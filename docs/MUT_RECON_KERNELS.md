@@ -965,106 +965,97 @@ Every band above overlaps, and every arm-pair ratio here is from a loaded box.
 
 ---
 
-## 19. The V pass's batch cap — taken, and the machinery cost three times the prize before it was made free
+## 19. The V pass's batch cap — built, measured, and NOT SHIPPED
 
-§15 named this "a separate, smaller, and *much* cheaper change" than the band,
-"blocked on two mechanical things". Both asserts came out. The cheapness did
-not hold: the first cut MEASURED SLOWER THAN BASE, and the reason is worth more
-than the change.
+§15 called this "a separate, smaller, and *much* cheaper change" than the band,
+"blocked on two mechanical things". Both asserts came out and the count came out
+exactly as predicted. **It is still not shipped, because the wall clock says no**
+— and the reason generalises further than the change does.
 
-### 19a. What is NOT done
+### 19a. The verdict first
 
-* **The H pass is untouched and always will be by this route.** It is 69.3% of
-  `LfBlock::fill` and its cap ratio is exactly **1.000** at 4, 8, 16, 32 and 64
-  (`benchmarks/lf_cap_census_2026-08-10.txt`, `LFCAP` rows). H needs a
-  different mechanism, not a bigger batch.
-* **`cdef_arm`'s 1,863,648 and `ctx.rs:99`'s 2,534,988 are still not reduced.**
-  §20 attributes the second of them for the first time but does not shrink it.
-* **The final wall-clock sweep ran on a LOADED box** — three other agents'
-  jobs, `foreign` 1-7 per row — under `measlock --load-ok`. Paired, interleaved,
-  rotating-order ratios are reported; absolute ms/frame are not comparable to
-  an idle campaign's.
-* **Not measured:** x86_64 and wasm32 (compile-checked; x86 clippy set-diffed
-  against base and identical), `asm` / `c-ffi`, `unchecked`, t=16, and any
-  vector below 4K. The corpus gate covers 766 vectors at t=1 and 753 at t=8 for
-  CORRECTNESS at every size, not for speed.
-* **The write-back chunking is sound by construction, not by test.** §19d.
+| | |
+|---|---|
+| count | **1.971x on the V pass, exactly as §16 priced it**: 1,178,490 -> 597,876 regs/frame, whole decoder 11,401,399 -> 10,820,785 |
+| the prize, in CPU | 580,614 regs x #485's own **4.04 ns** each = **2.35 ms/frame**, i.e. **<= 0.51% of a t=8 frame's CPU** and <= 0.74% of a t=1 frame's |
+| wall clock, n=7-8, load-tagged | 8bpc t=1 **1.0157** (1/8 rounds faster), t=2 **1.0162** (0/8, p=0.008), t=4 1.0150 (3/8), t=8 **1.0005** (4/8, p=1.000); 10bpc all within [0.993, 1.003] and never significant. **No cell disjoint.** |
+| shipped | **no.** `main`'s `LF_BATCH_MAX` stays 4. The implementation is preserved on this branch at `61f88dc` + `362e5d9`. |
 
-### 19b. The lever, priced at every cap
+**The framing "a cheap, sound, un-taken win" was wrong in one specific way, and
+this is the transferable part: 1.971x is a RATIO on 30.7% of ONE site, and
+nobody had converted it into milliseconds.** Two lines of arithmetic against
+#485's own per-registration price put the whole lever under 0.51% of frame CPU
+— at or below what this box resolves at n=9 under load — before a line was
+written. Do that conversion first, every time.
 
-`--features __probe_lf_hist` (ported from PR #485, extended with `LFCAP`, which
-adds for each NATURAL run what that run would cost at each candidate cap). The
-base column reproduces #485's attribution **to the registration**:
+### 19b. What is NOT done
 
-| t=8, `v4k_8tile` 8bpc | regs/frame | share | regs/open |
-|---|---|---|---|
-| H — `filter_plane_cols_*` | 2,656,552 | 69.3% | 14.30 |
-| V — `filter_plane_rows_*` | 1,178,490 | 30.7% | 6.33 |
+* **The H pass is untouched and cannot be helped by this route.** 69.3% of
+  `LfBlock::fill`, and its cap ratio is exactly **1.000** at 4, 8, 16, 32 and 64
+  (`benchmarks/lf_cap_census_2026-08-10.txt`). Structural: its rectangle grows
+  in the ROW direction, so a run of `n` groups costs `4n` however it is split.
+* **`cdef_arm`'s 1,863,648 and `ctx.rs:99`'s 2,534,988 are not reduced.** §20
+  attributes the second for the first time; it does not shrink it.
+* **A cap-8 variant with a stack scratch was built and NOT measured to n=9.**
+  Its prize is 365,712 regs = 1.48 ms = <= 0.32% of t=8 CPU, i.e. further below
+  the resolution than the arm that already measured null. Its correctness was
+  verified (parity 4/4, corpus 14/14, frame md5 identical, census 812,778 —
+  exactly `LFCAP`'s cap-8 row) and it is left unmeasured deliberately.
+* **The wall-clock numbers are load-tagged**, `foreign` 14-24 per row, taken
+  under `measlock --load-ok` because three other agents held the box. Paired,
+  interleaved, rotating-order ratios only; absolutes are not comparable to an
+  idle campaign's. The 9th round was lost when two sweeps restarted (see 19f).
 
-| cap | V regs/frame | vs cap 4 | H regs/frame | vs cap 4 |
+### 19c. The lever, priced at every cap — this part is solid and reusable
+
+`--features __probe_lf_hist` (ported from #485, extended with `LFCAP`, which
+adds for each NATURAL run what it would cost at each candidate cap). It is
+**kept on `main`** because it is what any future attempt needs. The base column
+reproduces #485's attribution to the registration:
+
+| t=8, `v4k_8tile` 8bpc | regs/frame | share | regs/open | mean natural run |
+|---|---|---|---|---|
+| H — `filter_plane_cols_*` | 2,656,552 | 69.3% | 14.30 | 6.91 |
+| V — `filter_plane_rows_*` | 1,178,490 | 30.7% | 6.33 | 7.00 |
+
+| cap | V regs/frame | vs 4 | H regs/frame | vs 4 |
 |---|---|---|---|---|
 | 4 | 1,178,490 | 1.000 | 2,656,552 | 1.000 |
 | 8 | 812,778 | 1.450 | 2,656,552 | 1.000 |
 | 16 | 657,708 | 1.792 | 2,656,552 | 1.000 |
-| **32** | **597,876** | **1.971** | 2,656,552 | 1.000 |
+| 32 | 597,876 | **1.971** | 2,656,552 | 1.000 |
 | 64 | 597,876 | 1.971 | 2,656,552 | 1.000 |
 
-32 is the true maximum, not a tuning choice: `vm` is a `u32`, so a superblock
-edge has at most 32 groups and cap 64 buys nothing. Shipped census, one binary,
-`probe-sites`, `lost=0`:
+32 is the true maximum: `vm` is a `u32`, so an edge has at most 32 groups.
 
-| site | base | head |
-|---|---|---|
-| whole decoder | **11,401,399** | **10,820,785** |
-| `fill`, V pass | 1,178,490 | **597,876** |
-| `fill`, H pass | 2,656,552 | 2,656,552 |
+### 19d. It WAS sound, and the soundness argument is worth keeping
 
-−580,614/frame, −5.1% of the decoder's whole population, and the delta is
-*exactly* the V pass's — nothing else moved.
+The band is REFUTED (§18) because the filter's read set is 2-D SPARSE and any
+contiguous band reserves bytes nothing reads. A fused run has **no slack**:
+every one of its `4 * groups` columns belongs to a group that filters, at the
+same `wd` and therefore over the same `2 * reach` rows, so the union of the
+members' rectangles IS the fused rectangle. Raising the cap changes the COUNT
+and nothing about the relationship between extent and read set. The write side
+was kept identical by scanning and writing back in 16-column chunks.
 
-### 19c. Why this is sound where #485's band was not
+**The one-line test that separates the three schemes**, worth more than any of
+them: *does the reservation contain a byte no member of the batch reads?*
+Strided hull — yes, the gaps between rows (2.65x slower). Read band — yes, the
+gaps between edges (decode failure). Fused run — **no** (sound; just not worth
+it).
 
-The band is REFUTED (§18): the filter's read set is 2-D SPARSE, every
-contiguous band reserves bytes nothing reads, and under concurrent sbrow filter
-tasks that slack collided with a legitimate 8-pixel write. A fused run has **no
-slack**: every one of its `4 * groups` columns belongs to a group that filters,
-at the same `wd` and therefore over the same `2 * reach` rows, so the union of
-the members' rectangles IS the fused rectangle — which is the argument `open`
-already made at 4 groups and which does not weaken at 32. A non-filtering group
-still BREAKS the run rather than being spanned.
+An honest gap in the evidence: planting the un-chunked write-back (a genuine
+over-reservation above 16 columns) and running `md5_inventory --threads 8
+--group 8-bit/data` gave **358/358 pass, 0 errors**. The corpus did not catch
+it in one run — #485's lesson again — and the liveness of that arm on the
+corpus vectors was not proved, so the null bounds nothing.
 
-So this changes the COUNT of registrations and nothing about the relationship
-between their extent and the read set. That is the distinction three schemes
-have now died on, stated as a test you can apply to the next one: *does the
-reservation contain a byte no member of the batch reads?* Hull: yes (the gaps
-between rows). Band: yes (the gaps between edges). Fused run: no.
+### 19e. Where the time went: the machinery, three times
 
-### 19d. The write side is not touched, and that is enforced, not hoped
-
-`close` scans and writes back in **16-column chunks**, so a 32-group run takes
-exactly the mutable guards eight 4-group runs took. `w <= 16` — every rectangle
-base could open — takes the single-span form base took, so its codegen does not
-move either.
-
-**An honest gap:** planting the un-chunked version (one mutable guard over the
-whole fused width, i.e. a genuine over-reservation above 16 columns) and running
-`md5_inventory --threads 8 --group 8-bit/data` gave **358/358 pass, 0 errors**.
-So the corpus did NOT catch it in one run — which is exactly #485's lesson
-("766 vectors passed" is evidence, not proof; its column band passed a full
-t=8 corpus run and failed later). The chunking is kept because it makes the
-write population identical BY CONSTRUCTION, not because a test demands it. Note
-also that this arm's liveness was not proved: wide V runs are known common on
-`v4k_8tile` (`LFNAT` mean 7.00, spike at 32) and were NOT verified on the
-corpus vectors, so the null bounds nothing.
-
-### 19e. The first cut was SLOWER, and the machinery is where it went
-
-`benchmarks/lf_vbatch_2026-08-10_v1.tsv` (n=6, load-tagged), v1 vs base:
-**8bpc t=1 +3.0%, t=8 +7.9%; 10bpc t=1 +2.1%, t=8 +7.3%.**
-
-An isolation arm — the whole machinery present, `LF_BATCH_V` pinned back to 4 —
-separated machinery from batching (`benchmarks/lf_vbatch_iso_2026-08-10_v1.tsv`,
-n=3, load-tagged, `v4k_8tile` 8bpc):
+The first cut measured **+3.0% t=1 / +7.9% t=8**
+(`benchmarks/lf_vbatch_2026-08-10_v1.tsv`). An isolation arm — whole machinery
+present, `LF_BATCH_V` pinned back to 4 — separated machinery from batching
+(`benchmarks/lf_vbatch_iso_2026-08-10_v1.tsv`, `v4k_8tile` 8bpc):
 
 | arm | t=1 | t=8 |
 |---|---|---|
@@ -1072,54 +1063,41 @@ n=3, load-tagged, `v4k_8tile` 8bpc):
 | v1 (batch 32) | 1.030 | 1.086 |
 | **machinery only (batch 4)** | **1.187** | 1.049 |
 
-The cost was in the MACHINERY, not the wider runs. A `sample` profile of the
-machinery-only arm at t=1 named two leaves base does not have —
-`LfBlock::close` at 2.36% and `___arcane_lf_dispatch_u8` at 1.30%. Three causes,
-each removed:
+A `sample` profile of the machinery-only arm named two leaves base does not
+have — `LfBlock::close` 2.36% and `___arcane_lf_dispatch_u8` 1.30%. Three
+causes, each removed, each a general trap:
 
-1. **`lane_thr` read from `params`.** Dropping the materialised `[u16; NG]`
-   threshold table (to avoid zero-filling 32 entries per run) put a slice bounds
-   check and an `Option` branch inside the 8-lane chunk loop of BOTH kernels —
-   and H, which gains nothing from a wider batch, paid it on 69.3% of the work.
-   The table is back, sized per direction by a const generic; `LF_GROUPS_H = 4`
-   is byte-for-byte what H had.
-2. **A fixed 128-pixel V scratch stride.** It made a 1-group V rectangle span
-   14 x 128 = 1,792 bytes of scratch where base spanned 224. The stride is now
-   the run's own, rounded to a power of two >= 16, so every run base could also
-   have opened keeps base's exact geometry — and it is a CONST generic on the
-   kernel, because a runtime stride turns every tap address into a multiply.
-3. **`close`'s chunk loop ran when `w <= 16`,** where it can only ever do one
-   iteration.
+1. **Reading per-group thresholds from `params` instead of a materialised
+   table.** Done to avoid zero-filling 32 entries per run; it put a slice bounds
+   check and an `Option` branch in the 8-lane chunk loop of BOTH kernels, so the
+   H pass paid for a feature it cannot use.
+2. **A fixed 128-pixel V scratch stride.** A 1-group V rectangle spanned
+   14 x 128 = 1,792 bytes where base spanned 224.
+3. **A write-back chunk loop that ran when `w <= 16`,** where it can only ever
+   iterate once.
 
-After (`benchmarks/lf_vbatch_iso_2026-08-10_v3.tsv`, n=3, load-tagged):
+After all three (`benchmarks/lf_vbatch_iso_2026-08-10_v3.tsv`, n=3): head
+1.014 / 0.981, machinery-only 1.019 / 0.998. The residual ~2% at t=1 is the
+thread-local scratch and the `&mut`-through-`&mut` scratch handle that the
+2,048-pixel array forced — and ~2% is four times the whole prize.
 
-| arm | t=1 | t=8 |
-|---|---|---|
-| base | 1.000 | 1.000 |
-| **head** | **1.014** | **0.981** |
-| machinery only | 1.019 | 0.998 |
+**The general rule, and it is §11's lesson from a third side.** §11 said: price
+the EXTENT, not just the count. This adds: **price the MACHINERY, and price the
+count in MILLISECONDS before building anything.** A correct count reduction
+whose machinery costs more than the registrations it removes is a regression,
+and the only way to see that is an isolation arm that KEEPS the machinery and
+REMOVES the reduction.
 
-**The general lesson, and it is the strided hull's lesson from the other side.**
-§11's meta-lesson was that a count reduction bought with a WIDER extent can be
-actively harmful. This adds: a count reduction bought with *more machinery* can
-be too, and the machinery does not have to touch the extent to cost more than
-the count is worth. The prize here is ~580 K registrations/frame; at #485's
-measured 4.04 ns each that is ~2.3 ms of frame CPU, and the first cut's
-machinery cost several times it. **Price the machinery, not just the count.**
+### 19f. A measurement-integrity note, because it cost the 9th round
 
-### 19f. The scratch is thread-local, and that is load-bearing
-
-`LF_SW_V * LF_BH` = 2,048 pixels, i.e. 4 KB across `buf` + `pristine` at 8bpc.
-`loop_filter_sb128_rust` runs ~100 K times a frame, so the per-call zero-init
-Rust requires would be hundreds of MB of `memset` per frame — more than the
-registrations removed are worth. Hoisting it to the thread also retires the
-512-byte zero-init the 16x16 stack version was already paying on every call.
-
-Reuse is sound for the same reason the old per-call scratch tolerated stale pad
-between opens: `fill` writes `[0, w)` of rows `[0, h)` before anything reads
-them, and `close` compares and writes back only inside that window. What
-changes is *which* stale bytes sit in the pad, not whether they can reach a
-picture.
+Two of this round's sweeps restarted from round 0 simultaneously and then ran
+CONCURRENTLY, after `measlock`'s owner-file format changed under a running
+holder (another agent was fixing a real release bug in it at the time). The
+committed table is the pre-restart snapshot at n=7-8, which is why the row
+counts are 7 and 8 rather than 9. Two lessons already in the brief were the
+ones that bit: do not change a tool a run depends on while the run is live, and
+`--load-ok` mutual exclusion is only as good as the lock file's format
+agreement.
 
 ## 20. `ctx.rs:99` — attributed for the first time, NOT reduced
 

@@ -254,10 +254,14 @@ count by widening the reservation", and the first where the widening was contigu
 `LfBlock::open` already fuses consecutive same-`wd` groups into one rectangle, and that rectangle is
 **exactly the union of its members'** — every column belongs to a group that filters, over the same
 `2 * reach` rows — so it has none of the slack a band has. Raising the fusing cap therefore removes
-registrations without moving the boundary between "reserved" and "read" at all. Done for the V pass
-(`docs/MUT_RECON_KERNELS.md` §19): 1,178,490 -> 597,876 per frame, whole decoder 11,401,399 ->
-10,820,785. **H's cap ratio is exactly 1.000 at every cap** because its rectangle grows in the ROW
-direction, so 69.3% of the site is untouched by this lever and needs a different one.
+registrations without moving the boundary between "reserved" and "read" at all. Built for the V pass and
+**measured as no win** (`docs/MUT_RECON_KERNELS.md` §19): the count came out exactly as priced
+(1,178,490 -> 597,876 per frame, whole decoder 11,401,399 -> 10,820,785) and the wall clock did not
+move (8bpc t=8 1.0005, 4/8 rounds faster; t=1/t=2 +1.6%, sign-consistent). **The prize is
+<= 0.51% of a t=8 frame's CPU** — 580,614 registrations x 4.04 ns — which nobody had converted from
+a ratio into milliseconds before building it. `LF_BATCH_MAX` stays 4. **H's cap ratio is exactly
+1.000 at every cap** because its rectangle grows in the ROW direction, so 69.3% of the site cannot
+be touched by this lever at all.
 
 **The test that distinguishes it from the three schemes that died**, stated so the next attempt can
 apply it in one line: *does the reservation contain a byte no member of the batch reads?* Strided

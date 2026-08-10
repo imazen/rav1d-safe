@@ -34,7 +34,7 @@ use archmage::{Arm64, SimdToken as _, arcane, rite};
 use safe_unaligned_simd::aarch64 as safe_simd;
 
 #[cfg(target_arch = "aarch64")]
-use crate::src::loopfilter::{LF_BATCH_H, LF_BATCH_V, LF_BLOCK_LEN, LF_SW_H, LF_SW_V};
+use crate::src::loopfilter::{LF_BLOCK_LEN, LF_BW};
 
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::dav1d::picture::PicOffset;
@@ -98,17 +98,14 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 //
 // ## Layout
 //
-// The scratch is a padded rectangle whose row stride is per DIRECTION:
-// `LF_SW_V` = 128 for V (a fused run is `4 * groups` wide, up to
-// `4 * LF_BATCH_V`), `LF_SW_H` = 16 for H (whose runs grow DOWN the rectangle,
-// so its rows never need to be wider than `2 * reach`).
+// The scratch is a padded `LF_BW x LF_BW` = 16x16 rectangle of `u16`.
 //
 //   V (`HV::V`, horizontal edges, `deblock_rows`): tap-major. Tap `k` of lane
-//   `j` is `buf[base + k * LF_SW_V + j]`, so ALL lanes of one tap are contiguous
+//   `j` is `buf[base + k * LF_BW + j]`, so ALL lanes of one tap are contiguous
 //   — a plain `vld1q_u16`, no transpose.
 //
 //   H (`HV::H`, vertical edges, `deblock_cols`): lane-major. Tap `k` of lane
-//   `j` is `buf[base + j * LF_SW_H + k]`, so the kernel transposes 8x8 `u16`
+//   `j` is `buf[base + j * LF_BW + k]`, so the kernel transposes 8x8 `u16`
 //   tiles in registers (the structure dav1d's `lpf_h_sb_*` asm uses), filters,
 //   and transposes back. Padding the scratch row stride to a fixed 16 is what
 //   makes each row exactly two 8-lane loads at every filter width.
@@ -130,25 +127,15 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 ///
 /// `e`/`i`/`h` come from the filter LUT and CHANGE PER GROUP inside a fused
 /// run — the run only fuses on matching `wd` — so they are PER GROUP, not
-/// splats. Held as `NG`-entry arrays (one per fused group) rather than
-/// sixteen-entry per-lane ones: a group is four adjacent lanes, so [`lane_thr`]
-/// expands two groups into an 8-lane vector in two instructions and the run
-/// never touches memory for them.
-///
-/// **`NG` is per DIRECTION, and that is a measured requirement, not tidiness.**
-/// A first cut of the V batch lift dropped these arrays and had `lane_thr` read
-/// `params.get(..)` directly, to avoid materialising 32 entries per run. That
-/// put a slice bounds check and an `Option` branch inside the 8-lane chunk loop
-/// of BOTH kernels, and the H pass — 69.3% of the work, which gains nothing
-/// from a wider batch — paid it for nothing. Measured at
-/// `benchmarks/lf_vbatch_2026-08-10_v1.tsv`: 8bpc t=1 +3.0%, t=8 +7.9% against
-/// base. `LF_GROUPS_H` = 4 keeps H's codegen identical to before the batch
-/// change.
+/// splats. Held as four-entry arrays (one per fused group, `LF_BATCH_MAX`)
+/// rather than sixteen-entry per-lane ones: a group is four adjacent lanes, so
+/// [`lane_thr`] expands two groups into an 8-lane vector in two instructions
+/// and the run never touches memory for them.
 #[cfg(target_arch = "aarch64")]
-pub(crate) struct LfLaneThresholds<const NG: usize> {
-    e: [u16; NG],
-    i: [u16; NG],
-    h: [u16; NG],
+pub(crate) struct LfLaneThresholds {
+    e: [u16; LF_GROUPS],
+    i: [u16; LF_GROUPS],
+    h: [u16; LF_GROUPS],
     /// `1 << bitdepth_min_8`, the flatness threshold.
     f: u16,
     bd_max: u16,
@@ -156,25 +143,17 @@ pub(crate) struct LfLaneThresholds<const NG: usize> {
     clip_hi: i16,
 }
 
-/// Fused groups the H kernel can see — [`LF_BATCH_H`], because H's rectangle
-/// grows in the ROW direction and fusing further cannot reduce its guard count.
-#[cfg(target_arch = "aarch64")]
-const LF_GROUPS_H: usize = LF_BATCH_H;
-
-/// Fused groups the V kernel can see — [`LF_BATCH_V`].
+/// Fused groups per run.
 ///
-/// This used to be asserted equal to the batch constant, which is what blocked
-/// the V pass's batch from rising at all. The GUARD batch and the KERNEL batch
-/// are different concerns: this bounds the threshold table the 8-lane chunk
-/// loop indexes, the batch bounds how many groups one borrow registration
-/// covers. They are equal here only because a V run's lanes and its groups are
-/// the same population.
+/// A group is 4 lanes and the scratch is `LF_BW` wide, so this is what the
+/// scratch can hold; the assert pins it to what the driver actually fuses.
+/// Raising `LF_BATCH_MAX` past it would silently drop every run to the scalar
+/// path (`lf_compact_run_neon` returns false) rather than mis-filter, but
+/// failing the build is the better signal.
 #[cfg(target_arch = "aarch64")]
-const LF_GROUPS_V: usize = LF_BATCH_V;
+const LF_GROUPS: usize = LF_BW / 4;
 #[cfg(target_arch = "aarch64")]
-const _: () = assert!(4 * LF_GROUPS_V <= LF_SW_V);
-#[cfg(target_arch = "aarch64")]
-const _: () = assert!(4 * LF_GROUPS_H <= LF_SW_H);
+const _: () = assert!(LF_GROUPS == crate::src::loopfilter::LF_BATCH_MAX);
 
 /// Tap reach of a filter width. MUST mirror `src::loopfilter::lf_reach`.
 #[cfg(target_arch = "aarch64")]
@@ -496,34 +475,22 @@ macro_rules! lf_runs {
     ($px:ty, $vname:ident, $hname:ident, $ld:ident, $st:ident) => {
         /// V direction (`HV::V`): tap-major scratch, no transpose.
         ///
-        /// Tap `k` of lane `j` is `buf[base + k * LF_SW_V + j]`, so all lanes of
+        /// Tap `k` of lane `j` is `buf[base + k * LF_BW + j]`, so all lanes of
         /// one tap are contiguous.
         #[rite(neon)]
-        fn $vname<const WD: c_int, const SW: usize>(
+        fn $vname<const WD: c_int>(
             buf: &mut [$px; LF_BLOCK_LEN],
             base: usize,
             n_lanes: usize,
-            thr: &LfLaneThresholds<LF_GROUPS_V>,
+            thr: &LfLaneThresholds,
         ) {
-            // `SW` is a CONST generic, not a parameter: a runtime stride turns
-            // every tap address in this loop into a multiply and showed up as a
-            // new `lf_dispatch` self-time leaf (`~/tmp` profile, 2026-08-10).
-            // Only four values exist, and `SW == LF_SW_H` reproduces base's
-            // addressing exactly.
-            const { assert!(SW.is_power_of_two() && SW >= 16) };
-            let sw = SW;
             let reach = reach_of(WD);
             let bd_max = vdupq_n_s16(thr.bd_max as i16);
             let clip_hi = vdupq_n_s16(thr.clip_hi);
             let f = vdupq_n_u16(thr.f);
             let (wlo, whi) = written_taps(WD);
 
-            // `sw` is the run's OWN row stride, not a constant: a short V run
-            // keeps `LF_SW_H`'s 16 and therefore base's exact scratch
-            // footprint, and only a long one spreads out. A fixed 128 made a
-            // 1-group rectangle span 1,792 bytes instead of 224.
-            debug_assert!(base >= reach * sw && 2 * reach * sw <= LF_BLOCK_LEN);
-            debug_assert!(n_lanes <= sw);
+            debug_assert!(base >= reach * LF_BW);
             let mut lane = 0usize;
             while lane < n_lanes {
                 let c = lane / 8;
@@ -532,16 +499,16 @@ macro_rules! lf_runs {
                 let h = lane_thr(&thr.h, c);
 
                 // Slot `n` (0..2*reach) is tap `n - reach`.
-                let slot0 = base - reach * sw + lane;
+                let slot0 = base - reach * LF_BW + lane;
                 let mut t = [vdupq_n_u16(0); 14];
                 for n in 0..2 * reach {
-                    t[n + 7 - reach] = $ld(buf, slot0 + n * sw);
+                    t[n + 7 - reach] = $ld(buf, slot0 + n * LF_BW);
                 }
 
                 lf_core::<WD>(&mut t, e, i, h, f, bd_max, clip_hi);
 
                 for n in wlo..whi {
-                    $st(buf, slot0 + (n + reach - 7) * sw, t[n]);
+                    $st(buf, slot0 + (n + reach - 7) * LF_BW, t[n]);
                 }
                 lane += 8;
             }
@@ -549,7 +516,7 @@ macro_rules! lf_runs {
 
         /// H direction (`HV::H`): lane-major scratch, transposed in registers.
         ///
-        /// Tap `k` of lane `j` is `buf[base + j * LF_SW_H + k]`, so each lane is
+        /// Tap `k` of lane `j` is `buf[base + j * LF_BW + k]`, so each lane is
         /// one scratch row and the kernel must transpose 8x8 tiles — the same
         /// structure dav1d's `lpf_h_sb_*` asm uses.
         #[rite(neon)]
@@ -557,7 +524,7 @@ macro_rules! lf_runs {
             buf: &mut [$px; LF_BLOCK_LEN],
             base: usize,
             n_lanes: usize,
-            thr: &LfLaneThresholds<LF_GROUPS_H>,
+            thr: &LfLaneThresholds,
         ) {
             let reach = reach_of(WD);
             let bd_max = vdupq_n_s16(thr.bd_max as i16);
@@ -566,7 +533,7 @@ macro_rules! lf_runs {
             let (wlo, whi) = written_taps(WD);
 
             debug_assert!(base >= reach);
-            // Slot 0 (tap `-reach`) of lane `j` is `buf[j * LF_SW_H + row_off]`.
+            // Slot 0 (tap `-reach`) of lane `j` is `buf[j * LF_BW + row_off]`.
             let row_off = base - reach;
             let wide = 2 * reach > 8;
 
@@ -579,7 +546,7 @@ macro_rules! lf_runs {
 
                 let mut rows = [vdupq_n_u16(0); 8];
                 for (j, r) in rows.iter_mut().enumerate() {
-                    *r = $ld(buf, (lane + j) * LF_SW_H + row_off);
+                    *r = $ld(buf, (lane + j) * LF_BW + row_off);
                 }
                 let cols_lo = transpose8(rows);
                 let mut t = [vdupq_n_u16(0); 14];
@@ -590,7 +557,7 @@ macro_rules! lf_runs {
                 let mut cols_hi = [vdupq_n_u16(0); 8];
                 if wide {
                     for (j, r) in rows.iter_mut().enumerate() {
-                        *r = $ld(buf, (lane + j) * LF_SW_H + row_off + 8);
+                        *r = $ld(buf, (lane + j) * LF_BW + row_off + 8);
                     }
                     cols_hi = transpose8(rows);
                     for n in 8..2 * reach {
@@ -614,12 +581,12 @@ macro_rules! lf_runs {
                 }
                 let back = transpose8(out_lo);
                 for (j, r) in back.iter().enumerate() {
-                    $st(buf, (lane + j) * LF_SW_H + row_off, *r);
+                    $st(buf, (lane + j) * LF_BW + row_off, *r);
                 }
                 if wide {
                     let back = transpose8(out_hi);
                     for (j, r) in back.iter().enumerate() {
-                        $st(buf, (lane + j) * LF_SW_H + row_off + 8, *r);
+                        $st(buf, (lane + j) * LF_BW + row_off + 8, *r);
                     }
                 }
                 lane += 8;
@@ -646,7 +613,7 @@ const fn written_taps(wd: c_int) -> (usize, usize) {
 /// lanes each.
 #[cfg(target_arch = "aarch64")]
 #[rite(neon)]
-fn lane_thr<const NG: usize>(v: &[u16; NG], c: usize) -> uint16x8_t {
+fn lane_thr(v: &[u16; LF_GROUPS], c: usize) -> uint16x8_t {
     vcombine_u16(vdup_n_u16(v[2 * c]), vdup_n_u16(v[2 * c + 1]))
 }
 
@@ -654,25 +621,6 @@ fn lane_thr<const NG: usize>(v: &[u16; NG], c: usize) -> uint16x8_t {
 lf_runs!(u8, lf_run_v_u8, lf_run_h_u8, ld8_u8, st8_u8);
 #[cfg(target_arch = "aarch64")]
 lf_runs!(u16, lf_run_v_u16, lf_run_h_u16, ld8_u16, st8_u16);
-
-/// `wd` dispatch for one V stride. Split out so the `sw` match above stays four
-/// arms rather than sixteen.
-#[cfg(target_arch = "aarch64")]
-#[rite(neon)]
-fn lf_v_u8<const SW: usize>(
-    buf: &mut [u8; LF_BLOCK_LEN],
-    base: usize,
-    n_lanes: usize,
-    thr: &LfLaneThresholds<LF_GROUPS_V>,
-    wd: c_int,
-) {
-    match wd {
-        4 => lf_run_v_u8::<4, SW>(buf, base, n_lanes, thr),
-        6 => lf_run_v_u8::<6, SW>(buf, base, n_lanes, thr),
-        8 => lf_run_v_u8::<8, SW>(buf, base, n_lanes, thr),
-        _ => lf_run_v_u8::<16, SW>(buf, base, n_lanes, thr),
-    }
-}
 
 #[cfg(target_arch = "aarch64")]
 #[arcane]
@@ -682,41 +630,18 @@ fn lf_dispatch_u8(
     base: usize,
     is_v: bool,
     n_lanes: usize,
-    sw: usize,
-    thr_v: &LfLaneThresholds<LF_GROUPS_V>,
-    thr_h: &LfLaneThresholds<LF_GROUPS_H>,
+    thr: &LfLaneThresholds,
     wd: c_int,
 ) {
     match (is_v, wd) {
-        (true, wd) => match sw {
-            LF_SW_H => lf_v_u8::<LF_SW_H>(buf, base, n_lanes, thr_v, wd),
-            32 => lf_v_u8::<32>(buf, base, n_lanes, thr_v, wd),
-            64 => lf_v_u8::<64>(buf, base, n_lanes, thr_v, wd),
-            _ => lf_v_u8::<LF_SW_V>(buf, base, n_lanes, thr_v, wd),
-        },
-        (false, 4) => lf_run_h_u8::<4>(buf, base, n_lanes, thr_h),
-        (false, 6) => lf_run_h_u8::<6>(buf, base, n_lanes, thr_h),
-        (false, 8) => lf_run_h_u8::<8>(buf, base, n_lanes, thr_h),
-        (false, _) => lf_run_h_u8::<16>(buf, base, n_lanes, thr_h),
-    }
-}
-
-/// `wd` dispatch for one V stride. Split out so the `sw` match above stays four
-/// arms rather than sixteen.
-#[cfg(target_arch = "aarch64")]
-#[rite(neon)]
-fn lf_v_u16<const SW: usize>(
-    buf: &mut [u16; LF_BLOCK_LEN],
-    base: usize,
-    n_lanes: usize,
-    thr: &LfLaneThresholds<LF_GROUPS_V>,
-    wd: c_int,
-) {
-    match wd {
-        4 => lf_run_v_u16::<4, SW>(buf, base, n_lanes, thr),
-        6 => lf_run_v_u16::<6, SW>(buf, base, n_lanes, thr),
-        8 => lf_run_v_u16::<8, SW>(buf, base, n_lanes, thr),
-        _ => lf_run_v_u16::<16, SW>(buf, base, n_lanes, thr),
+        (true, 4) => lf_run_v_u8::<4>(buf, base, n_lanes, thr),
+        (true, 6) => lf_run_v_u8::<6>(buf, base, n_lanes, thr),
+        (true, 8) => lf_run_v_u8::<8>(buf, base, n_lanes, thr),
+        (true, _) => lf_run_v_u8::<16>(buf, base, n_lanes, thr),
+        (false, 4) => lf_run_h_u8::<4>(buf, base, n_lanes, thr),
+        (false, 6) => lf_run_h_u8::<6>(buf, base, n_lanes, thr),
+        (false, 8) => lf_run_h_u8::<8>(buf, base, n_lanes, thr),
+        (false, _) => lf_run_h_u8::<16>(buf, base, n_lanes, thr),
     }
 }
 
@@ -728,22 +653,18 @@ fn lf_dispatch_u16(
     base: usize,
     is_v: bool,
     n_lanes: usize,
-    sw: usize,
-    thr_v: &LfLaneThresholds<LF_GROUPS_V>,
-    thr_h: &LfLaneThresholds<LF_GROUPS_H>,
+    thr: &LfLaneThresholds,
     wd: c_int,
 ) {
     match (is_v, wd) {
-        (true, wd) => match sw {
-            LF_SW_H => lf_v_u16::<LF_SW_H>(buf, base, n_lanes, thr_v, wd),
-            32 => lf_v_u16::<32>(buf, base, n_lanes, thr_v, wd),
-            64 => lf_v_u16::<64>(buf, base, n_lanes, thr_v, wd),
-            _ => lf_v_u16::<LF_SW_V>(buf, base, n_lanes, thr_v, wd),
-        },
-        (false, 4) => lf_run_h_u16::<4>(buf, base, n_lanes, thr_h),
-        (false, 6) => lf_run_h_u16::<6>(buf, base, n_lanes, thr_h),
-        (false, 8) => lf_run_h_u16::<8>(buf, base, n_lanes, thr_h),
-        (false, _) => lf_run_h_u16::<16>(buf, base, n_lanes, thr_h),
+        (true, 4) => lf_run_v_u16::<4>(buf, base, n_lanes, thr),
+        (true, 6) => lf_run_v_u16::<6>(buf, base, n_lanes, thr),
+        (true, 8) => lf_run_v_u16::<8>(buf, base, n_lanes, thr),
+        (true, _) => lf_run_v_u16::<16>(buf, base, n_lanes, thr),
+        (false, 4) => lf_run_h_u16::<4>(buf, base, n_lanes, thr),
+        (false, 6) => lf_run_h_u16::<6>(buf, base, n_lanes, thr),
+        (false, 8) => lf_run_h_u16::<8>(buf, base, n_lanes, thr),
+        (false, _) => lf_run_h_u16::<16>(buf, base, n_lanes, thr),
     }
 }
 
@@ -760,7 +681,6 @@ pub(crate) fn lf_compact_run_neon(
     base: usize,
     is_v: bool,
     n_lanes: usize,
-    sw: usize,
     params: &[(u8, u8, u8, c_int)],
     wd: c_int,
     bitdepth_min_8: u8,
@@ -775,17 +695,7 @@ pub(crate) fn lf_compact_run_neon(
 
     // The AV1 widths: 4/8/16 on luma, 4/6 on chroma. Anything else would be a
     // caller bug, but fall back rather than mis-filter.
-    let groups_cap = if is_v { LF_GROUPS_V } else { LF_GROUPS_H };
-    if !matches!(wd, 4 | 6 | 8 | 16) || n_lanes == 0 || n_lanes > sw {
-        return false;
-    }
-    if params.len() > groups_cap {
-        return false;
-    }
-    if is_v && !(sw.is_power_of_two() && (LF_SW_H..=LF_SW_V).contains(&sw)) {
-        return false;
-    }
-    if !is_v && sw != LF_SW_H {
+    if !matches!(wd, 4 | 6 | 8 | 16) || n_lanes == 0 || n_lanes > LF_BW {
         return false;
     }
     let Some(token) = Arm64::summon() else {
@@ -795,37 +705,21 @@ pub(crate) fn lf_compact_run_neon(
     // Unfilled groups keep zero thresholds. Those lanes are pad columns (V) or
     // pad rows (H) of the scratch that `close` never compares, so whatever the
     // kernel does with them is inert.
-    let mut thr_v = LfLaneThresholds::<LF_GROUPS_V> {
-        e: [0; LF_GROUPS_V],
-        i: [0; LF_GROUPS_V],
-        h: [0; LF_GROUPS_V],
+    let mut thr = LfLaneThresholds {
+        e: [0; LF_GROUPS],
+        i: [0; LF_GROUPS],
+        h: [0; LF_GROUPS],
         f: 1 << bitdepth_min_8,
         bd_max,
         clip_hi: (128i16 << bitdepth_min_8) - 1,
     };
-    let mut thr_h = LfLaneThresholds::<LF_GROUPS_H> {
-        e: [0; LF_GROUPS_H],
-        i: [0; LF_GROUPS_H],
-        h: [0; LF_GROUPS_H],
-        f: thr_v.f,
-        bd_max,
-        clip_hi: thr_v.clip_hi,
-    };
+    if params.len() > LF_GROUPS {
+        return false;
+    }
     for (g, &(e, i, h, _)) in params.iter().enumerate() {
-        let (e, i, h) = (
-            (e as u16) << bitdepth_min_8,
-            (i as u16) << bitdepth_min_8,
-            (h as u16) << bitdepth_min_8,
-        );
-        if is_v {
-            thr_v.e[g] = e;
-            thr_v.i[g] = i;
-            thr_v.h[g] = h;
-        } else {
-            thr_h.e[g] = e;
-            thr_h.i[g] = i;
-            thr_h.h[g] = h;
-        }
+        thr.e[g] = (e as u16) << bitdepth_min_8;
+        thr.i[g] = (i as u16) << bitdepth_min_8;
+        thr.h[g] = (h as u16) << bitdepth_min_8;
     }
 
     match bpc {
@@ -833,13 +727,13 @@ pub(crate) fn lf_compact_run_neon(
             let Ok(buf) = <&mut [u8; LF_BLOCK_LEN]>::try_from(scratch) else {
                 return false;
             };
-            lf_dispatch_u8(token, buf, base, is_v, n_lanes, sw, &thr_v, &thr_h, wd);
+            lf_dispatch_u8(token, buf, base, is_v, n_lanes, &thr, wd);
         }
         BPC::BPC16 => {
             let Ok(buf) = <[u16; LF_BLOCK_LEN]>::mut_from_bytes(scratch) else {
                 return false;
             };
-            lf_dispatch_u16(token, buf, base, is_v, n_lanes, sw, &thr_v, &thr_h, wd);
+            lf_dispatch_u16(token, buf, base, is_v, n_lanes, &thr, wd);
         }
     }
     true
@@ -895,9 +789,10 @@ fn diff_span_u8(
     _token: Arm64,
     work: &[u8; LF_BLOCK_LEN],
     pristine: &[u8; LF_BLOCK_LEN],
-    off: usize,
+    row: usize,
     w: usize,
 ) -> Option<(usize, usize)> {
+    let off = row * LF_BW;
     let a = safe_simd::vld1q_u8(<&[u8; 16]>::try_from(&work[off..off + 16]).unwrap());
     let b = safe_simd::vld1q_u8(<&[u8; 16]>::try_from(&pristine[off..off + 16]).unwrap());
     first_last_set(vandq_u8(vmvnq_u8(vceqq_u8(a, b)), valid_mask(w)))
@@ -909,9 +804,10 @@ fn diff_span_u16(
     _token: Arm64,
     work: &[u16; LF_BLOCK_LEN],
     pristine: &[u16; LF_BLOCK_LEN],
-    off: usize,
+    row: usize,
     w: usize,
 ) -> Option<(usize, usize)> {
+    let off = row * LF_BW;
     let ne = |k: usize| -> uint8x8_t {
         let a = ld8_u16(work, off + k);
         let b = ld8_u16(pristine, off + k);
@@ -920,20 +816,18 @@ fn diff_span_u16(
     first_last_set(vandq_u8(vcombine_u8(ne(0), ne(8)), valid_mask(w)))
 }
 
-/// Span of the `w` scratch pixels at flat index `off` that the filter changed.
+/// Span of `row`'s first `w` scratch pixels that the filter changed.
 ///
-/// `off` is `row * sw + col`, so the caller can scan a wide V rectangle in
-/// 16-column chunks and take the same mutable guards it would have taken as
-/// several narrower runs. Returns `None` for an untouched chunk, exactly like
-/// the scalar `position`/`rposition` pair it replaces — including for a chunk
-/// whose changes all sit in the pad columns beyond `w`, which the caller must
-/// not write back.
+/// Returns `None` for an untouched row, exactly like the scalar
+/// `position`/`rposition` pair it replaces — including for a row whose
+/// changes all sit in the pad columns beyond `w`, which the caller must not
+/// write back.
 #[cfg(target_arch = "aarch64")]
 pub(crate) fn lf_diff_span(
     bpc: crate::include::common::bitdepth::BPC,
     work: &[u8],
     pristine: &[u8],
-    off: usize,
+    row: usize,
     w: usize,
 ) -> Option<Option<(usize, usize)>> {
     // Ablation switch (measurement only; const-false without `__ablate`).
@@ -943,21 +837,18 @@ pub(crate) fn lf_diff_span(
     use crate::include::common::bitdepth::BPC;
     use zerocopy::FromBytes as _;
 
-    // One `vld1q` window, and it must stay inside the scratch: the caller
-    // chunks at 16 and every scratch row stride is a multiple of 16, so a chunk
-    // never straddles a row and `off + 16` never leaves the array.
-    debug_assert!(w <= 16 && off + 16 <= LF_BLOCK_LEN);
+    debug_assert!(w <= LF_BW);
     let token = Arm64::summon()?;
     match bpc {
         BPC::BPC8 => {
             let work = <&[u8; LF_BLOCK_LEN]>::try_from(work).ok()?;
             let pristine = <&[u8; LF_BLOCK_LEN]>::try_from(pristine).ok()?;
-            Some(diff_span_u8(token, work, pristine, off, w))
+            Some(diff_span_u8(token, work, pristine, row, w))
         }
         BPC::BPC16 => {
             let work = <[u16; LF_BLOCK_LEN]>::ref_from_bytes(work).ok()?;
             let pristine = <[u16; LF_BLOCK_LEN]>::ref_from_bytes(pristine).ok()?;
-            Some(diff_span_u16(token, work, pristine, off, w))
+            Some(diff_span_u16(token, work, pristine, row, w))
         }
     }
 }
