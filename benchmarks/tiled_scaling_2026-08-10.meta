@@ -126,6 +126,8 @@ COMMANDS
   scripts/perf/tiled_taskprobe_report.py <probedir>
   scripts/perf/tiled_stage_delta.py  <probedir> [4|2]
   scripts/perf/tiled_prof.sh        ~/tmp/tiledprof/prof 30
+                                    (MODE=profivf INLOOP=... TAG=... for the
+                                     spin test; MODE=ivf cannot outlive a window)
   scripts/perf/tiled_prof_report.py <profdir>
   scripts/perf/tiled_wallcpu.sh     <out.tsv> 7      (ARMS/CELLS via env)
   scripts/perf/tiled_wallcpu_report.py <out.tsv>
@@ -163,3 +165,16 @@ A PROFILE ATTEMPT THAT FAILED, RECORDED SO IT IS NOT REPEATED
   = 0.66 s at t=8, 16 frames = 0.5 s at 4K), far short of the 25 s window, and
   it has no repeat loop. The aggregate test in tiled_inloop2_* answers the same
   question; a symbol-level version needs a repeat loop in that driver.
+
+SYMBOL-LEVEL SPIN TEST (added after the first attempt failed)
+  tiled_spin_selftime_2026-08-10.txt -- examples/profile_ivf under
+  RAV1D_THREADS=8 + RAV1D_INLOOP={all,nodeblock}, 60 passes of the 200-frame
+  1024x576/8-tile IVF, 25 s `sample` window, outlived_window=1 both cells.
+  Removing the deblock work drives `TinyLock::lock_slow` from 1.45% to 7.03% of
+  busy self time (4.85x) and makes `add_contended::<false>` appear from zero,
+  while every loop-filter symbol goes to exactly 0.00 (so the ablation fired).
+  The contention is not deleted with the work; it is converted into spin.
+  `profile_ivf` is the tool docs/AGENT_BRIEF.md §7 already names for this --
+  the first attempt used bench_ivf_limit, which exits at end of stream and
+  produced outlived_window=0 with no .sample at all.
+  NOT COMMITTED: the two 40 MB .sample files, at ~/tmp/tiledprof/prof_spin/.

@@ -1,0 +1,30 @@
+======================================================================================================================
+BUCKETED SELF TIME, normalised on BUSY samples (parked threads excluded and reported separately as idle%)
+======================================================================================================================
+cell                               busy  idle%  entropy  kernels       lf     cdef       lr  tracker     sync  runtime    other
+L1024x576_420_8b__t8__t8__il-all    95147  36.46    53.78    11.67     9.26     4.27     0.00    14.67     1.45     2.38     2.52
+L1024x576_420_8b__t8__t8__il-nodeblock    97090  37.03    51.07    11.31     0.80     7.20     0.00    17.76     7.03     2.54     2.28
+
+
+SYMBOL-LEVEL: what happens when the DEBLOCK work is removed at t=8
+busy_all=95147 busy_nodeblock=97090  (1 ms sampler, 25 s, 8 threads, profile_ivf x60 passes)
+RISERS (pp of busy self time):
+   +5.58   1.45 ->  7.03  <rav1d_disjoint_mut::tracker_shard::TinyLock>::lock_slow
+   +1.30   2.73 ->  4.03  <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<true>
+   +1.17   1.55 ->  2.72  rav1d_safe::src::safe_simd::cdef_arm::cdef_filter_block_8bpc_inner
+   +0.70   0.97 ->  1.67  rav1d_safe::src::cdef_apply::rav1d_cdef_brow::<rav1d_safe::include::common::bitdepth::Bi
+   +0.57   0.66 ->  1.23  <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add_wide::<true>
+   +0.39   0.51 ->  0.90  rav1d_safe::src::safe_simd::cdef_arm::cdef_dir_cost
+   +0.37   0.29 ->  0.66  <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::remove_wide
+   +0.32   0.42 ->  0.74  rav1d_safe::src::safe_simd::cdef_arm::cdef_filter_row::<true, true>
+   +0.31   0.00 ->  0.31  <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add_contended::<false>
+   +0.27   1.76 ->  2.03  core::ptr::drop_glue::<rav1d_disjoint_mut::DisjointMutGuard<aligned::Aligned<aligned::A8
+   +0.19   0.41 ->  0.59  rav1d_safe::src::safe_simd::cdef_arm::padding_8bpc::{closure#0}
+   +0.16   0.41 ->  0.58  <rav1d_safe::src::with_offset::WithOffset<&rav1d_safe::include::dav1d::picture::Rav1dPic
+FALLERS:
+   -2.45  48.39 -> 45.93  rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bitdepth::BitDepth8>
+   -2.45   2.45 ->  0.00  rav1d_safe::src::safe_simd::loopfilter_arm::lf_compact_run_neon
+   -2.15   2.15 ->  0.00  rav1d_safe::src::loopfilter::loopfilter_sb_direct::<rav1d_safe::include::common::bitdept
+   -2.10   2.10 ->  0.00  <rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>
+   -1.68   1.68 ->  0.00  <rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>
+   -0.15   4.64 ->  4.48  rav1d_safe::src::recon::rav1d_recon_b_intra::<rav1d_safe::include::common::bitdepth::Bit

@@ -214,15 +214,34 @@ CPU ms/frame *saved* by disabling a filter, `L1024x576_420_8b__t8` at t=8
 
 Removing *both* filter stages recovers 4.978 ms, which agrees with the probe's
 measured filter-chain total (2.208 + 0.684 + 1.972 = 4.864) to 2.3%. Removing
-*either one alone* recovers far less than that stage costs, because the surviving
-workers keep spinning against the remaining registration population. With the
-tracker out, the costs are separable. **A per-stage cost under a spinning lock is
-not a per-stage opportunity** — which is why §7 ranks "make concurrent filter
-tasks land on different shard lines" above "make one stage cheaper".
+*either one alone* recovers far less than that stage costs. With the tracker out,
+the costs are separable.
 
-(At 4K the same arms are roughly additive: ours 21.143 + 6.715 = 27.86 against
-27.500 for both. The super-additivity is a 1024x576 effect, where the whole frame
-is 3.3 ms of wall and the contention window is the entire decode.)
+**And the spin is visible symbol by symbol.** Profiling the same cell at t=8 with
+deblocking on and off (`benchmarks/tiled_spin_selftime_2026-08-10.txt`;
+`examples/profile_ivf` under `RAV1D_INLOOP` + `RAV1D_THREADS`, 25 s window, 60
+passes), in percentage points of busy self time:
+
+```
+RISERS when the deblock work is REMOVED       FALLERS (the ablation is live)
+  +5.58   1.45 ->  7.03  TinyLock::lock_slow   -2.45  2.45 -> 0.00  lf_compact_run_neon
+  +1.30   2.73 ->  4.03  BorrowTracker::add    -2.15  2.15 -> 0.00  loopfilter_sb_direct
+  +1.17   1.55 ->  2.72  cdef_filter_block     -2.10  2.10 -> 0.00  LfBlock::close
+  +0.57   0.66 ->  1.23  add_wide::<true>      -1.68  1.68 -> 0.00  LfBlock::open
+  +0.37   0.29 ->  0.66  remove_wide           -2.45 48.39 ->45.93  decode_coefs
+  +0.31   0.00 ->  0.31  add_contended
+```
+
+The loop-filter symbols go to exactly 0.00, so the ablation really fired; the
+`sync` bucket **4.85x** (1.45% -> 7.03%) and `add_contended` appears from
+nothing. Deleting the work did not delete the contention — it converted it into
+spin. **A per-stage cost under a spinning lock is not a per-stage opportunity**,
+which is why §7 ranks "make concurrent filter tasks land on different shard
+lines" above "make one stage cheaper".
+
+(At 4K the aggregate arms are roughly additive: ours 21.143 + 6.715 = 27.86
+against 27.500 for both. The super-additivity is a 1024x576 effect, where the
+whole frame is 3.3 ms of wall so the contention window is the entire decode.)
 
 ## 3. It is NOT the things the history suggested first
 
@@ -399,12 +418,15 @@ number on it with dav1d on the same clock.
   binaries without it.
 * **`--inloopfilters` changes output pixels.** Attribution only — never an md5
   comparison across its values.
-* **One un-explained profile attempt.** A `sample` run of `bench_ivf_limit` under
-  `RAV1D_INLOOP` was intended to show the spin redistribution symbol-by-symbol
-  and could not: that driver stops at end of stream (200 frames = 0.66 s at t=8),
-  far short of the sample window, and produced `outlived_window=0` with no
-  usable profile. §2's aggregate test replaces it; a symbol-level version needs a
-  repeat loop in the driver.
+* **A profile attempt wasted for a reason the brief already documented.** The
+  first symbol-level spin test drove `bench_ivf_limit`, which stops at end of
+  stream (200 frames = 0.66 s at t=8) and so cannot outlive a sample window — all
+  four cells reported `outlived_window=0` and produced no `.sample`.
+  `docs/AGENT_BRIEF.md` §7 already names the fix ("`examples/profile_ivf` takes
+  `RAV1D_THREADS` (default 1) — needed because `bench_ivf_limit` exits before
+  `sample` can attach"). Re-run with `profile_ivf` and it worked first time. The
+  lesson is the brief's own §"DOCS: SEARCH before acting": grep the brief for the
+  tool before building around a limitation.
 * **dav1d's speedups here are measured** (§5, §6, n=7, idle box). Where a dav1d
   number from `benchmarks/size_sweep_t8_*` is quoted it is labelled as the prior,
   load-tagged record.

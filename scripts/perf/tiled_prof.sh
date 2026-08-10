@@ -16,8 +16,14 @@
 #
 # Usage: tiled_prof.sh <outdir> [seconds]
 # Env:   BIN, VEC, CELLS (<vector>:<threads>:<iters>)
-#        MODE=avif|ivf   -- `ivf` drives bench_ivf_limit off VEC/<vec>.ivf so
-#                           RAV1D_INLOOP is available (see INLOOP)
+#        MODE=avif|ivf|profivf
+#                        -- `ivf` drives bench_ivf_limit off VEC/<vec>.ivf so
+#                           RAV1D_INLOOP is available (see INLOOP). It EXITS AT
+#                           END OF STREAM, so it cannot outlive a sample window
+#                           (200 frames = 0.66 s at t=8) -- use `profivf`
+#                           (examples/profile_ivf), which loops `iters` passes
+#                           and takes threads from RAV1D_THREADS. That is the
+#                           tool docs/AGENT_BRIEF.md §7 already names for this.
 #        INLOOP=all|nodeblock|nocdef|norestoration|none  (MODE=ivf only)
 #                           CHANGES OUTPUT PIXELS -- attribution only. Used to
 #                           test whether a stage's measured cost DISAPPEARS when
@@ -40,7 +46,10 @@ mkdir -p "$OUT"
 for cell in "${CELLS[@]}"; do
   IFS=: read -r vec t iters <<< "$cell"
   tag="${vec}__t${t}${TAG}"
-  if [ "$MODE" = ivf ]; then
+  if [ "$MODE" = profivf ]; then
+    RAV1D_INLOOP="$INLOOP" RAV1D_THREADS="$t" "$BIN" "$VEC/$vec.ivf" "$iters" \
+      > "$OUT/$tag.run" 2>&1 &
+  elif [ "$MODE" = ivf ]; then
     RAV1D_INLOOP="$INLOOP" "$BIN" "$VEC/$vec.ivf" "$t" "$iters" prof \
       > "$OUT/$tag.run" 2>&1 &
   else
