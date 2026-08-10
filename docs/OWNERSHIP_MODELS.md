@@ -243,12 +243,22 @@ reserved extent, the footprint actually touched, and the distance to every
 concurrently-live foreign reservation — separating "does a foreign RESERVATION
 intersect" from "does a foreign FOOTPRINT intersect", which is the whole
 decision. For this site it says: `LfBlock::fill`'s per-row read guard comes
-within **232 bytes** of `cdef_arm.rs:622:9`'s concurrent write (2,217,283
-co-live pairs), and a widening of <=256 bytes collides **16** times across 1406
-frames of `8-bit/data`. #485's band widened by ~124 bytes and measured 1, 2 and
-0 errors on three passes of that group — retrodicted without writing it. The
-same table shows the 4K gap vectors under-report the risk by ~1000x, which is
-why the band's first full sample passed.
+within **60 bytes** of a concurrent write — `loopfilter.rs:887:14`, the loop
+filter's OWN write-back running in another superblock-row filter task, over
+1,176,771 co-live pairs. (`cdef_arm.rs:622:9` at 232 B is only the third
+nearest; the earlier 232 B figure here was a per-pair number quoted as if it
+were the site's. Corrected 2026-08-10 from the full pair table —
+`docs/BOUNDS_MAP.md` Part 2.) A widening of <=256 bytes collides **16** times
+across 1406 frames of `8-bit/data`. #485's band widened by ~124 bytes and
+measured 1, 2 and 0 errors on three passes of that group — retrodicted without
+writing it. The same table shows the 4K gap vectors under-report the risk by
+~1000x, which is why the band's first full sample passed.
+
+**Since 2026-08-10 this is also ENFORCED, not merely measurable.**
+`include/dav1d/picture.rs::note_pic_extent` fails the build's own test run the
+moment a picture-plane reservation spans more than one row, or exceeds its
+file's measured ceiling, while tile threading is active. CI job `extent-gate`;
+teeth proved by two mutations. See `docs/BOUNDS_MAP.md` Part 2.
 
 **Two structural facts that fall out, and both are load-bearing for any future attempt:**
 
@@ -285,7 +295,8 @@ stops 13 of 768 vectors decoding above one thread. Unaudited.
 
 0. Before proposing ANY extent change, run the bounds map
    (`--features __probe_bounds`, `docs/BOUNDS_MAP.md`) and read the site's
-   widening budget. It costs one build and one decode, and it is the only thing
+   widening budget. The per-site VERDICT table (Part 2) states it directly, and
+   `PIC_EXTENT_CEILINGS` will fail the test suite if you widen past it. It costs one build and one decode, and it is the only thing
    in the campaign that has priced a coarsening before it was written. Two
    further facts it has already established: at t=8 the shipped decoder's hot
    sites reserve exactly what they touch (`over_ratio = 1.000`, 1-16 bytes), so

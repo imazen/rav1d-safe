@@ -1,0 +1,140 @@
+# Per-site VERDICTs + the standing extent gate — 2026-08-10
+
+Branch `probe/bounds-verdict`, based on `probe/bounds-map` @ `be55376`
+(itself on `main` @ `f87b12c`). Host: macOS aarch64 (Darwin 25.5.0).
+
+Two products:
+
+1. `bounds_verdicts_2026-08-10.tsv` — the per-site verdict table, derived by
+   `scripts/perf/bounds_verdicts.py` from `bounds_map_raw_2026-08-10.tar.zst`.
+   **Deterministic**: no new decoding, no new instrumentation. Re-run
+   `python3 scripts/perf/bounds_verdicts.py <extracted-raw-dir>` and every table
+   in `docs/BOUNDS_MAP.md` Part 2 regenerates byte-for-byte.
+2. The standing extent gate itself — `include/dav1d/picture.rs::note_pic_extent`
+   + `PIC_EXTENT_CEILINGS` + `tests/guard_extent_budget.rs` + CI `extent-gate`.
+   This one IS a new measurement; its numbers are below.
+
+## NO WALL-CLOCK NUMBER HERE
+
+Nothing timed was run. `measlock` was therefore not needed and not taken. Every
+build and test was `nice -n 19`. The gate's own counters are under
+`--features probe-sites`, which perturbs the decoder; no timing claim is made
+from that build or any other.
+
+## 1. The verdict table — what is derived, and from what
+
+Input is the same eight cells as `bounds_map_2026-08-10.meta`; no cell was
+re-run. Verdict rules are stated in the script's module docstring and in
+`docs/BOUNDS_MAP.md` Part 2, and are applied mechanically.
+
+Conflict facts come from `corpus 8-bit/data` t=8 where the site runs there and
+from `v4k_8tile` t=8 otherwise; the TSV's last column records which.
+
+Class shares over the corpus cell's 936,867,496 registrations:
+
+| class | registrations | share |
+|---|---|---|
+| COARSENABLE-N (finite budget) | 407,958,230 | 43.5% |
+| COARSENABLE-INF (no concurrent writer, ever) | 288,180,835 | 30.8% |
+| BLOCKED (butt-adjacent write) | 229,489,855 | 24.5% |
+| UNMEASURED (`fp_kind = whole`, large) | 11,238,576 | 1.2% |
+
+(The 30.8% here counts by verdict class; counting directly by
+`n_conc_mut == 0` gives 293,787,973 = 31.4%, the difference being sites that
+are also UNMEASURED. Both numbers are in `docs/BOUNDS_MAP.md`; the 31.4% is the
+one to quote for "cannot collide".)
+
+### Corrections this pass forced on the previous record
+
+* **`loopfilter.rs:710:14`'s nearest concurrent writer is
+  `loopfilter.rs:887:14` at 60 B, not `cdef_arm.rs:622:9` at 232 B.** The 232
+  was a per-pair figure quoted as the site's; `BCONC`'s `min_gap_mut` said 60
+  all along. Errata added to `bounds_map_2026-08-10.meta`; fixed in
+  `docs/OWNERSHIP_MODELS.md` §7d and `docs/AGENT_BRIEF.md`.
+* **205 of 253 sites never execute on either 4K gap vector**, and only 49.5% of
+  corpus registrations land at a site the 4K vector runs at all. `src/mc*` is
+  **0** there (33.0% of the corpus) because `photo_4k.avif` is an all-intra
+  still; `looprestoration`/`lr_apply`, `refmvs` and `picture.rs:2027:22` are
+  likewise 0. The previously-recorded blindness ("LR is off in both 4K
+  vectors") is a subset of a much larger one.
+
+## 2. The standing extent gate — the measurement behind the ceilings
+
+Instrument: `extent_budget` in `include/dav1d/picture.rs`, compiled under
+`debug_assertions` or `--features probe-sites`. It records, per source FILE,
+the largest partial picture-plane reservation taken while
+`tile_threading_active()` and the largest number of picture rows one spanned.
+
+Corpus: the 30 committed `tests/crash_vectors/*.obu` plus every `.ivf` in
+`dav1d-test-data` `8-bit/data` (358) and `10-bit/data` (71), 4 frames each,
+`threads = 8`, `max_frame_delay = 1` (pure tile threading). Release build.
+
+    checks                      575,577,925
+    checks under tile threading 575,577,925
+    whole-component exempt        5,740,796
+    frames                            1,734
+    MAX_ROWS_TT                           1
+
+| file | max B | registrations | ceiling shipped |
+|---|---|---|---|
+| `src/owned_recon.rs` | 3840 | 26,070,390 | one row |
+| `src/lf_apply.rs` | 3840 | 95,292 | one row |
+| `src/cdef_apply.rs` | 3840 | 72,788,816 | one row |
+| `src/mc.rs` | 640 | 79,807,872 | one row |
+| `src/looprestoration.rs` | 352 | 1,992,021 | one row |
+| `src/safe_simd/looprestoration_arm.rs` | 352 | 1,984,455 | one row |
+| `src/safe_simd/mc_arm.rs` | 128 | 45,093,084 | one row |
+| `include/dav1d/picture.rs` | 128 | 63,952,504 | one row |
+| **`src/loopfilter.rs`** | **32** | **90,170,282** | **32** |
+| `src/safe_simd/cdef_arm.rs` | 24 | 192,238,382 | 32 |
+| `src/lr_apply.rs` | 8 | 1,384,827 | 32 |
+
+Only the three constant-bounded files get a tight entry. `MAX_ROWS_TT = 1` over
+all 575 M is the strongest fact here: under tile threading the shipped decoder
+never reserves across a picture row boundary.
+
+**Not covered by this measurement:** 12-bit, the `multi-bit` / `oss-fuzz` /
+`8-bit/{issues,size,intra,mv,mfmv,resize,vq_suite,cdfupdate,quantizer}` groups,
+frames past the 4th of each vector, x86_64, wasm32, `asm`/`c-ffi`, `unchecked`,
+and t != 8. The three tight ceilings are nonetheless STRUCTURAL (`LF_BW = 16`
+px x 2 B; CDEF's <= 16 px; LR's 4 px), which is why they are safe to pin at the
+observed maximum rather than at the maximum plus slack.
+
+## 3. Teeth — planted and fired, restored byte-exact
+
+| plant | result |
+|---|---|
+| baseline | ok |
+| `--features __probe_lf_hull` + `RAV1D_LF_HULL=1` (#475's shape; the switch is already in the tree, **no source edit**) | **FAILED**: 17 in-decoder panics `src/loopfilter.rs:769:33 took a 1924 B picture-plane reservation ... spans 16 rows`, plus the test's `MAX_ROWS_TT` assertion at `left: 16, right: 1` |
+| LF per-row read `W` -> `W + 96` (the V-batch's shape, inside one row) | **FAILED**: `src/loopfilter.rs:710:14 took a 100 B picture-plane reservation while tile threading is active; the measured ceiling for that file is 32 B` |
+| `unsafe { *(&0u8 as *const u8) }` planted in `tile_threading_active()` | **FAILED to compile**: `error: usage of an unsafe block`, anchored on `lib.rs:13 forbid(unsafe_code)` |
+| after restore | ok |
+
+Restores verified with `shasum -a 256 -c` on `src/loopfilter.rs` and
+`include/dav1d/picture.rs` AND `git diff --exit-code`, then `touch`ed and
+re-run per the mtime trap in `docs/MUT_RECON_KERNELS.md` §7.
+
+## 4. The in-flight V-batch, priced (a PREDICTION, not a measurement)
+
+`perf/lf-v-batch` @ `61f88dc` raises `LF_BATCH_V` 4 -> 32, which takes
+`fill_v`'s per-row reservation from 16 px to 128 px under tile threading. Its
+own claim is "a COUNT reduction with NO extent widening"; the count half is
+correct, the extent half is not — the union is spatially exact but the LIVE
+reservation grows 8x, and collision is decided by the absolute extent of a live
+reservation.
+
+| cell | widening | predicted collisions | x V-pass share (30.7%) |
+|---|---|---|---|
+| corpus `8-bit/data` t=8, 1406 frames | +112 B | 2 .. 16 | 0.6 .. 4.9 |
+| corpus `10-bit/data` t=8, 284 frames | +224 B | 0 .. 1 | 0.0 .. 0.3 |
+| `v4k_8tile` t=8 / `v4k_8tile_10b` t=8 | +112 / +224 B | 0 | 0 |
+
+Same arithmetic that retrodicted #485's measured 1, 2 and 0. **This is a
+prediction from the 2026-08-10 histogram, not a run of that branch** — the
+branch was read (`git show`), never built, and its worktree was not touched.
+The decisive experiment is one corpus pass of `--features __probe_bounds` on
+top of `61f88dc`.
+
+Caveats that do not move the sign: the histogram is not split H vs V (the 30.7%
+scaling is an assumption), it is direction-blind (a one-sided widening collides
+with ~half the column), and `min_gap_mut = 60` is an observed minimum.
