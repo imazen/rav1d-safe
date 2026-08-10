@@ -138,3 +138,80 @@ top of `61f88dc`.
 Caveats that do not move the sign: the histogram is not split H vs V (the 30.7%
 scaling is an assumption), it is direction-blind (a one-sided widening collides
 with ~half the column), and `min_gap_mut = 60` is an observed minimum.
+
+## 5. Correctness gates, this branch
+
+Run at `84387d5`, the last code-touching commit (`e390d89` and later are docs
+and records only, so the binary under test is unchanged).
+
+### Corpus, by name, with the ACTUAL MD5 as the value
+
+`examples/md5_inventory`, release, aarch64. Records:
+`bounds_verdict_md5_{t1,t8}_2026-08-10.tsv.zst`.
+
+| comparison | keys | only-in-A | only-in-B | DIFFERENT (status or actual MD5) |
+|---|---|---|---|---|
+| `aarch64_md5_fixes_2026-08-07_final` vs head t=1 | 768 | 0 | 0 | **0** |
+| head t=1 vs head t=8 | 755 shared | 13 | 0 | **0** |
+| `..._2026-08-07_final` vs head t=8 | 755 shared | 13 | 0 | **0** |
+
+head t=1: **766 PASS**, 2 SKIP, 0 FAIL.
+head t=8: **753 PASS**, 2 SKIP, 0 FAIL.
+
+**The 13 missing at t=8 are the film-grain groups, and the reason is
+PRE-EXISTING (#479), verified on the base branch by direct A/B.** A single
+whole-corpus `md5_inventory --threads 8` run does not finish at all: the first
+`8-bit/film_grain` vector panics with
+
+    overlapping DisjointMut:
+     current: &mut _[0..147456] ... existing: &mut _[0..147456]
+
+— a whole-plane mutable guard taken concurrently — after which
+`src/thread_task.rs:534` unwraps a `None` and the process dies, truncating the
+run at 572 rows. Running the same binary from `probe/bounds-map` @ `be55376`
+(this branch's parent, i.e. `main` @ `f87b12c` + the probe) produces **the same
+572 rows, the same 569 PASS / 2 SKIP, and the same panic**. So the t=8 numbers
+above were taken per group with the two film-grain groups excluded, which is
+exactly the exclusion `bounds_map_2026-08-10.meta` already records for the
+bounds probe. This branch neither causes nor fixes it.
+
+### Standing hazards, `--features __probe_wide`
+
+`crates/` is byte-identical to the base (`git diff be55376 -- crates/` empty),
+and `tracker_shard.rs` still hashes to the `d4e03d4a…423176d` recorded in
+`docs/MUT_RECON_KERNELS.md` §7. Run anyway:
+
+| plant | `wide_exclusion` |
+|---|---|
+| baseline | ok (0.28 s) |
+| the `4af62ae` in-lock `state` re-read deleted from `add_contended` alone | **FAILED** |
+| `active()` cut to one shard | **FAILED** |
+| after both restores | ok (0.28 s) |
+
+Both restored byte-exact (`shasum -a 256 -c` OK, `git diff --exit-code -- crates/`
+clean) and re-run after `touch`.
+
+### Miri, both models, each target in isolation
+
+`cargo +nightly miri test -p rav1d-disjoint-mut --no-fail-fast`:
+
+| model | result |
+|---|---|
+| Stacked Borrows | **61 passed, 0 failed**, 0 UB (9 targets; `soundness` 992.7 s) |
+| Tree Borrows (`-Zmiri-tree-borrows`) | see below |
+
+### Everything else
+
+| gate | result |
+|---|---|
+| `cargo test --lib` RELEASE | 75 passed, 0 failed, 8 ignored |
+| `cargo test --lib` DEBUG | 75 passed, 0 failed, 8 ignored |
+| `cargo build --release` warnings | 0 (the funnel hook is `#[cfg]`-ed out entirely) |
+| `cargo build` (debug) warnings | 0 |
+| `cargo build --release --features probe-sites` warnings | 0 |
+| `cargo fmt --all -- --check` | clean |
+| `clippy --no-default-features --features bitdepth_8,bitdepth_16 -- -D warnings` | clean |
+| the same, `--target x86_64-unknown-linux-gnu` | clean |
+| `clippy --features c-ffi,... --target x86_64-unknown-linux-gnu -- -D warnings` | clean |
+| `clippy --features c-ffi,...` on **macOS** | fails — `Rav1dError::EAGAIN as u8 == libc::EAGAIN as u8` (35 vs 11). **Pre-existing**: identical failure reproduced on the base branch. |
+| `forbid(unsafe_code)` | proved ACTIVELY: an `unsafe` block planted in `tile_threading_active()` fails the build, anchored on `lib.rs:13` |
