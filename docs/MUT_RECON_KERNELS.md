@@ -1005,6 +1005,14 @@ written. Do that conversion first, every time.
   under `measlock --load-ok` because three other agents held the box. Paired,
   interleaved, rotating-order ratios only; absolutes are not comparable to an
   idle campaign's. The 9th round was lost when two sweeps restarted (see 19f).
+  **How bad the load was, stated rather than hidden:** the raw beta bands are
+  8bpc t=8 base [52.33..121.89] ms/frame against head [52.28..127.67] — a 2.3x
+  spread within one arm. That is why the `disjoint` column is `no` everywhere
+  and why it CANNOT be used here: only the per-round pairing (both arms inside
+  one cell, rotating order, same load) carries any signal at all. A reader
+  should treat the +1.6% at t=1/t=2 as "sign-consistent across 8 rounds"
+  (0/8 and 1/8) rather than as a calibrated magnitude, and the t=8 1.0005 as
+  "no effect this instrument can see".
 
 ### 19c. The lever, priced at every cap — this part is solid and reusable
 
