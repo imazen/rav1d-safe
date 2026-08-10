@@ -18,9 +18,12 @@ import sys
 
 # Most specific first; a symbol lands in the first family that matches.
 FAMILIES = [
+    # cast_u16 MUST come before tracker: the u16 cast entry points are methods
+    # ON `DisjointMut`, so their demangled names contain `disjoint_mut` and the
+    # tracker rule would swallow the very path the 10bpc question is about.
+    ("cast_u16", r"slice_as|cast_slice|CastError|zerocopy|try_cast|from_bytes"),
     ("tracker", r"DisjointMut|BorrowTracker|TinyLock|ShardGuard|disjoint_mut|"
                 r"borrow_id|ShardRecs|tracker_shard|wide_probe"),
-    ("cast_u16", r"cast_slice|slice_as|zerocopy|try_cast|from_bytes"),
     ("entropy", r"msac|decode_coefs|cdf|read_coef|decode_symbol|bool_adapt|golomb|read_mv"),
     ("itx", r"itx|inv_txfm|inv_dct|inv_adst|inv_identity|inv_wht"),
     ("cdef", r"cdef"),

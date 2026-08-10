@@ -99,6 +99,18 @@ def main():
         per[(r["arm"], r["vec"], r["round"])].append(mspf)
     cell = {k: median(v) for k, v in per.items()}
 
+    # Drop any round that did not complete every (arm, vector) pair, so every
+    # cell in the table has the SAME n. A partial final round would otherwise
+    # give one or two cells n+1 and the rest n, which is exactly the kind of
+    # silent inconsistency that makes a median comparable to nothing.
+    full = {(a, v) for (a, v, _) in cell}
+    complete = sorted(rd for rd in {r for (_, _, r) in cell}
+                      if all((a, v, rd) in cell for (a, v) in full))
+    dropped = sorted({r for (_, _, r) in cell} - set(complete))
+    if dropped:
+        print(f"dropped incomplete rounds: {dropped}  (kept {len(complete)})")
+        cell = {k: v for k, v in cell.items() if k[2] in complete}
+
     arms = sorted({a for (a, _, _) in cell})
     allv = {v for (_, v, _) in cell}
     # Vectors whose name is not a ladder cell (the campaign's own v4k_8tile

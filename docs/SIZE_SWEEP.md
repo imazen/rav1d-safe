@@ -81,3 +81,91 @@ regression, only mask one.
 
 What this round adds on top of those is the SHAPE of the depth penalty across
 image size, and a ranked ms/frame attribution of what is left.
+
+## The tool set is constant across the ladder — checked in the bitstream
+
+Before reading anything into "the ratio changes with size", the obvious
+confound had to go: libaom picks superblock size, CDEF and loop restoration per
+resolution, so two cells of one ladder can be running different kernels.
+`scripts/perf/seq_header_flags.py` reads the flags out of the AV1 sequence
+header (spec 5.5.1, reduced-still-picture form).
+
+| | 64x36 | 256x144 | 512x288 | 1024x576 | 2048x1152 | 3840x2160 |
+|---|---|---|---|---|---|---|
+| `use_128x128_superblock` | 0 | 0 | 0 | 0 | 0 | 0 |
+| `enable_filter_intra` | 1 | 1 | 1 | 1 | 1 | 1 |
+| `enable_intra_edge_filter` | 1 | 1 | 1 | 1 | 1 | 1 |
+| `enable_superres` | 0 | 0 | 0 | 0 | 0 | 0 |
+| `enable_cdef` | 1 | 1 | 1 | 1 | 1 | 1 |
+| `enable_restoration` | **0** | **0** | **0** | **0** | **0** | **0** |
+
+Identical at every size and both depths. **So the size effect below is not the
+encoder turning a tool on — it is ours.**
+
+Two things fall out of the same table:
+
+* **Loop restoration is off at every point of this ladder**, so this round
+  inherits the campaign's structural blindness rather than curing it. Recorded
+  as a limitation, not buried.
+* The campaign's own seven vectors read the same way — `v256`, `v1024`,
+  `v1024_10b`, `v4k_1tile{,_10b}`, `v4k_8tile{,_10b}` all have
+  `enable_restoration = 0`. That independently confirms the brief's claim for
+  the two 4K gap vectors and extends it to the other five.
+
+**Teeth on the parser** (it would be worthless if it could only ever print 0):
+`dav1d-test-data/.../00000791.ivf` reads `use_128x128_superblock = 1`,
+`enable_restoration = 1`. It also refuses to guess past a non-reduced-still
+sequence header rather than mis-parsing one.
+
+Caveat stated in the tool's own header: `enable_cdef` / `enable_restoration`
+are SEQUENCE-level permissions. Absence is conclusive; presence is not — which
+frame actually applies CDEF, or picks anything but `RESTORE_NONE` per plane,
+lives in the uncompressed frame header. Execution is proved from profile leaf
+samples, not from this table.
+
+## Not measured — said before the results, not after
+
+* **No loop restoration anywhere.** `enable_restoration = 0` in all 24 ladder
+  vectors and all 7 campaign vectors (table above). LR is active in 696 of 768
+  corpus vectors, so the filter-chain share here is understated and every other
+  share is correspondingly overstated. This round does not cure the campaign's
+  structural blindness; it documents its extent.
+* **No inter prediction.** Every vector is a still image, so `mc_arm.rs`
+  registers no borrows and runs no kernels. An AVIF still is exactly this case,
+  so the omission is right for the product question and wrong for video.
+* **One content class.** The whole ladder is downscales of a single photo
+  (`src4k.png`). Content class moves the transform-size mix and the
+  coefficient density, and it was not swept. Screen content and line art are
+  not represented.
+* **One quality point** (`-q 70`). The project's sweep discipline asks for
+  q5-q100 with low-q density equal to high-q; that axis is not in this round.
+* **One encoder** (libaom 3.14.1 via avifenc 1.4.2). zenrav1e/SVT streams pick
+  different tools and were not measured.
+* **aarch64 only.** No x86_64 build or run. Do not extrapolate any of these
+  ratios there.
+* **t=1 for the whole ladder**; only 1024x576 and 3840x2160 were also taken at
+  t=8, and only at 4:2:0.
+* **No 12bpc.**
+
+## Independent corroboration of the shape, from before this round existed
+
+The size effect is not a property of today's harness or today's vectors. The
+pre-campaign yardstick sweep (`~/tmp/recon-yard/yard_report.txt`, 2026-08-06,
+n=9, a *different build* on a *different day* with *different vectors*) shows
+the same ordering at t=1:
+
+| vector | geom | ours ms | dav1d ms | ratio |
+|---|---|---|---|---|
+| `v256` | 256x144 8bpc | 1.197 | 0.770 | **1.56** |
+| `v1024` | 1024x576 8bpc | 52.951 | 15.431 | **3.43** |
+| `v4k_1tile` | 3840x2160 8bpc | 597.506 | 246.514 | **2.42** |
+
+Best at 256x144, worst at 1024x576, 4K in between — the same U with the same
+hump, at ratios 2-3x larger before the campaign's work. So the campaign
+improved every cell (4K 2.42 -> 1.30, 1024 3.43 -> 1.54) without changing the
+shape.
+
+That table is also an instrument cross-check: its **dav1d** column reproduces
+this round's to under 1% four days apart (256x144 0.770 vs 0.765; 1024x576
+15.431 vs 15.392; 4K 1-tile 246.514 vs 246.179), which is worth more confidence
+than any single sweep's internal spread.
