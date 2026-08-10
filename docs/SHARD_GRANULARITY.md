@@ -1,8 +1,10 @@
 # Shard granularity: the ladder re-fitted, and the wide path that was believed dead
 
-**Status: two measured findings and one arm that is NOT recommended for the
-default yet.** Read §1 and §2 before §5 — the counting results are much stronger
-than the timing results, and the timing is what decides a default.
+**Status: a 14.6% measured win on one cell, behind a compile-time arm that is NOT
+flipped, plus two corrections to committed claims and one correction to the
+objective this round was given.** Read §1 and §2 for the mechanism, then §5e —
+which shows the headline of §1 (the wide path) is worth only about a point of the
+fourteen, and says where the rest comes from.
 
 Record: `benchmarks/shard_granularity_2026-08-10.{meta,txt}`. Levers named by
 `docs/TILED_SCALING.md` §7 item 1 and `benchmarks/strided_2d_2026-08-10.meta` §4.
@@ -58,6 +60,11 @@ is worst** (34.1% of wall, `TILED_SCALING.md` §4).
 
 Going one step COARSER removes them entirely. Going one step FINER triples them
 (14,580) and doubles the multi-shard registrations.
+
+**Read §5e before pricing this.** The 153 promotions are real and were denied by
+the tracker's own doc, but the arm that removes 79% of them WITHOUT touching the
+block size (`msb-5`) buys only ~1% of wall. The wide path is about one point of
+the fourteen; the rest is the ordinary multi-shard registrations.
 
 `w_full` is **0 at every rung**, which retires the trap flagged for this
 direction: a coarser block funnels more simultaneous borrows onto one shard and
@@ -310,24 +317,41 @@ Read against that floor:
 * `bps1`'s 1.243x and 1.493x on those two cells have bands spanning 2x
   (`[10.578..30.289]`, `[35.357..65.000]`) and are load artefacts, not results.
 
-### 5e. `msb-5` timing — NOT ESTABLISHED, and the first attempt was my harness bug
+### 5e. `msb-5` timed — it buys about 1%, and that DECOMPOSES the win
 
-The cap raise's counting result (§4: 4,590 -> 965 all-shards promotions) is solid.
-Its WALL effect is not, and this section says so rather than quoting the number.
+Idle box (`foreign_max = 0`), n = 7, `L1024x576_420_8b__t8`, same two-point fit.
+`benchmarks/shard_granularity_msb5_clean_2026-08-10.tsv`.
 
-**The first attempt is void.** It was launched under `measlock --load-ok` against
-this branch's own gates, and I started it before the `msb5half` binary had finished
-building, so four of its seven rounds timed a missing executable and that arm's
-median came out `0.000`. That is the same family as the brief's "never let a build
-rewrite a binary a run has already exec'd" — the adjacent error, launching before
-the build lands. The grid's own t=1 calibration also reads 0.970-0.988 where the
-arms are provably the same code path, so its floor was ~3.0% and `msb5`'s 0.967x
-sat inside it either way.
+| arm | wall | band | CPU | wall/plain | CPU/plain |
+|---|---|---|---|---|---|
+| plain | 3.283 | [3.233..3.317] | 18.428 | 1.0000 | 1.0000 |
+| **msb-5** | 3.256 | [3.228..3.289] | 18.222 | **0.9915** | **0.9888** |
+| bps-half | 2.806 | [2.794..2.822] | 16.472 | 0.8545 | 0.8939 |
+| msb-5 + bps-half | 2.789 | [2.761..2.811] | 16.456 | 0.8494 | 0.8930 |
 
-**Status: a clean idle-box re-run of `plain / msb-5 / bps-half / msb-5+bps-half`
-on the 1024x576/8-tile cell at t=8 and t=1 is the one measurement this round
-leaves outstanding.** Command in the `.meta`. Until it lands, the cap raise is a
-counting result only, and `bps-half` is the rung with a timed result.
+The t=1 cell is again the noise calibration and this time it is tight: the four
+arms read 1.0000 / 1.0000 / 1.0038 / 1.0000 where the true ratio is exactly 1.000,
+so **this grid's floor is ~0.4%**.
+
+**`msb-5` alone is worth 0.85% of wall and 1.12% of CPU, with bands that overlap.**
+Call it "about a point, and not cleanly separated from zero at n=7". It is a real
+direction — the CPU number is the more consistent of the two and both have the
+same sign — but it is not a 14% lever.
+
+**And that is the useful part, because it decomposes the granularity win.**
+`msb-5` removes **79%** of the all-shards promotions (§4) and buys ~1%. `bps-half`
+removes 100% of them *and* cuts multi-shard registrations 72,336 -> 23,910, and
+buys 14.6%. So:
+
+* **The wide path is worth roughly one point of the fourteen.** §1's 153
+  promotions per frame are real, and were denied by the tracker's own doc, but
+  they are not where the money is.
+* **The money is the ordinary multi-shard registrations** — the 3x reduction in
+  how many shard cache lines a borrow touches, not the rare catastrophic ones.
+  That is the same conclusion the shard design reached once before ("the win was
+  fewer LINES, not fewer atomics") arriving from a new direction.
+* **The cap adds nothing on top of the coarser block** (0.8494 vs 0.8545, inside
+  the floor) — as it must, since `bps-half` already reads zero wide promotions.
 
 ## 6. Recommendation, and what it is NOT backed by
 
