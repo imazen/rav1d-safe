@@ -11,8 +11,8 @@ use crate::src::internal::Rav1dContext;
 use crate::src::internal::Rav1dFrameData;
 use crate::src::lf_band::lf_band_enabled;
 use crate::src::lf_band::LfBand;
-use crate::src::lf_band::LF_BAND_MAX_COLS;
-use crate::src::lf_band::LF_BAND_MAX_ROWS;
+use crate::src::lf_band::LfBandCursor;
+use crate::src::lf_band::LF_BAND_MAX_DIM;
 use crate::src::lf_band::LF_BAND_PAD;
 use crate::src::lr_apply::LrRestorePlanes;
 use crate::src::relaxed_atomic::RelaxedAtomic;
@@ -381,22 +381,31 @@ fn arm_band<BD: BitDepth>(
     pic_stride: isize,
     rows: usize,
     cols: usize,
+    row_pad: usize,
+    col_pad: usize,
 ) {
-    if !(lf_band_enabled() && band.fill_from(dst, pic_stride, rows, cols)) {
+    if !(lf_band_enabled() && band.fill_from(dst, pic_stride, rows, cols, row_pad, col_pad)) {
         band.disarm();
     }
 }
 
-/// `(band buffer, band offset of column `4 * x`, band row stride)` for one
-/// `loop_filter_sb128` call, or `None` when the band is disarmed.
+/// A cursor anchored at the band cell one `loop_filter_sb128` call names as
+/// its `dst`, or `None` when the band is disarmed.
+///
+/// The H band pads on columns and indexes rows from 0; the V band pads on rows
+/// and indexes columns from 0.
 #[inline]
 fn band_cursor<BD: BitDepth>(
     band: &mut LfBand<BD>,
-    x: usize,
-) -> Option<(&mut [BD::Pixel], usize, isize)> {
-    band.view().map(|v| {
-        let off = LF_BAND_PAD + 4 * x;
-        (v.buf, off, v.stride)
+    row: usize,
+    col: usize,
+) -> Option<LfBandCursor<'_, BD>> {
+    band.view().map(|v| LfBandCursor {
+        buf: v.buf,
+        row,
+        col,
+        stride: v.stride,
+        rows: v.rows,
     })
 }
 #[inline]
@@ -421,7 +430,7 @@ fn filter_plane_cols_y<BD: BitDepth>(
     // of `4 * groups` guards per filtered column. Declining leaves the band
     // disarmed and every call on the picture path, which is correct because
     // the band never holds anything the picture does not.
-    arm_band::<BD>(band, y_dst(0), pic_stride, 4 * len, 4 * w + 2 * LF_BAND_PAD);
+    arm_band::<BD>(band, y_dst(0), pic_stride, 4 * len, 4 * w + 2 * LF_BAND_PAD, 0, LF_BAND_PAD);
     let mask = &mask[..w];
     for x in 0..w {
         if !have_left && x == 0 {
@@ -439,7 +448,7 @@ fn filter_plane_cols_y<BD: BitDepth>(
             mask.each_ref().map(|[_, b]| b.get() as u32)
         };
         let lvl = |y| lvl + (4 * x + y);
-        let cursor = band_cursor::<BD>(band, x);
+        let cursor = band_cursor::<BD>(band, 0, LF_BAND_PAD + 4 * x);
         lf_sb
             .y
             .h
@@ -458,14 +467,27 @@ fn filter_plane_rows_y<BD: BitDepth>(
     w: usize,
     starty4: usize,
     endy4: usize,
+    band: &mut LfBand<BD>,
 ) {
     //                                 block1
     // filter edges between rows (e.g. ------)
     //                                 block2
     let lf_sb = &f.dsp.lf.loop_filter_sb;
     let len = endy4 - starty4;
+    let pic_stride = y_dst.pixel_stride::<BD>();
     let y_dst = |i| y_dst + (i as isize * 4 * y_dst.pixel_stride::<BD>());
     assert!(y_dst(len - 1).offset <= y_dst(len - 1).data.pixel_len::<BD>()); // Bounds check
+    // The V rectangle reaches `+-reach` ROWS, so this band pads on rows and
+    // spans the superblock's columns exactly.
+    arm_band::<BD>(
+        band,
+        y_dst(0),
+        pic_stride,
+        4 * len + 2 * LF_BAND_PAD,
+        4 * w,
+        LF_BAND_PAD,
+        0,
+    );
     for i in 0..len {
         let y = i + starty4;
         if !have_top && y == 0 {
@@ -475,10 +497,11 @@ fn filter_plane_rows_y<BD: BitDepth>(
             .each_ref()
             .map(|[a, b]| a.get() as u32 | ((b.get() as u32) << 16));
         let lvl = |y| lvl + (4 * i * b4_stride + y);
+        let cursor = band_cursor::<BD>(band, LF_BAND_PAD + 4 * i, 0);
         lf_sb
             .y
             .v
-            .call::<BD>(f, y_dst(i), &vmask, lvl(1), w, true, true, None);
+            .call::<BD>(f, y_dst(i), &vmask, lvl(1), w, true, true, cursor);
     }
 }
 
@@ -499,12 +522,16 @@ fn filter_plane_cols_uv<BD: BitDepth>(
     // filter edges between columns (e.g. block1 | block2)
     let lf_sb = &f.dsp.lf.loop_filter_sb;
     let len = endy4 - starty4;
-    let pic_stride = u_dst.pixel_stride::<BD>();
+    // Per plane: U and V share a stride in every layout dav1d produces, but
+    // the band's row walk is wrong by a whole plane if that ever stops being
+    // true, so neither is derived from the other.
+    let u_stride = u_dst.pixel_stride::<BD>();
+    let v_stride = v_dst.pixel_stride::<BD>();
     let u_dst = |x| u_dst + x * 4;
     let v_dst = |x| v_dst + x * 4;
     let (rows, cols) = (4 * len, 4 * w + 2 * LF_BAND_PAD);
-    arm_band::<BD>(u_band, u_dst(0), pic_stride, rows, cols);
-    arm_band::<BD>(v_band, v_dst(0), pic_stride, rows, cols);
+    arm_band::<BD>(u_band, u_dst(0), u_stride, rows, cols, 0, LF_BAND_PAD);
+    arm_band::<BD>(v_band, v_dst(0), v_stride, rows, cols, 0, LF_BAND_PAD);
     assert!(u_dst(w).offset <= u_dst(w).data.pixel_len::<BD>()); // Bounds check
     assert!(v_dst(w).offset <= v_dst(w).data.pixel_len::<BD>()); // Bounds check
     let mask = &mask[..w];
@@ -525,12 +552,12 @@ fn filter_plane_cols_uv<BD: BitDepth>(
         };
         let hmask = [hmask[0], hmask[1], 0];
         let lvl = |y| lvl + (4 * x + y);
-        let uc = band_cursor::<BD>(u_band, x);
+        let uc = band_cursor::<BD>(u_band, 0, LF_BAND_PAD + 4 * x);
         lf_sb
             .uv
             .h
             .call::<BD>(f, u_dst(x), &hmask, lvl(2), len, false, false, uc);
-        let vc = band_cursor::<BD>(v_band, x);
+        let vc = band_cursor::<BD>(v_band, 0, LF_BAND_PAD + 4 * x);
         lf_sb
             .uv
             .h
@@ -551,14 +578,20 @@ fn filter_plane_rows_uv<BD: BitDepth>(
     starty4: usize,
     endy4: usize,
     ss_hor: c_int,
+    [u_band, v_band]: &mut [LfBand<BD>; 2],
 ) {
     //                                 block1
     // filter edges between rows (e.g. ------)
     //                                 block2
     let lf_sb = &f.dsp.lf.loop_filter_sb;
     let len = endy4 - starty4;
+    let u_stride = u_dst.pixel_stride::<BD>();
+    let v_stride = v_dst.pixel_stride::<BD>();
     let u_dst = |i| u_dst + (i as isize * 4 * u_dst.pixel_stride::<BD>());
     let v_dst = |i| v_dst + (i as isize * 4 * v_dst.pixel_stride::<BD>());
+    let (rows, cols) = (4 * len + 2 * LF_BAND_PAD, 4 * w);
+    arm_band::<BD>(u_band, u_dst(0), u_stride, rows, cols, LF_BAND_PAD, 0);
+    arm_band::<BD>(v_band, v_dst(0), v_stride, rows, cols, LF_BAND_PAD, 0);
     assert!(u_dst(len - 1).offset <= u_dst(len - 1).data.pixel_len::<BD>()); // Bounds check
     assert!(v_dst(len - 1).offset <= v_dst(len - 1).data.pixel_len::<BD>()); // Bounds check
     for i in 0..len {
@@ -571,14 +604,16 @@ fn filter_plane_rows_uv<BD: BitDepth>(
             .map(|[a, b]| a.get() as u32 | ((b.get() as u32) << (16 >> ss_hor)));
         let vmask = [vmask[0], vmask[1], 0];
         let lvl = |y| lvl + (4 * i * b4_stride + y);
+        let uc = band_cursor::<BD>(u_band, LF_BAND_PAD + 4 * i, 0);
+        let vc = band_cursor::<BD>(v_band, LF_BAND_PAD + 4 * i, 0);
         lf_sb
             .uv
             .v
-            .call::<BD>(f, u_dst(i), &vmask, lvl(2), w, false, true, None);
+            .call::<BD>(f, u_dst(i), &vmask, lvl(2), w, false, true, uc);
         lf_sb
             .uv
             .v
-            .call::<BD>(f, v_dst(i), &vmask, lvl(3), w, false, true, None);
+            .call::<BD>(f, v_dst(i), &vmask, lvl(3), w, false, true, vc);
     }
 }
 
@@ -698,8 +733,8 @@ pub(crate) fn rav1d_loopfilter_sbrow_cols<BD: BitDepth>(
     // Allocated once per sbrow (17 per frame at 4K) and reused across every
     // superblock and both chroma planes below.
     let mut bands: [LfBand<BD>; 2] = [
-        LfBand::with_capacity(LF_BAND_MAX_ROWS, LF_BAND_MAX_COLS),
-        LfBand::with_capacity(LF_BAND_MAX_ROWS, LF_BAND_MAX_COLS),
+        LfBand::with_capacity(LF_BAND_MAX_DIM, LF_BAND_MAX_DIM),
+        LfBand::with_capacity(LF_BAND_MAX_DIM, LF_BAND_MAX_DIM),
     ];
     for x in 0..f.sb128w as usize {
         filter_plane_cols_y::<BD>(
@@ -764,6 +799,12 @@ pub(crate) fn rav1d_loopfilter_sbrow_rows<BD: BitDepth>(
         data: &f.lf.level[..],
         offset: 4 * f.b4_stride as usize * (sby * sbsz) as usize,
     };
+    // Allocated once per sbrow and reused across every superblock and both
+    // chroma planes below, as in `rav1d_loopfilter_sbrow_cols`.
+    let mut bands: [LfBand<BD>; 2] = [
+        LfBand::with_capacity(LF_BAND_MAX_DIM, LF_BAND_MAX_DIM),
+        LfBand::with_capacity(LF_BAND_MAX_DIM, LF_BAND_MAX_DIM),
+    ];
     for x in 0..f.sb128w as usize {
         filter_plane_rows_y::<BD>(
             f,
@@ -775,6 +816,7 @@ pub(crate) fn rav1d_loopfilter_sbrow_rows<BD: BitDepth>(
             cmp::min(32, f.w4 - x as c_int * 32) as usize,
             starty4 as usize,
             endy4 as usize,
+            &mut bands[0],
         );
     }
 
@@ -801,6 +843,7 @@ pub(crate) fn rav1d_loopfilter_sbrow_rows<BD: BitDepth>(
             starty4 as usize >> ss_ver,
             uv_endy4 as usize,
             ss_hor,
+            &mut bands,
         );
     }
 }

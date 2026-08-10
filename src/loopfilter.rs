@@ -5,6 +5,7 @@ use crate::include::common::bitdepth::DynPixel;
 use crate::include::common::intops::iclip;
 use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::Align16;
+use crate::src::lf_band::LfBandCursor;
 use crate::src::cpu::CpuFlags;
 use crate::src::ffi_safe::FFISafe;
 use crate::src::internal::Rav1dFrameData;
@@ -57,7 +58,7 @@ fn loopfilter_sb_scalar<BD: BitDepth>(
     bd: BD,
     is_y: bool,
     is_v: bool,
-    band: Option<(&mut [BD::Pixel], usize, isize)>,
+    band: Option<LfBandCursor<BD>>,
 ) {
     match (is_y, is_v) {
         (true, false) => loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::Y as usize }>(
@@ -84,7 +85,7 @@ fn loopfilter_sb_direct<BD: BitDepth>(
     w: usize,
     is_y: bool,
     is_v: bool,
-    band: Option<(&mut [BD::Pixel], usize, isize)>,
+    band: Option<LfBandCursor<BD>>,
 ) {
     let stride = dst.stride();
     let b4_stride = f.b4_stride;
@@ -208,7 +209,7 @@ impl loopfilter_sb::Fn {
         w: usize,
         is_y: bool,
         is_v: bool,
-        band: Option<(&mut [BD::Pixel], usize, isize)>,
+        band: Option<LfBandCursor<BD>>,
     ) {
         cfg_if::cfg_if! {
             if #[cfg(asm_loopfilter)] {
@@ -825,15 +826,10 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
     /// [`Self::open`] reading from an [`LfBand`](crate::src::lf_band::LfBand)
     /// instead of the picture — **zero borrow registrations**.
     ///
-    /// `H` only (`is_v == false`): the V pass's rectangle grows along a picture
-    /// row, so fusing already divides its guard count and a band buys it
-    /// nothing (measured: 1.000x for H, 1.971x for V — see
-    /// [`crate::src::lf_band`]).
-    ///
-    /// `band_off` is the band offset of the same pixel `dst` names in the
-    /// picture, and `band_stride` the band's row stride. The rectangle is the
-    /// SAME shape as [`Self::open`] would take — [`lf_geom`] is shared — so the
-    /// two paths differ only in where the bytes are read from.
+    /// The cursor names, in band coordinates, the same pixel `dst` names in
+    /// the picture. The rectangle is the SAME shape [`Self::open`] would take
+    /// — [`lf_geom`] is shared — so the two paths differ only in where the
+    /// bytes are read from.
     ///
     /// `origin`/`stride` are still the PICTURE's, because
     /// [`Self::close_band`] writes the changed span to the picture exactly as
@@ -843,9 +839,8 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
     #[inline]
     fn open_band(
         scratch: &'b mut LfScratch<BD>,
-        band: &[BD::Pixel],
-        band_off: usize,
-        band_stride: isize,
+        band: &LfBandCursor<BD>,
+        is_v: bool,
         dst: PicOffset<'a>,
         stride: isize,
         wd: c_int,
@@ -858,19 +853,26 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
             stridea,
             strideb,
             base,
-        } = lf_geom(false, reach, groups);
+        } = lf_geom(is_v, reach, groups);
 
-        // The band rectangle. Both ends are checked, so every row between them
-        // is in range for a stride of either sign.
-        let b_first = (band_off as isize).checked_sub(reach)?;
-        let b_last = b_first + (h as isize - 1) * band_stride;
-        if b_first.min(b_last) < 0 || b_first.max(b_last) + w as isize > band.len() as isize {
+        // The band rectangle, bounded on BOTH axes. `V` grows along a row and
+        // `H` down a column, so a flat `offset + len <= buf.len()` test would
+        // let a column overrun read the next band row instead of failing.
+        let (r0, c0) = if is_v {
+            (band.row.checked_sub(reach as usize)?, band.col)
+        } else {
+            (band.row, band.col.checked_sub(reach as usize)?)
+        };
+        if r0 + h > band.rows || c0 + w > band.stride {
             return None;
         }
+        let b_first = r0 * band.stride + c0;
+        let band_stride = band.stride as isize;
         // The PICTURE rectangle, checked exactly as `open` checks it — the
         // write-back in `close_band` goes there and must be in bounds even
         // though the read did not touch it.
-        let first = dst.offset as isize - reach;
+        let origin_delta = if is_v { -reach * stride } else { -reach };
+        let first = dst.offset as isize + origin_delta;
         let last = first + (h as isize - 1) * stride;
         if first < 0 || last < 0 {
             return None;
@@ -879,7 +881,7 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
             return None;
         }
 
-        let b_first = b_first as usize;
+        let band = &*band.buf;
         match w {
             4 => Self::fill_band::<4>(scratch, band, b_first, band_stride, h),
             6 => Self::fill_band::<6>(scratch, band, b_first, band_stride, h),
@@ -908,7 +910,7 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
             base,
             stridea,
             strideb,
-            is_v: false,
+            is_v,
         })
     }
 
@@ -945,7 +947,17 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
     /// superblock (whose window overlaps this one) reads what this call wrote,
     /// and so that a later `open_band` returning `None` can fall back to the
     /// picture and see the same bytes.
-    fn close_band(self, band: &mut [BD::Pixel], band_first: usize, band_stride: isize) {
+    fn close_band(self, band: &mut LfBandCursor<BD>) {
+        // The rectangle's origin is derived from the SAME cursor and the SAME
+        // `lf_geom` shape `open_band` used (`reach` is `h / 2` for `V` and
+        // `w / 2` for `H`), so the two cannot drift apart.
+        let band_stride = band.stride as isize;
+        let band_first = if self.is_v {
+            (band.row - self.h / 2) * band.stride + band.col
+        } else {
+            band.row * band.stride + band.col - self.w / 2
+        };
+        let band = &mut *band.buf;
         for row in 0..self.h {
             let Some((first, last)) = self.changed_span(row) else {
                 continue; // row untouched: no write, no mutable guard
@@ -1396,10 +1408,10 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
     lut: &Align16<Av1FilterLUT>,
     _wh: c_int,
     bd: BD,
-    // `(band buffer, band offset of `dst`, band row stride)`. `H` only; the
-    // caller passes `None` for `V` and for every asm build. See
+    // A read cache for the rectangle this call filters, anchored at `dst`.
+    // `None` for every asm build and whenever the band declined to fill. See
     // [`crate::src::lf_band`].
-    mut band: Option<(&mut [BD::Pixel], usize, isize)>,
+    mut band: Option<LfBandCursor<BD>>,
 ) {
     let hv = HV::from_repr(HV).unwrap();
     let yuv = YUV::from_repr(YUV).unwrap();
@@ -1419,12 +1431,6 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
         YUV::UV => vmask[0] | vmask[1],
     };
     let is_v = matches!(hv, HV::V);
-    // The band's geometry is the H rectangle's; `lf_geom(true, ..)` grows the
-    // other way and `open_band` hardcodes `is_v == false`. Callers only ever
-    // arm it on the column pass, and this makes that a checked fact.
-    if is_v {
-        band = None;
-    }
 
     // Resolve every 4-pixel group's filter parameters before touching a pixel,
     // so consecutive groups that actually filter can be fused into one
@@ -1501,14 +1507,22 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
         // or a band too small for the run — falls straight through to the
         // picture path below, which reads identical bytes.
         let mut banded = false;
-        if let Some((buf, boff, bstride)) = band.as_mut() {
-            let bstride = *bstride;
-            let bg = boff.wrapping_add_signed(4 * bstride * g as isize);
+        if let Some(b) = band.as_mut() {
+            // Groups advance DOWN the band for `H` and ALONG a band row for
+            // `V` — the same axis `group_step = 4 * stridea` advances in the
+            // picture.
+            let mut cur = LfBandCursor {
+                buf: &mut *b.buf,
+                row: if is_v { b.row } else { b.row + 4 * g },
+                col: if is_v { b.col + 4 * g } else { b.col },
+                stride: b.stride,
+                rows: b.rows,
+            };
             if let Some(mut block) =
-                LfBlock::<BD>::open_band(&mut scratch, buf, bg, bstride, run_dst, stride, wd, n)
+                LfBlock::<BD>::open_band(&mut scratch, &cur, is_v, run_dst, stride, wd, n)
             {
                 block.filter_run(&params[g..g + n], wd, bd);
-                block.close_band(buf, bg.wrapping_add_signed(-lf_reach(wd)), bstride);
+                block.close_band(&mut cur);
                 banded = true;
             }
         }

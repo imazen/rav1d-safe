@@ -86,10 +86,13 @@ pub(crate) fn lf_band_enabled() -> bool {
     *ON.get_or_init(|| !matches!(std::env::var("RAV1D_LF_BAND").as_deref(), Ok("0")))
 }
 
-/// Widest band any superblock needs: `4 * 32` picture rows by `4 * 32` columns
-/// plus [`LF_BAND_PAD`] on each side.
-pub(crate) const LF_BAND_MAX_ROWS: usize = 128;
-pub(crate) const LF_BAND_MAX_COLS: usize = 4 * 32 + 2 * LF_BAND_PAD;
+/// Widest band either pass needs, on either axis.
+///
+/// A superblock is at most `4 * 32` pixels on a side, and the padded axis adds
+/// [`LF_BAND_PAD`] at each end — columns for the H pass, rows for the V pass.
+/// One square capacity covers both orientations, so the same buffer can be
+/// reused by either without a re-check that depends on which pass has it.
+pub(crate) const LF_BAND_MAX_DIM: usize = 4 * 32 + 2 * LF_BAND_PAD;
 
 /// Reusable scratch for one superblock's column pass.
 ///
@@ -114,8 +117,14 @@ impl<BD: BitDepth> LfBand<BD> {
         }
     }
 
-    /// Fill from the picture: `rows` picture rows starting at `dst`'s row,
-    /// each `cols` pixels wide starting [`LF_BAND_PAD`] pixels left of `dst`.
+    /// Fill from the picture: `rows` picture rows starting `row_pad` rows
+    /// ABOVE `dst`'s row, each `cols` pixels wide starting `col_pad` pixels
+    /// left of `dst`.
+    ///
+    /// The two passes pad on different axes — the H pass reads `+-reach`
+    /// columns at the rows it filters, the V pass reads `+-reach` rows at the
+    /// columns it filters — so the pad is a parameter rather than a constant
+    /// on one axis.
     ///
     /// ONE immutable guard per picture row, over a CONTIGUOUS span — this is
     /// the whole registration cost of the pass that replaces
@@ -131,16 +140,18 @@ impl<BD: BitDepth> LfBand<BD> {
         pic_stride: isize,
         rows: usize,
         cols: usize,
+        row_pad: usize,
+        col_pad: usize,
     ) -> bool {
         self.stride = 0;
         self.rows = 0;
         if rows == 0 || cols == 0 || rows * cols > self.buf.len() {
             return false;
         }
-        let first = match (dst.offset as isize).checked_sub(LF_BAND_PAD as isize) {
-            Some(v) if v >= 0 => v,
-            _ => return false,
-        };
+        let first = dst.offset as isize - row_pad as isize * pic_stride - col_pad as isize;
+        if first < 0 {
+            return false;
+        }
         // Row offsets are monotone in `r`, so checking the two ends bounds all
         // of them — including a negative picture stride.
         let last = first + (rows as isize - 1) * pic_stride;
@@ -175,7 +186,8 @@ impl<BD: BitDepth> LfBand<BD> {
             return None;
         }
         Some(LfBandView {
-            stride: self.stride as isize,
+            stride: self.stride,
+            rows: self.rows,
             buf: &mut self.buf[..self.rows * self.stride],
         })
     }
@@ -185,6 +197,22 @@ impl<BD: BitDepth> LfBand<BD> {
 pub(crate) struct LfBandView<'c, BD: BitDepth> {
     pub(crate) buf: &'c mut [BD::Pixel],
     /// Row stride in pixels — also the band's column count.
-    pub(crate) stride: isize,
+    pub(crate) stride: usize,
+    pub(crate) rows: usize,
+}
+
+/// One `loop_filter_sb128` call's window on a band.
+///
+/// The anchor is carried as `(row, col)` rather than a flat offset on purpose:
+/// the V pass's rectangle grows along a row, and a flat
+/// `offset + len <= buf.len()` bound cannot tell a column overrun (which would
+/// silently read the NEXT band row) from a row overrun. Two axis bounds can.
+pub(crate) struct LfBandCursor<'c, BD: BitDepth> {
+    pub(crate) buf: &'c mut [BD::Pixel],
+    /// Band row/column of the pixel the picture call names as `dst`.
+    pub(crate) row: usize,
+    pub(crate) col: usize,
+    pub(crate) stride: usize,
+    pub(crate) rows: usize,
 }
 

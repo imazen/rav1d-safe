@@ -962,3 +962,131 @@ is *expensive*: at 8bpc — the common case — t=2/4/8 are at parity and only t
 is measurably positive, at 0.8%.
 
 Every band above overlaps, and every arm-pair ratio here is from a loaded box.
+
+---
+
+# The loop-filter COLUMN band (branch `perf/lf-band`, base `main` @ `0f6bf10`)
+
+Same box: Apple M4 Pro (12 cores, 8P+4E), macOS 26.5.2. Every timed run below
+is wrapped in `measlock`, which takes a cross-agent exclusive lock and then
+waits for the box to go quiet.
+
+§11 priced `LfBlock::fill` and told the next attempt what it had to answer
+first. This section answers it and builds the thing.
+
+## 15. What is NOT done — read this before the parts that work
+
+* **The V pass is untouched.** The band covers `filter_plane_cols_*` (the H
+  pass) only. `fill`'s residual 1,181,034 registrations/frame at t=8 are
+  essentially all V (`filter_plane_rows_*`), and §16 measures that lifting
+  `LF_BATCH_MAX` from 4 to 32 would divide them by **1.971**. That is a
+  separate, smaller, and *much* cheaper change than this one, and it is NOT
+  made here — it needs a rectangular scratch (`LF_BW` is 16 and `LF_BLOCK_LEN`
+  is asserted to be `LF_BW * LF_BW`) and the NEON kernel's
+  `LF_GROUPS == LF_BATCH_MAX` assert decoupled into a guard batch and a kernel
+  batch. Nothing here does any of that.
+* **`cdef_arm`'s 1,863,648 and `ctx.rs:99`'s 2,534,988 are untouched**, as in
+  every prior round. After this branch they are the two largest sites left.
+* **The mirror in `close_band` is NOT covered by the corpus.** §18 plants its
+  removal and **766-vector-subset gate still passes 14/14**. It is kept anyway,
+  because it is what makes "the band never differs from the picture" an
+  invariant rather than an assumption — but the honest statement is that no
+  test here can tell whether it is load-bearing, and the reason it appears
+  inert (a wider filter implies a more distant next edge) is an *argument*, not
+  a measurement.
+* **Not measured, unchanged from §10:** x86_64 and wasm32 (compile-checked
+  only), `asm` / `c-ffi` (the band is dropped there — `call` takes the picture
+  path and the arm is simply unaccelerated), `unchecked`, t=16, any vector
+  below 4K, and any vector with loop restoration live.
+* **The band's copy is not separately priced.** Its cost is inside the A/B
+  below, not isolated from the registrations it removes.
+
+## 16. Attribution: which HALF of `fill` is it, measured
+
+`--features __probe_lf_hist` (new, counts only) splits the site by pass. It
+counts the whole process including `probe_tracker`'s warmup decode, so its raw
+totals are `(iters+1)/iters` of the per-frame figure; at `iters=3` the scale is
+exactly 3/4, and the two halves then sum to 3,835,042 **to the registration**,
+which is the instrument's control.
+
+| t=8, `v4k_8tile` 8bpc | regs/frame | share | regs/open | shape |
+|---|---|---|---|---|
+| H — `filter_plane_cols_*`, vertical edges | **2,656,552** | **69.3%** | 14.30 | `4 * groups` rows x `2 * reach` px |
+| V — `filter_plane_rows_*`, horizontal edges | **1,178,490** | **30.7%** | 6.33 | `2 * reach` rows x `4 * groups` px |
+
+and the run-length histogram says **79% of opens hit the `LF_BATCH_MAX = 4`
+cap exactly** (mean natural run 6.91 H / 7.00 V, with a spike at 32 on V). So
+the obvious lever — fuse harder — was priced from the same run, by counting
+what each natural run WOULD have cost uncapped:
+
+| cap 4 -> 32 | now | uncapped | ratio |
+|---|---|---|---|
+| V | 1,178,490 | 597,876 | **1.971** |
+| H | 2,656,552 | 2,656,552 | **1.000** |
+
+**Exactly 1.000 for H, and that is structural, not a rounding artefact.** The
+H rectangle grows in the ROW direction (`h = 4 * groups`), so a run of `n`
+groups costs `4n` registrations however it is split; the V rectangle grows
+along a picture row (`w = 4 * groups`) at a fixed `h = 2 * reach`, so fusing
+divides its count. **69.3% of the site cannot be bought by fusing along the
+run at all** — only by fusing ACROSS the caller's `x` loop.
+
+## 17. The band, and why it needs no halo
+
+§11b's proposal was a row band with a halo, and its answer was: expressible as
+copy-in/copy-out, NOT as a shared halo, because `&mut` exclusion is static and
+a run-time ownership handoff is a borrow tracker wearing a different hat. It
+also sized the copy at ~3.1 MB per superblock row and ~53 MB per frame, and
+said to check that arithmetic before writing any conversion.
+
+**The halo question does not arise here, because this band never owns
+anything.** `src/lf_band.rs`:
+
+* `LfBand::fill_from` copies `4 * len` picture rows x `4 * w + 14` pixels into
+  a plain `Vec<BD::Pixel>` — **one immutable guard per picture row, over a
+  CONTIGUOUS span**, once per superblock, for all of that superblock's `x`
+  positions.
+* `LfBlock::open_band` / `fill_band` read the rectangle out of that `Vec`. No
+  guard, no tracker, no policy branch.
+* `LfBlock::close_band` writes each changed span **to the picture, with the
+  same mutable guard `close` always took**, and mirrors it into the band.
+
+So the band is a read CACHE that is equal to the picture at every point, which
+is what makes `open_band` returning `None` (rectangle off the plane, band too
+small) *ordinary* rather than a special case: the caller falls through to the
+picture path and reads identical bytes. Nothing is handed between workers, so
+there is no halo protocol to express.
+
+**The copy is 170x smaller than §11b's sizing** because the unit is a
+superblock, not a superblock row: 128 rows x 142 px is ~18 KB at 8bpc, against
+3.1 MB. And it is not even net-new traffic — the per-edge windows it replaces
+are 14 px wide every 4 px, i.e. ~3.5x redundant.
+
+### Registrations, measured — `--features probe-sites`, `lost=0`
+
+One binary, `RAV1D_LF_BAND=0/1`. `v4k_8tile` 8bpc t=8:
+
+| site | band OFF | band ON |
+|---|---|---|
+| whole decoder | **11,401,399** | **8,941,599** |
+| `LfBlock::fill` | 3,835,042 | 1,181,034 |
+| `LfBand::fill_from` (copy-in) | 0 | 194,208 @ **142 B** |
+| `LfBlock::close` (write) | 17,852 | 12,616 |
+| `LfBlock::close_band` (write) | 0 | 5,236 |
+
+Three things to read off it:
+
+1. The band-off column **reproduces §11a's 11,401,399 exactly**, so the
+   `Option` threaded through the dispatch changes no registration anywhere.
+2. `fill` falls by **2,654,008**, against the 2,656,552 §16 attributed to the H
+   pass — i.e. 99.9% of the H pass is banded and the residual 2,544 are opens
+   that declined. The remainder of `fill` is the V pass, untouched.
+3. **The write population is identical: 17,852 = 12,616 + 5,236.** The only
+   MUTABLE reservation in the loop filter is bit-for-bit what it was, merely
+   split across two functions. Nothing here widens a mutable extent — which is
+   the direction #479 and #469 were burned by.
+
+Net **-2,459,800 registrations/frame, -21.6% of the whole decoder's
+population**, bought at an extent of 142 contiguous bytes per guard. That is
+the opposite trade from §11c's hull, which removed 3.46 M by paying 50-60 KB
+of strided extent and measured **2.65x SLOWER**.
