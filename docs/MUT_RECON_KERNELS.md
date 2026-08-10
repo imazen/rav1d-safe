@@ -1090,3 +1090,114 @@ Net **-2,459,800 registrations/frame, -21.6% of the whole decoder's
 population**, bought at an extent of 142 contiguous bytes per guard. That is
 the opposite trade from §11c's hull, which removed 3.46 M by paying 50-60 KB
 of strided extent and measured **2.65x SLOWER**.
+
+## 18. The band is REFUTED under concurrent filtering — and the first run passed
+
+§17's registration table is real and the band is nevertheless **not
+shippable**. It ships **default OFF** (`RAV1D_LF_BAND=1` to arm), in the shape
+`__probe_lf_hull` already uses for the strided-hull negative.
+
+### What went wrong
+
+**The loop filter's read set is 2-D SPARSE, and every per-row band is
+contiguous.** A band reserves, for each of its rows, one span covering the
+whole superblock; the pass actually reads only the `+-reach` tap windows
+around the edges that filter, and a row in which nothing filters is not read
+at all. The difference is columns and rows that are reserved but never read —
+and under concurrent filtering another worker is legitimately writing them:
+
+```text
+current:  &     _[163840..163968]   <- the band's 128-px row copy-in
+existing: &mut  _[163944..163952]   <- a concurrent 8-px write inside it
+```
+
+That is the SAME defect class as §11c's hull, transposed. The hull reserved
+the gaps BETWEEN rows; this reserves the gaps BETWEEN edges. §11c's version
+was merely slow because its extent hit the wide path; this one is a false
+positive, i.e. a decode failure.
+
+### The numbers, and the sample that lied
+
+`examples/md5_inventory --threads 8`, group `8-bit/data` (358 vectors), same
+box, same load, repeated:
+
+| arm | pass | error |
+|---|---|---|
+| base commit `0f6bf10`, its own binary | 358 / 358 / 358 | **0 / 0 / 0** |
+| band off (this binary) | 358 / 358 | 0 / 0 |
+| **column band only** | 357 / 356 / 358 | **1 / 2 / 0** |
+| **column + row band** | 294 | **64** |
+| default build (band off), after the fix | 358 x4 | **0 x4** |
+
+**The column-only band's first full `--threads 8` corpus run passed 753/755
+`SETDIFF: CLEAN`.** One sample. It was committed on that basis, and the
+failure only appeared when the row band widened the same defect enough to fire
+reliably. "766 vectors passed" is evidence, not a proof — and a rare
+false positive is a decode failure, not a wrong pixel, so it cannot be
+detected by an md5 diff at all, only by an error count.
+
+### `tile_threading_active()` is the WRONG gate, measured
+
+The obvious rescue is the latch that already lets `fill_hull`, `block_mut` and
+`compact_read` widen a reservation. It does not work, because it gates
+concurrent **tile** workers and the loop filter's concurrency is between
+**sbrow filter tasks** — inserted for `sby+1` before the selected task for
+`sby` even runs (`src/thread_task.rs:1030-1043`) — which exist whenever
+`n_tc > 1` however many tiles a frame has. Gated that way:
+
+* the `v4k_8tile` t=8 census is byte-identical to `main` (11,401,399), so the
+  band provably never armed on that vector, and
+* `8-bit/data` at t=8 **still produced 8 errors in one run of two.**
+
+A gate that is right for this site would have to mean "no other thread can be
+filtering this picture", which the decoder does not currently expose.
+
+### What the default build is
+
+Byte-for-byte `main`'s behaviour, verified rather than assumed:
+
+* census, `--features probe-sites`, `lost=0`: **6,005,602** at t=1 and
+  **11,401,399** at t=8 — both exactly §11a's numbers;
+* corpus set-diffed BY NAME with the md5 as the value, against
+  `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst`: `--threads 1`
+  **766 PASS / 768 keys / 0 differing, SETDIFF: CLEAN**; `--threads 8` with
+  both film-grain groups dropped from BOTH sides (#479) **753 PASS / 755 keys
+  / 0 differing, SETDIFF: CLEAN**;
+* the write population is untouched in every arm: 17,852 per frame, split
+  17,327 + 525 between `close` and `close_band` when armed.
+
+### The one number the armed arm is still good for
+
+Paired user CPU, `v4k_8tile` 8bpc t=8, 20 frames, one binary, arms interleaved
+with rotating order within each round, under `measlock`, n=9 (foreign_max=1,
+so load-tagged):
+
+| | median | band | faster |
+|---|---|---|---|
+| band / band-off | **0.9628** | [0.9523..0.9781] | **9/9** |
+
+**That is a real 3.7% and it is not available**, because the arm that produced
+it is the arm that fails 1-64 vectors per run. It is recorded because it
+prices what a SOUND removal of this population would be worth: it is the
+first direct measurement that removing ~2.4 M of `fill`'s registrations
+without paying extent is worth several percent of CPU, which §11f could only
+bound from above by doubling.
+
+### What the next attempt should and should not do
+
+* **Do not build another contiguous band.** Column-major, row-major, and both
+  together are now all measured. The obstruction is that the read set is
+  sparse in 2-D and the tracker's unit is an interval.
+* **The V pass has a cheap, sound, un-taken win**: §16 measured that lifting
+  `LF_BATCH_MAX` from 4 to 32 divides the V pass's registrations by **1.971**
+  (1,178,490 -> 597,876/frame) with **no extent change beyond a contiguous
+  in-row span that the fused groups genuinely read**. That is the one lever
+  here that buys count without buying extent. It is blocked on two mechanical
+  things, both untouched: `LF_BW` is 16 with
+  `assert!(LF_BW * LF_BW == LF_BLOCK_LEN)`, so the scratch has to become
+  rectangular rather than square; and `src/safe_simd/loopfilter_arm.rs:156`
+  asserts `LF_GROUPS == LF_BATCH_MAX`, so the GUARD batch has to be decoupled
+  from the KERNEL batch. Watch `LfScratch::new`'s zero-init while doing it —
+  it runs once per DSP call, ~100 K times a frame.
+* **H's 69.3% needs a different mechanism entirely**, not a bigger batch:
+  §16's cap-lift ratio for it is exactly **1.000**.
