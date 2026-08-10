@@ -1453,6 +1453,44 @@ use crate::include::dav1d::headers::Rav1dPixelLayoutSubSampled;
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
 use crate::src::strided::Strided as _;
 
+/// Pixel length of the strided `w × h` band a film-grain row worker touches,
+/// counted from the band's first pixel.
+///
+/// **This is the #479 fix.** The four film-grain guards below used to reserve
+/// the WHOLE plane (`full_guard_mut` / `full_guard`) once per `FG_BLOCK_SIZE`
+/// row band. Film grain is applied by N worker threads that each `fetch_add` a
+/// *different* `row` off `TaskThreadData::delayed_fg_progress[0]`
+/// (`src/thread_task.rs`, `TaskType::FgApply`), so a whole-plane reservation
+/// collides with every other worker the instant `threads > 1`:
+///
+/// ```text
+///  current: &mut _[0..147456] on ThreadId(6) at include/dav1d/picture.rs:736
+/// existing: &mut _[0..147456]                at include/dav1d/picture.rs:736
+/// ```
+///
+/// 13 of 768 corpus vectors could not be decoded **at all** above one thread,
+/// and the dead worker then wedged the main thread on `thread_task.rs:534`'s
+/// `unwrap()` of a `None`.
+///
+/// The band is the strided hull of the rows this call actually touches,
+/// `(h - 1) * |stride| + w`. Bands never overlap: consecutive bands start
+/// `FG_BLOCK_SIZE * stride` apart (`FG_BLOCK_SIZE >> ss_y` in a subsampled
+/// chroma plane, matching the band height there), a band spans at most
+/// `(FG_BLOCK_SIZE - 1) * stride + w`, and `w <= |stride|` always.
+///
+/// **Narrowing is the safe direction.** Three schemes that *widened* a
+/// reservation to cut its count were refuted — keyed locking (§3), the exact
+/// record + wide reference that was outright UB (§6), and the filter band whose
+/// contiguous extent swallowed a concurrent narrow write (§7d) — all in
+/// `docs/OWNERSHIP_MODELS.md`. Here the record and the reference handed back
+/// are *the same* hull, which §6 says is the non-negotiable part.
+fn band_len<BD: BitDepth>(c: &Rav1dPictureDataComponent, w: usize, h: usize) -> usize {
+    if w == 0 || h == 0 {
+        return 0;
+    }
+    (h - 1) * c.pixel_stride::<BD>().unsigned_abs() + w
+}
+
 /// Safe dispatch for generate_grain_y (aarch64).
 /// The grain LFSR is inherently serial, so this is scalar and always returns true.
 #[cfg(target_arch = "aarch64")]
@@ -1539,20 +1577,30 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
         return false;
     }
     use zerocopy::{FromBytes, IntoBytes};
+    // Negative strides address rows *downward* from `pixel_offset`, which the
+    // `row_off(y) = (y * stride) as usize` addressing in `fgy_inner_*` cannot
+    // express (it wraps and indexes out of bounds — a panic on `main` too, at
+    // any thread count). Hand those frames to the `PicOffset`-based scalar
+    // fallback in `filmgrain.rs`, which walks rows by offset and is correct for
+    // either sign. No corpus vector has a negative stride; only a caller-
+    // supplied `Rav1dPicAllocator` under `c-ffi` can produce one.
+    if dst.stride() < 0 || src.stride() < 0 {
+        return false;
+    }
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
     let dst_row = dst.with_offset::<BD>() + row_strides * dst.pixel_stride::<BD>();
     let src_row = src.with_offset::<BD>() + row_strides * src.pixel_stride::<BD>();
 
     let stride = dst.stride();
+    // The `pw × bh` band this row worker owns — see `band_len` (#479).
+    let band = band_len::<BD>(dst, pw, bh);
 
     match BD::BPC {
         BPC::BPC8 => {
-            let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
-            let dst_bytes = dst_guard.as_mut_bytes();
-            let dst_slice = &mut dst_bytes[dst_base..];
-            let (src_guard, src_base) = src_row.full_guard::<BD>();
-            let src_bytes = src_guard.as_bytes();
-            let src_slice = &src_bytes[src_base..];
+            let mut dst_guard = dst_row.slice_mut::<BD>(band);
+            let dst_slice = dst_guard.as_mut_bytes();
+            let src_guard = src_row.slice::<BD>(band);
+            let src_slice = src_guard.as_bytes();
             let scaling_bytes: &[u8] = scaling.as_ref();
             let grain_lut_8: &[[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
                 FromBytes::ref_from_bytes(grain_lut.as_bytes()).unwrap();
@@ -1569,15 +1617,10 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
             );
         }
         BPC::BPC16 => {
-            let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
-            let dst_bytes = dst_guard.as_mut_bytes();
-            let base_byte = dst_base * std::mem::size_of::<BD::Pixel>();
-            let dst_u16: &mut [u16] =
-                FromBytes::mut_from_bytes(&mut dst_bytes[base_byte..]).unwrap();
-            let (src_guard, src_base) = src_row.full_guard::<BD>();
-            let src_bytes = src_guard.as_bytes();
-            let src_base_byte = src_base * std::mem::size_of::<BD::Pixel>();
-            let src_u16: &[u16] = FromBytes::ref_from_bytes(&src_bytes[src_base_byte..]).unwrap();
+            let mut dst_guard = dst_row.slice_mut::<BD>(band);
+            let dst_u16: &mut [u16] = FromBytes::mut_from_bytes(dst_guard.as_mut_bytes()).unwrap();
+            let src_guard = src_row.slice::<BD>(band);
+            let src_u16: &[u16] = FromBytes::ref_from_bytes(src_guard.as_bytes()).unwrap();
             let stride_u16 = stride / 2;
             let scaling_bytes: &[u8] = scaling.as_ref();
             let grain_lut_16: &[[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
@@ -1624,6 +1667,10 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
         return false;
     }
     use zerocopy::{FromBytes, IntoBytes};
+    // See `fgy_32x32xn_dispatch`: negative strides go to the scalar fallback.
+    if dst.stride() < 0 || src.stride() < 0 || luma.stride() < 0 {
+        return false;
+    }
     let ss_y = (layout == Rav1dPixelLayoutSubSampled::I420) as usize;
     let row_strides = (row_num * FG_BLOCK_SIZE) as isize;
     let dst_row = dst.with_offset::<BD>() + (row_strides * dst.pixel_stride::<BD>() >> ss_y);
@@ -1639,20 +1686,36 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
         Rav1dPixelLayoutSubSampled::I444 => (false, false),
     };
 
+    // The chroma band this row worker owns, and the luma band it reads (#479).
+    //
+    // Chroma: rows `0..bh` × cols `0..pw`, both already in chroma units.
+    //
+    // Luma: `fguv_inner_*` reads row `y << sy` for `y in 0..bh` — so the last
+    // luma row touched is `(bh - 1) << sy`, not `bh << sy` — and `noise_uv`
+    // reads `luma_row[(x << sx) + 1]` when `is_sx`, so the widest column is
+    // `((pw - 1) << sx) + sx`. Exactly the extent, one pixel at a time; the
+    // `asm`-path FFI wrapper above is deliberately a hair more generous
+    // (`(bh << sy) * stride + (pw << sx) + sx`) because it builds a raw slice.
+    let band = band_len::<BD>(dst, pw, bh);
+    let sx = is_sx as usize;
+    let sy = is_sy as usize;
+    let luma_band = band_len::<BD>(
+        luma,
+        (pw.saturating_sub(1) << sx) + sx + 1,
+        (bh.saturating_sub(1) << sy) + 1,
+    );
+
     match BD::BPC {
         BPC::BPC8 => {
-            let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
-            let dst_bytes = dst_guard.as_mut_bytes();
-            let dst_slice = &mut dst_bytes[dst_base..];
-            let (src_guard, src_base) = src_row.full_guard::<BD>();
-            let src_bytes = src_guard.as_bytes();
-            let src_slice = &src_bytes[src_base..];
+            let mut dst_guard = dst_row.slice_mut::<BD>(band);
+            let dst_slice = dst_guard.as_mut_bytes();
+            let src_guard = src_row.slice::<BD>(band);
+            let src_slice = src_guard.as_bytes();
             let scaling_bytes: &[u8] = scaling.as_ref();
             let grain_lut_8: &[[i8; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
                 FromBytes::ref_from_bytes(grain_lut.as_bytes()).unwrap();
-            let (luma_guard, luma_base) = luma_row.full_guard::<BD>();
-            let luma_bytes = luma_guard.as_bytes();
-            let luma_slice = &luma_bytes[luma_base..];
+            let luma_guard = luma_row.slice::<BD>(luma_band);
+            let luma_slice = luma_guard.as_bytes();
             fguv_inner_8bpc(
                 dst_slice,
                 src_slice,
@@ -1672,23 +1735,15 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
             );
         }
         BPC::BPC16 => {
-            let (mut dst_guard, dst_base) = dst_row.full_guard_mut::<BD>();
-            let dst_bytes = dst_guard.as_mut_bytes();
-            let base_byte = dst_base * std::mem::size_of::<BD::Pixel>();
-            let dst_u16: &mut [u16] =
-                FromBytes::mut_from_bytes(&mut dst_bytes[base_byte..]).unwrap();
-            let (src_guard, src_base) = src_row.full_guard::<BD>();
-            let src_bytes = src_guard.as_bytes();
-            let src_base_byte = src_base * std::mem::size_of::<BD::Pixel>();
-            let src_u16: &[u16] = FromBytes::ref_from_bytes(&src_bytes[src_base_byte..]).unwrap();
+            let mut dst_guard = dst_row.slice_mut::<BD>(band);
+            let dst_u16: &mut [u16] = FromBytes::mut_from_bytes(dst_guard.as_mut_bytes()).unwrap();
+            let src_guard = src_row.slice::<BD>(band);
+            let src_u16: &[u16] = FromBytes::ref_from_bytes(src_guard.as_bytes()).unwrap();
             let scaling_bytes: &[u8] = scaling.as_ref();
             let grain_lut_16: &[[i16; GRAIN_WIDTH]; GRAIN_HEIGHT + 1] =
                 FromBytes::ref_from_bytes(grain_lut.as_bytes()).unwrap();
-            let (luma_guard, luma_base) = luma_row.full_guard::<BD>();
-            let luma_bytes = luma_guard.as_bytes();
-            let luma_base_byte = luma_base * std::mem::size_of::<BD::Pixel>();
-            let luma_u16: &[u16] =
-                FromBytes::ref_from_bytes(&luma_bytes[luma_base_byte..]).unwrap();
+            let luma_guard = luma_row.slice::<BD>(luma_band);
+            let luma_u16: &[u16] = FromBytes::ref_from_bytes(luma_guard.as_bytes()).unwrap();
             fguv_inner_16bpc(
                 dst_u16,
                 src_u16,
