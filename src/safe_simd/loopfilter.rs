@@ -5536,6 +5536,26 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 ///
 /// The inner filter functions are scalar (no SIMD intrinsics). The `&[AtomicU8]`
 /// level cache is passed directly to inner functions which load entries on demand.
+///
+/// # KNOWN HAZARD, NOT FIXED: this window is wider than #494's was
+///
+/// It takes ONE **mutable** guard over `reach_before = 7 * stride` ..
+/// `reach_after = ... + 16 * stride`, i.e. up to **16 rows below** a V edge,
+/// where the filter reads at most `lf_reach(wd)` = 7 and usually 2. That is
+/// wider than the constant-7 x86 window that raced concurrent reconstruction at
+/// t=8 (#494), and mutable rather than immutable, so under wasm threads it
+/// would conflict rather than merely over-read. It is left alone deliberately:
+/// nothing in this campaign can execute wasm32 threads, and here `reach_after`
+/// is BOTH the window and the scalar-fallback predicate, so narrowing it
+/// without the `win_*` / `reach_*` split the x86 arms now have would change
+/// which runs fall back to scalar — i.e. possibly change wasm output bytes,
+/// unverifiably.
+///
+/// To fix it, copy the x86 arms: keep this predicate on the plane worst case,
+/// add `win_before`/`win_after` from `crate::src::loopfilter::lf_run_reach` for
+/// the V window, and re-run the corpus on a wasm host. The `debug_assert!` in
+/// `loopfilter_sb_direct` already covers the invariant on every architecture,
+/// so a wasm debug build would report a violation.
 #[cfg(target_arch = "wasm32")]
 pub fn loopfilter_sb_dispatch<BD: BitDepth>(
     dst: PicOffset,

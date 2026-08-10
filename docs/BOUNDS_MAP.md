@@ -128,6 +128,16 @@ sides). Every co-live pair is therefore seen exactly once, at the later acquire.
   `probe_declare_rows` call like `narrow_guard` and `fill_hull` have; until
   then their over-reservation column is ABSENT, not zero. (Their concurrency
   column is exact, and says they never meet a concurrent writer.)
+* **It prices reservations against footprints, not footprints against NEED.** This is the hole
+  #494 fell through. The x86_64 loop filter's V-run compact read had `over_ratio` exactly 1.000 —
+  reservation == footprint, the memcpy really did touch every byte it reserved — and it was still
+  reading 3 rows past the bottom of its superblock row, because the *footprint* was sized from the
+  plane's worst-case tap span instead of the reach the mask selected. The colliding pair had
+  byte-identical extents (`& _[73728..73736]` vs `&mut _[73728..73736]`), which is the signature of
+  this failure mode: **a site can be perfectly tight by this instrument's definition and still read
+  what it must not.** Ask the second question separately — does the code read more than the
+  algorithm needs? — and where the answer is knowable from data the site already has (here, the
+  filter-level mask), assert it (`loopfilter_sb_direct`, `lf_run_reach`).
 * **Sub-`Deref` write sets are not measured.** For the conflict question that is
   the safe direction — a mutable reservation is a superset of the bytes it
   writes, so testing a proposed extent against foreign *reservations* can

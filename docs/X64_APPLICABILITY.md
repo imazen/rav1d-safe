@@ -183,3 +183,128 @@ scheme.
    under load; its ratios held to three digits while its absolute ms were inflated ~2.5%.
 5. **Two-point wall fits** (2 and 20 frames) remove process startup and made our numbers agree with
    an in-process instrument to <=0.5%.
+
+---
+
+> Sections F and G were written by different sessions. **F** (PR #493) is the first x86_64
+> execution pass. **G** is the root cause and fix for the t=8 defect F found. If only one of the
+> two is present in your checkout, the other is still in review.
+
+## G. The x86-only guard-policy duplication, and the t=8 race it caused (#494)
+
+**Verdict on A2/A3: A3's CDEF check was necessary but not sufficient, and A2's soundness argument
+was true of the reference and FALSE of the x86 loop-filter window.** Fixed; the argument is now an
+executable assertion rather than a comment.
+
+### What was wrong
+
+`src/loopfilter.rs::loopfilter_sb_direct` dispatches to a **different** SIMD entry point per
+architecture, and the two sit at different levels:
+
+| arch | entry | who sizes the guard |
+|---|---|---|
+| aarch64 | `loopfilter_arm::loopfilter_sb_dispatch` returns **false** | `LfBlock::open`, per fused group, from that group's own `wd` |
+| x86_64 | `safe_simd::loopfilter::loopfilter_sb_dispatch` handles the whole superblock edge | the dispatcher itself, from a **constant** |
+
+The x86 dispatcher sized a V run (horizontal edges) as `tap_before = tap_after = 7` for luma — the
+widest tap span the *plane* allows. The filter's real reach is per group: the mask level is
+`min(log2(tx_h) above, log2(tx_h) below)` capped at 2 (`src/lf_mask.rs`,
+`masks[1][by4 + y][cmp::min(ttx, btx)]`), a transform never crosses a superblock boundary, and
+`lf_reach` maps level 2/1/0 to 7/4/2 rows against 16/8/4 rows of headroom. **At every level-0 edge
+in the last 4-row band of a superblock row the window therefore read 3 rows PAST the bottom of its
+own superblock row** — rows owned by whoever is working on the next one.
+
+### The writer, named
+
+`--features probe-sites` did not reproduce (F records that as a measured negative: its per-registration
+hash + three atomic RMWs perturb the window away). What does reproduce, and keeps per-record
+`Loc`s, is a plain **`-C debug-assertions=on` release build**: `ShardRecs::locs` and the
+`track_caller` propagation through `picture.rs`'s helpers are both `debug_assertions`-gated, so this
+costs one non-atomic store per registration and no hash. It reproduced at a similar rate to release
+(2 aborts in the first 220 vectors of `8-bit/data` at t=8 vs release's 4 in 358) and named both
+sides:
+
+```
+ current:    & _[98304..98432] at src/safe_simd/loopfilter.rs:5134:44   <- the V-run compact read
+existing: &mut _[98304..98688] at src/owned_recon.rs:937:42            <- stitch_sbrow, next sbrow
+
+ current: &mut _[98439..98441] at src/safe_simd/loopfilter.rs:5203:25   <- an LF diff write-back
+existing:    & _[98432..98448] at src/safe_simd/loopfilter.rs:5134:44   <- another LF compact read
+```
+
+So there are **two** concurrent writers, which is why #482 was correctly ruled out and yet the
+failure rate went UP with `RAV1D_OWNED_RECON=0`: one pairing is `stitch_sbrow` copying the next
+superblock row out of the owned band, and the other is that row's own `DeblockCols` task — which
+does not involve owned recon at all, and which the barrier also used to order.
+
+### Attribution to the barrier: yes, and it is still the wrong remedy
+
+`054e2ed` removed a `check_tile` predicate that made reconstruction of superblock row S wait for
+`deblock_progress >= S`, i.e. for `DeblockRows(S-1)`. Every candidate pairing above is downstream of
+that: recon of row N+1, and `DeblockCols(N+1)` (which needs recon of N+1), both used to be ordered
+after `DeblockRows(N)`. So removing it is what exposed this — **and putting it back is still the
+wrong fix**, because it costs 2.19x at t=8 to paper over a 3-row over-read. The window is the defect.
+
+### The fix, and why it cannot move a single output byte
+
+`lf_run_reach(is_y, mask)` (new, beside `lf_reach`) returns the reach of the widest width the
+run's mask can select; both BPC arms of the x86 dispatcher use it for the V window.
+`lf_group_wd` is extracted from `loop_filter_sb128_rust` so the new function and its test share the
+driver's ladder rather than copying it. Two things deliberately did NOT change:
+
+* the **scalar-fallback predicate** still tests the plane worst case, so the SIMD-vs-scalar decision
+  is bit-for-bit what it was, and the narrowed window is always a subset of an extent that test
+  already proved in bounds;
+* the **H direction** keeps the constant. Its perpendicular extent is COLUMNS of rows already inside
+  this superblock row, so it has no cross-row ordering to violate, and its `tap_after` (9 luma /
+  5 chroma at 8bpc) is the 4-byte chunked transpose load's rounding, not a tap bound — narrowing it
+  would mean modelling the kernels' loads for no correctness gain.
+
+### The defect is now DETERMINISTIC and single-threaded
+
+`loopfilter_sb_direct` carries a `debug_assert!` — arch-independent, placed where the superblock
+geometry is in scope — that a V run's window stays inside its superblock row. With the old constant
+planted, a `-C debug-assertions=on` release build aborts on the **second vector of `8-bit/data` at
+`--threads 1`**:
+
+```
+V-run window leaves the superblock row: row 380 (+7) in a 128-row superblock row,
+is_y=true, mask=[f0000000, 00000000, 00000000]
+```
+
+380 % 128 = 124, i.e. the last 4-row band, with only level 0 present. Unmutated: 358/358 PASS, 0
+firings. A race that needed a 10-minute t=8 corpus pass to show up once is now a 1.5-second t=1
+abort — that is the reusable part of this fix.
+
+## H. The two x86 misfits F flagged
+
+### H1. `Shard` is 128 bytes on a 64-byte-line machine — DOCUMENTED, NOT CHANGED
+
+`crates/rav1d-disjoint-mut/src/tracker_shard.rs` has `#[repr(align(128))] struct Shard` with
+`const _: () = assert!(size_of::<Shard>() == 128 || cfg!(debug_assertions))`, and the comment says
+128 is the M-series line size. On x86 (`clflush size: 64`) that means:
+
+* **no false sharing between shards** — a 128-byte aligned 128-byte object still occupies whole
+  lines, so the stated purpose of the alignment holds on x86 too;
+* **but the steady-state fast path touches TWO lines.** Field offsets are `lock` 0, `live` 1..8,
+  `allocated`/`mutable` 8..10, `starts[0..7]` 16..72, `ends[0..7]` 72..128. The measured steady
+  state is occupancy 0-1, so the hot path reads `lock`, `live[0]`, `allocated`, `mutable`,
+  `starts[0]` (line 0) and `ends[0]` at offset **72** (line 1).
+
+Two refits would put slot 0 entirely in one x86 line, both pure layout with no semantic change:
+store the records as `[(usize, usize); SLOTS]` pairs (slot 0's pair lands at 16..32), or take
+`SLOTS` from 7 to 3 (`1 + 3 + 8 + 48 = 60`, one 64-byte shard). **Neither is landed and no speedup
+is claimed: TCG has no cache model, so this box cannot measure either one.** The `SLOTS = 3` variant
+additionally raises the shard-full rate, which pushes borrows onto the wide path — that is
+measurable without timing, via `--features __probe_wide`, and should be checked before it is tried.
+What is landed is the corrected comment.
+
+### H2. `CpuLevel::X86V2` is inert in a default build — DOCUMENTED, AND FILED
+
+`CpuLevel::X86V2` sets `SSE2 | SSSE3 | SSE41` in `rav1d_cpu_flags_mask`, and **nothing under
+`src/safe_simd/` reads those three flags**: every x86 dispatcher gates on `summon_avx2()` /
+`summon_avx512()` / `summon_avx512x()`. So in the default (safe-SIMD, checked) build `X86V2`
+behaves exactly like `Scalar`, and a pre-Haswell x86 gets no vector kernels at all. It is not
+entirely inert in every build: `--features asm` links dav1d's SSSE3/SSE4.1 asm, and `unchecked`
+uses SSE2 intrinsics in msac. The doc comment now says which builds the level affects; the missing
+safe-SIMD SSE tier is filed as a coverage gap rather than fixed here.

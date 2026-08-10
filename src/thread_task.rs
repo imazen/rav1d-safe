@@ -602,6 +602,18 @@ fn check_tile(
     //    sbrow N-1 (already reconstructed) — never into sbrow N+1, which is
     //    all that concurrent reconstruction touches. That is also why dav1d is
     //    bit-exact at every thread count without an equivalent rule.
+    //
+    //    THAT BOUND IS A PROPERTY OF THE MASK, AND IT IS NOW ASSERTED. The
+    //    level at a horizontal edge is `min(log2(tx_h) above, log2(tx_h)
+    //    below)` capped at 2 (`src/lf_mask.rs`), so `lf_reach` of that level
+    //    (7/4/2 rows) always fits the 16/8/4 rows the transform leaves inside
+    //    the superblock row. A filter-side READ window sized from anything
+    //    wider — e.g. the plane's worst-case 7 rows applied at a level-0 edge
+    //    in the last 4-row band — reaches 3 rows past the bottom and races
+    //    exactly the reconstruction this predicate no longer orders. That was
+    //    #494, x86_64 only, at t=8. `loopfilter_sb_direct` now carries a
+    //    `debug_assert!` for the invariant, so the next such window fails at
+    //    t=1 instead of racing here; see `src::loopfilter::lf_run_reach`.
     //  * The overlap it was suppressing was a guard-width artefact in the CDEF
     //    padding loops, fixed in fdd6a35 (and f9458f4 before it): a top/bottom
     //    line-buffer window guarded from `offset - 2` when `HAVE_LEFT` is

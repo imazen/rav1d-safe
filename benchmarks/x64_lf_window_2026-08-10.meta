@@ -1,0 +1,189 @@
+# x86_64 t=8 deblock race (#494): root cause, writer, fix, and the gate
+
+date: 2026-08-10
+commit: base `main` @ 14e5cf4 ("Merge pull request #491"), head = this branch
+hosts:
+  aarch64 — Apple M4 Pro (8P+4E), macOS 26.5.2, native.
+  x86_64  — colima QEMU-TCG VM (4 vCPU, 6 GiB, AuthenticAMD, sse..sse4_2 / avx /
+            avx2 / fma / bmi1 / bmi2, NO AVX-512, `clflush size: 64`), Alpine
+            3.20 container, binary cross-built on the host per
+            `scripts/x64/build_and_run_x86.sh` (from PR #493).
+harness: `examples/md5_inventory --threads N [--group G]`, no `--skip-group`.
+
+**NO WALL-CLOCK NUMBER IN THIS FILE, AND NONE IS DERIVABLE FROM IT.** TCG has no
+cache model, no store buffer and no PMU. Everything below is correctness. The
+`wall_ms` column in the attached TSVs is emitted by the harness and must be
+ignored for the x86 arms.
+
+---
+
+## 1. What was wrong (root cause)
+
+`src/loopfilter.rs::loopfilter_sb_direct` dispatches per architecture, and the
+two arms sit at different levels:
+
+* aarch64 — `loopfilter_arm::loopfilter_sb_dispatch` returns **false**;
+  `LfBlock::open` sizes each rectangle from the fused group's own `wd`.
+* x86_64 — `safe_simd::loopfilter::loopfilter_sb_dispatch` handles the whole
+  superblock edge and sizes the rectangle itself, from a **constant**:
+  `tap_before = tap_after = 7` (luma) for a V run.
+
+The filter's real reach is `lf_reach(wd)` for the width the MASK selected. The
+mask level at a horizontal edge is `min(log2(tx_h) above, log2(tx_h) below)`
+capped at 2 (`src/lf_mask.rs`, `masks[1][by4 + y][cmp::min(ttx, btx)]`), and a
+transform never crosses a superblock boundary:
+
+  level 2 -> wd 16 -> reach 7 rows, with >= 16 rows below the edge in the SB row
+  level 1 -> wd  8 -> reach 4 rows, with >=  8
+  level 0 -> wd  4 -> reach 2 rows, with >=  4
+
+So a mask-derived window always fits. The constant does not: at a level-0 edge
+in the last 4-row band of a superblock row it reads 7 rows where 4 remain —
+**3 rows past the bottom of its own superblock row.**
+
+## 2. Reproduction, pre-fix (release, x86_64, t=8)
+
+    8-bit/data, 358 vectors, 1 pass:  4 ERROR, 0 MISMATCH
+      00000635 00000641 00000660 00000704
+
+PR #493's two passes on the same group named `00000325 00000625 issue_48
+…_019_vq_aom_ctest_4.2` and `00000557 00000580 00000624`. Seven-plus distinct
+vectors across three passes, no stable set: a timing window, not content.
+
+Panic extents from this pass (release keeps no per-record `Loc`):
+
+     current:    & _[49152..49160] at include/dav1d/picture.rs:729:19   (slice)
+    existing: &mut _[49152..49160]                       <- IDENTICAL extents
+     current: &mut _[49976..49984] at include/dav1d/picture.rs:742:19   (slice_mut)
+    existing:    & _[49920..50040]                       (120 B = a V-run row)
+     current:    & _[16512..16544] at include/dav1d/picture.rs:729:19
+    existing: &mut _[16528..16544]
+     current: &mut _[16448..16512] at include/dav1d/picture.rs:742:19
+    existing:    & _[16384..16512]                       (128 B = a V-run row)
+
+Byte-identical extents rule out over-RESERVATION: reservation == footprint here.
+What was too wide was the FOOTPRINT — see `docs/BOUNDS_MAP.md`, "prices
+reservations against footprints, not footprints against NEED".
+
+## 3. Naming the writer: `-C debug-assertions=on`, not `probe-sites`
+
+`--features probe-sites` does not reproduce (#493: 358/358 PASS, 0 overlaps) —
+its per-registration hash plus three atomic RMWs perturb the window away. But
+`ShardRecs::locs` and the `track_caller` propagation through `picture.rs`'s
+helpers are gated on `any(debug_assertions, feature = "probe-sites")`, so a
+plain **release build with `-C debug-assertions=on -C overflow-checks=off`**
+keeps per-record `Loc`s at the cost of one non-atomic store per registration and
+no hash. It reproduced at a comparable rate — **2 aborts in the first 220
+vectors** of `8-bit/data` at t=8 (`00000037`, `00000051`) against release's 4 in
+358 — and named both sides:
+
+     current:    & _[98304..98432] at src/safe_simd/loopfilter.rs:5134:44
+    existing: &mut _[98304..98688] at src/owned_recon.rs:937:42
+
+     current: &mut _[98439..98441] at src/safe_simd/loopfilter.rs:5203:25
+    existing:    & _[98432..98448] at src/safe_simd/loopfilter.rs:5134:44
+
+* `loopfilter.rs:5134` = the V-run `compact_read_per_row`; `:5203` = its
+  `compact_write_back_per_row_diff`.
+* `owned_recon.rs:937` = `stitch_sbrow`, one row guard per row of the tile's own
+  columns, copying the NEXT superblock row out of the owned band (384 B row).
+* Both records start at 98304. With a 384-px stride that is row 256 — the first
+  row of a superblock row (256 = 4 x 64), i.e. exactly the 3 rows a V run at the
+  last edge of the previous superblock row over-reads.
+
+**Two writers, which is why #482 was correctly ruled out.** `RAV1D_OWNED_RECON=0`
+removes the `stitch_sbrow` pairing and leaves the DeblockCols one, and #493
+measured a HIGHER failure rate with it off (3 in its first 207).
+
+## 4. Attribution to the deblock barrier: yes, and it is still the wrong remedy
+
+`054e2ed` removed a `check_tile` predicate requiring `deblock_progress >= sby`
+for reconstruction tasks, i.e. recon of superblock row S waited for
+`DeblockRows(S-1)`. Every pairing above is downstream of it: recon of row N+1,
+and `DeblockCols(N+1)` (which needs recon of N+1), were both ordered after
+`DeblockRows(N)`. So the barrier is what had been masking this.
+
+It is still the wrong fix — 2.19x at t=8 (`benchmarks/p1_barrier_2026-08-07.meta`)
+to paper over a 3-row over-read — and `054e2ed`'s own argument is the fix's
+specification: "the filter length is bounded by the transform heights on both
+sides, which cannot cross a superblock boundary". True of the reference and of
+the aarch64 path; false of this window. The barrier was NOT put back.
+
+## 5. The fix
+
+`src::loopfilter::lf_run_reach(is_y, mask)` returns the reach of the widest
+width the run's mask can select; both BPC arms of the x86 dispatcher use it for
+the V window. `lf_group_wd` is extracted from `loop_filter_sb128_rust` so the
+new function and its test share the driver's ladder instead of copying it.
+
+Unchanged on purpose:
+* the scalar-fallback bounds predicate still tests the plane worst case, so the
+  SIMD-vs-scalar decision — and every output byte — is what it was, and the
+  narrowed window is always a subset of an extent that test already proved in
+  bounds;
+* the H direction keeps the constant: its perpendicular extent is COLUMNS of
+  rows already inside this superblock row, and its `tap_after` (9 luma / 5
+  chroma at 8bpc) is the 4-byte chunked transpose load's rounding, not a tap
+  bound.
+
+## 6. Gates
+
+### 6a. Deterministic, single-threaded, t=1 — the reusable part
+
+`loopfilter_sb_direct` carries a `debug_assert!` (arch-independent, where the
+superblock geometry is in scope) that a V run's window stays inside its
+superblock row. Built `--release -C debug-assertions=on`:
+
+  aarch64, `8-bit/data`, t=1, fix in place:      358/358 PASS, 0 firings
+  aarch64, `8-bit/data`, t=1, old constant planted:
+      abort on the SECOND vector —
+      "V-run window leaves the superblock row: row 380 (+7) in a 128-row
+       superblock row, is_y=true, mask=[f0000000, 00000000, 00000000]"
+      (380 % 128 = 124 -> the last 4-row band; only level 0 present)
+
+A race that took a 10-minute t=8 corpus pass to show once is now a ~1.5 s t=1
+abort.
+
+### 6b. Unit, with teeth
+
+`src::loopfilter::run_reach::run_reach_equals_the_widest_group_it_can_meet` —
+every combination of 8 mask patterns x 3 levels x {luma, chroma} against the
+driver's own `lf_group_wd` walked per group, plus a liveness assert that all
+four reaches (2/3/4/7) occur. Planting the old constant fails it
+(`left: 7, right: 4`). `run_reach_fits_the_transform_that_selected_it` pins the
+headroom table.
+
+### 6c. Corpus, by name, MD5 as the value
+
+  aarch64 (native, full corpus, no --skip-group)
+    base t=1  766 PASS / 0 MISMATCH / 0 ERROR / 2 SKIP
+    base t=8  766 / 0 / 0 / 2
+    head t=1  766 / 0 / 0 / 2
+    head t=8  766 / 0 / 0 / 2
+    set-diff (name, status, actual_md5) base vs head: IDENTICAL, 768 rows, at
+    BOTH thread counts; head t=1 vs head t=8 also IDENTICAL.
+
+  x86_64 (TCG) — see section 7 for the per-pass table.
+
+## 7. x86_64 post-fix passes
+
+Filled in from `~/tmp/x64race_fixrel_p*.tsv` / `_full*`; see the companion
+`.tsv` files committed beside this record.
+
+## 8. Coverage this does NOT have
+
+* **AVX-512 is unexecuted.** The guest has no AVX-512, so the `x16` V-kernel
+  fast path in `lpf_v_sb_y_8bpc_inner` never ran here. It reads the same window
+  (`buf`, `base`, `strideb`) as the x8/x4 paths and the window shrank for all of
+  them, so a mis-sized rectangle would panic rather than corrupt — but it is
+  not exercised.
+* **12-bit is corpus-only** (the `12-bit/*` groups run; no separate arm).
+* **wasm32 has the same defect shape and is NOT fixed.** Its dispatcher
+  (`loopfilter.rs`, `#[cfg(target_arch = "wasm32")]`) takes ONE wide MUTABLE
+  guard sized `reach_before = 7 * stride`, `reach_after = ... + 16 * stride` —
+  16 rows below a V edge, i.e. wider than the pre-fix x86 window, and mutable.
+  Untouched because nothing here can execute wasm32 threads; recorded so the
+  next session does not have to re-derive it.
+* **No timing.** Whether narrowing the copy changes decode cost on real x86
+  hardware is unmeasured. The copy shrinks (14 rows -> 4 at level-0 edges), so
+  the expected sign is favourable, and that is a hypothesis, not a result.

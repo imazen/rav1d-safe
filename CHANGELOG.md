@@ -5,6 +5,42 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- **x86_64 at `--threads 8`: the loop filter read 3 picture rows past its own
+  superblock row and raced concurrent reconstruction** (#494,
+  `src/safe_simd/loopfilter.rs`, `src/loopfilter.rs`). The x86-only
+  `loopfilter_sb_dispatch` sizes the guard for a whole superblock edge itself
+  (aarch64 returns `false` and lets `LfBlock::open` size per fused group), and
+  it used a CONSTANT perpendicular reach for V runs — 7 rows either side of a
+  horizontal edge for luma, the widest the plane allows. The filter's real
+  reach is `lf_reach` of the level the MASK selected, and the level is
+  `min(log2(tx_h) above, log2(tx_h) below)` capped at 2, with a transform never
+  crossing a superblock boundary: level 2 (reach 7) has >= 16 rows of headroom,
+  level 1 (reach 4) >= 8, level 0 (reach 2) >= 4. At every level-0 edge in the
+  last 4-row band the window therefore read 3 rows into the NEXT superblock
+  row, which since `054e2ed` dropped the frame-global deblock barrier is being
+  written concurrently. Reproduced as 4 aborts per 358-vector `8-bit/data` pass
+  at t=8 (the failing set is a timing window, not content — three passes named
+  seven different vectors), with both sides identified by a
+  `-C debug-assertions=on` release build: the V-run compact read
+  (`loopfilter.rs:5134`) against `owned_recon.rs:937`'s `stitch_sbrow` copy-out
+  of the next superblock row, and against that row's own DeblockCols
+  write-back. In an `unchecked` build there is no panic — the read returns
+  half-written pixels. Fix: `lf_run_reach` derives the V window from the run's
+  mask; `lf_group_wd` is extracted from `loop_filter_sb128_rust` so the new
+  function and its test share the driver's ladder. The scalar-fallback
+  predicate still tests the plane worst case, so the SIMD-vs-scalar decision
+  and every output byte are unchanged (aarch64 base-vs-head set-diffed by name
+  with the MD5 as the value: identical, 768 rows, at t=1 and t=8). The H
+  direction keeps the constant deliberately — its extent is columns of rows
+  already inside this superblock row, and its `tap_after` is the chunked
+  transpose load's rounding rather than a tap bound. Gates:
+  `run_reach_equals_the_widest_group_it_can_meet` (every mask combination
+  against the driver's own ladder, with a liveness assert that all four reaches
+  occur) plus a `debug_assert!` in `loopfilter_sb_direct` that a V run's window
+  stays inside its superblock row — which makes the whole class deterministic
+  and single-threaded: with the old constant planted, a
+  `-C debug-assertions=on` release build aborts on the second vector of
+  `8-bit/data` at `--threads 1`.
 - **Film grain could not be decoded above one thread at all** (#479,
   `src/safe_simd/filmgrain_arm.rs`). `rav1d_apply_grain_row` is claimed by N
   workers that each `fetch_add` a *different* `FG_BLOCK_SIZE` row band off
