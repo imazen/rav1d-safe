@@ -554,13 +554,24 @@ entirely.
 |---|---|
 | baseline | ok |
 | `--features __probe_lf_hull` + `RAV1D_LF_HULL=1` (#475's shape; **no source edit** — the switch is already in the tree) | **FAILED** — 17 in-decoder panics, `src/loopfilter.rs:769:33 took a 1924 B picture-plane reservation ... spans 16 rows`, and the test's `MAX_ROWS_TT` assertion at `left: 16, right: 1` |
-| LF per-row read widened `W` -> `W + 96` (the V-batch's shape, **within one row**) | **FAILED** — `src/loopfilter.rs:710:14 took a 100 B picture-plane reservation while tile threading is active; the measured ceiling for that file is 32 B` |
+| LF per-row read widened `W` -> `W + 96` (the V-batch's shape, **within one row**) | **FAILED** — in-decoder: `src/loopfilter.rs:710:14 took a 100 B picture-plane reservation while tile threading is active; the measured ceiling for that file is 32 B`, AND test-level: `src/loopfilter.rs 220 B / ceiling 32 / rows 1  <-- OVER` |
 | an `unsafe` block planted in `tile_threading_active()` | **FAILED to compile** — `error: usage of an unsafe block`, anchored on `lib.rs:13 forbid(unsafe_code)` |
 | after restore | ok |
 
-All restores verified byte-exact (`sha256` match on `src/loopfilter.rs` and
-`include/dav1d/picture.rs`, `git diff --exit-code` clean) and re-run **after
-`touch`**, per the mtime trap in §7.
+All restores verified byte-exact (`sha256` match on `src/loopfilter.rs`,
+`include/dav1d/picture.rs` and `tests/guard_extent_budget.rs`,
+`git diff --exit-code` clean) and re-run **after `touch`**, per the mtime trap in
+`docs/MUT_RECON_KERNELS.md` §7.
+
+**The mutation found a defect in the gate itself, which is the point of running
+one.** On the first pass the `<-- OVER` flag did NOT fire on mutation 2 — only
+the in-decoder panic did — because the test-level check was
+`bytes > ceiling && rows > 1`, so a widening that stayed inside one row (the
+V-batch's exact shape, and #485's) was invisible to the test's own assertion. The
+two checks now apply the same bound: a file with a tight entry is held to it
+(`pic_extent_ceiling_const`), a file without one is held to one row by the
+separate `MAX_ROWS_TT == 1` assertion. A gate whose two halves disagree is a gate
+with a hole, and only a mutation shows you which half is wrong.
 
 ## The ranked candidate list
 
