@@ -36,6 +36,9 @@ campaigns. Every rule below cost real time to learn.
   for "idle" forever: three rounds of the rav1d-safe campaign were degraded exactly that way (one
   capped at n=4 instead of n>=7; another had 354/360 rows load-tagged). Builds and tests do NOT
   need the lock — nice them instead, so they run on the E-cores while someone else measures.
+  (Its release is ownership-checked: a holder whose lock was reclaimed as stale will NOT delete the
+  next holder's lock. That bug existed for one day and let two agents measure at once — if you see
+  `[measlock] not releasing: lock now held by ...`, that is the guard working, not an error.)
 - **Interleave arms back-to-back with rotating order, median >= 5.** Discard and re-run any cell
   where a foreign process exceeded 25% CPU. State whether the box was idle.
 - **A busy box invalidates absolutes but not paired ratios.** One campaign had 354/360 rows under
@@ -58,6 +61,34 @@ campaigns. Every rule below cost real time to learn.
 - **Profile before optimizing, and profile self-time leaves**, not inclusive stacks. `samply` is
   installed and gives real call-tree attribution; macOS `sample` works too. Two sessions were
   saved by a profile contradicting the "obvious" target, and one was wasted by not taking one.
+- **A self-time leaf can be the WRONG NAME for the cost — count the calls before you port
+  anything.** Inlining collapses a dispatcher, a driver and a fallback onto one symbol, and a code
+  path that is never taken costs nothing and appears nowhere. `<itx::itxfm::Fn>::call` carried the
+  largest itx share at 4K 10bpc and read as "the scalar fallback for shapes above 16x16" — the
+  named open item. A census at that seam (`examples/itx_shape_census.rs`, `--features __ablate`)
+  put the fallback at **20 calls out of 272,949**, 0.15% of coefficient area, and **0** on the
+  campaign's own gap vector; the symbol was holding the inlined SIMD dispatch instead. Days of
+  kernel porting avoided by one counter. Same lesson as the LR blindness above, one level down:
+  prove the code runs, and prove it runs *often*, before optimising the symbol it hides behind.
+- **Never edit a shell script while it is running.** Bash reads a script incrementally and keeps a
+  file offset; an in-place edit that changes byte lengths makes it resume parsing at the wrong
+  place. If you must change a tool that may be running (`measlock`), write a temp file and
+  **`mv`** it into place — an atomic rename leaves the running process on the old inode.
+- **`measlock --load-ok`** (or `MEASLOCK_LOAD_OK=1`) keeps the mutual exclusion and skips the
+  wait-for-quiet. Use it when another agent holds the box with a long-running NON-timed job (a
+  multi-hour `miri`): the quiet gate can never be satisfied and the default behaviour is the worst
+  of both — wait 20 minutes, then run anyway. With `--load-ok` you MUST record `foreign_max` per
+  row and report paired ratios, never absolutes.
+- **A "disjoint bands" tick has to compare the arms the CLAIM compares.** Printing
+  ours-vs-dav1d disjointness for a claim about base-vs-head is trivially true for two different
+  decoders: a green tick that can never fail. Same family as a vacuous `wide_exclusion`.
+- **Diff against your recorded base SHA, never against the `main` ref.** All worktrees share one
+  `.git`, so another agent's merge silently turns up in `git diff main..HEAD` as reverse-deletions
+  in your branch. `main` moved twice under one 2026-08-10 sweep.
+- **Frame counts must be per cell.** A 64x36 frame decodes in 45 us, so the standard 2-vs-20 fit
+  measures timer noise there. Scale them: 5,000/50,000 at the tiny end down to 2/16 at 4K.
+- **Permission is not execution.** `enable_cdef = 1` in the sequence header at every size, yet CDEF
+  executes **zero blocks** at 512x288. Read the profile, not the flag.
 
 ## 3. Never fabricate
 
@@ -95,6 +126,7 @@ campaigns. Every rule below cost real time to learn.
 
 | Idea | Result |
 |---|---|
+| **16bpc itx above 16x16** (32/64-point, `WHT_WHT`) — rav1d-safe #455 open item 5 | **not a target**: 20 of 272,949 16bpc transform calls on `L3840x2160_420_10b`, 0 on `v4k_8tile_10b`. Census, not a guess — `examples/itx_shape_census.rs` |
 | `TinyLock` backoff/yield (rav1d-safe) | null, measured twice |
 | `block_mut` held row guards (rav1d-safe) | null — halving guard COUNT bought nothing; shard GRANULARITY was the whole win |
 | `CompInterType` guard drop glue | not a real target (ICF-folded shared glue) |
@@ -104,6 +136,8 @@ campaigns. Every rule below cost real time to learn.
 | Loop-filter reads as one strided HULL instead of `h` per-row guards (rav1d-safe) | **2.65x SLOWER at t=8** despite removing 3.46 M registrations/frame — the hull is 50-60 KB and lands on the tracker's wide path. `--features __probe_lf_hull` reproduces it |
 | Restoring `rav1d_recon_b_intra`'s incremental destination addressing (rav1d-safe) | 1.021 vs 1.0060 — the hoist keeps a live 40-byte `ReconDst` across `decode_coefs` |
 | Coarsening a guard extent at t=8 in rav1d-safe, ANY site | **measure it first, do not build it**: `--features __probe_bounds` (`docs/BOUNDS_MAP.md`) prints each site's distance to the nearest concurrently-live foreign WRITE. At t=8 every hot site already reserves exactly what it touches (`over_ratio = 1.000`, 1-16 bytes); `ctx.rs:99:27` has a concurrent write at gap **0**; `loopfilter.rs:710:14` has 232 bytes of room. The 4K gap vectors under-report collision risk ~1000x vs the corpus |
+| Raising the loop filter's **H** batch cap (rav1d-safe) | structurally null: `LFCAP` measures ratio **1.000** at caps 4/8/16/32/64, because H's rectangle grows in the ROW direction, so a run of `n` groups costs `4n` registrations however it is split |
+| The loop filter's **V** batch cap **with a fixed-wide scratch stride, a `params`-read threshold table, and an always-on write-back chunk loop** (rav1d-safe) | **+3.0% t=1 / +7.9% t=8** — and the cost was the MACHINERY, not the batch: an isolation arm holding the machinery at cap 4 was **+18.7% at t=1**. The cap itself is a win once the machinery is made free on the runs base could already open. `benchmarks/lf_vbatch_iso_2026-08-10_v1.tsv` |
 
 **The meta-lesson from the top two rows: a large self-time share is not automatically a large
 opportunity, and reducing the COUNT of an operation is not the same as reducing its COST.** The
@@ -111,6 +145,10 @@ loop-filter hull row sharpens it in the other direction: a count reduction bough
 extent can be actively harmful. Price the extent, not just the count — and price the count on its
 own by ADDING a duplicate rather than removing the original, which is sound for immutable
 reservations and is the only arm that changes nothing else (rav1d-safe `RAV1D_LF_DOUBLE`).
+**The last row adds a third clause: price the MACHINERY the count reduction needs.** A correct
+count reduction whose new machinery costs more than the registrations it removes is a regression,
+and you only find that out by building an isolation arm that KEEPS the machinery and REMOVES the
+reduction.
 
 ## 7. Repo-specific
 
