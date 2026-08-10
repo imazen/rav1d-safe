@@ -312,6 +312,42 @@ after restore reported FAILED on a byte-identical tree. `touch` the file after
 any restore that does not bump mtime, and re-run before believing a green (or a
 red).
 
+## 7b. Miri, and the compile matrix
+
+`crates/rav1d-disjoint-mut` is **byte-identical to `cebb97f`** on this branch
+(`git diff cebb97f -- crates/` is empty), so neither memory model can regress
+from a change that is not there. Both were re-run anyway, each target in
+isolation via `--no-fail-fast`, `cargo +nightly miri test -p
+rav1d-disjoint-mut`:
+
+| model | result |
+|---|---|
+| Stacked Borrows (`MIRIFLAGS=""`) | **61 passed, 0 failed**, no UB (9 targets; `soundness` 992.7 s) |
+| Tree Borrows (`-Zmiri-tree-borrows`) | **61 passed, 0 failed**, no UB (9 targets; `soundness` 993.1 s) |
+
+**The `asm` arms did not compile, and nothing on this box could have told me.**
+`--features asm` cannot be built on macOS at all: `main` itself fails c-ffi's
+`EAGAIN` const-assert there (macOS 35 vs Linux 11), and the aarch64 asm leg
+wants a cross-assembler that is not installed. Cross-checking against
+`--target x86_64-unknown-linux-gnu` found three real breakages — every
+`*_c_erased` FFI shim handing a recovered `PicOffset` to a fallback that now
+takes `&mut ReconDst`, `pal_pred::Fn::call`'s asm arm still calling
+`as_mut_ptr` on the enum, and two `Strided` imports the asm arms need. Fixed
+in `9492cfc`. Matrix now green:
+
+| configuration | |
+|---|---|
+| default, aarch64-apple-darwin | OK (and every runtime gate above) |
+| default, x86_64-apple-darwin | OK (compile only) |
+| default, wasm32-unknown-unknown | OK (compile only) |
+| default, aarch64-unknown-linux-gnu | OK (compile only) |
+| `--features c-ffi`, aarch64-unknown-linux-gnu | OK (compile only) |
+| `--features asm`, x86_64-unknown-linux-gnu | OK (compile only) |
+
+The full workspace suite (`cargo test --release --workspace`) is green: 30
+targets, 0 failures, including `decode_md5_verify` (14) and
+`decode_permutations` (19).
+
 ## 8. Mechanical scope of the conversion
 
 Function signatures moved from `WithOffset<&Rav1dPictureDataComponent>` to
