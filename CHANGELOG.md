@@ -117,6 +117,39 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   Record: `benchmarks/verify_compose4_2026-08-08.meta`.
 
 ### Added
+- **The borrow tracker's block-shift rule swept across PICTURE SIZE, and a
+  derived alternative to it** (#455, `docs/SHARD_SIZE_SWEEP.md`,
+  `benchmarks/shard_size_sweep_2026-08-10.*`). The adaptive shift targets a
+  fixed BLOCK COUNT, so a block spans `~aligned_h / 256` picture ROWS while the
+  hot strided accesses are a fixed number of rows — meaning the rule is
+  miscalibrated by picture geometry, not by its constant. Measured over 17
+  multi-tile cells (a fixed-width height ladder, a fixed-height width ladder,
+  the 16:9 diagonal and two discriminating cells), all bit-identical to dav1d
+  1.5.4 at t=1 and t=8 before timing: coarsening by two shifts is worth
+  0.761x-0.930x wall with disjoint bands on 9 of the 10 cells below 2.13 rows
+  per block, and is a null on all 7 cells at or above 3.76. That crossover is
+  why the prior round measured 14.6% at 1024x576 and nothing at 4K. `len` alone
+  provably cannot express the rule (the wanted coarsening is not monotone in
+  it), so `rav1d-disjoint-mut` gained `DisjointMut::declare_row_stride` — called
+  unconditionally by the picture allocator, a no-op for the shipped rule — and a
+  default-off `__bps_rows` arm that picks the shift per instance to give a block
+  at least 4 picture rows. Over the 17 cells it is the only arm with no
+  regression anywhere (worst 0.998 vs 1.004/1.013/1.031 for the fixed rungs) and
+  has the best CPU geomean; on wall geomean it ties `bps-half`. Not enabled: one
+  cell (512x576) is an unexplained 7% miss, and there is no 10-bit, 4:4:4 or
+  x86_64 leg. Corpus 766/766 at t=1 and t=8 on both the default build and the
+  arm. (dad8f15, eb4169c)
+- `examples/decode_md5 --threads N` (was hardcoded to 1) and an `__ablate`
+  per-stage execution census in `examples/probe_tracker`, so an ad-hoc vector
+  can be identity-checked at t=8 and "did this stage run at all?" is a counter
+  rather than a header flag. The census corrects a committed claim: "CDEF
+  executes zero blocks at 512x288" is a property of the DOWNSCALED size-ladder
+  vector, not of the size — a 1:1 crop at that size runs 63,488 units/frame.
+  (dad8f15)
+- `scripts/perf/av1_tile_info.py`, which parses tile_cols/tile_rows out of an
+  AVIF's AV1 bitstream. libaom clamps a `--tilecolslog2` request against the
+  frame's superblock count and the encoder log records only the request, so an
+  unnoticed clamp turns a multi-tile cell into a silently void one. (dad8f15)
 - **10/12-bit inverse transforms now have an aarch64 NEON tier**
   (`src/safe_simd/itx_arm_hbd.rs`). `itxfm_add_dispatch` had been 8bpc-only on
   purpose: the `itx_arm_neon_*` kernels hold transform state in `int16x8_t`,
