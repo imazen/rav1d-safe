@@ -1,7 +1,6 @@
 #![forbid(unsafe_code)]
 
 use crate::include::common::bitdepth::BitDepth;
-use crate::src::strided::Strided as _;
 use std::fmt::Display;
 use std::io;
 use std::io::stdout;

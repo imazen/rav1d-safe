@@ -196,50 +196,6 @@ impl ReconBand {
             stride: stride as isize,
         }
     }
-
-    /// Two planes at once, for the CfL read of luma beside a chroma write.
-    ///
-    /// Rust's array-of-`Vec` field split is what makes this expressible with no
-    /// interior mutability: `[a, b, c]` destructured mutably yields three
-    /// disjoint `&mut`.
-    #[inline]
-    pub(crate) fn at_pair<BD: BitDepth>(
-        &mut self,
-        src_pl: usize,
-        src: (usize, usize),
-        dst_pl: usize,
-        dst: (usize, usize),
-    ) -> (BandRef<'_>, Band<'_>) {
-        assert!(src_pl != dst_pl);
-        let pixel_size = core::mem::size_of::<BD::Pixel>();
-        let [p0, p1, p2] = &mut self.planes;
-        let mut slots = [Some(p0), Some(p1), Some(p2)];
-        let src_buf = slots[src_pl].take().unwrap();
-        let dst_buf = slots[dst_pl].take().unwrap();
-
-        let (srow0, scol0) = self.origin[src_pl];
-        let sstride = self.stride[src_pl];
-        assert!(src.0 - srow0 < self.rows[src_pl], "recon band row (src)");
-        let src_off = ((src.0 - srow0) * sstride) / pixel_size + (src.1 - scol0);
-
-        let (drow0, dcol0) = self.origin[dst_pl];
-        let dstride = self.stride[dst_pl];
-        assert!(dst.0 - drow0 < self.rows[dst_pl], "recon band row (dst)");
-        let dst_off = ((dst.0 - drow0) * dstride) / pixel_size + (dst.1 - dcol0);
-
-        (
-            BandRef {
-                bytes: zerocopy::IntoBytes::as_bytes(&src_buf[..]),
-                offset: src_off,
-                stride: sstride as isize,
-            },
-            Band {
-                bytes: zerocopy::IntoBytes::as_mut_bytes(&mut dst_buf[..]),
-                offset: dst_off,
-                stride: dstride as isize,
-            },
-        )
-    }
 }
 
 /// A strided pixel region whose uniqueness is a static fact.
@@ -391,17 +347,6 @@ fn px_mut<BD: BitDepth>(bytes: &mut [u8], off: usize, len: usize) -> &mut [BD::P
     zerocopy::FromBytes::mut_from_bytes(s).expect("band row pixel reinterpretation")
 }
 
-impl<'a> Band<'a> {
-    #[inline]
-    fn reborrow(&mut self) -> Band<'_> {
-        Band {
-            bytes: self.bytes,
-            offset: self.offset,
-            stride: self.stride,
-        }
-    }
-}
-
 impl<'a> ReconDst<'a> {
     /// Byte stride between rows.
     #[inline]
@@ -540,6 +485,32 @@ impl<'a> ReconDst<'a> {
         }
     }
 
+    /// A `w × h` block as `(bytes, byte_offset, byte_stride)`, closure-shaped.
+    ///
+    /// The picture arm is [`with_pixel_guard_mut`]; the owned arm is the band
+    /// itself, so there is no compact copy, no write-back and no registration.
+    ///
+    /// [`with_pixel_guard_mut`]: crate::include::dav1d::picture::with_pixel_guard_mut
+    #[inline]
+    pub(crate) fn with_block_mut<BD: BitDepth, R>(
+        &mut self,
+        w: usize,
+        h: usize,
+        f: impl FnOnce(&mut [u8], usize, isize) -> R,
+    ) -> R {
+        match self {
+            Self::Pic(p) => {
+                crate::include::dav1d::picture::with_pixel_guard_mut::<BD, R>(p, w, h, f)
+            }
+            Self::Own(b) => {
+                let _ = (w, h);
+                let off = b.offset * core::mem::size_of::<BD::Pixel>();
+                let stride = b.stride;
+                f(b.bytes, off, stride)
+            }
+        }
+    }
+
     /// A `w × h` block as `(bytes, base, byte_stride)`.
     #[inline]
     pub(crate) fn block_mut<BD: BitDepth>(&mut self, w: usize, h: usize) -> DstBlock<'_, BD> {
@@ -547,21 +518,18 @@ impl<'a> ReconDst<'a> {
             Self::Pic(p) => DstBlock::Pic(p.block_mut::<BD>(w, h)),
             Self::Own(b) => {
                 let _ = (w, h);
+                // Slice FROM the origin with `base = 0`, matching what the
+                // picture arm hands out (a compact buffer under tile threading;
+                // `narrow_guard_mut`'s base is also 0 at a positive stride). A
+                // kernel that ignores `base` — the wasm ones do — is then
+                // correct on both backings.
+                let off = b.offset * core::mem::size_of::<BD::Pixel>();
                 DstBlock::Own {
-                    base: b.offset * core::mem::size_of::<BD::Pixel>(),
-                    bytes: b.bytes,
+                    bytes: &mut b.bytes[off..],
+                    base: 0,
                     stride: b.stride,
                 }
             }
-        }
-    }
-
-    /// Reborrow, so a `&mut ReconDst` can be stored in a local.
-    #[inline]
-    pub(crate) fn reborrow(&mut self) -> ReconDst<'_> {
-        match self {
-            Self::Pic(p) => ReconDst::Pic(*p),
-            Self::Own(b) => ReconDst::Own(b.reborrow()),
         }
     }
 }
@@ -684,88 +652,61 @@ mod tests {
         b
     }
 
+    fn dst_at(b: &mut ReconBand, row: usize, col: usize) -> ReconDst<'_> {
+        ReconDst::Own(b.at::<BitDepth8>(0, row, col))
+    }
+
     #[test]
     fn translation_is_plane_coordinates_minus_origin() {
         let mut b = band_of(8, 96);
         // Plane (16, 32) is band (0, 0).
-        b.at::<BitDepth8>(0, 16, 32).set::<BitDepth8>(7);
+        dst_at(&mut b, 16, 32).set::<BitDepth8>(7);
         // Plane (17, 34) is band (1, 2).
-        b.at::<BitDepth8>(0, 17, 34).set::<BitDepth8>(9);
+        dst_at(&mut b, 17, 34).set::<BitDepth8>(9);
         let stride = b.stride[0];
-        let bytes = b.row_bytes(0, 0, stride);
-        assert_eq!(bytes[0], 7);
-        let bytes = b.row_bytes(0, 1, stride);
-        assert_eq!(bytes[2], 9);
+        assert_eq!(b.row_bytes(0, 0, stride)[0], 7);
+        assert_eq!(b.row_bytes(0, 1, stride)[2], 9);
     }
 
     #[test]
     #[should_panic(expected = "recon band row out of range")]
     fn a_row_above_the_band_panics_it_does_not_alias() {
         let mut b = band_of(8, 96);
-        b.at::<BitDepth8>(0, 15, 32).set::<BitDepth8>(1);
+        dst_at(&mut b, 15, 32).set::<BitDepth8>(1);
     }
 
     #[test]
     #[should_panic]
     fn a_row_below_the_band_panics() {
         let mut b = band_of(8, 96);
-        b.at::<BitDepth8>(0, 24, 32).set::<BitDepth8>(1);
+        dst_at(&mut b, 24, 32).set::<BitDepth8>(1);
     }
 
     #[test]
     fn for_rows_mut_walks_the_bands_own_stride_not_the_pictures() {
         let mut b = band_of(4, 96);
-        let stride = b.stride[0];
-        assert_eq!(stride, 128); // 96 rounded up to a 64-byte multiple.
-        b.at::<BitDepth8>(0, 16, 32)
-            .for_rows_mut::<BitDepth8, _>(96, 4, |y, row| {
-                row.fill(y as u8 + 1);
-            });
+        assert_eq!(b.stride[0], 128); // 96 rounded up to a 64-byte multiple.
+        dst_at(&mut b, 16, 32).for_rows_mut::<BitDepth8, _>(96, 4, |y, row| {
+            row.fill(y as u8 + 1);
+        });
         for y in 0..4 {
             let r = b.row_bytes(0, y, 96);
             assert!(r.iter().all(|&v| v == y as u8 + 1), "row {y}");
         }
     }
 
-    #[test]
-    fn at_pair_hands_out_two_disjoint_planes() {
-        let mut b = ReconBand::default();
-        b.arm(3, &[(0, 0, 4, 64, 1), (0, 0, 4, 64, 1), (0, 0, 4, 64, 1)]);
-        b.at::<BitDepth8>(0, 1, 3).set::<BitDepth8>(42);
-        let (src, mut dst) = b.at_pair::<BitDepth8>(0, (1, 3), 1, (2, 5));
-        let v = src.get::<BitDepth8>();
-        dst.set::<BitDepth8>(v);
-        assert_eq!(b.row_bytes(1, 2, 64)[5], 42);
-    }
-}
-
-impl<'a> BandRef<'a> {
-    #[inline]
-    fn get<BD: BitDepth>(&self) -> BD::Pixel {
-        px::<BD>(self.bytes, self.offset, 1)[0]
-    }
-}
-
-impl<'a> Band<'a> {
-    #[inline]
-    fn set<BD: BitDepth>(&mut self, v: BD::Pixel) {
-        px_mut::<BD>(self.bytes, self.offset, 1)[0] = v;
-    }
-    #[inline]
-    fn for_rows_mut<BD: BitDepth, F: FnMut(usize, &mut [BD::Pixel])>(
-        &mut self,
-        w: usize,
-        h: usize,
-        mut f: F,
-    ) {
-        let pxstride = (self.stride / core::mem::size_of::<BD::Pixel>() as isize) as usize;
-        for row in 0..h {
-            f(
-                row,
-                px_mut::<BD>(self.bytes, self.offset + row * pxstride, w),
-            );
-        }
-    }
+    // The exclusion property itself is a COMPILE-time fact and cannot be
+    // asserted at run time, so there is deliberately no test for it here — a
+    // test that "passes" because a string matches would prove nothing. It is
+    // proved the same way `forbid(unsafe_code)` is: by planting
+    //
+    //     let mut a = dst_at(&mut b, 16, 32);
+    //     let mut c = dst_at(&mut b, 17, 32);
+    //     a.set::<BitDepth8>(1);
+    //     c.set::<BitDepth8>(2);
+    //
+    // and observing `error[E0499]: cannot borrow 'b' as mutable more than once
+    // at a time`. See docs/MUT_RECON_KERNELS.md §6 for the recorded run.
 }
 
 /// The plane set one reconstruction call writes into: the shared picture, or
@@ -845,37 +786,6 @@ impl<'a> ReconPlanes<'a> {
                     offset: (brow * stride) / core::mem::size_of::<BD::Pixel>() + (col - col0),
                     stride: stride as isize,
                 })
-            }
-        }
-    }
-
-    /// A read of one plane beside a write of another — the CfL shape.
-    #[inline]
-    pub(crate) fn pair<BD: BitDepth>(
-        &mut self,
-        src_pl: usize,
-        src_rc: (usize, usize),
-        dst_pl: usize,
-        dst_rc: (usize, usize),
-    ) -> (ReconSrc<'_>, ReconDst<'_>) {
-        match self {
-            Self::Pic(p) => {
-                let sd = &p[src_pl];
-                let dd = &p[dst_pl];
-                (
-                    ReconSrc::Pic(
-                        sd.with_offset::<BD>()
-                            + (src_rc.0 as isize * sd.pixel_stride::<BD>() + src_rc.1 as isize),
-                    ),
-                    ReconDst::Pic(
-                        dd.with_offset::<BD>()
-                            + (dst_rc.0 as isize * dd.pixel_stride::<BD>() + dst_rc.1 as isize),
-                    ),
-                )
-            }
-            Self::Own(b) => {
-                let (s, d) = b.at_pair::<BD>(src_pl, src_rc, dst_pl, dst_rc);
-                (ReconSrc::Own(s), ReconDst::Own(d))
             }
         }
     }

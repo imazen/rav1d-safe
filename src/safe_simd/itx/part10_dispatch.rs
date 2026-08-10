@@ -662,7 +662,7 @@ fn itxfm_dispatch_16bpc(
 pub fn itxfm_add_dispatch<BD: BitDepth>(
     tx_size: usize,
     tx_type: usize,
-    dst: PicOffset,
+    dst: &mut crate::src::owned_recon::ReconDst<'_>,
     coeff: &mut [BD::Coef],
     eob: i32,
     bd: BD,
@@ -692,8 +692,7 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
         let coeff_i16: &mut [i16] = zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
             .expect("coeff alignment/size mismatch for i16 reinterpretation");
 
-        crate::include::dav1d::picture::with_pixel_guard_mut::<BD, _>(
-            &dst,
+        dst.with_block_mut::<BD, _>(
             w,
             h,
             |bytes, offset, stride| match BD::BPC {
@@ -738,7 +737,7 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
 pub fn itxfm_add_dispatch<BD: BitDepth>(
     tx_size: usize,
     tx_type: usize,
-    dst: PicOffset,
+    dst: &mut crate::src::owned_recon::ReconDst<'_>,
     coeff: &mut [BD::Coef],
     eob: i32,
     bd: BD,
@@ -757,6 +756,9 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
     let (w, h) = txfm.to_wh();
 
     // Create tracked guard — ensures borrow tracker knows about this access
+    let dst = dst
+        .as_pic()
+        .expect("owned recon band is never armed under `c-ffi`/`asm`");
     let (mut dst_guard, _dst_base) = dst.strided_slice_mut::<BD>(w, h);
     let dst_ptr: *mut DynPixel = dst_guard.as_mut_bytes().as_mut_ptr() as *mut DynPixel;
     let dst_stride = dst.stride();

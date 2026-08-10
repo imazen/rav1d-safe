@@ -51,7 +51,6 @@ use crate::src::levels::Z1_PRED;
 use crate::src::levels::Z2_PRED;
 #[cfg(feature = "asm")]
 use crate::src::levels::Z3_PRED;
-use crate::src::strided::Strided as _;
 use crate::src::tables::FLT_INCR;
 use crate::src::tables::dav1d_dr_intra_derivative;
 use crate::src::tables::dav1d_filter_intra_taps;

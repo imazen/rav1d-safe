@@ -1,0 +1,5 @@
+arm	vector	bpc	threads	regs_per_frame	distinct_sites	lost
+band_off	v4k_8tile	8	1	7924706	54	0
+band_on	v4k_8tile	8	1	6005602	49	0
+band_off	v4k_8tile	8	8	22700725	54	0
+band_on	v4k_8tile	8	8	11401399	48	0

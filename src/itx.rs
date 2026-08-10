@@ -47,7 +47,6 @@ use crate::src::levels::V_DCT;
 use crate::src::levels::V_FLIPADST;
 use crate::src::levels::WHT_WHT;
 use crate::src::owned_recon::ReconDst;
-use crate::src::strided::Strided as _;
 use crate::src::wrap_fn_ptr::wrap_fn_ptr;
 use std::cmp;
 use std::num::NonZeroUsize;
