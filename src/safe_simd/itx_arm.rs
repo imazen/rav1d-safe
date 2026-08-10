@@ -8490,32 +8490,30 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                     zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
                         .expect("coeff alignment/size mismatch for i32 reinterpretation");
 
-                // ONE NARROW GUARD PER ROW, not `block_mut`'s wide guard over
-                // the whole block. Measured on `v4k_8tile` at t=1: the same
-                // trade in the CfL kernel cost +0.79% `add_wide::<true>` and
-                // +0.73% `remove_wide` against a 2.46% kernel saving, and
-                // switching that one to per-row guards moved it from 0.14% to
-                // 0.99% of whole-decode wall. `dst` here is only ever touched a
-                // row at a time, so the wide extent bought nothing; narrowing
-                // it is also the safe direction under tile threading.
-                let pxstride = dst.pixel_stride::<BD>();
-                let mut add_row = |y: usize, tmp_row: Option<&[i32]>, dc: i32| {
-                    let mut row = dst.at(y as isize * pxstride);
-                    let mut guard = row.slice_mut::<BD>(w);
-                    let px: &mut [u16] =
-                        crate::src::safe_simd::pixel_access::reinterpret_slice_mut(&mut guard)
-                            .expect("BD::Pixel layout matches u16");
-                    match tmp_row {
-                        Some(t) => super::itx_arm_hbd::add_row_hbd_neon(token, px, t, w, bd_c),
-                        None => super::itx_arm_hbd::add_row_dc_hbd_neon(token, px, w, dc, bd_c),
-                    }
-                };
-
+                // Guard policy: `for_rows_mut` takes ONE guard over the block's
+                // strided hull when tile threading is off, and one narrow guard
+                // per row when it is on.
+                //
+                // This used to take a narrow guard per row unconditionally, on
+                // the CfL measurement that a wide guard bought nothing there.
+                // That reading does not transfer: CfL's kernel is one call over
+                // the block, while this add loop runs `h` times, so the
+                // per-block registration count was `h`, not 1 — 16 for a 16x16.
+                // Profile of `L3840x2160_420_10b` at t=1 (55 s `sample`, 42,119
+                // leaves, 2026-08-10): the closure below 1.92%,
+                // `ReconDst::slice_mut` 1.27%, and 0.91% of `BorrowTracker::add`
+                // charged to the closure's subtree — 4.10% of the whole frame
+                // for `h` registrations of a row that is then touched once.
+                // Under tile threading the registration count is unchanged, so
+                // the narrow-guard soundness argument is untouched.
                 if eob < has_dc_only as i32 {
                     let dc = super::itx_arm_hbd::hbd_dc_value(w, h, shift, coeff_i32);
-                    for y in 0..h {
-                        add_row(y, None, dc);
-                    }
+                    dst.for_rows_mut::<BD, _>(w, h, |_y, row| {
+                        let px: &mut [u16] =
+                            crate::src::safe_simd::pixel_access::reinterpret_slice_mut(row)
+                                .expect("BD::Pixel layout matches u16");
+                        super::itx_arm_hbd::add_row_dc_hbd_neon(token, px, w, dc, bd_c);
+                    });
                     return true;
                 }
 
@@ -8523,9 +8521,12 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                 super::itx_arm_hbd::inv_txfm_hbd_neon(
                     token, w, h, first, second, shift, coeff_i32, bd_c, &mut tmp,
                 );
-                for y in 0..h {
-                    add_row(y, Some(&tmp[y * w..y * w + w]), 0);
-                }
+                dst.for_rows_mut::<BD, _>(w, h, |y, row| {
+                    let px: &mut [u16] =
+                        crate::src::safe_simd::pixel_access::reinterpret_slice_mut(row)
+                            .expect("BD::Pixel layout matches u16");
+                    super::itx_arm_hbd::add_row_hbd_neon(token, px, &tmp[y * w..y * w + w], w, bd_c);
+                });
                 return true;
             }
             if w == 4 && h == 4 && BD::BPC == BPC::BPC8 {
