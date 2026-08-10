@@ -259,6 +259,36 @@ Both verified to be in files this branch does not touch, and CI's own legs pass:
 warning/error lines — **the same count as the base source files, measured both
 ways on this box** — and `cargo test --lib` passes in DEBUG and release.
 
+## 7c. Miri, both memory models
+
+**CI is the authority and it PASSES**: `Miri (Stacked Borrows)` green in 47 min
+on this branch (both the pre- and post-rebase runs), `Miri (Tree Borrows)` on
+the same job matrix. CI runs `cargo +nightly miri test -p rav1d-disjoint-mut
+--no-fail-fast`, so every target reports independently. Nothing in this change
+touches that crate's code — the only edit there is a doc comment — so a
+different result would have been surprising.
+
+Local corroboration, EACH TARGET IN ISOLATION, with a 900 s per-target watchdog
+(macOS 26.5.2, aarch64, nightly `da86f4d072`):
+
+  target               Stacked Borrows        Tree Borrows
+  lib                  26 passed              26 passed
+  soundness            25 passed              25 passed
+  wide_exclusion        1 passed               1 passed
+  narrow_release        1 passed               1 passed
+  guard_move_release    2 passed               2 passed
+  aligned_miri          0 tests (feature)      0 tests (feature)
+  pic_buf_overflow      0 tests (feature)      0 tests (feature)
+  shard_liveness       **TIMEOUT 900 s**      **TIMEOUT 900 s**
+
+`shard_liveness` is **NOT reported as a pass under either model here.** It hangs
+in `concurrent_disjoint_is_never_refused`, which spins on `TinyLock` — under
+Miri's scheduler a spin loop burns unbounded steps. The same target completes in
+CI's Linux legs, which is why CI is the authority for it. `aligned_miri` and
+`pic_buf_overflow` contain no tests without their `aligned` / `pic-buf`
+features, matching CI's own invocation; running them WITH those features is not
+done here.
+
 ## 8. Coverage this does NOT have
 
 * **AVX-512 is unexecuted.** The guest has no AVX-512, so the `x16` V-kernel
