@@ -47,6 +47,8 @@ use crate::src::levels::V_DCT;
 use crate::src::levels::V_FLIPADST;
 use crate::src::levels::WHT_WHT;
 use crate::src::owned_recon::ReconDst;
+#[cfg(feature = "asm")]
+use crate::src::strided::Strided as _;
 use crate::src::wrap_fn_ptr::wrap_fn_ptr;
 use std::cmp;
 use std::num::NonZeroUsize;
@@ -288,7 +290,7 @@ unsafe extern "C" fn inv_txfm_add_c_erased<
     dst: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `itxfm::Fn::call`.
-    let dst = *unsafe { FFISafe::get(dst) };
+    let dst = &mut ReconDst::Pic(*unsafe { FFISafe::get(dst) });
     // SAFETY: `fn itxfm::Fn::call` passes `coeff.len()` as `coeff_len`.
     let coeff = unsafe { slice::from_raw_parts_mut(coeff.cast(), coeff_len.into()) };
     let bd = BD::from_c(bitdepth_max);

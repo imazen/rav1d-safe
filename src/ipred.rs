@@ -51,6 +51,8 @@ use crate::src::levels::Z1_PRED;
 use crate::src::levels::Z2_PRED;
 #[cfg(feature = "asm")]
 use crate::src::levels::Z3_PRED;
+#[cfg(feature = "asm")]
+use crate::src::strided::Strided as _;
 use crate::src::tables::FLT_INCR;
 use crate::src::tables::dav1d_dr_intra_derivative;
 use crate::src::tables::dav1d_filter_intra_taps;
@@ -511,6 +513,7 @@ impl pal_pred::Fn {
             if #[cfg(feature = "asm")] {
                 // SAFETY: `DisjointMut` is unchecked for asm `fn`s,
                 // but passed through as an extra arg for the fallback `fn`.
+                let dst = dst.as_pic().expect(OWNED_BAND_DECLINES_UNDER_C_FFI);
                 let dst_ptr = dst.as_mut_ptr::<BD>().cast();
                 let stride = dst.stride();
                 let pal = pal.as_ptr().cast();
@@ -720,6 +723,7 @@ unsafe extern "C" fn ipred_dc_c_erased<BD: BitDepth, const DC_GEN: u8>(
 
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
+    let dst = &mut ReconDst::Pic(dst);
     // SAFETY: `fn angular_ipred::Fn::call` makes `topleft` `topleft_off` from the beginning of the array.
     let topleft = unsafe { reconstruct_topleft::<BD>(topleft, topleft_off) };
     let dc = dc_gen.call::<BD>(topleft, topleft_off, width, height) as c_int;
@@ -748,6 +752,7 @@ unsafe extern "C" fn ipred_cfl_c_erased<BD: BitDepth, const DC_GEN: u8>(
 
     // SAFETY: Was passed as `FFISafe::new(_)` in `cfl_pred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
+    let dst = &mut ReconDst::Pic(dst);
     // SAFETY: `fn cfl_pred::Fn::call` makes `topleft` `topleft_off` from the beginning of the array.
     let topleft = unsafe { reconstruct_topleft::<BD>(topleft, topleft_off) };
     let dc = dc_gen.call::<BD>(topleft, topleft_off, width, height) as c_int;
@@ -775,6 +780,7 @@ unsafe extern "C" fn ipred_dc_128_c_erased<BD: BitDepth>(
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
+    let dst = &mut ReconDst::Pic(dst);
     let bd = BD::from_c(bitdepth_max);
     let dc = bd.bitdepth_max().as_::<c_int>() + 1 >> 1;
     splat_dc(dst, width, height, dc, bd)
@@ -799,6 +805,7 @@ unsafe extern "C" fn ipred_cfl_128_c_erased<BD: BitDepth>(
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `cfl_pred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
+    let dst = &mut ReconDst::Pic(dst);
     let bd = BD::from_c(bitdepth_max);
     let dc = bd.bitdepth_max().as_::<c_int>() + 1 >> 1;
     cfl_pred(dst, width, height, dc, ac, alpha, bd)
@@ -839,6 +846,7 @@ unsafe extern "C" fn ipred_v_c_erased<BD: BitDepth>(
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
+    let dst = &mut ReconDst::Pic(dst);
     // SAFETY: `fn angular_ipred::Fn::call` makes `topleft` `topleft_off` from the beginning of the array.
     let topleft = unsafe { reconstruct_topleft::<BD>(topleft, topleft_off) };
     ipred_v_rust::<BD>(dst, topleft, topleft_off, width, height)
@@ -879,6 +887,7 @@ unsafe extern "C" fn ipred_h_c_erased<BD: BitDepth>(
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
+    let dst = &mut ReconDst::Pic(dst);
     // SAFETY: `fn angular_ipred::Fn::call` makes `topleft` `topleft_off` from the beginning of the array.
     let topleft = unsafe { reconstruct_topleft::<BD>(topleft, topleft_off) };
     ipred_h_rust::<BD>(dst, topleft, topleft_off, width, height)
@@ -936,6 +945,7 @@ unsafe extern "C" fn ipred_paeth_c_erased<BD: BitDepth>(
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
+    let dst = &mut ReconDst::Pic(dst);
     // SAFETY: `fn angular_ipred::Fn::call` makes `topleft` `topleft_off` from the beginning of the array.
     let topleft = unsafe { reconstruct_topleft::<BD>(tl_ptr, topleft_off) };
     ipred_paeth_rust::<BD>(dst, topleft, topleft_off, width, height)
@@ -986,6 +996,7 @@ unsafe extern "C" fn ipred_smooth_c_erased<BD: BitDepth>(
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
+    let dst = &mut ReconDst::Pic(dst);
     // SAFETY: `fn angular_ipred::Fn::call` makes `topleft` `topleft_off` from the beginning of the array.
     let topleft = unsafe { reconstruct_topleft::<BD>(topleft, topleft_off) };
     ipred_smooth_rust::<BD>(dst, topleft, topleft_off, width, height)
@@ -1032,6 +1043,7 @@ unsafe extern "C" fn ipred_smooth_v_c_erased<BD: BitDepth>(
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
+    let dst = &mut ReconDst::Pic(dst);
     // SAFETY: `fn angular_ipred::Fn::call` makes `topleft` `topleft_off` from the beginning of the array.
     let topleft = unsafe { reconstruct_topleft::<BD>(topleft, topleft_off) };
     ipred_smooth_v_rust::<BD>(dst, topleft, topleft_off, width, height)
@@ -1078,6 +1090,7 @@ unsafe extern "C" fn ipred_smooth_h_c_erased<BD: BitDepth>(
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
+    let dst = &mut ReconDst::Pic(dst);
     // SAFETY: `fn angular_ipred::Fn::call` makes `topleft` `topleft_off` from the beginning of the array.
     let topleft = unsafe { reconstruct_topleft::<BD>(topleft, topleft_off) };
     ipred_smooth_h_rust::<BD>(dst, topleft, topleft_off, width, height)
@@ -1513,6 +1526,7 @@ unsafe extern "C" fn ipred_z_c_erased<BD: BitDepth, const Z: usize>(
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
+    let dst = &mut ReconDst::Pic(dst);
     // SAFETY: `fn angular_ipred::Fn::call` makes `topleft` `topleft_off` from the beginning of the array.
     let topleft_in = unsafe { reconstruct_topleft::<BD>(topleft_in, topleft_off) };
     let bd = BD::from_c(bitdepth_max);
@@ -1613,6 +1627,7 @@ unsafe extern "C" fn ipred_filter_c_erased<BD: BitDepth>(
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `angular_ipred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
+    let dst = &mut ReconDst::Pic(dst);
     // SAFETY: `fn angular_ipred::Fn::call` makes `topleft` `topleft_off` from the beginning of the array.
     let topleft = unsafe { reconstruct_topleft::<BD>(topleft_in, topleft_off) };
     let bd = BD::from_c(bitdepth_max);
@@ -1749,7 +1764,8 @@ unsafe extern "C" fn cfl_ac_c_erased<BD: BitDepth, const IS_SS_HOR: bool, const 
     y: *const FFISafe<PicOffset>,
 ) {
     // SAFETY: Was passed as `FFISafe::new(_)` in `cfl_ac::Fn::call`.
-    let y = *unsafe { FFISafe::get(y) };
+    let y = ReconSrc::Pic(*unsafe { FFISafe::get(y) });
+    let y = &y;
     let cw = cw as usize;
     let ch = ch as usize;
     cfl_ac_rust::<BD>(ac, y, w_pad, h_pad, cw, ch, IS_SS_HOR, IS_SS_VER);
@@ -1799,6 +1815,7 @@ unsafe extern "C" fn pal_pred_c_erased<BD: BitDepth>(
 ) {
     // SAFETY: Was passed as `FFISafe::new(dst)` in `pal_pred::Fn::call`.
     let dst = *unsafe { FFISafe::get(dst) };
+    let dst = &mut ReconDst::Pic(dst);
     // SAFETY: Undoing dyn cast in `pal_pred::Fn::call`.
     let pal = unsafe { &*pal.cast() };
     // SAFETY: Length sliced in `pal_pred::Fn::call`.
