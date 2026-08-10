@@ -34,11 +34,12 @@ cd "$(dirname "$0")/../.."
 IFS=' ' read -r -a CELLS <<< "${CELLS:-L1024x576_420_8b__t8:8:20 L3840x2160_420_8b__t8:8:4 L1024x576_420_8b__t8:1:20}"
 
 # rung=cargo-feature ("-" = shipped default)
-RUNGS=("plain=-" "bpsq=bps-quarter" "bpshalf=bps-half" "bps1=bps-1" "bps4=bps-4" "bps8=bps-8")
+IFS=' ' read -r -a RUNGS <<< "${RUNGS:-plain=- bpsq=bps-quarter bpshalf=bps-half bps1=bps-1 bps4=bps-4 bps8=bps-8}"
+IFS=' ' read -r -a PROBES <<< "${PROBES:-probe-wide __probe_bounds}"
 
 for spec in "${RUNGS[@]}"; do
   rung=${spec%%=*}; feat=${spec#*=}
-  for probe in probe-wide __probe_bounds; do
+  for probe in "${PROBES[@]}"; do
     tag="${rung}__${probe//_/}"
     if [ "$feat" = "-" ]; then f="$probe"; else f="$probe,$feat"; fi
     echo "[$(date +%H:%M:%S)] build $tag ($f)" >&2

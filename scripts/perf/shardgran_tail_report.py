@@ -7,15 +7,24 @@ the post-tile filter tail -- so a shift that minimises mean wall can be wrong
 exactly where the cores are idle. This reducer prints BOTH objectives per rung so
 a disagreement between them is visible rather than averaged away.
 
-The tail objective is `tail_idle_frac`: the fraction of the whole frame's
-CORE-TIME that is idle *because* the tail is running under-subscribed,
+Two tail scalars, and the difference between them is itself a finding:
 
     tail_idle_frac = tail_frac_of_wall * (threads - tail_mean_active) / threads
+    tail_idle_ms   = tail_frac_of_wall * wall_ms * (threads - tail_mean_active)
 
-which is the quantity the "upper-bound recoverable" row of that document
-normalises. Lower is better. `tail_frac_of_wall` and `tail_mean_active` are
-printed beside it because they can move in opposite directions: a rung that
-shortens the tail while emptying it further is not obviously a win.
+The FRACTION is what "upper-bound recoverable" in that document normalises;
+`tail_idle_ms` is the same quantity in absolute core-milliseconds per frame, which
+removes the "win by making the frame longer" artefact the fraction has. Lower is
+better for both.
+
+**Neither is a sufficient objective on its own, and this reducer exists to show
+that rather than hide it.** A rung changes total WORK (registrations, lock
+acquisitions), so it can move cost OUT of the idle-tail bucket and INTO busy work
+and improve both tail scalars while losing on wall. Measured instance, 4K/t=8:
+`bps4` reads idlefrac 0.878x and idle_ms 0.933x -- better on both -- while wall is
+1.062x, i.e. 6.2% SLOWER. Tail concurrency is a valid objective at constant work
+and a misleading one otherwise. Where the columns disagree, wall decides; the tail
+columns say WHY.
 
 Usage: shardgran_tail_report.py <probedir>
 """
@@ -86,7 +95,7 @@ def main():
         print(f"=== {vec}  t={t} " + "=" * 30)
         print(
             f"{'arm':<12} {'wall':>8} {'[min..max]':>17} {'busy':>8} "
-            f"{'tailfrac':>9} {'tailmean':>9} {'tail_idle':>10} "
+            f"{'tailfrac':>9} {'tailmean':>9} {'idlefrac':>9} {'idle_ms':>8} "
             f"{'occ':>6} {'dbcols':>8} {'cdef':>7} {'n':>3}"
         )
         base = None
@@ -104,14 +113,16 @@ def main():
             db = med([r["stage_ms"].get("deblock_cols", float("nan")) for r in a])
             cd = med([r["stage_ms"].get("cdef", float("nan")) for r in a])
             w = med(walls)
+            idle_ms = tf * w * (t - tm)
             if arm in ("tt", "plain"):
-                base = (w, idle)
+                base = (w, idle, idle_ms)
             print(
                 f"{arm:<12} {w:8.3f} [{lo:7.3f}..{hi:7.3f}] {busy:8.3f} "
-                f"{tf:9.4f} {tm:9.3f} {idle:10.4f} {occ:6.2f} {db:8.3f} {cd:7.3f} {len(a):3d}"
+                f"{tf:9.4f} {tm:9.3f} {idle:9.4f} {idle_ms:8.3f} "
+                f"{occ:6.2f} {db:8.3f} {cd:7.3f} {len(a):3d}"
             )
         if base:
-            print(f"{'':<12} (ratios vs the default rung: wall / tail_idle)")
+            print(f"{'':<12} (ratios vs the default rung: wall / idlefrac / idle_ms)")
             for arm in arms:
                 a = [r for r in sub if r["arm"] == arm]
                 if not a or arm in ("tt", "plain"):
@@ -120,12 +131,16 @@ def main():
                 tf = med([r.get("tail_frac", float("nan")) for r in a])
                 tm = med([r.get("tail_mean", float("nan")) for r in a])
                 idle = tf * (t - tm) / t if t else float("nan")
+                idle_ms = tf * w * (t - tm)
                 rw = w / base[0] if base[0] else float("nan")
                 ri = idle / base[1] if base[1] else float("nan")
+                rm = idle_ms / base[2] if base[2] else float("nan")
                 flag = ""
                 if (rw < 1.0) != (ri < 1.0):
-                    flag = "  <-- OBJECTIVES DISAGREE"
-                print(f"{arm:<12} wall {rw:6.4f}x   tail_idle {ri:6.4f}x{flag}")
+                    flag = "  <-- wall and idleFRAC disagree"
+                if (rw < 1.0) != (rm < 1.0):
+                    flag += "  <-- wall and idle_MS disagree"
+                print(f"{arm:<12} wall {rw:6.4f}x   idlefrac {ri:6.4f}x   idle_ms {rm:6.4f}x{flag}")
         print()
     return 0
 

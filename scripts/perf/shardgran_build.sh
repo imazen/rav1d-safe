@@ -4,12 +4,18 @@
 # tracker-removed ceiling.
 #
 # The ladder knob is `BPS` (blocks per shard the adaptive block shift aims for,
-# `crates/rav1d-disjoint-mut/src/tracker_shard.rs`). A rung with a SMALLER ratio
-# is one shift COARSER, i.e. more picture rows share a block:
+# `crates/rav1d-disjoint-mut/src/tracker_shard.rs`). The rule targets
+# `N_SHARDS * BPS` blocks, so each HALVING of the ratio is one shift COARSER,
+# i.e. twice as many picture rows share a block:
 #
-#   bpsq   1/4  -> +2 shifts vs default    bps1  1/1 -> +1
-#   bpshalf 1/2 -> +1 shift                bps4  4/1 -> -1
-#   plain   2/1 -> the shipped default     bps8  8/1 -> -2
+#   bps8    8/1 -> shift -2      plain   2/1 -> the shipped default
+#   bps4    4/1 -> shift -1      bps1    1/1 -> shift +1
+#                                bpshalf 1/2 -> shift +2
+#                                bpsq    1/4 -> shift +3
+#
+# (Subject to `ilog2` rounding, so a given buffer length may land a step short.
+# The `shifts` column of the `__probe_bounds` rect table is the ground truth for
+# what a rung actually used, and is that rung's liveness proof.)
 #
 # Copied to a name cargo never writes, so a later build cannot swap the inode
 # under a running measurement (AGENT_BRIEF §2).

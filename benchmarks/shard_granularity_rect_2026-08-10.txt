@@ -1,0 +1,162 @@
+##### rect/bps1__probebounds__L1024x576_420_8b__t8__t8.txt
+RUN	L1024x576_420_8b__t8.avif	1024x576	8bpc	threads=8	iters=8	ms_total=847.45	ms_per_frame=105.931
+SITES	total_per_frame=682489	distinct=43	lost=0
+BOUNDS	total_per_frame=682489	distinct=43	lost_slot=0	lost_th=0	lost_site=0	lost_scan=431997	skip_dead=2860469	lost_inst=0	lost_pair=0	lost_tid=0
+BOVLSUM	n=0	mutable_overlaps=0	sampled=0
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	61440	54314	110211	0	0	0	0	0	8.00	8	2.864	2.864	2.864	3	0.00	0.00	0.00	0.00	0.00	100.00	12	src/cdef_apply.rs:104:32
+RECT	60928	53306	106759	0	0	0	0	0	8.00	8	2.864	2.864	2.864	3	0.00	0.00	0.00	0.00	0.00	100.00	12	src/safe_simd/cdef_arm.rs:622:9
+RECT	162544	90305	192588	0	0	0	0	0	8.94	16	3.670	3.670	3.670	8	27.53	27.53	10.60	0.00	0.00	99.28	10,12	src/loopfilter.rs:809:17
+RECT	60928	53558	108109	0	0	0	0	0	8.00	8	2.866	2.866	2.866	3	0.00	0.00	0.00	0.00	0.00	98.52	12	src/safe_simd/cdef_arm.rs:192:9
+RECT	60928	53666	109480	0	0	0	0	0	8.00	8	2.864	2.864	2.864	3	0.00	0.00	0.00	0.00	0.00	100.00	12	src/safe_simd/cdef_arm.rs:1217:9
+RECTMETA	rows_capped=0	gaps_sampled=0
+cell	bps1	__probe_bounds	L1024x576_420_8b__t8	8	8
+##### rect/bps1__probebounds__L3840x2160_420_8b__t8__t8.txt
+RUN	L3840x2160_420_8b__t8.avif	3840x2160	8bpc	threads=8	iters=2	ms_total=1556.69	ms_per_frame=778.344
+SITES	total_per_frame=5615688	distinct=44	lost=0
+BOUNDS	total_per_frame=5615688	distinct=44	lost_slot=0	lost_th=0	lost_site=0	lost_scan=426362	skip_dead=5921237	lost_inst=0	lost_pair=0	lost_tid=0
+BOVLSUM	n=0	mutable_overlaps=0	sampled=0
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	59356	41734	66269	0	0	0	0	0	8.00	8	1.820	1.820	1.820	2	0.00	0.00	0.00	0.00	0.00	100.00	15	src/cdef_apply.rs:104:32
+RECT	72576	44665	69153	0	0	0	0	0	7.16	8	1.793	1.793	1.793	2	0.00	0.00	0.00	0.00	0.00	100.00	13,15	src/safe_simd/cdef_arm.rs:622:9
+RECT	507170	214895	323531	0	0	0	0	0	9.02	16	2.339	2.339	2.339	5	5.12	5.12	0.00	0.00	0.00	99.72	13,15	src/loopfilter.rs:809:17
+RECT	72576	43525	67645	0	0	0	0	0	7.16	8	1.794	1.794	1.794	2	0.00	0.00	0.00	0.00	0.00	99.82	13,15	src/safe_simd/cdef_arm.rs:192:9
+RECT	57280	40256	64171	0	0	0	0	0	8.00	8	1.820	1.820	1.820	2	0.00	0.00	0.00	0.00	0.00	100.00	15	src/safe_simd/cdef_arm.rs:1217:9
+RECT	16896	4249	4807	0	0	0	0	0	4.00	4	1.694	1.694	1.694	2	0.00	0.00	0.00	0.00	0.00	100.00	13	src/cdef_apply.rs:121:33
+RECTMETA	rows_capped=0	gaps_sampled=0
+cell	bps1	__probe_bounds	L3840x2160_420_8b__t8	8	2
+##### rect/bps4__probebounds__L1024x576_420_8b__t8__t8.txt
+RUN	L1024x576_420_8b__t8.avif	1024x576	8bpc	threads=8	iters=8	ms_total=855.47	ms_per_frame=106.934
+SITES	total_per_frame=682489	distinct=43	lost=0
+BOUNDS	total_per_frame=682489	distinct=43	lost_slot=0	lost_th=0	lost_site=0	lost_scan=417173	skip_dead=2821741	lost_inst=0	lost_pair=0	lost_tid=0
+BOVLSUM	n=0	mutable_overlaps=0	sampled=0
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	60928	52644	104084	0	0	0	0	0	8.00	8	8.458	8.000	8.000	8	100.00	100.00	100.00	0.00	0.00	100.00	10	src/safe_simd/cdef_arm.rs:622:9
+RECT	162544	90035	191110	0	0	0	0	0	8.94	16	12.352	9.002	9.002	32	70.05	70.05	69.90	29.35	2.16	96.83	8,10	src/loopfilter.rs:809:17
+RECT	60928	52648	104517	0	0	0	0	0	8.00	8	8.463	8.059	8.059	9	100.00	100.00	100.00	5.93	0.00	94.07	10	src/safe_simd/cdef_arm.rs:192:9
+RECT	60928	53154	106138	0	0	0	0	0	8.00	8	8.458	8.000	8.000	8	100.00	100.00	100.00	0.00	0.00	100.00	10	src/safe_simd/cdef_arm.rs:1217:9
+RECT	61440	53544	106883	0	0	0	0	0	8.00	8	8.456	8.000	8.000	8	100.00	100.00	100.00	0.00	0.00	100.00	10	src/cdef_apply.rs:104:32
+RECTMETA	rows_capped=0	gaps_sampled=0
+cell	bps4	__probe_bounds	L1024x576_420_8b__t8	8	8
+##### rect/bps4__probebounds__L3840x2160_420_8b__t8__t8.txt
+RUN	L3840x2160_420_8b__t8.avif	3840x2160	8bpc	threads=8	iters=2	ms_total=1552.66	ms_per_frame=776.332
+SITES	total_per_frame=5615688	distinct=44	lost=0
+BOUNDS	total_per_frame=5615688	distinct=44	lost_slot=0	lost_th=0	lost_site=0	lost_scan=419633	skip_dead=5979573	lost_inst=0	lost_pair=0	lost_tid=0
+BOVLSUM	n=0	mutable_overlaps=0	sampled=0
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	507170	213547	323277	0	0	0	0	0	9.02	16	6.368	6.368	6.368	16	58.14	58.14	50.03	10.14	0.00	98.88	11,13	src/loopfilter.rs:809:17
+RECT	16896	4261	4812	0	0	0	0	0	4.00	4	3.770	3.770	3.770	4	0.00	0.00	0.00	0.00	0.00	100.00	11	src/cdef_apply.rs:121:33
+RECT	72576	43426	67167	0	0	0	0	0	7.16	8	4.169	4.169	4.169	5	21.65	21.65	0.00	0.00	0.00	99.22	11,13	src/safe_simd/cdef_arm.rs:192:9
+RECT	57280	40014	63392	0	0	0	0	0	8.00	8	4.273	4.273	4.273	5	27.32	27.32	0.00	0.00	0.00	100.00	13	src/safe_simd/cdef_arm.rs:1217:9
+RECT	59356	41543	65719	0	0	0	0	0	8.00	8	4.274	4.274	4.274	5	27.36	27.36	0.00	0.00	0.00	100.00	13	src/cdef_apply.rs:104:32
+RECT	72576	44518	68736	0	0	0	0	0	7.16	8	4.167	4.167	4.167	5	21.56	21.56	0.00	0.00	0.00	100.00	11,13	src/safe_simd/cdef_arm.rs:622:9
+RECTMETA	rows_capped=0	gaps_sampled=0
+cell	bps4	__probe_bounds	L3840x2160_420_8b__t8	8	2
+##### rect/bps8__probebounds__L1024x576_420_8b__t8__t8.txt
+RUN	L1024x576_420_8b__t8.avif	1024x576	8bpc	threads=8	iters=8	ms_total=852.33	ms_per_frame=106.542
+SITES	total_per_frame=682489	distinct=43	lost=0
+BOUNDS	total_per_frame=682489	distinct=43	lost_slot=0	lost_th=0	lost_site=0	lost_scan=432080	skip_dead=2867505	lost_inst=0	lost_pair=0	lost_tid=0
+BOVLSUM	n=0	mutable_overlaps=0	sampled=0
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	60928	53263	107847	0	0	0	0	0	8.00	8	15.916	8.000	8.000	8	100.00	100.00	100.00	0.00	0.00	100.00	9	src/safe_simd/cdef_arm.rs:1217:9
+RECT	61440	53909	109607	0	0	0	0	0	8.00	8	15.912	8.000	8.000	8	100.00	100.00	100.00	0.00	0.00	100.00	9	src/cdef_apply.rs:104:32
+RECT	60928	53199	106151	0	0	0	0	0	8.00	8	15.916	8.000	8.000	8	100.00	100.00	100.00	0.00	0.00	100.00	9	src/safe_simd/cdef_arm.rs:622:9
+RECT	162544	90396	192886	0	0	0	0	0	8.94	16	23.706	9.088	9.088	32	70.19	70.19	69.90	30.40	2.36	95.43	7,9	src/loopfilter.rs:809:17
+RECT	60928	53107	106414	0	0	0	0	0	8.00	8	15.926	8.119	8.119	9	100.00	100.00	100.00	11.87	0.00	88.13	9	src/safe_simd/cdef_arm.rs:192:9
+RECTMETA	rows_capped=0	gaps_sampled=0
+cell	bps8	__probe_bounds	L1024x576_420_8b__t8	8	8
+##### rect/bps8__probebounds__L3840x2160_420_8b__t8__t8.txt
+RUN	L3840x2160_420_8b__t8.avif	3840x2160	8bpc	threads=8	iters=2	ms_total=1558.23	ms_per_frame=779.113
+SITES	total_per_frame=5615688	distinct=44	lost=0
+BOUNDS	total_per_frame=5615688	distinct=44	lost_slot=0	lost_th=0	lost_site=0	lost_scan=404835	skip_dead=5963838	lost_inst=0	lost_pair=0	lost_tid=0
+BOVLSUM	n=0	mutable_overlaps=0	sampled=0
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	16896	4041	4476	0	0	0	0	0	4.00	4	6.542	4.000	4.000	4	0.00	0.00	0.00	0.00	0.00	100.00	10	src/cdef_apply.rs:121:33
+RECT	59356	41335	63843	0	0	0	0	0	8.00	8	7.547	7.547	7.547	8	100.00	100.00	100.00	0.00	0.00	100.00	12	src/cdef_apply.rs:104:32
+RECT	72576	44185	66377	0	0	0	0	0	7.16	8	7.334	6.799	6.799	8	78.92	78.92	78.92	0.00	0.00	100.00	10,12	src/safe_simd/cdef_arm.rs:622:9
+RECT	507170	210811	308509	0	0	0	0	0	9.02	16	11.751	8.743	8.743	18	73.43	73.43	73.43	30.09	0.47	98.24	10,12	src/loopfilter.rs:809:17
+RECT	72576	42644	64653	0	0	0	0	0	7.16	8	7.338	6.807	6.807	8	79.54	79.54	78.92	0.00	0.00	98.44	10,12	src/safe_simd/cdef_arm.rs:192:9
+RECT	57280	39999	62107	0	0	0	0	0	8.00	8	7.546	7.546	7.546	8	100.00	100.00	100.00	0.00	0.00	100.00	12	src/safe_simd/cdef_arm.rs:1217:9
+RECTMETA	rows_capped=0	gaps_sampled=0
+cell	bps8	__probe_bounds	L3840x2160_420_8b__t8	8	2
+##### rect/bpshalf__probebounds__L1024x576_420_8b__t8__t8.txt
+RUN	L1024x576_420_8b__t8.avif	1024x576	8bpc	threads=8	iters=8	ms_total=852.01	ms_per_frame=106.502
+SITES	total_per_frame=682489	distinct=43	lost=0
+BOUNDS	total_per_frame=682489	distinct=43	lost_slot=0	lost_th=0	lost_site=0	lost_scan=432333	skip_dead=2855738	lost_inst=0	lost_pair=0	lost_tid=0
+BOVLSUM	n=0	mutable_overlaps=0	sampled=0
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	61440	54133	109798	0	0	0	0	0	8.00	8	1.930	1.930	1.930	2	0.00	0.00	0.00	0.00	0.00	100.00	13	src/cdef_apply.rs:104:32
+RECT	60928	53392	107114	0	0	0	0	0	8.00	8	1.931	1.931	1.931	2	0.00	0.00	0.00	0.00	0.00	100.00	13	src/safe_simd/cdef_arm.rs:622:9
+RECT	162544	90414	194554	0	0	0	0	0	8.94	16	2.282	2.282	2.282	4	0.00	0.00	0.00	0.00	0.00	99.64	11,13	src/loopfilter.rs:809:17
+RECT	60928	53336	107555	0	0	0	0	0	8.00	8	1.931	1.931	1.931	2	0.00	0.00	0.00	0.00	0.00	99.24	13	src/safe_simd/cdef_arm.rs:192:9
+RECT	60928	53748	109114	0	0	0	0	0	8.00	8	1.931	1.931	1.931	2	0.00	0.00	0.00	0.00	0.00	100.00	13	src/safe_simd/cdef_arm.rs:1217:9
+RECTMETA	rows_capped=0	gaps_sampled=0
+cell	bpshalf	__probe_bounds	L1024x576_420_8b__t8	8	8
+##### rect/bpshalf__probebounds__L3840x2160_420_8b__t8__t8.txt
+RUN	L3840x2160_420_8b__t8.avif	3840x2160	8bpc	threads=8	iters=2	ms_total=1560.46	ms_per_frame=780.228
+SITES	total_per_frame=5615688	distinct=44	lost=0
+BOUNDS	total_per_frame=5615688	distinct=44	lost_slot=0	lost_th=0	lost_site=0	lost_scan=402201	skip_dead=5882246	lost_inst=0	lost_pair=0	lost_tid=0
+BOVLSUM	n=0	mutable_overlaps=0	sampled=0
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	72576	43179	64795	0	0	0	0	0	7.16	8	1.396	1.396	1.396	2	0.00	0.00	0.00	0.00	0.00	100.00	14,16	src/safe_simd/cdef_arm.rs:622:9
+RECT	507170	211483	315520	0	0	0	0	0	9.02	16	1.667	1.667	1.667	3	0.00	0.00	0.00	0.00	0.00	99.86	14,16	src/loopfilter.rs:809:17
+RECT	72576	41994	63058	0	0	0	0	0	7.16	8	1.397	1.397	1.397	2	0.00	0.00	0.00	0.00	0.00	99.91	14,16	src/safe_simd/cdef_arm.rs:192:9
+RECT	57280	39187	60096	0	0	0	0	0	8.00	8	1.410	1.410	1.410	2	0.00	0.00	0.00	0.00	0.00	100.00	16	src/safe_simd/cdef_arm.rs:1217:9
+RECT	16896	3922	4428	0	0	0	0	0	4.00	4	1.345	1.345	1.345	2	0.00	0.00	0.00	0.00	0.00	100.00	14	src/cdef_apply.rs:121:33
+RECT	59356	40674	62616	0	0	0	0	0	8.00	8	1.410	1.410	1.410	2	0.00	0.00	0.00	0.00	0.00	100.00	16	src/cdef_apply.rs:104:32
+RECTMETA	rows_capped=0	gaps_sampled=0
+cell	bpshalf	__probe_bounds	L3840x2160_420_8b__t8	8	2
+##### rect/bpsq__probebounds__L1024x576_420_8b__t8__t8.txt
+RUN	L1024x576_420_8b__t8.avif	1024x576	8bpc	threads=8	iters=8	ms_total=846.04	ms_per_frame=105.755
+SITES	total_per_frame=682489	distinct=43	lost=0
+BOUNDS	total_per_frame=682489	distinct=43	lost_slot=0	lost_th=0	lost_site=0	lost_scan=436683	skip_dead=2885967	lost_inst=0	lost_pair=0	lost_tid=0
+BOVLSUM	n=0	mutable_overlaps=0	sampled=0
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	61440	54068	110413	0	0	0	0	0	8.00	8	1.465	1.465	1.465	2	0.00	0.00	0.00	0.00	0.00	100.00	14	src/cdef_apply.rs:104:32
+RECT	60928	53058	106766	0	0	0	0	0	8.00	8	1.465	1.465	1.465	2	0.00	0.00	0.00	0.00	0.00	100.00	14	src/safe_simd/cdef_arm.rs:622:9
+RECT	162544	90646	195310	0	0	0	0	0	8.94	16	1.566	1.566	1.566	2	0.00	0.00	0.00	0.00	0.00	99.82	12,14	src/loopfilter.rs:809:17
+RECT	60928	53140	107466	0	0	0	0	0	8.00	8	1.466	1.466	1.466	2	0.00	0.00	0.00	0.00	0.00	99.59	14	src/safe_simd/cdef_arm.rs:192:9
+RECT	60928	53689	109443	0	0	0	0	0	8.00	8	1.465	1.465	1.465	2	0.00	0.00	0.00	0.00	0.00	100.00	14	src/safe_simd/cdef_arm.rs:1217:9
+RECTMETA	rows_capped=0	gaps_sampled=0
+cell	bpsq	__probe_bounds	L1024x576_420_8b__t8	8	8
+##### rect/bpsq__probebounds__L3840x2160_420_8b__t8__t8.txt
+RUN	L3840x2160_420_8b__t8.avif	3840x2160	8bpc	threads=8	iters=2	ms_total=1557.02	ms_per_frame=778.508
+SITES	total_per_frame=5615688	distinct=44	lost=0
+BOUNDS	total_per_frame=5615688	distinct=44	lost_slot=0	lost_th=0	lost_site=0	lost_scan=421619	skip_dead=5918817	lost_inst=0	lost_pair=0	lost_tid=0
+BOVLSUM	n=0	mutable_overlaps=0	sampled=0
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	59356	41436	64432	0	0	0	0	0	8.00	8	1.205	1.205	1.205	2	0.00	0.00	0.00	0.00	0.00	100.00	17	src/cdef_apply.rs:104:32
+RECT	72576	44374	67403	0	0	0	0	0	7.16	8	1.201	1.201	1.201	2	0.00	0.00	0.00	0.00	0.00	100.00	15,17	src/safe_simd/cdef_arm.rs:622:9
+RECT	507170	213134	313151	0	0	0	0	0	9.02	16	1.332	1.332	1.332	2	0.00	0.00	0.00	0.00	0.00	99.93	15,17	src/loopfilter.rs:809:17
+RECT	72576	43102	65751	0	0	0	0	0	7.16	8	1.201	1.201	1.201	2	0.00	0.00	0.00	0.00	0.00	99.95	15,17	src/safe_simd/cdef_arm.rs:192:9
+RECT	57280	40063	62776	0	0	0	0	0	8.00	8	1.205	1.205	1.205	2	0.00	0.00	0.00	0.00	0.00	100.00	17	src/safe_simd/cdef_arm.rs:1217:9
+RECT	16896	4205	4721	0	0	0	0	0	4.00	4	1.184	1.184	1.184	2	0.00	0.00	0.00	0.00	0.00	100.00	15	src/cdef_apply.rs:121:33
+RECTMETA	rows_capped=0	gaps_sampled=0
+cell	bpsq	__probe_bounds	L3840x2160_420_8b__t8	8	2
+##### rect/plain__probebounds__L1024x576_420_8b__t8__t8.txt
+RUN	L1024x576_420_8b__t8.avif	1024x576	8bpc	threads=8	iters=8	ms_total=854.39	ms_per_frame=106.799
+SITES	total_per_frame=682489	distinct=43	lost=0
+BOUNDS	total_per_frame=682489	distinct=43	lost_slot=0	lost_th=0	lost_site=0	lost_scan=429970	skip_dead=2840591	lost_inst=0	lost_pair=0	lost_tid=0
+BOVLSUM	n=0	mutable_overlaps=0	sampled=0
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	60928	52904	105414	0	0	0	0	0	8.00	8	4.729	4.729	4.729	5	72.90	72.90	0.00	0.00	0.00	100.00	11	src/safe_simd/cdef_arm.rs:622:9
+RECT	162544	90122	191754	0	0	0	0	0	8.94	16	6.669	6.669	6.669	16	62.31	62.31	44.71	26.65	0.00	98.53	9,11	src/loopfilter.rs:809:17
+RECT	60928	52992	106503	0	0	0	0	0	8.00	8	4.732	4.732	4.732	5	73.16	73.16	0.00	0.00	0.00	97.03	11	src/safe_simd/cdef_arm.rs:192:9
+RECT	60928	53237	107559	0	0	0	0	0	8.00	8	4.729	4.729	4.729	5	72.90	72.90	0.00	0.00	0.00	100.00	11	src/safe_simd/cdef_arm.rs:1217:9
+RECT	61440	53648	108680	0	0	0	0	0	8.00	8	4.728	4.728	4.728	5	72.81	72.81	0.00	0.00	0.00	100.00	11	src/cdef_apply.rs:104:32
+RECTMETA	rows_capped=0	gaps_sampled=0
+cell	plain	__probe_bounds	L1024x576_420_8b__t8	8	8
+##### rect/plain__probebounds__L3840x2160_420_8b__t8__t8.txt
+RUN	L3840x2160_420_8b__t8.avif	3840x2160	8bpc	threads=8	iters=2	ms_total=1552.65	ms_per_frame=776.323
+SITES	total_per_frame=5615688	distinct=44	lost=0
+BOUNDS	total_per_frame=5615688	distinct=44	lost_slot=0	lost_th=0	lost_site=0	lost_scan=413760	skip_dead=5927127	lost_inst=0	lost_pair=0	lost_tid=0
+BOVLSUM	n=0	mutable_overlaps=0	sampled=0
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	72576	44735	68074	0	0	0	0	0	7.16	8	2.586	2.586	2.586	3	0.00	0.00	0.00	0.00	0.00	100.00	12,14	src/safe_simd/cdef_arm.rs:622:9
+RECT	507170	213453	313840	0	0	0	0	0	9.02	16	3.675	3.675	3.675	9	20.35	20.35	9.99	0.13	0.00	99.44	12,14	src/loopfilter.rs:809:17
+RECT	16896	4257	4737	0	0	0	0	0	4.00	4	2.387	2.387	2.387	3	0.00	0.00	0.00	0.00	0.00	100.00	12	src/cdef_apply.rs:121:33
+RECT	72576	43673	66730	0	0	0	0	0	7.16	8	2.587	2.587	2.587	3	0.00	0.00	0.00	0.00	0.00	99.61	12,14	src/safe_simd/cdef_arm.rs:192:9
+RECT	57280	40360	63227	0	0	0	0	0	8.00	8	2.639	2.639	2.639	3	0.00	0.00	0.00	0.00	0.00	100.00	14	src/safe_simd/cdef_arm.rs:1217:9
+RECT	59356	41911	65458	0	0	0	0	0	8.00	8	2.639	2.639	2.639	3	0.00	0.00	0.00	0.00	0.00	100.00	14	src/cdef_apply.rs:104:32
+RECTMETA	rows_capped=0	gaps_sampled=0
+cell	plain	__probe_bounds	L3840x2160_420_8b__t8	8	2

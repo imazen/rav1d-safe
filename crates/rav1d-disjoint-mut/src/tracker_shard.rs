@@ -855,7 +855,12 @@ const KIND_UNCHECKED: u64 = 3;
 const KIND_BITS: u32 = 2;
 const KIND_MASK: u64 = (1 << KIND_BITS) - 1;
 /// Bits holding `pairs - 1`, i.e. `ceil(log2(MAX_SHARDS_PER_BORROW))`.
-const N_BITS: u32 = (MAX_SHARDS_PER_BORROW as u32 - 1).ilog2() + 1;
+///
+/// Written with `leading_zeros` rather than `ilog2` on purpose: `ilog2` panics on
+/// zero, so a cap of 1 would fail const evaluation with a message about a
+/// logarithm instead of about the cap. This form yields 0 there, which is
+/// correct — with one possible pair the count field is empty.
+const N_BITS: u32 = usize::BITS - (MAX_SHARDS_PER_BORROW - 1).leading_zeros();
 const N_MASK: u64 = (1 << N_BITS) - 1;
 const PAIR_SHIFT: u32 = KIND_BITS + N_BITS;
 /// 3 bits of slot + exactly as many shard bits as `N_SHARDS` needs.
