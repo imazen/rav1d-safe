@@ -461,7 +461,28 @@ not reported as green.**
 
 `cargo +nightly miri test -p rav1d-disjoint-mut --no-fail-fast`, 9 targets each.
 
-<!-- MIRI-RESULTS -->
+| model | result |
+|---|---|
+| Stacked Borrows (`MIRIFLAGS=""`) | **9 targets, 61 passed, 0 failed**, no UB (`soundness` 992.69 s) |
+| Tree Borrows (`-Zmiri-tree-borrows`) | **9 targets, 61 passed, 0 failed**, no UB (`soundness` 993.11 s) |
+
+Both runs are COMPLETE — 9 of 9 targets each, which is what the previous round's
+§7b also reported (61/61, `soundness` 992.7 s / 993.1 s). Neither run is
+partial, and neither is inherited: both were re-run on this branch.
+Raw: `benchmarks/ctx_tl_split_miri_2026-08-10.txt`.
+
+`crates/rav1d-disjoint-mut` being byte-identical to `5e9975f` is why a
+regression here was not expected; the runs exist because "expected" is not
+evidence, and because #469 and #478 were both caught by Miri and by nothing
+else.
+
+**What Miri does NOT cover here.** Miri runs `rav1d-disjoint-mut`'s own tests,
+not the decoder. This change's soundness argument is not about the tracker's
+internals at all — it is that `&mut DisjointMut<_>` is exclusive, which is
+borrowck's claim and is checked at every one of the 22 sites by the compiler
+(see the `set_exclusive`-on-the-shared-direction plant in §7). There is no new
+guard SHAPE here to run Miri against, which is the case §6 of
+`OWNERSHIP_MODELS.md` says to reach for Miri on.
 
 ---
 
