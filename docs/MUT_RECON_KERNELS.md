@@ -1163,3 +1163,55 @@ half-done would be worse than the study.
 **Do not attack this by coalescing fields.** Laying the 8 same-offset fields out
 adjacently so one registration covers them makes the reservation span the gaps
 BETWEEN fields, which other blocks legitimately write — §19c's test says no.
+
+## 21. Correctness gates for this round
+
+All on the final tree (`e19c4f4` onward), whose source diff against `f87b12c`
+is **pure addition** — 112 lines in `src/loopfilter.rs`, 9 in `src/ctx.rs`, 3 in
+`lib.rs`, 7 in `examples/probe_tracker.rs`, 6 in `Cargo.toml`, and **zero
+removed lines in any of them**; `src/safe_simd/loopfilter_arm.rs` is
+byte-identical to base.
+
+| gate | result |
+|---|---|
+| corpus, by NAME with the md5 as the value, `--threads 1` | 766 PASS / 768 keys / **0 differing**, `SETDIFF: CLEAN` |
+| corpus, `--threads 8`, `8-bit/film_grain` + `10-bit/film_grain` dropped from BOTH sides (#479) | 753 PASS / 755 keys / **0 differing**, `SETDIFF: CLEAN` |
+| census, `probe-sites`, `lost=0` | **11,401,399**/frame at t=8 — base's number exactly |
+| frame md5 vs base | identical at 8bpc and 10bpc, t=1 and t=8 |
+| `cargo test --lib`, release AND **debug** | 75 passed each (#482 hit a profile-dependent panic; this checks both) |
+| `mt_stress` 1/2/4/8/16 | 25/25 cells |
+| `multi_decoder_pressure.sh` 12 procs x 3 iters | PASS, every md5 matches the serial reference |
+| x86 clippy, `--all-targets --keep-going -D warnings` | 11 failing sites, **set-diff against base empty both ways** — `main` is already red there |
+| Miri, Stacked Borrows, each target in isolation | **61 passed / 0 failed, rc=0, no UB** |
+| Miri, Tree Borrows | **INCOMPLETE at hand-off** — 29 passed / 0 failed of the same 61, no UB, still running `shard_liveness`. Stated, not assumed. |
+
+**`#![forbid(unsafe_code)]`, proved ACTIVELY and non-vacuously.** Planted in
+`src/ablate.rs` — an always-compiled file with NO module-local `cfg_attr`, so
+the failure can only come from the crate attribute — with an `#[allow(unsafe_code)]`
+on it. Both errors anchor on **`lib.rs:13`**: `allow(unsafe_code) incompatible
+with previous forbid ... overruled by previous forbid` and `usage of an unsafe
+block`. Restored byte-exact (sha256 match + `git diff --exit-code`).
+
+**Teeth, planted and confirmed FAILING, each restored byte-exact.**
+
+| mutation | gate that caught it |
+|---|---|
+| `lane_thr` indexes `c` instead of `2c` | NEON parity 3/4 FAILED at `groups=3` |
+| V kernel dispatched at the wrong const stride (`sw=64` -> `32`) | NEON parity FAILED at `groups=9` — i.e. the WIDE path specifically |
+| `copy_row_v`'s 4-element tail deleted | corpus 13 of 14 tests FAILED |
+| `note_natural` prices every cap as cap 4 | `LFCAP` cap-32 collapses 1.971 -> 1.000 |
+| un-chunked write-back (a real over-reservation) | **NOT caught** — 358/358 at t=8. Recorded in §19d as a gap, not glossed. |
+
+**Standing hazards, `--features __probe_wide`, run even though `crates/` is
+untouched** — "the diff is empty" is reasoning, not measurement (`git diff
+f87b12c -- crates/` IS empty and `tracker_shard.rs` hashes to
+`d4e03d4a70183660cde4ef18cde777d5ef29530501c5a0e029a524e9c423176d`, and they
+were run anyway):
+
+| arm | `wide_exclusion` |
+|---|---|
+| control | **passes** |
+| in-lock `state` re-read deleted from `add_contended` | **FAILS** |
+| `active()` cut to one shard | **FAILS** |
+
+Both restored byte-exact (`shasum -c` OK, `git diff --exit-code` clean).
