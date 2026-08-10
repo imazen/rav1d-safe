@@ -38,6 +38,21 @@ Data: `benchmarks/size_sweep_tile_layout_2026-08-10.tsv`.
 nothing: the campaign's own `v4k_8tile.avif` reads **4 x 2 = 8** and
 `v4k_1tile_10b.avif` reads 1, from the same code path.
 
+### The campaign's existing t=8 numbers are from a different vector class
+
+Every t=8 figure the rav1d-safe campaign has recorded — the 5.88x t=1->t=8
+latency ratio at "4K", the 408.63/424.45/475.39 ms stage-body CPU at t=2/4/8 —
+was taken on `v4k_8tile`. Decoded and read out rather than assumed:
+
+| vector | layout | tiles |
+|---|---|---|
+| `v4k_8tile` (campaign) | **I444** | **8** (4 x 2) |
+| `L3840x2160_420_8b` (this ladder) | **I420** | **1** |
+
+Different on BOTH axes. So "4K scales 5.88x to t=8" and "4K scales 1.1x to t=8"
+are not in contradiction — they are two different bitstreams, and the ladder's
+one is the shape an `avifenc` default still actually has.
+
 ### What is left to parallelise when there is one tile
 
 Read from source, not assumed. Per frame pass rav1d-safe enqueues:
