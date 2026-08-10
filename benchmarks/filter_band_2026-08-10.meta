@@ -1,0 +1,50 @@
+Round of 2026-08-10, branch perf/filter-band, base perf/mut-recon-kernels @ 3b7242c.
+Host: Apple M4 Pro (12 cores, 8P+4E), macOS 26.5.2. Rust stable + nightly (Miri).
+Commits: 2a7ff51 (inline(always) seam), e0b399b (__probe_lf_hull), a59e652 (clippy).
+
+BOX WAS NOT IDLE for filter_band_gap_2026-08-10.tsv. All 288 rows carry a
+non-zero foreign_max (1 on 128, 2 on 152, 3 on 4, 6 on 4): another agent held a
+95-110% CPU benchmark for the whole sweep. ALLOW_LOAD=1 was set deliberately.
+PAIRED RATIOS are the citable result; the absolute ms/frame are ~10% inflated
+and must NOT be compared to #482's idle table in docs/MUT_RECON_KERNELS.md §4.
+
+filter_band_gap_2026-08-10.tsv
+  scripts/perf/verify_gap_arms.sh (verify_gap.sh forked to give each arm its own
+  env, so `head`/`headoff` -- ONE binary, RAV1D_OWNED_RECON -- interleave in one
+  sweep). 9 rounds x 8 cells x 4 arms = 288 rows. Two-point wall fit at NLO=2 /
+  NHI=20 frames, rotating arm order, dav1d 1.5.4 --framedelay 1 in the same
+  sweep, no nice on any timed run, no -C target-cpu=native.
+  Columns: round arm vec threads nlo ms_lo nhi ms_hi foreign_max
+  Report:  python3 scripts/perf/verify_gap_report.py <tsv>
+           python3 scripts/perf/gap_bands.py <tsv> base headoff dav1d_fd1
+
+filter_band_census_t{1,8}_own{0,1}_2026-08-10.tsv
+  cargo build --release --features probe-sites --example probe_tracker
+  ./probe_tracker v4k_8tile.avif <threads> 3, RAV1D_OWNED_RECON=<own>.
+  SITES line = total_per_frame / distinct / lost. SITE rows are
+  total immut mut mean_extent_bytes pct_cumulative file:line:col.
+  Counts only -- the probe's per-registration atomics perturb wall clock.
+
+filter_band_hull_t{2,4,8}_2026-08-10.txt
+  User CPU (/usr/bin/time -l, "user" seconds), 20 frames of v4k_8tile 8bpc,
+  5 rounds, arms interleaved within a round. Arms: bench_base; bench_head with
+  RAV1D_OWNED_RECON in {0,1}; bench_hullprobe (built --features
+  __probe_lf_hull) with RAV1D_LF_HULL in {0,1}.
+
+filter_band_perrow_t1_2026-08-10.txt
+  Columns: round  RAV1D_LF_PERROW  user_seconds. bench_hullprobe,
+  RAV1D_OWNED_RECON=1, v4k_8tile 8bpc t=1, 20 frames, n=7.
+
+filter_band_usercpu_grid_2026-08-10.tsv
+  Columns: vec threads round base_user headoff_user. 20 frames, n=5.
+  NOTE: at t>1 under the load described above this instrument is unusable --
+  bands run [0.75..1.22]. It is only reported for t=1.
+
+filter_band_md5_t{1,8}_2026-08-10.tsv.zst
+  examples/md5_inventory --threads {1,8}; the t=8 run adds
+  --skip-group 8-bit/film_grain --skip-group 10-bit/film_grain (#479).
+  Set-diffed BY NAME with the md5 in the value against
+  benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst via
+  scripts/perf/md5_setdiff.py, film-grain groups dropped from BOTH sides for
+  the t=8 comparison: t=1 766 PASS / 768 keys / 0 differing; t=8 753 PASS /
+  755 keys / 0 differing.

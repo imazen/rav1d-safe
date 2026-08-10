@@ -477,6 +477,31 @@ fn lf_hull_reads() -> bool {
     false
 }
 
+/// The OTHER half of the same ablation: force the PER-ROW read path even
+/// without tile threading, i.e. at `t=1`, where it is unconditionally sound
+/// (no second thread exists) and uncontended.
+///
+/// This is what separates the two candidate explanations for the filter
+/// chain's t=8 registration population. `RAV1D_LF_HULL=1` says what one wide
+/// registration costs against `h` narrow ones WITH contention;
+/// `RAV1D_LF_PERROW=1` says what `h` narrow registrations cost against one
+/// wide one WITHOUT it. Together they price count against extent, which is the
+/// question a next attempt at converting the filter chain has to answer before
+/// it starts: a band removes the COUNT, and only pays off if the count is what
+/// costs.
+#[cfg(feature = "__probe_lf_hull")]
+fn lf_force_per_row() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| matches!(std::env::var("RAV1D_LF_PERROW").as_deref(), Ok("1")))
+}
+
+#[cfg(not(feature = "__probe_lf_hull"))]
+#[inline(always)]
+fn lf_force_per_row() -> bool {
+    false
+}
+
 struct LfBlock<'a, 'b, BD: BitDepth> {
     scratch: &'b mut LfScratch<BD>,
     /// Top-left of the rectangle in picture coordinates.
@@ -633,7 +658,9 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         stride: isize,
         h: usize,
     ) {
-        if !crate::include::dav1d::picture::tile_threading_active() || lf_hull_reads() {
+        if (!crate::include::dav1d::picture::tile_threading_active() || lf_hull_reads())
+            && !lf_force_per_row()
+        {
             return Self::fill_hull::<W>(scratch, origin, stride, h);
         }
         for row in 0..h {

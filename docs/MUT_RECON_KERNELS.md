@@ -393,3 +393,419 @@ Two kernel bodies needed more than a type change:
 The `asm` dispatch arms recover the tracked `PicOffset` via `ReconDst::as_pic()`
 and `expect`. That is not a latent panic: `asm` implies `c-ffi`, and
 `frame_setup` refuses to arm under `c-ffi`.
+
+---
+
+# Round 2 of 2026-08-10 — the seam's tax, and what the filter chain is actually made of
+
+Branch `perf/filter-band`, based on `perf/mut-recon-kernels` @ `3b7242c`.
+Same box: idle-or-tagged Apple M4 Pro (12 cores, 8P+4E), macOS 26.5.2.
+
+Two problems were left open above. §9 closes the first. §11 answers the second
+with a measurement that says **do not build the thing that was proposed**.
+
+## 9. The seam's tax on the TRACKED path — closed
+
+§4's honest negative: `headoff`, the same binary with the band disarmed — every
+frame the conversion declines, which today is every inter frame — ran at
+1.0115 / 1.0180 / 1.0193 / 1.0216 of `base` at 8bpc t=1/2/4/8, 9/9 rounds
+slower at 7 of 8 cells. A net loss for video in exchange for a key-frame-only
+win.
+
+**It was not the enum's branch. It was that the seam's accessors were being
+CALLED.** A `sample` self-time profile at t=1 with the band disarmed named it
+in one line: `owned_recon::ReconSrc::slice::<BitDepth8>` at **0.460% of leaf
+samples as an out-of-line symbol**, against 0.000% in `base`, where the same
+read is `PicOffset::slice` inlined into `rav1d_prepare_intra_edges`. `#[inline]`
+is a hint, and these wrappers lost the coin toss: each returns an enum WRAPPING
+a borrow guard (`Px` / `PxMut`), so the callee looks big to the inliner even
+though the `Pic` arm is a passthrough and the `Own` arm is dead in that build.
+
+`#[inline(always)]` on the 37 seam accessors (`2a7ff51`). No signature, arm or
+arithmetic changed. Paired user CPU over 20 frames of `v4k_8tile` 8bpc at t=1,
+`/usr/bin/time -l`, arms interleaved base,head within each round:
+
+| | base | headoff | headoff/base | slower |
+|---|---|---|---|---|
+| before | 6.62 s | 6.76 s | **1.0212** | 5/5 |
+| after | 6.71 s | 6.75 s | **1.0060** | 6/7 |
+
+and re-profiling finds **no `owned_recon` symbol in the head arm's self-time
+table at all** — the seam is gone from the emitted code, not merely cheap. Code
+size went DOWN (2,887,376 bytes against the pre-inline head's 2,888,816; base
+is 2,868,624): forcing thin wrappers to inline does not bloat, leaving them out
+of line duplicates a call frame. The armed path is unaffected — t=8 user CPU
+7.23 s against base's 9.90 s.
+
+The wall-clock gate for this is §12.
+
+### The other half, measured and REVERTED
+
+The second suspected mechanism was addressing. §8's conversion made
+`rav1d_recon_b_intra` re-derive its destination per transform block —
+`planes.dst(0, 4*t.b.y, 4*t.b.x)`, a multiply by the destination's pixel
+stride — where `main` advanced it with `y_dst += 4 * t_dim.w`, an add. Restoring
+the incremental form is backing-agnostic (`ReconDst::at` is a pixel delta on
+whichever stride the destination carries), so it was written for both the luma
+and the chroma loop and measured:
+
+| | base | headoff | headoff/base |
+|---|---|---|---|
+| `#[inline(always)]` only | 6.71 s | 6.75 s | **1.0060** |
+| + row-origin hoist | 6.71 s | 6.85 s | **1.021** (n=7) |
+
+**A regression, back to where the tax started.** Reverted. The hoist keeps a
+live 40-byte `ReconDst` across the whole block body — including the call to
+`decode_coefs`, which is 62% of leaf samples — and that costs more than the
+multiply it saves. Re-confirmed at n=7 after reverting: 1.0060.
+
+## 10. What is STILL not done, after this round
+
+* **The filter chain is still not converted**, and §11 argues against converting
+  it the way this round was asked to. Nothing in `loopfilter`, `cdef`,
+  `looprestoration`, `lf_apply`, `lr_apply` or `filmgrain` changed except one
+  default-off, feature-gated measurement branch.
+* **Inter frames are still not converted.** Unchanged from §0: 228 `PicOffset`
+  parameters remain, `src/mc.rs` holds 59, and a frame containing inter
+  reconstruction still declines wholesale.
+* **`src/ctx.rs:99` is still untouched**, 2,534,988 registrations/frame at
+  `v4k_8tile` t=8 — now 22.2% of the population and, again, not a picture
+  buffer.
+* **`ipred_filter_rust`'s per-row-pair copy** (§8) is still there. It is extra
+  work on the TRACKED path too, and it was NOT removed, because
+  `ipred_filter_rust` does not appear in a `sample` self-time profile of this
+  vector at all — there is no instrument here that could show a change. It is
+  removable (the row it copies back is the row the kernel wrote one iteration
+  earlier, so it can be stashed as it is written), and that is a strictly
+  smaller amount of work than either arm does today; it is left undone rather
+  than done blind.
+* **#479 did not fall out of this work.** `looprestoration.rs:212,258` and
+  `loopfilter.rs:140,182` — the whole-plane-guard shape named in §0 — were not
+  audited or changed. The two film-grain groups are still skipped at
+  `--threads 8`.
+* Not measured, unchanged: x86_64 and wasm32 (compile-checked only), `asm` /
+  `c-ffi` (compile-checked only), `unchecked`, t=16, any vector below 4K, and
+  **any vector with loop restoration live** — the structural blindness of
+  #455 item 4 is still there, and §11's census inherits it (see the caveat at
+  the end of §11).
+
+## 11. The filter chain: the census, the halo question, and a large negative
+
+### 11a. The census, measured here
+
+`--features probe-sites`, `v4k_8tile` 8bpc, 3 iterations, registrations per
+frame, `lost=0`. The band-on t=8 total reproduces §2's 11,401,399 exactly,
+which is the instrument's control.
+
+| | t=1 | t=8 |
+|---|---|---|
+| whole decoder, band ON | 6,005,602 | 11,401,399 |
+| **filter chain** | **995,665** (16.6%) | **6,391,462** (56.1%) |
+| `src/loopfilter.rs:566` (`LfBlock::fill`) | on the hull path | **3,835,042** (33.6% of everything) |
+| `src/safe_simd/cdef_arm.rs` (5 sites) | | 1,622,288 |
+| `src/cdef_apply.rs:104,121` | | 669,376 |
+| `src/loopfilter.rs:739` (`LfBlock::close`, the WRITE side) | | 17,852 |
+| `src/ctx.rs:99` (not the filter chain, not a picture) | | 2,534,988 |
+
+Two things in that table were not in the brief and change the problem.
+
+**First: the filter chain is 6.4x bigger at t=8 than at t=1.** 5,395,797 of its
+6,391,462 registrations do not exist at t=1. They are not what the filter chain
+reads; they are one policy branch. `LfBlock::fill` (`src/loopfilter.rs:551`)
+takes ONE guard over the strided hull when `tile_threading_active()` is false
+and `h` per-row guards when it is true, because a hull also reserves the
+inter-row gaps and those gaps are other columns of the same picture rows, which
+a concurrent tile worker may legitimately be writing. That is the same per-row
+split #482 removed from reconstruction — recon's 7.9M -> 22.7M at t=8 was the
+same mechanism.
+
+**Second: the write side is already tiny.** `LfBlock::close` writes back only
+the rows that changed and only the changed span within them
+(`src/loopfilter.rs:722-741`), so the entire mutable population of the biggest
+filter kernel is 17,852 per frame. Anything aimed at the loop filter is aimed
+at an IMMUTABLE population.
+
+### 11b. The row-band-with-halo: expressible, but not exclusive
+
+The brief's proposal was a row band with a halo — a filter worker owns sbrow
+N's rows plus the tap rows above and below, with the halo read-only for one of
+the two neighbours. Three facts, with file:line:
+
+1. **Filter stages for different superblock rows DO overlap in time.**
+   `src/thread_task.rs:1030-1043`: when a filter task for `sby` is *selected*,
+   the replacement task for `sby+1` is inserted immediately, before the
+   selected one runs. So a second worker can be in `DeblockCols(N+1)` while the
+   first is still in `Cdef(N)` / `LoopRestoration(N)`. Only `DeblockRows` is
+   serialised against itself, by `ensure_progress` on
+   `fc.frame_thread_progress.deblock` (`src/thread_task.rs:538-559`,
+   `:1351-1362`).
+
+2. **The pipeline is nevertheless built so their WRITE sets are row-disjoint,
+   and the margin is one row.** `rav1d_filter_sbrow_cdef`
+   (`src/recon.rs:3780-3789`) filters `[sby*sbsz - 2, sby*sbsz)` and then stops
+   `2 * ((sby+1) < sbh)` block rows short of the end of its own superblock row.
+   `rav1d_loopfilter_sbrow_rows(N)` writes sbrow N plus the tail of sbrow N-1,
+   reaching at most `lf_reach` = 7 rows above the boundary
+   (`src/loopfilter.rs:455-467`, and the argument recorded at
+   `src/thread_task.rs:596-604`). So CDEF(N-1)'s last written luma row is
+   `N*sbsz*4 - 9` and deblock(N)'s topmost row is `N*sbsz*4 - 7`. Disjoint —
+   by exactly one row.
+
+3. **A shared halo is not expressible in safe Rust, and a copied one is.**
+   `&mut` exclusion is a static fact, not a temporal one. Two workers whose
+   bands overlap in a halo need the halo handed from one to the other at run
+   time, and a run-time ownership handoff is a borrow tracker wearing a
+   different hat — which is the thing being removed. What IS expressible is the
+   shape `stitch_sbrow` already uses (`src/owned_recon.rs:995-1013`): copy the
+   halo rows IN under row guards, filter entirely inside an owned
+   `Vec<Chunk>`, copy the owned rows back OUT under row guards. That is safe,
+   needs no `unsafe`, and turns millions of kernel-level registrations into a
+   few hundred row-level ones per superblock row.
+
+So the answer to "is it expressible" is: **yes as copy-in/copy-out, no as a
+shared halo.** Which would be the design — except for §10c.
+
+One more thing before anyone builds it: **the copy is not free, and it is not
+measured here.** A 4K 4:4:4 superblock-row band is roughly
+`135 rows x 3840 B x 3 planes` in and the same out — about 3.1 MB per
+superblock row, ~53 MB per frame at 17 superblock rows. Nothing in this round
+measured that, and no conversion should be started without measuring it.
+
+### 11c. The measurement that says stop: removing 3.46 M registrations made it 2.65x SLOWER
+
+`--features __probe_lf_hull` + `RAV1D_LF_HULL=1` makes `fill` take the hull
+under tile threading as well. This arm is **sound in the detection sense** and
+that is why it can be run at all: widening an IMMUTABLE reservation is a
+superset of the narrow rows, so it cannot MISS an overlap they would have
+caught. Its only new failure mode is a false positive, which is a loud
+`overlapping DisjointMut` panic, never a wrong pixel. (Contrast #481's
+`tracker: None`, which could only be run because nothing checked it.)
+
+It removes **3,463,025 registrations per frame** at t=8 — 11,401,399 ->
+7,938,374, 30.4% of the whole post-#482 population, and 54% of the filter
+chain's.
+
+User CPU, `/usr/bin/time -l`, `v4k_8tile` 8bpc, 20 frames, median of 5, arms
+interleaved within every round, band armed in all three columns:
+
+| | base | band on | band on + hull | hull / band-on |
+|---|---|---|---|---|
+| t=2 | 8.31 s | 6.91 s | 7.30 s | **1.053** |
+| t=4 | 8.80 s | 7.02 s | 7.44 s | **1.052** |
+| t=8 | 9.93 s | 7.40 s | 19.63 s | **2.65** |
+
+and with the recon band *also* disarmed — i.e. what an inter frame would see —
+t=8 goes to 30.94 s, **3.12x base**.
+
+The mechanism is extent, not count. The hull of an `LfBlock` read is 14-16
+picture rows: at a 3840-byte stride that is 50-60 KB, far past the sharded
+tracker's block size, so every one of them takes the wide path and is checked
+against every shard. Fourteen 8-byte registrations are cheaper than one 50 KB
+one — and at t=8, where the wide path also contends with eight tile workers,
+they are cheaper by 2.65x.
+
+**This is the campaign's "count is not cost" lesson for the third time, and the
+first time in the direction where reducing the count is actively harmful.**
+#455 recorded `block_mut` halving the guard count for nothing; #481 recorded
+recon's removals costing 9.4/5.4/2.8 ns each against a 1.00 ns average. This
+one says a filter-chain registration is worth *less* than nothing if you pay
+extent for it.
+
+The switch is kept, behind `#[cfg(feature = "__probe_lf_hull")]`, as the
+reproduction. The default build compiles `lf_hull_reads()` to `false` and the
+branch folds out of `fill`; the default binary is byte-for-byte the same size
+it was before the feature existed (2,887,376).
+
+### 11d. The clean ablation: the count IS worth something — you just cannot buy it with extent
+
+`RAV1D_LF_PERROW=1` forces the per-row path at t=1, where no second thread
+exists, so it is unconditionally sound and completely uncontended. It ADDS the
+same population the hull REMOVED, measured from the other side:
+
+| t=1, band on | registrations/frame |
+|---|---|
+| default (hull at t=1) | 6,005,602 |
+| `RAV1D_LF_PERROW=1` | 9,468,627 |
+| difference | **+3,463,025** |
+
+That is **the same 3,463,025** the hull removed at t=8 (11,401,399 ->
+7,938,374), to the registration — the two arms are pricing one population from
+opposite directions, which is the instrument's control.
+
+User CPU, `v4k_8tile` 8bpc t=1, 20 frames, paired within round, n=7:
+
+| | median | band | slower | p |
+|---|---|---|---|---|
+| hull (the t=1 default) | 6.790 s | [6.75..7.14] | | |
+| per-row (forced) | 6.990 s | [6.88..7.21] | | |
+| **per-row / hull** | **1.0264** | [1.0098..1.0619] | 7/7 | 0.016 |
+
+**So the count is not free: 3.46 M uncontended narrow registrations cost 2.64%
+of a t=1 frame — 0.20 s over 20 frames, ~10 ms/frame, ~2.9 ns each.** That
+lands inside the 2.8-9.4 ns/registration range #481 measured for recon's
+population, and it contradicts a lazy reading of §11c.
+
+Put the two together and the finding is sharper than "count is not cost":
+
+* Buying the count with **EXTENT** (one wide guard instead of `h` narrow ones)
+  is REFUTED: +5.2% at t=2 and t=4, +165% at t=8.
+* The count itself is worth about **2.6% at t=1 for this one site**, and at t=8
+  those same registrations are additionally contended — which this round did
+  NOT measure, because no arm removes them without adding extent. **That is the
+  gap the next attempt has to close, and a band is the only instrument that
+  can.**
+
+### 11e. What a next attempt has to answer first
+
+Whatever that says, two things are now fixed points for anyone converting the
+filter chain:
+
+* The prize is smaller than the share suggests. 56.1% of registrations is
+  **not** 56.1% of anything else, and 5.4 M of the 6.4 M exist only because of
+  a policy branch that is there to avoid false positives, not because the
+  filter chain reads a lot.
+* The loop filter's read population is IMMUTABLE and its write population is
+  already 0.3% of it. A conversion that gives the loop filter an owned band is
+  buying out immutable registrations, which are the cheap kind.
+
+
+## 12. Wall clock — and the sweep was NOT idle
+
+**Every one of the 288 rows in this sweep is load-tagged.** Another agent held a
+95-110% CPU benchmark on this box for the whole run; `foreign_max` is 1 on 128
+rows, 2 on 152, 3 on 4 and 6 on 4. `ALLOW_LOAD=1` was used deliberately rather
+than letting the strict gate discard forever (it discarded 3 cells in a row
+before the switch). Per the campaign's own rule, **the paired ratios below are
+believable and the absolute ms/frame are inflated** — `base` at 8bpc t=4 reads
+118.7 ms here against §4's idle 106.8, so treat the absolutes as ~10% high and
+do NOT compare them to §4's table.
+
+n = 9 complete rounds, 288 rows, `scripts/perf/verify_gap_arms.sh` (verify_gap
+with per-arm env), two-point wall fit at 2 and 20 frames, rotating arm order,
+dav1d 1.5.4 `--framedelay 1` in the SAME interleaved sweep, no `nice` on any
+timed run, no `-C target-cpu=native`. `head` and `headoff` are one binary
+(`RAV1D_OWNED_RECON`).
+
+ms/frame, median [min..max] — **loaded, see above**:
+
+| | t=1 | t=2 | t=4 | t=8 |
+|---|---|---|---|---|
+| `base` 8bpc | 321.1 [317.5..333.2] | 202.9 [200.8..214.2] | 118.7 [114.1..122.9] | 74.9 [71.7..80.2] |
+| **`head`** 8bpc | **315.3** [313.6..323.9] | **167.1** [166.2..178.4] | **90.0** [86.0..93.4] | **57.9** [54.6..61.9] |
+| `headoff` 8bpc | 324.8 [321.5..333.4] | 203.8 | 118.3 | 74.7 |
+| dav1d 8bpc | 249.3 [248.9..264.3] | 127.2 | 66.4 | 39.2 |
+
+Ratio to dav1d `--framedelay 1` (loaded):
+
+| | t=1 | t=2 | t=4 | t=8 |
+|---|---|---|---|---|
+| `base` 8bpc | 1.29 | 1.60 | 1.79 | 1.91 |
+| **`head`** 8bpc | **1.26** | **1.31** | **1.35** | **1.48** |
+| `head` 10bpc | 1.40 | 1.45 | 1.45 | 1.58 |
+
+which reproduces §4's shape (1.273 / 1.332 / 1.321 / 1.474 idle) closely enough
+that the conversion's win is clearly intact, but **these are loaded numbers and
+§4's idle table remains the citable one for the dav1d ratio.**
+
+Paired within-round `head`/`base`, exact two-sided sign test — the win, and it
+is unambiguous:
+
+| | median | band | wins | p |
+|---|---|---|---|---|
+| 8bpc t=1 | 0.9790 | [0.9702..0.9920] | 9/9 | 0.004 |
+| 8bpc t=2 | 0.8256 | [0.8186..0.8454] | 9/9 | 0.004 |
+| 8bpc t=4 | 0.7571 | [0.7428..0.7679] | 9/9 | 0.004 |
+| 8bpc t=8 | 0.7662 | [0.7573..0.7724] | 9/9 | 0.004 |
+| 10bpc t=1/2/4/8 | 0.9707 / 0.8938 / 0.8050 / 0.8007 | | 9/9 each | 0.004 |
+
+### The tax, before and after — REDUCED, NOT ELIMINATED
+
+Paired within-round `headoff`/`base`, the number §9 exists to move. #482's
+column is its own idle measurement; this column is loaded, which costs the sign
+test power, so a non-significant cell here is weaker evidence than a
+non-significant cell there.
+
+| | #482 (idle) | this branch (loaded) | wins for headoff | p |
+|---|---|---|---|---|
+| 8bpc t=1 | 1.0115 | **1.0116** | 2/9 | 0.180 |
+| 8bpc t=2 | 1.0180 | **1.0041** | 1/9 | 0.039 |
+| 8bpc t=4 | 1.0193 | **1.0056** | 2/9 | 0.180 |
+| 8bpc t=8 | 1.0216 | **0.9993** | 5/9 | 1.000 |
+| 10bpc t=1 | 1.0198 | **1.0133** | 0/9 | 0.004 |
+| 10bpc t=2 | 1.0266 | **1.0110** | 0/9 | 0.004 |
+| 10bpc t=4 | 1.0301 | **1.0085** | 3/9 | 0.508 |
+| 10bpc t=8 | 1.0245 | **1.0048** | 4/9 | 1.000 |
+
+**Honest reading.** #482 was 9/9-slower at 7 of 8 cells. This is 9/9-slower at
+2 of 8, both of them 10bpc t=1 and t=2, at 1.3% and 1.1%. The 8bpc t=2/4/8
+cells are at parity (t=8's median is below 1.0). **8bpc t=1 did not move at
+all** — 1.0116 against #482's 1.0115 — although it is no longer separated from
+noise on this data.
+
+That is a real improvement and it is NOT the parity the brief asked for. The
+seam still costs a 10bpc inter frame ~1%, and the 8bpc t=1 cell is unexplained:
+the low-noise user-CPU instrument put that same cell at 1.0060 after the fix
+against 1.0212 before, on a quiet box, so wall and work disagree there and only
+one of them can be right. **Do not merge #482 on the strength of this table
+alone; re-run `headoff` against `base` on an idle box.**
+
+## 13. Correctness gates, this round
+
+* **Corpus, set-diffed BY NAME with the md5 as the value**, against
+  `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst`:
+  * `--threads 1`: **766 PASS**, 768 keys, 0 only-in-baseline, 0 only-in-head,
+    **0 differing**. `SETDIFF: CLEAN`.
+  * `--threads 8`, `--skip-group 8-bit/film_grain --skip-group
+    10-bit/film_grain` (#479), the same two groups dropped from BOTH sides:
+    **753 PASS**, 755 keys, **0 differing**. `SETDIFF: CLEAN`. The 2 non-PASS
+    keys are `8-bit/features annexb` and `section5`, `SKIP` in the baseline
+    too. Inventories committed: `benchmarks/filter_band_md5_t{1,8}_2026-08-10.tsv.zst`.
+* **Frame md5 across all four arms** — band {on, off} x hull {on, off} — at
+  t=1 and t=8: 8 of 8 identical, `a00c11f454328023c58af14d55544cff`, matching
+  `base` at both thread counts.
+* `mt_stress` 1/2/4/8/16 x 5: **pass**.
+  `multi_decoder_pressure.sh` 12 procs x 3 iters x {1,2,4,8,16}: **PASS**,
+  every md5 matching the serial reference on all five vectors.
+* `cargo test --lib`: 75 passed in the DEBUG profile and 75 in release, and the
+  4 `owned_recon` tests pass in both — the profile-dependent-panic trap #482
+  hit on its Coverage leg does not recur.
+* **Clippy.** Both CI legs green on BOTH architectures, 0 warnings:
+  `cargo clippy --no-default-features --features bitdepth_8,bitdepth_16 --
+  -D warnings` on `aarch64-apple-darwin` and on `x86_64-apple-darwin`.
+  The stricter `--all-targets` x86 run still fails, but every remaining error
+  is one `cebb97f` also has, in a file this branch does not touch
+  (`src/safe_simd/mod.rs:33`, `tests/thread_cleanup_test.rs:11`,
+  `examples/bench_ivf_limit.rs:126`, `examples/profile_ivf.rs:69`,
+  `benches/tier_isolation.rs:221`, `examples/md5_ablate.rs`); the one that was
+  NEW to #482's branch, `src/owned_recon.rs:694 items after a test module`, is
+  fixed here (`a59e652`).
+* **`#![forbid(unsafe_code)]`, proved actively, twice, on the default build**,
+  in files that are unconditionally compiled:
+
+  | plant | diagnostic | lint anchored at |
+  |---|---|---|
+  | `src/owned_recon.rs:89` (`pub(crate) mod owned_recon;`, `lib.rs:184`, no cfg) | `error: usage of an 'unsafe' block` | **`lib.rs:13`** |
+  | `src/loopfilter.rs:481` (`mod loopfilter;`, `lib.rs:136`, no cfg) | `error: usage of an 'unsafe' block` | `src/loopfilter.rs:1` (module-local `cfg_attr(not(asm_loopfilter), forbid(...))`) |
+
+  Both restored byte-exact, verified by sha256 AND `git diff --exit-code`:
+  `owned_recon.rs` `29572fc4…af1ad6`, `loopfilter.rs` `87d3828a…70353c`.
+  The `loopfilter.rs` plant is the weaker of the two — its `forbid` is
+  module-local and cfg-conditional — which is exactly why the `owned_recon.rs`
+  plant, anchored at `lib.rs:13`, is the one that carries the claim.
+* **Standing hazards replanted** under `--features __probe_wide`.
+  `crates/rav1d-disjoint-mut` is byte-identical to `cebb97f` on this branch
+  (`git diff cebb97f -- crates/` is empty, and `tracker_shard.rs` hashes to
+  `d4e03d4a…423176d`, the value #482 recorded):
+
+  | plant | `wide_exclusion` |
+  |---|---|
+  | baseline | ok (0.06 s) |
+  | the in-lock `state` re-read deleted from `add_contended` ALONE | **FAILED** |
+  | `active()` cut to one shard | **FAILED** |
+  | after both restores | ok (0.05 s) |
+
+  Both restored byte-exact (sha256 + `git diff --exit-code`), and the test was
+  re-run green after restore with the file `touch`ed first — the mtime trap
+  #482 recorded.
+* **Miri, both models**, `cargo +nightly miri test -p rav1d-disjoint-mut
+  --no-fail-fast`: see §14.
