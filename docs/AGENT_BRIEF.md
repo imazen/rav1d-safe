@@ -103,6 +103,7 @@ campaigns. Every rule below cost real time to learn.
 | 2D-dot hoist in `compute_stats` (zenav1-svt) | 0.944-0.977x regression |
 | Loop-filter reads as one strided HULL instead of `h` per-row guards (rav1d-safe) | **2.65x SLOWER at t=8** despite removing 3.46 M registrations/frame — the hull is 50-60 KB and lands on the tracker's wide path. `--features __probe_lf_hull` reproduces it |
 | Restoring `rav1d_recon_b_intra`'s incremental destination addressing (rav1d-safe) | 1.021 vs 1.0060 — the hoist keeps a live 40-byte `ReconDst` across `decode_coefs` |
+| Coarsening a guard extent at t=8 in rav1d-safe, ANY site | **measure it first, do not build it**: `--features __probe_bounds` (`docs/BOUNDS_MAP.md`) prints each site's distance to the nearest concurrently-live foreign WRITE. At t=8 every hot site already reserves exactly what it touches (`over_ratio = 1.000`, 1-16 bytes); `ctx.rs:99:27` has a concurrent write at gap **0**; `loopfilter.rs:710:14` has 232 bytes of room. The 4K gap vectors under-report collision risk ~1000x vs the corpus |
 
 **The meta-lesson from the top two rows: a large self-time share is not automatically a large
 opportunity, and reducing the COUNT of an operation is not the same as reducing its COST.** The

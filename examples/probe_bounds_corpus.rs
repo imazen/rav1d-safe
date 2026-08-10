@@ -230,7 +230,10 @@ fn main() {
         #[cfg(not(feature = "__probe_bounds"))]
         println!("VEC\t{}\t{}\t{}\t-\t-", g, n, f);
     }
-    println!("CORPUS\tvectors={}\tframes={total_frames}\tthreads={threads}", vectors.len());
+    println!(
+        "CORPUS\tvectors={}\tframes={total_frames}\tthreads={threads}",
+        vectors.len()
+    );
 
     #[cfg(feature = "probe-sites")]
     print!("{}", rav1d_disjoint_mut::site_probe::report(1));

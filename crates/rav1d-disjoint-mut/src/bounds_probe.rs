@@ -1352,10 +1352,7 @@ pub fn report(frames: u64) -> String {
     }
 
     // ---- per-instance ------------------------------------------------------
-    let _ = writeln!(
-        out,
-        "#binst\tn_per_frame\tstride_bytes\tlen_bytes\tbase"
-    );
+    let _ = writeln!(out, "#binst\tn_per_frame\tstride_bytes\tlen_bytes\tbase");
     let mut insts: Vec<(u64, i64, u64, usize)> = Vec::new();
     for i in 0..NINST {
         let k = INST_KEY[i].load(Relaxed);
@@ -1366,7 +1363,12 @@ pub fn report(frames: u64) -> String {
         if n == 0 {
             continue;
         }
-        insts.push((n, INST_STRIDE[i].load(Relaxed), INST_LEN[i].load(Relaxed), k));
+        insts.push((
+            n,
+            INST_STRIDE[i].load(Relaxed),
+            INST_LEN[i].load(Relaxed),
+            k,
+        ));
     }
     insts.sort_by(|a, b| b.0.cmp(&a.0));
     for (n, st, l, k) in insts.iter().take(40) {
