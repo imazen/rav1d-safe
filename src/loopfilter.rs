@@ -57,19 +57,20 @@ fn loopfilter_sb_scalar<BD: BitDepth>(
     bd: BD,
     is_y: bool,
     is_v: bool,
+    band: Option<(&mut [BD::Pixel], usize, isize)>,
 ) {
     match (is_y, is_v) {
         (true, false) => loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::Y as usize }>(
-            dst, mask, lvl, b4_stride, lut, wh, bd,
+            dst, mask, lvl, b4_stride, lut, wh, bd, band,
         ),
         (true, true) => loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::Y as usize }>(
-            dst, mask, lvl, b4_stride, lut, wh, bd,
+            dst, mask, lvl, b4_stride, lut, wh, bd, band,
         ),
         (false, false) => loop_filter_sb128_rust::<BD, { HV::H as usize }, { YUV::UV as usize }>(
-            dst, mask, lvl, b4_stride, lut, wh, bd,
+            dst, mask, lvl, b4_stride, lut, wh, bd, band,
         ),
         (false, true) => loop_filter_sb128_rust::<BD, { HV::V as usize }, { YUV::UV as usize }>(
-            dst, mask, lvl, b4_stride, lut, wh, bd,
+            dst, mask, lvl, b4_stride, lut, wh, bd, band,
         ),
     }
 }
@@ -83,6 +84,7 @@ fn loopfilter_sb_direct<BD: BitDepth>(
     w: usize,
     is_y: bool,
     is_v: bool,
+    band: Option<(&mut [BD::Pixel], usize, isize)>,
 ) {
     let stride = dst.stride();
     let b4_stride = f.b4_stride;
@@ -143,7 +145,7 @@ fn loopfilter_sb_direct<BD: BitDepth>(
 
             // Run scalar on restored state
             let bd = BD::from_c(bd_max);
-            loopfilter_sb_scalar::<BD>(dst, mask, lvl, b4_stride as usize, lut, wh, bd, is_y, is_v);
+            loopfilter_sb_scalar::<BD>(dst, mask, lvl, b4_stride as usize, lut, wh, bd, is_y, is_v, None);
 
             // Compare SIMD vs scalar
             let (guard, _) = dst.full_guard::<BD>();
@@ -191,7 +193,7 @@ fn loopfilter_sb_direct<BD: BitDepth>(
     {
         let b4_stride = b4_stride as usize;
         let bd = BD::from_c(bd_max);
-        loopfilter_sb_scalar::<BD>(dst, mask, lvl, b4_stride, lut, wh, bd, is_y, is_v);
+        loopfilter_sb_scalar::<BD>(dst, mask, lvl, b4_stride, lut, wh, bd, is_y, is_v, band);
     }
 }
 
@@ -206,10 +208,13 @@ impl loopfilter_sb::Fn {
         w: usize,
         is_y: bool,
         is_v: bool,
+        band: Option<(&mut [BD::Pixel], usize, isize)>,
     ) {
         cfg_if::cfg_if! {
             if #[cfg(asm_loopfilter)] {
-                let _ = (is_y, is_v);
+                // The band is a pure read cache and the asm kernel reads the
+                // picture; dropping it is correct, just unaccelerated.
+                let _ = (is_y, is_v, band);
                 let dst_ptr = dst.as_mut_ptr::<BD>().cast();
                 let stride = dst.stride();
                 assert!(lvl.offset <= lvl.data.len());
@@ -231,7 +236,7 @@ impl loopfilter_sb::Fn {
                 }
             } else {
                 // Direct dispatch: no function pointers, no extern "C" ABI overhead
-                loopfilter_sb_direct::<BD>(f, dst, mask, lvl, w, is_y, is_v)
+                loopfilter_sb_direct::<BD>(f, dst, mask, lvl, w, is_y, is_v, band)
             }
         }
     }
@@ -331,7 +336,7 @@ impl<BD: BitDepth> LfTaps<BD> for CompactTaps<'_, BD> {
 }
 
 /// Widest tap window any `wd` reads: `p6` at `-7` through `q6` at `+6`.
-const LF_TAP_REACH: isize = 7;
+pub(crate) const LF_TAP_REACH: isize = 7;
 
 /// Widest `2 * reach x 4` (or `4 x 2 * reach`) tap block.
 const LF_BLOCK_MAX: usize = 4 * 2 * LF_TAP_REACH as usize;
@@ -530,6 +535,119 @@ fn lf_double_reads() -> bool {
     false
 }
 
+/// Attribution counters for [`LfBlock::fill`]'s population — counts only.
+///
+/// The census in `docs/MUT_RECON_KERNELS.md` §11a gives this site ONE number
+/// (3,835,042/frame at t=8). That number cannot say which of the two passes
+/// produces it, and the two have completely different shapes: the H pass
+/// (`filter_plane_cols_*`, vertical edges) reads `4 * groups` rows of
+/// `2 * reach` pixels, so its cost is `4` registrations per filtering group no
+/// matter how the run fuses; the V pass (`filter_plane_rows_*`, horizontal
+/// edges) reads `2 * reach` rows of `4 * groups` pixels, so fusing `n` groups
+/// divides its cost by `n` and [`LF_BATCH_MAX`] caps `n` at 4.
+///
+/// A fix aimed at the wrong half buys nothing, so this measures the split
+/// first. Registrations, opens and runs are counted separately because
+/// "registrations per open" is what the two shapes disagree about.
+#[cfg(feature = "__probe_lf_hist")]
+pub mod lf_hist {
+    use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
+
+    /// `[H, V]` — indexed by `is_v as usize`.
+    pub(super) static REGS: [AtomicU64; 2] = [AtomicU64::new(0), AtomicU64::new(0)];
+    pub(super) static OPENS: [AtomicU64; 2] = [AtomicU64::new(0), AtomicU64::new(0)];
+    /// Fused run length, 1..=4, per direction: `[dir][n - 1]`.
+    pub(super) static RUNLEN: [[AtomicU64; 4]; 2] = [
+        [
+            AtomicU64::new(0),
+            AtomicU64::new(0),
+            AtomicU64::new(0),
+            AtomicU64::new(0),
+        ],
+        [
+            AtomicU64::new(0),
+            AtomicU64::new(0),
+            AtomicU64::new(0),
+            AtomicU64::new(0),
+        ],
+    ];
+
+    /// Natural (UNCAPPED) run length, bucketed 1..=32, per direction.
+    /// `LF_BATCH_MAX` chops runs at 4; this is how long they would have been.
+    pub(super) static NATRUN: [[AtomicU64; 33]; 2] = [
+        [const { AtomicU64::new(0) }; 33],
+        [const { AtomicU64::new(0) }; 33],
+    ];
+    /// Registrations the V pass would take if the cap were lifted to 32:
+    /// one `2 * reach` open per NATURAL run instead of per capped run.
+    pub(super) static UNCAPPED_REGS: [AtomicU64; 2] =
+        [const { AtomicU64::new(0) }; 2];
+
+    #[inline]
+    pub(super) fn note(is_v: bool, h: usize, n: usize) {
+        let d = is_v as usize;
+        REGS[d].fetch_add(h as u64, Relaxed);
+        OPENS[d].fetch_add(1, Relaxed);
+        RUNLEN[d][(n - 1).min(3)].fetch_add(1, Relaxed);
+    }
+
+    /// Called once per NATURAL run (before the cap splits it).
+    ///
+    /// `h_one` is the row count ONE capped open of this run takes. For V that
+    /// is `2 * reach` and is independent of the run length, so an uncapped run
+    /// costs `h_one` total instead of `ceil(nat/4) * h_one` — that ratio is
+    /// the whole V-side prize. For H, `h = 4 * n` scales with the run, so an
+    /// uncapped run costs `4 * nat` either way and the prize is zero; the
+    /// counter records both so the asymmetry is measured, not assumed.
+    #[inline]
+    pub(super) fn note_natural(is_v: bool, nat: usize, h_one: usize) {
+        let d = is_v as usize;
+        NATRUN[d][nat.min(32)].fetch_add(1, Relaxed);
+        UNCAPPED_REGS[d].fetch_add(if is_v { h_one as u64 } else { (4 * nat) as u64 }, Relaxed);
+    }
+
+    /// One `LFHIST` row per direction, plus a run-length histogram.
+    pub fn report(iters: usize) -> String {
+        let mut s = String::new();
+        let it = iters.max(1) as f64;
+        for (d, name) in ["H_cols_vert_edges", "V_rows_horz_edges"].iter().enumerate() {
+            let regs = REGS[d].load(Relaxed) as f64 / it;
+            let opens = OPENS[d].load(Relaxed) as f64 / it;
+            let per = if opens > 0.0 { regs / opens } else { 0.0 };
+            s.push_str(&format!(
+                "LFHIST\t{name}\tregs_per_frame={regs:.0}\topens_per_frame={opens:.0}\tregs_per_open={per:.2}\n"
+            ));
+            for n in 0..4 {
+                s.push_str(&format!(
+                    "LFRUN\t{name}\tn={}\topens_per_frame={:.0}\n",
+                    n + 1,
+                    RUNLEN[d][n].load(Relaxed) as f64 / it
+                ));
+            }
+            let unc = UNCAPPED_REGS[d].load(Relaxed) as f64 / it;
+            s.push_str(&format!(
+                "LFUNCAP\t{name}\tregs_if_cap_32={unc:.0}\tvs_now={regs:.0}\tratio={:.3}\n",
+                if unc > 0.0 { regs / unc } else { 0.0 }
+            ));
+            let mut nat_sum = 0f64;
+            let mut nat_n = 0f64;
+            for n in 1..=32 {
+                let c = NATRUN[d][n].load(Relaxed) as f64 / it;
+                if c > 0.0 {
+                    s.push_str(&format!("LFNAT\t{name}\tnat={n}\truns_per_frame={c:.0}\n"));
+                    nat_sum += c * n as f64;
+                    nat_n += c;
+                }
+            }
+            s.push_str(&format!(
+                "LFNATAVG\t{name}\truns_per_frame={nat_n:.0}\tmean_natural_run={:.2}\n",
+                if nat_n > 0.0 { nat_sum / nat_n } else { 0.0 }
+            ));
+        }
+        s
+    }
+}
+
 struct LfBlock<'a, 'b, BD: BitDepth> {
     scratch: &'b mut LfScratch<BD>,
     /// Top-left of the rectangle in picture coordinates.
@@ -569,6 +687,44 @@ fn lf_reach(wd: c_int) -> isize {
     }
 }
 
+/// Shape of the rectangle one [`LfBlock`] covers, in pixels and scratch units.
+///
+/// Factored out so [`LfBlock::open`] and [`LfBlock::open_band`] cannot drift:
+/// the band path is a different SOURCE for the same rectangle, never a
+/// different rectangle. The origin delta is the one part that differs, because
+/// `V` shifts by rows (`-reach * stride`) and `H` by columns (`-reach`), and
+/// the two callers hold different strides.
+struct LfGeom {
+    w: usize,
+    h: usize,
+    stridea: isize,
+    strideb: isize,
+    base: usize,
+}
+
+#[inline(always)]
+fn lf_geom(is_v: bool, reach: isize, groups: usize) -> LfGeom {
+    if is_v {
+        // Taps run down the picture; each group's four columns run along x.
+        LfGeom {
+            w: 4 * groups,
+            h: 2 * reach as usize,
+            stridea: 1,
+            strideb: LF_BW as isize,
+            base: reach as usize * LF_BW,
+        }
+    } else {
+        // Taps run along x; each group's four columns run down the picture.
+        LfGeom {
+            w: 2 * reach as usize,
+            h: 4 * groups,
+            stridea: LF_BW as isize,
+            strideb: 1,
+            base: reach as usize,
+        }
+    }
+}
+
 impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
     /// Open the rectangle covering `groups` CONSECUTIVE 4-pixel groups that
     /// all filter with the same `wd`.
@@ -594,30 +750,17 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         groups: usize,
     ) -> Option<Self> {
         let reach = lf_reach(wd);
+        let LfGeom {
+            w,
+            h,
+            stridea,
+            strideb,
+            base,
+        } = lf_geom(is_v, reach, groups);
         // `w`/`h` are the PICTURE rectangle — what gets guarded and written
         // back. The scratch row stride is `LF_BW` regardless, so `w` may be
         // narrower than a scratch row; see [`LF_BW`].
-        let (w, h, origin_delta, stridea, strideb, base) = if is_v {
-            // Taps run down the picture; each group's four columns run along x.
-            (
-                4 * groups,
-                2 * reach as usize,
-                -reach * stride,
-                1isize,
-                LF_BW as isize,
-                reach as usize * LF_BW,
-            )
-        } else {
-            // Taps run along x; each group's four columns run down the picture.
-            (
-                2 * reach as usize,
-                4 * groups,
-                -reach,
-                LF_BW as isize,
-                1isize,
-                reach as usize,
-            )
-        };
+        let origin_delta = if is_v { -reach * stride } else { -reach };
         let first = dst.offset as isize + origin_delta;
         let last = first + (h as isize - 1) * stride;
         if first < 0 || last < 0 {
@@ -630,6 +773,17 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
             data: dst.data,
             offset: first as usize,
         };
+        #[cfg(feature = "__probe_lf_hist")]
+        lf_hist::note(
+            is_v,
+            // What `fill` will actually register: the hull path is one.
+            if crate::include::dav1d::picture::tile_threading_active() {
+                h
+            } else {
+                1
+            },
+            groups,
+        );
         // `w` is one of six values, so the row copy is monomorphized on it:
         // `copy_from_slice` at a RUNTIME length is a `memmove` CALL per row,
         // and at up to 16 rows per open that call overhead measured as ~1.5%
@@ -666,6 +820,154 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
             strideb,
             is_v,
         })
+    }
+
+    /// [`Self::open`] reading from an [`LfBand`](crate::src::lf_band::LfBand)
+    /// instead of the picture — **zero borrow registrations**.
+    ///
+    /// `H` only (`is_v == false`): the V pass's rectangle grows along a picture
+    /// row, so fusing already divides its guard count and a band buys it
+    /// nothing (measured: 1.000x for H, 1.971x for V — see
+    /// [`crate::src::lf_band`]).
+    ///
+    /// `band_off` is the band offset of the same pixel `dst` names in the
+    /// picture, and `band_stride` the band's row stride. The rectangle is the
+    /// SAME shape as [`Self::open`] would take — [`lf_geom`] is shared — so the
+    /// two paths differ only in where the bytes are read from.
+    ///
+    /// `origin`/`stride` are still the PICTURE's, because
+    /// [`Self::close_band`] writes the changed span to the picture exactly as
+    /// [`Self::close`] does. Returns `None` on the same conditions
+    /// [`Self::open`] does, plus the band being too small; the caller then
+    /// takes the picture path, which reads identical bytes.
+    #[inline]
+    fn open_band(
+        scratch: &'b mut LfScratch<BD>,
+        band: &[BD::Pixel],
+        band_off: usize,
+        band_stride: isize,
+        dst: PicOffset<'a>,
+        stride: isize,
+        wd: c_int,
+        groups: usize,
+    ) -> Option<Self> {
+        let reach = lf_reach(wd);
+        let LfGeom {
+            w,
+            h,
+            stridea,
+            strideb,
+            base,
+        } = lf_geom(false, reach, groups);
+
+        // The band rectangle. Both ends are checked, so every row between them
+        // is in range for a stride of either sign.
+        let b_first = (band_off as isize).checked_sub(reach)?;
+        let b_last = b_first + (h as isize - 1) * band_stride;
+        if b_first.min(b_last) < 0 || b_first.max(b_last) + w as isize > band.len() as isize {
+            return None;
+        }
+        // The PICTURE rectangle, checked exactly as `open` checks it — the
+        // write-back in `close_band` goes there and must be in bounds even
+        // though the read did not touch it.
+        let first = dst.offset as isize - reach;
+        let last = first + (h as isize - 1) * stride;
+        if first < 0 || last < 0 {
+            return None;
+        }
+        if first.max(last) as usize + w > dst.data.pixel_len::<BD>() {
+            return None;
+        }
+
+        let b_first = b_first as usize;
+        match w {
+            4 => Self::fill_band::<4>(scratch, band, b_first, band_stride, h),
+            6 => Self::fill_band::<6>(scratch, band, b_first, band_stride, h),
+            8 => Self::fill_band::<8>(scratch, band, b_first, band_stride, h),
+            12 => Self::fill_band::<12>(scratch, band, b_first, band_stride, h),
+            14 => Self::fill_band::<14>(scratch, band, b_first, band_stride, h),
+            16 => Self::fill_band::<16>(scratch, band, b_first, band_stride, h),
+            _ => {
+                for row in 0..h {
+                    let off = b_first.wrapping_add_signed(row as isize * band_stride);
+                    let src = &band[off..][..w];
+                    scratch.buf[row * LF_BW..][..w].copy_from_slice(src);
+                    scratch.pristine[row * LF_BW..][..w].copy_from_slice(src);
+                }
+            }
+        }
+        Some(Self {
+            scratch,
+            origin: PicOffset {
+                data: dst.data,
+                offset: first as usize,
+            },
+            stride,
+            w,
+            h,
+            base,
+            stridea,
+            strideb,
+            is_v: false,
+        })
+    }
+
+    /// [`Self::fill`] from a plain slice. No guard, no tracker, no policy
+    /// branch — the band is an ordinary `&[BD::Pixel]` the caller owns.
+    #[inline(always)]
+    fn fill_band<const W: usize>(
+        scratch: &mut LfScratch<BD>,
+        band: &[BD::Pixel],
+        first: usize,
+        stride: isize,
+        h: usize,
+    ) {
+        for row in 0..h {
+            let off = first.wrapping_add_signed(row as isize * stride);
+            let src: &[BD::Pixel; W] = (&band[off..][..W]).try_into().expect("band row is W long");
+            let dst: &mut [BD::Pixel; W] = (&mut scratch.buf[row * LF_BW..][..W])
+                .try_into()
+                .expect("scratch row is LF_BW >= W long");
+            *dst = *src;
+            let pri: &mut [BD::Pixel; W] = (&mut scratch.pristine[row * LF_BW..][..W])
+                .try_into()
+                .expect("scratch row is LF_BW >= W long");
+            *pri = *src;
+        }
+    }
+
+    /// [`Self::close`], plus a mirror of the same span into the band.
+    ///
+    /// **The picture write is byte-for-byte what [`Self::close`] does** — same
+    /// `changed_span`, same one mutable guard per changed row, same extent. The
+    /// band is not an owner and never becomes authoritative; mirroring is only
+    /// what keeps it equal to the picture, so that the next `x` in this
+    /// superblock (whose window overlaps this one) reads what this call wrote,
+    /// and so that a later `open_band` returning `None` can fall back to the
+    /// picture and see the same bytes.
+    fn close_band(self, band: &mut [BD::Pixel], band_first: usize, band_stride: isize) {
+        for row in 0..self.h {
+            let Some((first, last)) = self.changed_span(row) else {
+                continue; // row untouched: no write, no mutable guard
+            };
+            let work = &self.scratch.buf[row * LF_BW..][..self.w];
+            let changed = &work[first..=last];
+
+            let boff = band_first.wrapping_add_signed(row as isize * band_stride) + first;
+            band[boff..][..changed.len()].copy_from_slice(changed);
+
+            let off = self
+                .origin
+                .offset
+                .wrapping_add_signed(row as isize * self.stride)
+                + first;
+            let mut guard = PicOffset {
+                data: self.origin.data,
+                offset: off,
+            }
+            .slice_mut::<BD>(last + 1 - first);
+            guard.copy_from_slice(changed);
+        }
     }
 
     /// Read `h` picture rows of exactly `W` pixels into the scratch and its
@@ -1094,6 +1396,10 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
     lut: &Align16<Av1FilterLUT>,
     _wh: c_int,
     bd: BD,
+    // `(band buffer, band offset of `dst`, band row stride)`. `H` only; the
+    // caller passes `None` for `V` and for every asm build. See
+    // [`crate::src::lf_band`].
+    mut band: Option<(&mut [BD::Pixel], usize, isize)>,
 ) {
     let hv = HV::from_repr(HV).unwrap();
     let yuv = YUV::from_repr(YUV).unwrap();
@@ -1113,6 +1419,12 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
         YUV::UV => vmask[0] | vmask[1],
     };
     let is_v = matches!(hv, HV::V);
+    // The band's geometry is the H rectangle's; `lf_geom(true, ..)` grows the
+    // other way and `open_band` hardcodes `is_v == false`. Callers only ever
+    // arm it on the column pass, and this makes that a checked fact.
+    if is_v {
+        band = None;
+    }
 
     // Resolve every 4-pixel group's filter parameters before touching a pixel,
     // so consecutive groups that actually filter can be fused into one
@@ -1173,7 +1485,37 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
         while n < LF_BATCH_MAX && g + n < n_groups && filters[g + n] && params[g + n].3 == wd {
             n += 1;
         }
+        // Count each NATURAL run once, at its first group — `g` re-enters this
+        // loop mid-run whenever the cap split one.
+        #[cfg(feature = "__probe_lf_hist")]
+        if g == 0 || !filters[g - 1] || params[g - 1].3 != wd {
+            let mut nat = 1;
+            while g + nat < n_groups && filters[g + nat] && params[g + nat].3 == wd {
+                nat += 1;
+            }
+            lf_hist::note_natural(is_v, nat, 2 * lf_reach(wd) as usize);
+        }
         let run_dst = dst + group_step * g as isize;
+        // The band, when one is armed, is a read cache for THIS rectangle;
+        // `close_band` still writes the picture. `None` here — off the plane,
+        // or a band too small for the run — falls straight through to the
+        // picture path below, which reads identical bytes.
+        let mut banded = false;
+        if let Some((buf, boff, bstride)) = band.as_mut() {
+            let bstride = *bstride;
+            let bg = boff.wrapping_add_signed(4 * bstride * g as isize);
+            if let Some(mut block) =
+                LfBlock::<BD>::open_band(&mut scratch, buf, bg, bstride, run_dst, stride, wd, n)
+            {
+                block.filter_run(&params[g..g + n], wd, bd);
+                block.close_band(buf, bg.wrapping_add_signed(-lf_reach(wd)), bstride);
+                banded = true;
+            }
+        }
+        if banded {
+            g += n;
+            continue;
+        }
         match LfBlock::<BD>::open(&mut scratch, run_dst, is_v, stride, wd, n) {
             Some(mut block) => {
                 block.filter_run(&params[g..g + n], wd, bd);
@@ -1239,7 +1581,7 @@ unsafe extern "C" fn loop_filter_sb128_c_erased<BD: BitDepth, const HV: usize, c
     let lvl = *unsafe { FFISafe::get(lvl) };
     let b4_stride = b4_stride as usize;
     let bd = BD::from_c(bitdepth_max);
-    loop_filter_sb128_rust::<BD, { HV }, { YUV }>(dst, vmask, lvl, b4_stride, lut, wh, bd)
+    loop_filter_sb128_rust::<BD, { HV }, { YUV }>(dst, vmask, lvl, b4_stride, lut, wh, bd, None)
 }
 
 impl Rav1dLoopFilterDSPContext {

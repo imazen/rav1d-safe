@@ -132,7 +132,13 @@ pub mod src {
     mod filmgrain;
     mod ipred;
     mod itx;
+    pub(crate) mod lf_band;
     mod lf_mask;
+    // `pub` only to let `examples/probe_tracker` reach `loopfilter::lf_hist`.
+    // The default build keeps it private.
+    #[cfg(feature = "__probe_lf_hist")]
+    pub mod loopfilter;
+    #[cfg(not(feature = "__probe_lf_hist"))]
     mod loopfilter;
     mod looprestoration;
     mod mc;

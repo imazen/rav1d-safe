@@ -87,6 +87,11 @@ probe-sites = ["rav1d-disjoint-mut/__probe_sites"]
 # Absent from `default` and from every published feature. See
 # `src/loopfilter.rs::lf_hull_reads` and docs/MUT_RECON_KERNELS.md section 10.
 __probe_lf_hull = []
+# Measurement-only: counts `LfBlock::fill`'s registrations split by direction
+# (H = vertical edges, `filter_plane_cols_*`; V = horizontal edges,
+# `filter_plane_rows_*`) and by run length, so the site's population can be
+# attributed before anything is built against it. Counts only, never a policy.
+__probe_lf_hist = []
 probe-tinynop = ["rav1d-disjoint-mut/__probe_tinynop"]
 probe-addnop = ["rav1d-disjoint-mut/__probe_addnop"]
 probe-noscan = ["rav1d-disjoint-mut/__probe_noscan"]
