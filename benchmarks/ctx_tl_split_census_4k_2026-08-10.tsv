@@ -1,0 +1,5 @@
+arm	vec	threads	total_per_frame	distinct
+base	photo_4k	1	2055056	39
+head	photo_4k	1	1570898	41
+base	photo_4k	8	4241467	39
+head	photo_4k	8	3757309	41
