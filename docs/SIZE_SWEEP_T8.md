@@ -115,6 +115,24 @@ answer, so it is recorded:
 
 ---
 
+## A `measlock` defect this round tripped over — worth a line in the brief
+
+`measlock`'s `cleanup()` is `rm -rf "$LOCK"` on EXIT, unconditionally. It does
+not check that the lock it is deleting is still *its own*. So when holder A's
+lock is reclaimed (stale escape, or any other path) and holder B acquires, A's
+eventual exit **deletes B's lock**, and the next waiter walks straight in. That
+is what happened here: two agents ended up measuring simultaneously at 03:29,
+with neither having done anything wrong at its own call site.
+
+Fix shape: have `cleanup()` compare the pid in `$LOCK/owner` with `$$` and only
+remove the directory when it matches.
+
+    cleanup() { [ "$(awk '{print $2}' "$LOCK/owner" 2>/dev/null)" = "$$" ] && rm -rf "$LOCK"; }
+
+Consequence for this round, stated plainly: **every row is load-tagged** and the
+absolutes are inflated. Paired within-round ratios — speedup vs t=1, CPU
+multiplier vs t=1, ours/dav1d at matched t — are the statistics to read.
+
 ## Not measured — stated before the results
 
 * **4:4:4.** The thread sweep is 4:2:0 only (the product case for AVIF stills).
