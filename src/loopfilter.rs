@@ -84,6 +84,42 @@ fn loopfilter_sb_direct<BD: BitDepth>(
     is_y: bool,
     is_v: bool,
 ) {
+    // The invariant every filter-side guard policy rests on, checked where the
+    // superblock geometry is in scope (#494).
+    //
+    // `src/thread_task.rs::check_tile` runs reconstruction of superblock row
+    // N+1 concurrently with the deblock tasks of row N — sound only because a
+    // horizontal-edge filter cannot read or write past the bottom of its own
+    // superblock row. That is a property of the MASK, not of the plane: see
+    // [`lf_run_reach`]. Assert it directly, so a window sized from anything
+    // wider than the mask fails loudly and deterministically at `t=1` instead
+    // of racing a tile worker one run in a thousand at `t=8`.
+    //
+    // Downward only: the upward reach deliberately enters the previous
+    // superblock row (dav1d's CDEF task lags 8 luma / 4 chroma rows behind
+    // exactly so that it can).
+    //
+    // Negative strides are skipped: the row index would need the plane's
+    // bottom-up base, and no filter path constructs one.
+    #[cfg(debug_assertions)]
+    if is_v && (mask[0] | mask[1] | mask[2]) != 0 {
+        use crate::include::dav1d::headers::Rav1dPixelLayout;
+        let pxstride = dst.pixel_stride::<BD>();
+        if pxstride > 0 {
+            let pxstride = pxstride as usize;
+            let base = dst.data.with_offset::<BD>().offset;
+            let row = (dst.offset - base) / pxstride;
+            let ss_ver = (!is_y && f.cur.p.layout == Rav1dPixelLayout::I420) as u8;
+            let sb_h = ((f.sb_step as usize) * 4) >> ss_ver;
+            let reach = lf_run_reach(is_y, mask);
+            debug_assert!(
+                row % sb_h + reach <= sb_h,
+                "V-run window leaves the superblock row: row {row} (+{reach}) \
+                 in a {sb_h}-row superblock row, is_y={is_y}, mask={mask:08x?}"
+            );
+        }
+    }
+
     let stride = dst.stride();
     let b4_stride = f.b4_stride;
     let lut = &f.lf.lim_lut;
@@ -567,6 +603,77 @@ fn lf_reach(wd: c_int) -> isize {
     } else {
         2
     }
+}
+
+/// The filter width one 4-pixel group takes, from its bit in the mask.
+///
+/// `wd = 4 << idx` for luma with `idx` = 2 when `vmask[2]` has the bit, else 1
+/// when `vmask[1]` does, else 0; `wd = 4 + 2 * idx` for chroma with `idx` from
+/// `vmask[1]`. The level itself is `min(log2(tx) either side of the edge)`
+/// capped at 2 — see `src/lf_mask.rs`.
+///
+/// Extracted so [`lf_run_reach`] and its test share the ladder with the driver
+/// instead of transcribing it.
+#[inline(always)]
+fn lf_group_wd(is_y: bool, vmask: &[u32; 3], xy: u32) -> c_int {
+    if is_y {
+        let idx = if vmask[2] & xy != 0 {
+            2
+        } else {
+            (vmask[1] & xy != 0) as c_int
+        };
+        4 << idx
+    } else {
+        4 + 2 * (vmask[1] & xy != 0) as c_int
+    }
+}
+
+/// The deepest [`lf_reach`] any group of ONE `loopfilter_sb` run can need,
+/// derived from that run's mask.
+///
+/// Takes [`lf_group_wd`]'s widest answer over the whole mask: [`lf_reach`] is
+/// monotone in `wd`, so the reach of the widest level PRESENT ANYWHERE in the
+/// mask bounds every group in the run.
+///
+/// A group whose level resolves to zero does not filter at all and a group can
+/// carry a lower level than the run's widest, so this is an upper bound on the
+/// run's reach — never an under-estimate.
+///
+/// # Why a caller must use this instead of the plane's worst case
+///
+/// This is the bound the whole no-deblock-barrier argument rests on
+/// (`src/thread_task.rs::check_tile`, `054e2ed`): the mask level at a
+/// horizontal edge is `min(log2(tx_h) above, log2(tx_h) below)` capped at 2
+/// (`src/lf_mask.rs`, `masks[1][by4 + y][cmp::min(ttx, btx)]`), and a
+/// transform block never crosses a superblock boundary — so level 2 (reach 7)
+/// needs >= 16 rows below the edge inside the superblock row, level 1
+/// (reach 4) >= 8, level 0 (reach 2) >= 4. **A window sized from the mask
+/// therefore cannot read past the superblock row**, which is what makes the
+/// reads orderable against concurrent reconstruction of the next superblock
+/// row. A window sized from the plane's worst case (7 luma) reads 3 rows past
+/// the bottom of the superblock row at every level-0 edge in the last 4-row
+/// band, and those rows belong to whoever is reconstructing or column-filtering
+/// the NEXT superblock row. That was the x86_64 t=8 race in #494.
+#[cfg_attr(
+    not(any(target_arch = "x86_64", target_arch = "wasm32", test)),
+    allow(dead_code)
+)]
+#[inline]
+pub(crate) fn lf_run_reach(is_y: bool, vmask: &[u32; 3]) -> usize {
+    let wd = if is_y {
+        if vmask[2] != 0 {
+            16
+        } else if vmask[1] != 0 {
+            8
+        } else {
+            4
+        }
+    } else if vmask[1] != 0 {
+        6
+    } else {
+        4
+    };
+    lf_reach(wd) as usize
 }
 
 impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
@@ -1137,20 +1244,7 @@ fn loop_filter_sb128_rust<BD: BitDepth, const HV: usize, const YUV: usize>(
                     lvl.data[lvl.offset].load(Relaxed)
                 };
                 if l != 0 {
-                    let idx = match yuv {
-                        YUV::Y => {
-                            let idx = if vmask[2] & xy != 0 {
-                                2
-                            } else {
-                                (vmask[1] & xy != 0) as c_int
-                            };
-                            4 << idx
-                        }
-                        YUV::UV => {
-                            let idx = (vmask[1] & xy != 0) as c_int;
-                            4 + 2 * idx
-                        }
-                    };
+                    let idx = lf_group_wd(matches!(yuv, YUV::Y), vmask, xy);
                     params[n_groups] = (e_of(lut, l), i_of(lut, l), l >> 4, idx);
                     filters[n_groups] = true;
                 }
@@ -1365,6 +1459,93 @@ impl Rav1dLoopFilterDSPContext {
 // ============================================================================
 // TESTS
 // ============================================================================
+
+/// [`lf_run_reach`] against the driver's own per-group ladder (#494).
+///
+/// The oracle is [`lf_group_wd`] — the function `loop_filter_sb128_rust` itself
+/// calls — walked over every group the run would visit, so this cannot drift
+/// from the filter the way a transcribed ladder would.
+#[cfg(test)]
+mod run_reach {
+    use super::*;
+
+    /// Bit patterns that place levels on different groups, including the first
+    /// and last of the 32 a `u32` mask can hold.
+    const PATS: [u32; 8] = [
+        0,
+        1,
+        2,
+        0x8000_0000,
+        0xffff_ffff,
+        0x5555_5555,
+        0xaaaa_aaaa,
+        0x0001_0000,
+    ];
+
+    /// The deepest reach any group of this run actually needs, by walking the
+    /// groups exactly as the driver does.
+    fn oracle(is_y: bool, vmask: &[u32; 3]) -> usize {
+        let vm = if is_y {
+            vmask[0] | vmask[1] | vmask[2]
+        } else {
+            vmask[0] | vmask[1]
+        };
+        let mut want = 0usize;
+        for bit in 0..32 {
+            let xy = 1u32 << bit;
+            if vm & xy != 0 {
+                want = want.max(lf_reach(lf_group_wd(is_y, vmask, xy)) as usize);
+            }
+        }
+        want
+    }
+
+    #[test]
+    fn run_reach_equals_the_widest_group_it_can_meet() {
+        let mut covered = [false; 8];
+        for &m0 in &PATS {
+            for &m1 in &PATS {
+                for &m2 in &PATS {
+                    let vmask = [m0, m1, m2];
+                    for is_y in [true, false] {
+                        let want = oracle(is_y, &vmask);
+                        if want == 0 {
+                            // No group filters: the run returns early before
+                            // any window is sized.
+                            continue;
+                        }
+                        assert_eq!(
+                            lf_run_reach(is_y, &vmask),
+                            want,
+                            "is_y={is_y} mask={vmask:08x?}"
+                        );
+                        covered[want] = true;
+                    }
+                }
+            }
+        }
+        // Liveness: every reach the ladder can produce was actually reached,
+        // so a mutation to any rung has a cell that fails.
+        assert!(
+            covered[2] && covered[3] && covered[4] && covered[7],
+            "reaches exercised: {covered:?}"
+        );
+    }
+
+    /// The property the guard policy depends on: the run's reach never exceeds
+    /// the rows a transform of that level leaves below the edge inside a
+    /// superblock row. Level 2 needs 16 rows, level 1 needs 8, level 0 needs 4.
+    #[test]
+    fn run_reach_fits_the_transform_that_selected_it() {
+        for (wd, rows_below) in [(4, 4usize), (6, 4), (8, 8), (16, 16)] {
+            assert!(
+                lf_reach(wd) as usize <= rows_below,
+                "wd {wd} reaches {} into {rows_below} rows",
+                lf_reach(wd)
+            );
+        }
+    }
+}
 
 /// Per-variant bit-identity gate for the aarch64 NEON deblocking kernels.
 ///

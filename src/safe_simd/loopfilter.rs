@@ -5098,33 +5098,76 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             };
 
             // Guard: fall back to scalar if buffer bounds are insufficient.
+            // Deliberately the PLANE worst case above, not the per-run window
+            // below: keeping this predicate on `tap_*` keeps the SIMD-vs-scalar
+            // decision — and therefore every output byte — exactly what it was
+            // before the window narrowed. Narrowing the window can only make
+            // the guard a subset of what this test already proved in bounds.
             let buf_pixel_len = dst.data.pixel_len::<BitDepth8>();
             if dst.offset < reach_before || dst.offset.saturating_add(reach_after) > buf_pixel_len {
                 return false;
             }
 
+            // The window the guard and the copy actually cover (#494).
+            //
+            // For V (horizontal edges) the perpendicular extent is the tap
+            // reach of the widest width THIS RUN's mask can select, not the
+            // widest the plane allows: `lf_run_reach`'s docs carry the proof
+            // that a mask-derived window cannot read past the superblock row,
+            // and that a `tap_before/tap_after` of 7 reads 3 rows past it at
+            // every level-0 edge in the last 4-row band. Those rows belong to
+            // the tile worker reconstructing the next superblock row
+            // (`owned_recon.rs::stitch_sbrow`) and to that row's own
+            // DeblockCols task, both of which run concurrently at `t > 1` with
+            // no deblock barrier — an OBSERVED read/write race on x86_64,
+            // where this dispatcher owns the guard policy that
+            // `LfBlock::open` owns on aarch64 (which is why aarch64 is clean:
+            // it sizes from the group's own `wd`).
+            //
+            // H (vertical edges) keeps the plane worst case. Its perpendicular
+            // extent is COLUMNS of rows already inside this superblock row, so
+            // it has no cross-row ordering to violate, and its `tap_after` is
+            // not a tap bound at all but the 4-byte chunked transpose load's
+            // rounding (see `tap_after` above) — narrowing it would have to
+            // model the kernels' loads, for no correctness gain.
+            let (win_before, win_after) = if is_v {
+                let r = crate::src::loopfilter::lf_run_reach(is_y, mask);
+                (r, r)
+            } else {
+                (tap_before, tap_after)
+            };
+            let (win_reach_before, win_reach_after) = if !is_v {
+                (win_before, (max_iter * 4 - 1) * byte_stride + win_after)
+            } else {
+                (
+                    win_before * byte_stride,
+                    max_iter * 4 - 1 + win_after * byte_stride,
+                )
+            };
+
             // COW: single-threaded uses the original wide guard (zero-copy),
             // multi-threaded decomposes into a 2D compact buffer with per-row guards.
             let use_compact = crate::include::dav1d::picture::tile_threading_active();
 
-            let start_pixel = dst.offset - reach_before;
-            let total_pixels = (reach_before + reach_after).min(buf_pixel_len - start_pixel);
+            let start_pixel = dst.offset - win_reach_before;
+            let total_pixels =
+                (win_reach_before + win_reach_after).min(buf_pixel_len - start_pixel);
 
             if use_compact {
                 let (cw, ch, cstart, cbase) = if !is_v {
                     (
-                        tap_before + tap_after,
+                        win_before + win_after,
                         max_iter * 4,
-                        dst.offset - tap_before,
-                        tap_before,
+                        dst.offset - win_before,
+                        win_before,
                     )
                 } else {
                     let cw = max_iter * 4;
                     (
                         cw,
-                        tap_before + tap_after, // rows: tap_before above + tap_after below
-                        dst.offset.saturating_sub(tap_before * byte_stride),
-                        tap_before * cw,
+                        win_before + win_after, // rows: win_before above + win_after below
+                        dst.offset.saturating_sub(win_before * byte_stride),
+                        win_before * cw,
                     )
                 };
                 let lpf_pic = crate::src::with_offset::WithOffset {
@@ -5208,7 +5251,7 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                     .data
                     .slice_mut::<BitDepth8, _>((start_pixel.., ..total_pixels));
                 let buf: &mut [u8] = &mut *guard;
-                let base = reach_before;
+                let base = win_reach_before;
                 let stride_i = stride as isize;
                 match (is_y, is_v) {
                     (true, false) => lpf_h_sb_y_8bpc_inner(
@@ -5297,10 +5340,34 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             };
 
             // Guard: fall back to scalar if buffer bounds are insufficient.
+            // On the PLANE worst case, not the per-run window below, so the
+            // SIMD-vs-scalar decision is bit-for-bit what it was — see the
+            // 8bpc arm.
             let buf_pixel_len = dst.data.pixel_len::<BitDepth16>();
             if dst.offset < reach_before || dst.offset.saturating_add(reach_after) > buf_pixel_len {
                 return false;
             }
+
+            // Per-run window (#494). Same rule and same reason as the 8bpc
+            // arm: for V the row extent is the reach of the widest width this
+            // run's mask can select, so the window cannot read past the
+            // superblock row into concurrently-reconstructed rows. H keeps the
+            // plane worst case (columns of rows already inside this superblock
+            // row).
+            let (win_before, win_after) = if is_v {
+                let r = crate::src::loopfilter::lf_run_reach(is_y, mask);
+                (r, r)
+            } else {
+                (tap_before, tap_after)
+            };
+            let (win_reach_before, win_reach_after) = if !is_v {
+                (win_before, (max_iter * 4 - 1) * u16_stride + win_after)
+            } else {
+                (
+                    win_before * u16_stride,
+                    max_iter * 4 - 1 + win_after * u16_stride,
+                )
+            };
 
             // COW: single-threaded uses the original wide guard (zero-copy),
             // multi-threaded decomposes into a 2D compact buffer with per-row guards.
@@ -5308,17 +5375,17 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 
             if use_compact {
                 let (compact_w, compact_h, start_pixel, base) = if !is_v {
-                    // H filter: tap_before + tap_after pixels wide, max_iter*4 rows tall
-                    let w = tap_before + tap_after;
+                    // H filter: win_before + win_after pixels wide, max_iter*4 rows tall
+                    let w = win_before + win_after;
                     let h = max_iter * 4;
-                    let start = dst.offset - tap_before;
-                    (w, h, start, tap_before)
+                    let start = dst.offset - win_before;
+                    (w, h, start, win_before)
                 } else {
-                    // V filter: max_iter*4 pixels wide, tap_before + tap_after rows tall
+                    // V filter: max_iter*4 pixels wide, win_before + win_after rows tall
                     let w = max_iter * 4;
-                    let h = tap_before + tap_after;
-                    let start = dst.offset.saturating_sub(tap_before * u16_stride);
-                    (w, h, start, tap_before * w)
+                    let h = win_before + win_after;
+                    let start = dst.offset.saturating_sub(win_before * u16_stride);
+                    (w, h, start, win_before * w)
                 };
                 let lpf_pic = crate::src::with_offset::WithOffset {
                     data: dst.data,
@@ -5395,13 +5462,14 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                 crate::include::dav1d::picture::recycle_compact_scratch(compact);
                 crate::include::dav1d::picture::recycle_compact_scratch(pristine);
             } else {
-                let start_pixel = dst.offset - reach_before;
-                let total_pixels = (reach_before + reach_after).min(buf_pixel_len - start_pixel);
+                let start_pixel = dst.offset - win_reach_before;
+                let total_pixels =
+                    (win_reach_before + win_reach_after).min(buf_pixel_len - start_pixel);
                 let mut guard = dst
                     .data
                     .slice_mut::<BitDepth16, _>((start_pixel.., ..total_pixels));
                 let buf: &mut [u16] = &mut *guard;
-                let base = reach_before;
+                let base = win_reach_before;
                 let stride_i = stride as isize / 2;
 
                 match (is_y, is_v) {
