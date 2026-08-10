@@ -100,10 +100,28 @@ def main():
     cell = {k: median(v) for k, v in per.items()}
 
     arms = sorted({a for (a, _, _) in cell})
-    vecs = sorted({v for (_, v, _) in cell}, key=lambda v: (geom(v)["fmt"], geom(v)["depth"], geom(v)["luma"]))
+    allv = {v for (_, v, _) in cell}
+    # Vectors whose name is not a ladder cell (the campaign's own v4k_8tile
+    # anchors) get a plain table instead of a fit -- a size fit over one size
+    # would be a fabrication.
+    other_v = sorted(v for v in allv if geom(v) is None)
+    vecs = sorted((v for v in allv if geom(v)), key=lambda v: (geom(v)["fmt"], geom(v)["depth"], geom(v)["luma"]))
     rounds = sorted({rd for (_, _, rd) in cell})
+    threads = sorted({r["threads"] for r in rows})
     ours = "rs"
     ref = "dav1d_fd1" if "dav1d_fd1" in arms else [a for a in arms if a != ours][0]
+    if other_v:
+        print(f"\n=== non-ladder vectors (t={threads}) ===")
+        for v in other_v:
+            o = [cell[(ours, v, rd)] for rd in rounds if (ours, v, rd) in cell]
+            d = [cell[(ref, v, rd)] for rd in rounds if (ref, v, rd) in cell]
+            pr = [cell[(ours, v, rd)] / cell[(ref, v, rd)] for rd in rounds
+                  if (ours, v, rd) in cell and (ref, v, rd) in cell]
+            if not pr:
+                continue
+            print(f"  {v:<20} ours {median(o):9.3f} [{min(o):.3f}..{max(o):.3f}]  "
+                  f"dav1d {median(d):9.3f} [{min(d):.3f}..{max(d):.3f}]  "
+                  f"ratio {median(pr):.3f} [{min(pr):.3f}..{max(pr):.3f}]")
 
     out_lines = ["fmt\tdepth\tw\th\tluma_px\tsamples\tours_ms\tours_lo\tours_hi\tdav1d_ms\tdav1d_lo\tdav1d_hi\tratio_med\tratio_lo\tratio_hi\tdisjoint"]
 
@@ -113,7 +131,7 @@ def main():
             if not sel:
                 continue
             print()
-            print(f"=== YUV{fmt}  {depth}bpc  t=1  (n={len(rounds)} rounds) ===")
+            print(f"=== YUV{fmt}  {depth}bpc  t={','.join(map(str,threads))}  (n={len(rounds)} rounds) ===")
             print(f"{'size':>12} {'Mpx':>7} | {'ours ms/f':>10} {'[min..max]':>18} | "
                   f"{'dav1d ms/f':>10} {'[min..max]':>18} | {'ratio':>6} {'[min..max]':>16} band")
             xs_l, xs_s, y_ours, y_dav = [], [], [], []
