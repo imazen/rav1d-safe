@@ -163,3 +163,185 @@ multiplier vs t=1, ours/dav1d at matched t — are the statistics to read.
   and the point is not swept.
 * **No inter prediction, one content class, one quality point, aarch64 only** —
   inherited from the ladder, same as `docs/SIZE_SWEEP.md`.
+
+---
+
+# Results
+
+n=9 complete rounds. **All 1,944 rows are load-tagged** (foreign_max ranged 1-14
+across rounds; rounds 4-6 saw the worst). Absolutes are inflated; the paired
+within-round ratios below are the statistic to read, and where a band is wide it
+is printed wide rather than trimmed.
+
+Full tables: `benchmarks/size_sweep_t8_report_2026-08-10.txt`.
+Per-cell TSV: `benchmarks/size_sweep_t8_gap_2026-08-10.tsv`.
+Raw rows: `benchmarks/size_sweep_t8_raw_2026-08-10.tsv.zst`.
+
+## 1. On the ladder as encoded, threading is worth 0-16% and never more
+
+rav1d-safe, YUV420, single tile, ms/frame (median of 9) and cores busy:
+
+| size | bpc | t=1 | t=2 | t=4 | t=8 | best speedup | cores @t8 | CPU/decode @t8 |
+|---|---|---|---|---|---|---|---|---|
+| 64x36 | 8 | **0.047** | 0.064 | 0.065 | 0.068 | **none (t=1 wins)** | 1.15 | **1.75x** |
+| 256x144 | 8 | **0.618** | 0.633 | 0.651 | 0.653 | **none (t=1 wins)** | 1.11 | 1.17x |
+| 512x288 | 8 | 2.909 | **2.822** | 2.836 | 2.900 | 1.03x @t2 | 1.09 | 1.08x |
+| 1024x576 | 8 | 16.267 | 14.800 | **14.656** | 14.733 | **1.16x @t4** | 1.19 | 1.08x |
+| 2048x1152 | 8 | 67.778 | 56.481 | **55.778** | 56.333 | 1.11x @t4 | 1.14 | 1.04x |
+| 3840x2160 | 8 | 202.643 | 184.929 | **183.857** | 186.857 | 1.11x @t2 | 1.13 | 1.06x |
+| 64x36 | 10 | **0.063** | 0.084 | 0.082 | 0.083 | **none** | 1.12 | 1.55x |
+| 256x144 | 10 | **0.705** | 0.723 | 0.751 | 0.731 | **none** | 1.09 | 1.13x |
+| 512x288 | 10 | 3.202 | **3.107** | 3.189 | 3.136 | 1.03x @t2 | 1.08 | 1.07x |
+| 1024x576 | 10 | 17.656 | **16.133** | 16.489 | 16.433 | 1.10x @t2 | 1.18 | 1.10x |
+| 2048x1152 | 10 | 69.444 | 64.148 | **63.519** | 63.667 | 1.07x @t2 | 1.14 | 1.04x |
+| 3840x2160 | 10 | 223.857 | 207.071 | **206.071** | 206.929 | 1.08x @t2 | 1.14 | 1.04x |
+
+**`cores busy` never exceeds 1.19 at any size or any thread count.** Asking for
+8 threads and asking for 2 produce the same wall time and the same CPU, because
+the second task is the only extra work there is. The two-task reading of the
+source is confirmed by the instrument.
+
+**Below 0.15 MP threading is a straight loss.** At 64x36 t=2 is **1.36x SLOWER**
+than t=1 and burns **1.75x the CPU**; at 256x144 it is 2-6% slower for 9-17%
+more CPU. That is thread coordination with nothing to coordinate — the frame is
+1 to 12 superblocks, so the filter chain never gets far enough behind the tile
+task to overlap with it. dav1d pays the same toll (0.65x at 64x36 t=8).
+
+## 2. The mechanism, checked from the other direction
+
+Inverting the measured speedup through the two-stage model
+(`B/(A+B) = 1 - 1/S`, `scripts/perf/size_sweep_t8_amdahl.py`) says the
+overlappable minority stage is **8.4-13.7% of decode** for rav1d-safe across
+512x288..4K, and **3.3-8.6%** for dav1d.
+
+`docs/SIZE_SWEEP.md`'s independent profile puts loopfilter + cdef at
+**(1.53+1.09)/27.42 = 9.6%** of ms/MP at 1024x576 and **(1.48+0.37)/24.0 =
+7.7%** at 4K. Two instruments, four days and two base commits apart, agree.
+The filter chain IS the whole of the available parallelism, and it is small
+here because **loop restoration is off in every vector on this ladder** — a
+stream with LR active has more to overlap and would do better.
+
+## 3. Tiling the encode is the fix, and it is not decoder-side
+
+Same content, same encoder, same quality; the only change is
+`--tilecolslog2`/`--tilerowslog2`. rav1d-safe, YUV420 8bpc:
+
+| cell | tiles | t=1 | t=2 | t=4 | t=8 | speedup @t8 | cores @t8 | CPU/decode @t8 | bytes |
+|---|---|---|---|---|---|---|---|---|---|
+| 1024x576 | 1 | 16.267 | 14.800 | 14.656 | 14.733 | **1.11x** | 1.19 | 1.08x | — |
+| 1024x576 | 4 | 16.044 | 9.222 | 5.922 | 5.422 | **2.91x** | 3.49 | 1.26x | +0.64% |
+| 1024x576 | 8 | 16.067 | 9.256 | 5.089 | **4.189** | **3.89x** | 5.48 | 1.46x | +1.13% |
+| 2048x1152 | 1 | 67.778 | 56.481 | 55.778 | 56.333 | 1.09x | 1.14 | 1.04x | — |
+| 2048x1152 | 8 | 62.519 | 33.963 | 18.481 | **12.667** | **4.96x** | 6.36 | 1.32x | +0.57% |
+| 3840x2160 | 1 | 202.643 | 184.929 | 183.857 | 186.857 | 1.07x | 1.13 | 1.06x | — |
+| 3840x2160 | 8 | 200.786 | 106.429 | 57.786 | **38.286** | **5.20x** | 6.86 | 1.30x | +0.38% |
+| 3840x2160 10b | 8 | 234.071 | 123.429 | 65.714 | **42.929** | **5.41x** | 6.89 | 1.26x | +0.39% |
+
+**A 4K still goes from 187 ms to 38 ms — 4.9x lower latency at the same thread
+count — for 0.38% more bytes.** The single-tile t=1 and multi-tile t=1 columns
+agree to 1-8%, so the tiling costs essentially nothing when decoded serially:
+this is pure upside for a threaded decoder and it is bought in the ENCODER.
+
+**Efficiency of the tiled path is good, not free.** At 4K t=8 we buy 5.20x
+latency for 1.30x CPU per decode (S/C = 4.0) — the extra cores are more than
+paying for themselves. The 1.30x is the honest overhead of tile boundaries plus
+coordination; it is not the 8x that "8 threads" naively suggests, because the
+worker threads park rather than spin (`ttd.cond.wait`, `src/thread_task.rs:904`)
+so idle capacity costs nothing.
+
+## 4. Where we stand against dav1d on both axes
+
+Paired within round, rav1d-safe / dav1d, YUV420 8bpc:
+
+| cell | tiles | wall t=1 | wall t=8 | CPU t=1 | CPU t=8 |
+|---|---|---|---|---|---|
+| 512x288 | 1 | 1.122 | 1.129 | 1.122 | 1.206 |
+| 1024x576 | 1 | 1.452 | 1.360 | 1.444 | **1.525** |
+| 2048x1152 | 1 | 1.523 | 1.420 | 1.520 | **1.559** |
+| 3840x2160 | 1 | 1.268 | 1.221 | 1.268 | **1.342** |
+| 1024x576 | 8 | 1.427 | **2.04** | 1.427 | — |
+| 2048x1152 | 8 | 1.51 | **1.65** | — | — |
+| 3840x2160 | 8 | 1.273 | **1.485** | 1.274 | 1.427 |
+
+Two opposite movements, and both matter:
+
+* **On single-tile streams our WALL ratio improves with threads** (1.452 ->
+  1.360 at 1024x576) — only because our filter stage is bigger, so we have more
+  to hide. **Our CPU ratio gets worse over the same step** (1.444 -> 1.525). We
+  are not catching up; we are spending more cores to look closer.
+* **On tiled streams our ratio gets clearly worse with threads**: 4K goes
+  1.273 at t=1 to **1.485** at t=8 (dav1d 6.23x vs our 5.20x), and 1024x576
+  goes 1.43 to 2.04. **Tile-thread scaling is a real and separate deficit from
+  the single-thread gap**, and it only becomes visible on a bitstream that has
+  tiles — which is why fifteen rounds on `v4k_8tile` saw it and the ladder
+  never could.
+
+## 5. dav1d's default mode is a capability we do not have
+
+`dav1d_def` reaches 2.7-3.3x on SINGLE-TILE cells (e.g. 1024x576 8bpc:
+11.22 -> 3.50 ms at t=8, cores 3.59, CPU only 1.13x of t=1). That is frame
+threading pipelining independent frames out of the IVF, not stage overlap —
+which is exactly why the two-stage model returns a nonsense 46-70% for it.
+
+It is not a like-for-like latency number: it decodes several frames at once, so
+it cannot reduce the latency of ONE image. For a still-image server that is
+irrelevant (you get the same effect from N processes, and
+`docs/SIZE_SWEEP.md` already measured that at 8.22x for N=16 against dav1d's
+8.84x). For single-stream video it is a genuine gap: the checked build pins
+`n_fc = 1` (`src/lib.rs:127`) because frame threading needs `unchecked`.
+
+---
+
+# The decision table
+
+For each cell: the thread count that minimises latency, the point beyond which
+threads stop buying anything, and the CPU price. Rules are pre-registered in
+`scripts/perf/size_sweep_t8_report.py`'s docstring.
+
+| cell (YUV420) | tiles | best t | latency there | gain vs t=1 | threads stop helping after | CPU @t8 vs t=1 | verdict |
+|---|---|---|---|---|---|---|---|
+| 64x36 8b | 1 | **1** | 0.047 ms | — | t=1 | 1.75x | **never thread** |
+| 64x36 10b | 1 | **1** | 0.063 ms | — | t=1 | 1.55x | **never thread** |
+| 256x144 8b | 1 | **1** | 0.618 ms | — | t=1 | 1.17x | **never thread** |
+| 256x144 10b | 1 | **1** | 0.705 ms | — | t=1 | 1.13x | **never thread** |
+| 512x288 8b | 1 | 2 | 2.822 ms | 1.03x | t=2 | 1.08x | not worth it |
+| 512x288 10b | 1 | 2 | 3.107 ms | 1.03x | t=2 | 1.07x | not worth it |
+| 1024x576 8b | 1 | **2** | 14.80 ms | 1.11x | **t=2** | 1.08x | t=2 only |
+| 1024x576 10b | 1 | **2** | 16.13 ms | 1.10x | **t=2** | 1.10x | t=2 only |
+| 2048x1152 8b | 1 | **2** | 56.48 ms | 1.09x | **t=2** | 1.04x | t=2 only |
+| 2048x1152 10b | 1 | **2** | 64.15 ms | 1.07x | **t=2** | 1.04x | t=2 only |
+| 3840x2160 8b | 1 | **2** | 184.9 ms | 1.11x | **t=2** | 1.06x | t=2 only |
+| 3840x2160 10b | 1 | **2** | 207.1 ms | 1.08x | **t=2** | 1.04x | t=2 only |
+| 1024x576 8b | 4 | **8** | 5.42 ms | 2.91x | t=4 | 1.26x | thread to 4 |
+| 1024x576 8b | 8 | **8** | 4.19 ms | 3.89x | t=4 | 1.46x | thread to 8 |
+| 1024x576 10b | 8 | **8** | 4.59 ms | 3.84x | t=4 | 1.47x | thread to 8 |
+| 2048x1152 8b | 8 | **8** | 12.67 ms | 4.96x | t=4 | 1.32x | thread to 8 |
+| 3840x2160 8b | 8 | **8** | 38.29 ms | 5.20x | **t=8** | 1.30x | thread to 8 |
+| 3840x2160 10b | 8 | **8** | 42.93 ms | 5.41x | **t=8** | 1.26x | thread to 8 |
+
+Read plainly:
+
+1. **On the bitstreams `avifenc` produces by default, there is no thread count
+   worth using above 2, at any size, at either depth** — and below 0.15 MP
+   there is none worth using above 1. The ceiling is 1.16x and it is structural.
+2. **The lever is the encoder.** Eight tiles turn a 4K still from 187 ms to
+   38 ms for +0.38% bytes, and 1024x576 from 14.7 ms to 4.2 ms for +1.13%.
+3. **Threading is cheap in CPU terms wherever it works at all** (1.26-1.46x per
+   decode for 2.9-5.4x latency; S/C = 2.3-4.3) and expensive wherever it does
+   not (1.75x CPU for a 1.36x SLOWDOWN at 64x36). The bad trades are all at the
+   small end and all on single-tile input.
+4. **Our tile-thread scaling trails dav1d's** — 5.20x vs 6.23x at 4K/8-tile,
+   pushing the ratio from 1.27 to 1.49. That is a separate target from the
+   single-thread gap and it is invisible on this ladder's own vectors.
+
+## What this round did NOT settle
+
+* **The box was never idle.** All 1,944 rows carry foreign load (see the
+  measlock defect above). A clean-box repeat of the multi-tile t=8 cells is the
+  one measurement most likely to move: those are the cells where contention
+  bites hardest, so **5.20x at 4K/8-tile is a LOWER bound**.
+* **4:4:4 was not swept at t>1**, and no 4096x2304 vector exists.
+* **LR is off everywhere here**, so the overlappable stage is deblock+CDEF only.
+  Every single-tile speedup above is a lower bound for LR-active content.
+* **Why our tiled scaling trails dav1d's was not profiled.** This round measures
+  the deficit; it does not attribute it.
