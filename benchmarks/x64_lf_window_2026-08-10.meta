@@ -256,6 +256,32 @@ pass was thrown away because a `cargo build` rewrote the musl binary the running
 container had exec'd. A bind-mounted mmap of a replaced file is not a trustworthy
 arm. Every arm after that runs a pinned copy cargo never writes.
 
+## 7d. Liveness of the narrowing, on x86, as a COUNT
+
+A window that shrank must register fewer ROW guards, because the compact read
+takes one per row. `--features probe-sites`, x86_64, t=8, the first 8 vectors of
+`8-bit/data` (identical deterministic workload both arms — the write-back site's
+count is byte-for-byte equal, which is the check that they are comparable):
+
+  site                                  regs      mean extent
+  base  safe_simd/loopfilter.rs:5134  994,964        20.8 B    <- compact READ
+  head  safe_simd/loopfilter.rs:5177  970,370        19.3 B
+                                      -24,594        -7.2%
+                                       (-2.47%)
+
+  base  safe_simd/loopfilter.rs:5203  316,531         8.3 B    <- diff WRITE-BACK
+  head  safe_simd/loopfilter.rs:5246  316,531         8.3 B    <- UNCHANGED
+
+(The line numbers move because the patch inserts lines above the call; it is the
+same two call sites.)
+
+So the narrowing is **live on the arch that had the bug**: 24,594 fewer row
+guards and a 7.2% smaller mean extent at the read site, with the WRITE site
+identical to the registration — which is the design, since the write set is the
+diff against `pristine` and this change never touched what the filter modifies.
+It also bounds the perf direction without claiming a number: strictly fewer
+registrations and strictly fewer bytes copied. **No wall-clock claim: TCG.**
+
 ## 7b. Two LOCAL gate recipes that fail for reasons that predate this change
 
 Both verified to be in files this branch does not touch, and CI's own legs pass:
