@@ -414,6 +414,37 @@ impl<'a> ReconDst<'a> {
         }
     }
 
+    /// Copy out a `w`x`h` pixel rectangle, row-major, skipping stride gaps.
+    ///
+    /// Only the `__simd_test` harness needs this: it snapshots the destination
+    /// before a SIMD kernel, re-runs the scalar reference over the same block,
+    /// and compares. `PicOffset::strided_slice` served that on the tracked
+    /// path, but an owned band has no tracker and hands out no guard, so the
+    /// two variants need one shape in common. Row-at-a-time rather than one
+    /// span because the band's stride is its own tile width, not the picture's.
+    #[cfg(feature = "__simd_test")]
+    pub(crate) fn copy_out<BD: BitDepth>(&self, w: usize, h: usize) -> Vec<BD::Pixel> {
+        let ps = self.pixel_stride::<BD>();
+        let mut out = Vec::with_capacity(w * h);
+        for y in 0..h {
+            let row = self.as_src().at(ps * y as isize);
+            out.extend_from_slice(&row.slice::<BD>(w));
+        }
+        out
+    }
+
+    /// Write back a `w`x`h` pixel rectangle produced by [`Self::copy_out`].
+    #[cfg(feature = "__simd_test")]
+    pub(crate) fn copy_in<BD: BitDepth>(&mut self, w: usize, h: usize, src: &[BD::Pixel]) {
+        assert_eq!(src.len(), w * h, "copy_in expects exactly w*h pixels");
+        let ps = self.pixel_stride::<BD>();
+        for y in 0..h {
+            let mut row = self.at(ps * y as isize);
+            row.slice_mut::<BD>(w)
+                .copy_from_slice(&src[y * w..(y + 1) * w]);
+        }
+    }
+
     /// `len` pixels starting at the origin, read-only.
     #[inline]
     pub(crate) fn slice<BD: BitDepth>(&self, len: usize) -> Px<'_, BD> {

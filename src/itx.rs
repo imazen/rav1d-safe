@@ -449,9 +449,7 @@ impl itxfm::Fn {
                 let pre_state = {
                     let txsz = TxfmSize::from_repr(tx_size).unwrap();
                     let (w, h) = txsz.to_wh();
-                    let (guard, _) = dst.strided_slice::<BD>(w, h);
-                    let pixels = guard.to_vec();
-                    drop(guard);
+                    let pixels = dst.copy_out::<BD>(w, h);
                     let coeffs = coeff.to_vec();
                     (pixels, coeffs, w, h)
                 };
@@ -473,14 +471,11 @@ impl itxfm::Fn {
                         let pxstride = dst.pixel_stride::<BD>().unsigned_abs();
 
                         // Save SIMD output
-                        let (guard, _) = dst.strided_slice::<BD>(w, h);
-                        let simd_pixels = guard.to_vec();
-                        drop(guard);
+                        let simd_pixels = dst.copy_out::<BD>(w, h);
 
                         // Restore pre-SIMD state
                         {
-                            let (mut guard, _) = dst.strided_slice_mut::<BD>(w, h);
-                            guard.copy_from_slice(&orig_pixels);
+                            dst.copy_in::<BD>(w, h, &orig_pixels);
                         }
                         coeff.copy_from_slice(&orig_coeff);
 
@@ -488,9 +483,7 @@ impl itxfm::Fn {
                         itxfm_add_scalar_fallback::<BD>(tx_size, tx_type as TxfmType, dst, coeff, eob, bd);
 
                         // Compare SIMD vs scalar (only actual pixels, skip stride gaps)
-                        let (guard, _) = dst.strided_slice::<BD>(w, h);
-                        let scalar_pixels = guard.to_vec();
-                        drop(guard);
+                        let scalar_pixels = dst.copy_out::<BD>(w, h);
 
                         // Bit-exactness gate: NEON must match the generic scalar
                         // exactly. Panics on any divergence; the `__simd_test_log`
@@ -523,8 +516,7 @@ impl itxfm::Fn {
 
                         // Restore SIMD output so decoder proceeds correctly
                         {
-                            let (mut guard, _) = dst.strided_slice_mut::<BD>(w, h);
-                            guard.copy_from_slice(&simd_pixels);
+                            dst.copy_in::<BD>(w, h, &simd_pixels);
                         }
                         // Re-zero coefficients (both paths should have zeroed them)
                         for c in coeff.iter_mut() {
