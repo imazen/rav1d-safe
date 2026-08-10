@@ -122,7 +122,7 @@ impl Default for ReconBand {
 }
 
 impl ReconBand {
-    #[inline]
+    #[inline(always)]
     pub(crate) fn armed(&self) -> bool {
         self.armed
     }
@@ -169,12 +169,12 @@ impl ReconBand {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn n_planes(&self) -> usize {
         self.n_planes
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn plane_geometry(&self, pl: usize) -> (usize, usize, usize, usize) {
         let (row0, col0) = self.origin[pl];
         let (rows, cols) = self.live[pl];
@@ -182,7 +182,7 @@ impl ReconBand {
     }
 
     /// Read one live row of plane `pl`, for [`stitch`].
-    #[inline]
+    #[inline(always)]
     pub(crate) fn row_bytes(&self, pl: usize, row: usize, len: usize) -> &[u8] {
         let stride = self.stride[pl];
         let all: &[u8] = zerocopy::IntoBytes::as_bytes(&self.planes[pl][..]);
@@ -194,7 +194,7 @@ impl ReconBand {
     ///
     /// Panics (never corrupts) if `(row, col)` is outside the band: the
     /// subtraction underflows and the resulting index is out of bounds.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn at<BD: BitDepth>(&mut self, pl: usize, row: usize, col: usize) -> Band<'_> {
         let (row0, col0) = self.origin[pl];
         let stride = self.stride[pl];
@@ -269,7 +269,7 @@ pub(crate) enum PxMut<'a, BD: BitDepth> {
 
 impl<BD: BitDepth> Deref for PxMut<'_, BD> {
     type Target = [BD::Pixel];
-    #[inline]
+    #[inline(always)]
     fn deref(&self) -> &[BD::Pixel] {
         match self {
             Self::Pic(g) => g,
@@ -279,7 +279,7 @@ impl<BD: BitDepth> Deref for PxMut<'_, BD> {
 }
 
 impl<BD: BitDepth> DerefMut for PxMut<'_, BD> {
-    #[inline]
+    #[inline(always)]
     fn deref_mut(&mut self) -> &mut [BD::Pixel] {
         match self {
             Self::Pic(g) => g,
@@ -302,7 +302,7 @@ pub(crate) enum Px<'a, BD: BitDepth> {
 
 impl<BD: BitDepth> Deref for Px<'_, BD> {
     type Target = [BD::Pixel];
-    #[inline]
+    #[inline(always)]
     fn deref(&self) -> &[BD::Pixel] {
         match self {
             Self::Pic(g) => g,
@@ -329,7 +329,7 @@ pub(crate) enum DstBlock<'a, BD: BitDepth> {
 }
 
 impl<BD: BitDepth> DstBlock<'_, BD> {
-    #[inline]
+    #[inline(always)]
     pub(crate) fn as_mut_bytes(&mut self) -> &mut [u8] {
         match self {
             Self::Pic(b) => b.as_mut_bytes(),
@@ -337,7 +337,7 @@ impl<BD: BitDepth> DstBlock<'_, BD> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn base(&self) -> usize {
         match self {
             Self::Pic(b) => b.base(),
@@ -345,7 +345,7 @@ impl<BD: BitDepth> DstBlock<'_, BD> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn byte_stride(&self) -> isize {
         match self {
             Self::Pic(b) => b.byte_stride(),
@@ -370,7 +370,7 @@ fn px_mut<BD: BitDepth>(bytes: &mut [u8], off: usize, len: usize) -> &mut [BD::P
 
 impl<'a> ReconDst<'a> {
     /// Byte stride between rows.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn stride(&self) -> isize {
         match self {
             Self::Pic(p) => p.stride(),
@@ -379,7 +379,7 @@ impl<'a> ReconDst<'a> {
     }
 
     /// Pixel stride between rows.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn pixel_stride<BD: BitDepth>(&self) -> isize {
         match self {
             Self::Pic(p) => p.pixel_stride::<BD>(),
@@ -389,7 +389,7 @@ impl<'a> ReconDst<'a> {
 
     /// The same region, origin moved by `delta` PIXELS. Reborrows, so the
     /// result cannot outlive `self` — which is exactly the exclusion proof.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn at(&mut self, delta: isize) -> ReconDst<'_> {
         match self {
             Self::Pic(p) => ReconDst::Pic(*p + delta),
@@ -402,7 +402,7 @@ impl<'a> ReconDst<'a> {
     }
 
     /// A shared view of the same region.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn as_src(&self) -> ReconSrc<'_> {
         match self {
             Self::Pic(p) => ReconSrc::Pic(*p),
@@ -417,7 +417,7 @@ impl<'a> ReconDst<'a> {
     /// The tracked picture offset, if that is what this is. `None` on an owned
     /// band — used by the `asm` FFI paths, which take a raw picture pointer and
     /// therefore fall through to the Rust reference when the band is armed.
-    #[inline]
+    #[inline(always)]
     #[cfg_attr(not(feature = "asm"), allow(dead_code))]
     pub(crate) fn as_pic(&self) -> Option<PicOffset<'a>> {
         match self {
@@ -427,7 +427,7 @@ impl<'a> ReconDst<'a> {
     }
 
     /// `len` pixels starting at the origin.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn slice_mut<BD: BitDepth>(&mut self, len: usize) -> PxMut<'_, BD> {
         match self {
             Self::Pic(p) => PxMut::Pic(p.slice_mut::<BD>(len)),
@@ -467,7 +467,7 @@ impl<'a> ReconDst<'a> {
     }
 
     /// `len` pixels starting at the origin, read-only.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn slice<BD: BitDepth>(&self, len: usize) -> Px<'_, BD> {
         match self {
             Self::Pic(p) => Px::Pic(p.slice::<BD>(len)),
@@ -476,7 +476,7 @@ impl<'a> ReconDst<'a> {
     }
 
     /// The pixel at the origin.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn get<BD: BitDepth>(&self) -> BD::Pixel {
         match self {
             Self::Pic(p) => *p.index::<BD>(),
@@ -485,7 +485,7 @@ impl<'a> ReconDst<'a> {
     }
 
     /// Write the pixel at the origin.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn set<BD: BitDepth>(&mut self, v: BD::Pixel) {
         match self {
             Self::Pic(p) => *p.index_mut::<BD>() = v,
@@ -494,7 +494,7 @@ impl<'a> ReconDst<'a> {
     }
 
     /// Iterate `h` rows of `w` pixels, mutably.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn for_rows_mut<BD: BitDepth, F: FnMut(usize, &mut [BD::Pixel])>(
         &mut self,
         w: usize,
@@ -516,7 +516,7 @@ impl<'a> ReconDst<'a> {
     }
 
     /// Iterate `h` rows of `w` pixels, read-only.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn for_rows<BD: BitDepth, F: FnMut(usize, &[BD::Pixel])>(
         &self,
         w: usize,
@@ -543,7 +543,7 @@ impl<'a> ReconDst<'a> {
     /// itself, so there is no compact copy, no write-back and no registration.
     ///
     /// [`with_pixel_guard_mut`]: crate::include::dav1d::picture::with_pixel_guard_mut
-    #[inline]
+    #[inline(always)]
     pub(crate) fn with_block_mut<BD: BitDepth, R>(
         &mut self,
         w: usize,
@@ -564,7 +564,7 @@ impl<'a> ReconDst<'a> {
     }
 
     /// A `w × h` block as `(bytes, base, byte_stride)`.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn block_mut<BD: BitDepth>(&mut self, w: usize, h: usize) -> DstBlock<'_, BD> {
         match self {
             Self::Pic(p) => DstBlock::Pic(p.block_mut::<BD>(w, h)),
@@ -587,7 +587,7 @@ impl<'a> ReconDst<'a> {
 }
 
 impl<'a> ReconSrc<'a> {
-    #[inline]
+    #[inline(always)]
     pub(crate) fn stride(&self) -> isize {
         match self {
             Self::Pic(p) => p.stride(),
@@ -595,7 +595,7 @@ impl<'a> ReconSrc<'a> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn pixel_stride<BD: BitDepth>(&self) -> isize {
         match self {
             Self::Pic(p) => p.pixel_stride::<BD>(),
@@ -603,7 +603,7 @@ impl<'a> ReconSrc<'a> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn at(&self, delta: isize) -> ReconSrc<'a> {
         match self {
             Self::Pic(p) => ReconSrc::Pic(*p + delta),
@@ -615,7 +615,7 @@ impl<'a> ReconSrc<'a> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     #[cfg_attr(not(feature = "asm"), allow(dead_code))]
     pub(crate) fn as_pic(&self) -> Option<PicOffset<'a>> {
         match self {
@@ -624,7 +624,7 @@ impl<'a> ReconSrc<'a> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn slice<BD: BitDepth>(&self, len: usize) -> Px<'a, BD> {
         match self {
             Self::Pic(p) => Px::Pic(p.slice::<BD>(len)),
@@ -632,7 +632,7 @@ impl<'a> ReconSrc<'a> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn get<BD: BitDepth>(&self) -> BD::Pixel {
         match self {
             Self::Pic(p) => *p.index::<BD>(),
@@ -646,7 +646,7 @@ impl<'a> ReconSrc<'a> {
     /// copy under tile threading; the owned arm is the band itself, zero-copy.
     ///
     /// [`with_pixel_guard_immut`]: crate::include::dav1d::picture::with_pixel_guard_immut
-    #[inline]
+    #[inline(always)]
     pub(crate) fn with_block<BD: BitDepth, R>(
         &self,
         w: usize,
@@ -668,7 +668,7 @@ impl<'a> ReconSrc<'a> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn for_rows<BD: BitDepth, F: FnMut(usize, &[BD::Pixel])>(
         &self,
         w: usize,
@@ -777,7 +777,7 @@ pub(crate) enum ReconPlanes<'a> {
 impl<'a> ReconPlanes<'a> {
     /// Bind to the owned band if it is armed for this task, else to the shared
     /// picture.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn bind(
         pic: &'a [crate::include::dav1d::picture::Rav1dPictureDataComponent; 3],
         band: &'a mut ReconBand,
@@ -789,14 +789,14 @@ impl<'a> ReconPlanes<'a> {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn is_owned(&self) -> bool {
         matches!(self, Self::Own(_))
     }
 
     /// Pixel stride of plane `pl` — the BAND's stride when owned, which is why
     /// no caller may read `f.cur.stride[..]` for a reconstruction offset.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn pixel_stride<BD: BitDepth>(&self, pl: usize) -> isize {
         match self {
             Self::Pic(p) => p[pl].pixel_stride::<BD>(),
@@ -805,7 +805,7 @@ impl<'a> ReconPlanes<'a> {
     }
 
     /// A writable region at plane pixel coordinates `(row, col)`.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn dst<BD: BitDepth>(&mut self, pl: usize, row: usize, col: usize) -> ReconDst<'_> {
         match self {
             Self::Pic(p) => {
@@ -819,7 +819,7 @@ impl<'a> ReconPlanes<'a> {
     }
 
     /// A readable region at plane pixel coordinates `(row, col)`.
-    #[inline]
+    #[inline(always)]
     pub(crate) fn src<BD: BitDepth>(&self, pl: usize, row: usize, col: usize) -> ReconSrc<'_> {
         match self {
             Self::Pic(p) => {
