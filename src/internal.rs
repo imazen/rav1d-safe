@@ -537,6 +537,7 @@ pub struct ScalableMotionParams {
 }
 
 pub(crate) struct Rav1dFrameContextBdFn {
+    pub stitch_recon_band: fn(&Rav1dFrameData, &mut Rav1dTaskContext),
     pub recon_b_intra: ReconBIntraFn,
     pub recon_b_inter: ReconBInterFn,
     pub filter_sbrow: FilterSbrowFn,
@@ -556,6 +557,7 @@ pub(crate) struct Rav1dFrameContextBdFn {
 impl Rav1dFrameContextBdFn {
     pub const fn new<BD: BitDepth>() -> Self {
         Self {
+            stitch_recon_band: crate::src::owned_recon::stitch_sbrow::<BD>,
             recon_b_inter: rav1d_recon_b_inter::<BD>,
             recon_b_intra: rav1d_recon_b_intra::<BD>,
             filter_sbrow: rav1d_filter_sbrow::<BD>,
@@ -851,6 +853,9 @@ pub(crate) struct Rav1dFrameData {
     pub gmv_warp_allowed: [u8; 7],
     pub out_cdf: CdfThreadContext,
     pub tiles: Vec<Rav1dTileGroup>,
+    /// May reconstruction of this frame run on per-worker owned bands?
+    /// See [`crate::src::owned_recon::frame_setup`] for every decline.
+    pub owned_recon: bool,
 
     // for scalable references
     pub svc: [[ScalableMotionParams; 2]; 7], /* [2 x,y][7] */
@@ -1253,6 +1258,15 @@ pub(crate) struct Rav1dTaskContext {
     /// place by zerocopy — no stack temporary exists at any point.
     pub scratch: Box<TaskContextScratch>,
 
+    /// This worker's own reconstruction band — see
+    /// [`crate::src::owned_recon`]. Reached through `&mut Rav1dTaskContext`,
+    /// which is what makes `&mut [u8]` obtainable in every recon signature and
+    /// therefore makes the borrow tracker unnecessary on the recon path. The
+    /// buffers cannot live on `Rav1dFrameData`: tile tasks reach that through
+    /// `fc.data.try_read()`, a SHARED reference, whose only expressible
+    /// mutation is interior — i.e. the tracker (PR #481 §6).
+    pub recon_band: crate::src::owned_recon::ReconBand,
+
     pub warpmv: Rav1dWarpedMotionParams,
     /// Index into the relevant `Rav1dFrameContext::lf.mask` array.
     pub lf_mask: Option<usize>,
@@ -1279,6 +1293,7 @@ impl Rav1dTaskContext {
             pal_sz_uv: Default::default(),
             scratch: TaskContextScratch::new_box_zeroed()
                 .expect("OOM allocating 250 KB task-context scratch"),
+            recon_band: Default::default(),
             warpmv: Default::default(),
             lf_mask: Default::default(),
             top_pre_cdef_toggle: Default::default(),

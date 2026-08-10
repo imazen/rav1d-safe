@@ -5625,7 +5625,7 @@ use crate::src::internal::SCRATCH_EDGE_LEN;
 #[cfg(target_arch = "x86_64")]
 pub fn intra_pred_dispatch<BD: BitDepth>(
     mode: usize,
-    dst: PicOffset,
+    dst: &mut crate::src::owned_recon::ReconDst<'_>,
     topleft: &[BD::Pixel; SCRATCH_EDGE_LEN],
     topleft_off: usize,
     width: c_int,
@@ -5659,538 +5659,361 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
     // Get byte-level views (safe via zerocopy IntoBytes)
     let tl_bytes: &[u8] = topleft.as_bytes();
 
-    crate::include::dav1d::picture::with_pixel_guard_mut::<BD, _>(
-        &dst,
-        w,
-        h,
-        |dst_bytes, dst_base_bytes, byte_stride| {
-            match (BD::BPC, mode) {
-                (BPC::BPC8, 0) => {
-                    if let Some(t512) = avx512_token {
-                        ipred_dc_8bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_dc_8bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC8, 1) => {
-                    if let Some(t512) = avx512_token {
-                        ipred_v_8bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_v_8bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC8, 2) => {
-                    if let Some(t512) = avx512_token {
-                        ipred_h_8bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_h_8bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC8, 3) => {
-                    if let Some(t512) = avx512_token {
-                        ipred_dc_left_8bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_dc_left_8bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC8, 4) => {
-                    if let Some(t512) = avx512_token {
-                        ipred_dc_top_8bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_dc_top_8bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC8, 5) => {
-                    if let Some(t512) = avx512_token {
-                        ipred_dc_128_8bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_dc_128_8bpc_inner(token, dst_bytes, dst_base_bytes, byte_stride, w, h)
-                    }
-                }
-                (BPC::BPC8, 6) => {
-                    if let Some(t512x) = avx512x_token {
-                        ipred_z1_8bpc_v4x_inner(
-                            t512x,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                            angle as i32,
-                        );
-                    } else {
-                        ipred_z1_8bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                            angle as i32,
-                        );
-                    }
-                }
-                (BPC::BPC8, 7) => {
-                    if let Some(t512x) = avx512x_token {
-                        ipred_z2_8bpc_v4x_inner(
-                            t512x,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                            angle as i32,
-                            max_width,
-                            max_height,
-                        );
-                    } else {
-                        ipred_z2_8bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                            angle as i32,
-                            max_width,
-                            max_height,
-                        );
-                    }
-                }
-                (BPC::BPC8, 8) => {
-                    if let Some(t512x) = avx512x_token {
-                        ipred_z3_8bpc_v4x_inner(
-                            t512x,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                            angle as i32,
-                        );
-                    } else {
-                        ipred_z3_8bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                            angle as i32,
-                        );
-                    }
-                }
-                (BPC::BPC8, 9) => {
-                    if let Some(t512) = avx512_token {
-                        ipred_smooth_8bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_smooth_8bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC8, 10) => {
-                    if let Some(t512) = avx512_token {
-                        ipred_smooth_v_8bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_smooth_v_8bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC8, 11) => {
-                    if let Some(t512) = avx512_token {
-                        ipred_smooth_h_8bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_smooth_h_8bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC8, 12) => {
-                    if let Some(t512) = avx512_token {
-                        ipred_paeth_8bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_paeth_8bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            topleft_off,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC8, 13) => {
-                    ipred_filter_8bpc_inner(
+    dst.with_block_mut::<BD, _>(w, h, |dst_bytes, dst_base_bytes, byte_stride| {
+        match (BD::BPC, mode) {
+            (BPC::BPC8, 0) => {
+                if let Some(t512) = avx512_token {
+                    ipred_dc_8bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_dc_8bpc_inner(
                         token,
                         dst_bytes,
                         dst_base_bytes,
                         byte_stride,
                         tl_bytes,
-                        0, // tl_off: full array starts at 0
+                        topleft_off,
                         w,
                         h,
-                        angle as i32,
-                        topleft_off,
                     )
                 }
-                (BPC::BPC16, 0) => {
-                    let tl_off_bytes = topleft_off * 2;
-                    if let Some(t512) = avx512_token {
-                        ipred_dc_16bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_dc_16bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC16, 1) => {
-                    let tl_off_bytes = topleft_off * 2;
-                    if let Some(t512) = avx512_token {
-                        ipred_v_16bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_v_16bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC16, 2) => {
-                    let tl_off_bytes = topleft_off * 2;
-                    if let Some(t512) = avx512_token {
-                        ipred_h_16bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_h_16bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC16, 3) => {
-                    let tl_off_bytes = topleft_off * 2;
-                    if let Some(t512) = avx512_token {
-                        ipred_dc_left_16bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_dc_left_16bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC16, 4) => {
-                    let tl_off_bytes = topleft_off * 2;
-                    if let Some(t512) = avx512_token {
-                        ipred_dc_top_16bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_dc_top_16bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC16, 5) => {
-                    if let Some(t512) = avx512_token {
-                        ipred_dc_128_16bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            w,
-                            h,
-                            bd_c as i32,
-                        )
-                    } else {
-                        ipred_dc_128_16bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            w,
-                            h,
-                            bd_c as i32,
-                        )
-                    }
-                }
-                (BPC::BPC16, 6) => {
-                    let tl_off_bytes = topleft_off * 2;
-                    ipred_z1_16bpc_inner(
+            }
+            (BPC::BPC8, 1) => {
+                if let Some(t512) = avx512_token {
+                    ipred_v_8bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_v_8bpc_inner(
                         token,
                         dst_bytes,
                         dst_base_bytes,
                         byte_stride,
                         tl_bytes,
-                        tl_off_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                }
+            }
+            (BPC::BPC8, 2) => {
+                if let Some(t512) = avx512_token {
+                    ipred_h_8bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_h_8bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                }
+            }
+            (BPC::BPC8, 3) => {
+                if let Some(t512) = avx512_token {
+                    ipred_dc_left_8bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_dc_left_8bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                }
+            }
+            (BPC::BPC8, 4) => {
+                if let Some(t512) = avx512_token {
+                    ipred_dc_top_8bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_dc_top_8bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                }
+            }
+            (BPC::BPC8, 5) => {
+                if let Some(t512) = avx512_token {
+                    ipred_dc_128_8bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_dc_128_8bpc_inner(token, dst_bytes, dst_base_bytes, byte_stride, w, h)
+                }
+            }
+            (BPC::BPC8, 6) => {
+                if let Some(t512x) = avx512x_token {
+                    ipred_z1_8bpc_v4x_inner(
+                        t512x,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
                         w,
                         h,
                         angle as i32,
-                        bd_c,
                     );
-                }
-                (BPC::BPC16, 7) => {
-                    let tl_off_bytes = topleft_off * 2;
-                    ipred_z2_16bpc_inner(
+                } else {
+                    ipred_z1_8bpc_inner(
                         token,
                         dst_bytes,
                         dst_base_bytes,
                         byte_stride,
                         tl_bytes,
-                        tl_off_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                        angle as i32,
+                    );
+                }
+            }
+            (BPC::BPC8, 7) => {
+                if let Some(t512x) = avx512x_token {
+                    ipred_z2_8bpc_v4x_inner(
+                        t512x,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
                         w,
                         h,
                         angle as i32,
                         max_width,
                         max_height,
-                        bd_c,
+                    );
+                } else {
+                    ipred_z2_8bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                        angle as i32,
+                        max_width,
+                        max_height,
                     );
                 }
-                (BPC::BPC16, 8) => {
-                    let tl_off_bytes = topleft_off * 2;
-                    ipred_z3_16bpc_inner(
+            }
+            (BPC::BPC8, 8) => {
+                if let Some(t512x) = avx512x_token {
+                    ipred_z3_8bpc_v4x_inner(
+                        t512x,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                        angle as i32,
+                    );
+                } else {
+                    ipred_z3_8bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                        angle as i32,
+                    );
+                }
+            }
+            (BPC::BPC8, 9) => {
+                if let Some(t512) = avx512_token {
+                    ipred_smooth_8bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_smooth_8bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                }
+            }
+            (BPC::BPC8, 10) => {
+                if let Some(t512) = avx512_token {
+                    ipred_smooth_v_8bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_smooth_v_8bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                }
+            }
+            (BPC::BPC8, 11) => {
+                if let Some(t512) = avx512_token {
+                    ipred_smooth_h_8bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_smooth_h_8bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                }
+            }
+            (BPC::BPC8, 12) => {
+                if let Some(t512) = avx512_token {
+                    ipred_paeth_8bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_paeth_8bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        topleft_off,
+                        w,
+                        h,
+                    )
+                }
+            }
+            (BPC::BPC8, 13) => {
+                ipred_filter_8bpc_inner(
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    0, // tl_off: full array starts at 0
+                    w,
+                    h,
+                    angle as i32,
+                    topleft_off,
+                )
+            }
+            (BPC::BPC16, 0) => {
+                let tl_off_bytes = topleft_off * 2;
+                if let Some(t512) = avx512_token {
+                    ipred_dc_16bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_dc_16bpc_inner(
                         token,
                         dst_bytes,
                         dst_base_bytes,
@@ -6199,134 +6022,306 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
                         tl_off_bytes,
                         w,
                         h,
-                        angle as i32,
-                        bd_c,
-                    );
+                    )
                 }
-                (BPC::BPC16, 9) => {
-                    let tl_off_bytes = topleft_off * 2;
-                    if let Some(t512) = avx512_token {
-                        ipred_smooth_16bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_smooth_16bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC16, 10) => {
-                    let tl_off_bytes = topleft_off * 2;
-                    if let Some(t512) = avx512_token {
-                        ipred_smooth_v_16bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_smooth_v_16bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC16, 11) => {
-                    let tl_off_bytes = topleft_off * 2;
-                    if let Some(t512) = avx512_token {
-                        ipred_smooth_h_16bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_smooth_h_16bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC16, 12) => {
-                    let tl_off_bytes = topleft_off * 2;
-                    if let Some(t512) = avx512_token {
-                        ipred_paeth_16bpc_avx512_inner(
-                            t512,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    } else {
-                        ipred_paeth_16bpc_inner(
-                            token,
-                            dst_bytes,
-                            dst_base_bytes,
-                            byte_stride,
-                            tl_bytes,
-                            tl_off_bytes,
-                            w,
-                            h,
-                        )
-                    }
-                }
-                (BPC::BPC16, 13) => {
-                    ipred_filter_16bpc_inner(
+            }
+            (BPC::BPC16, 1) => {
+                let tl_off_bytes = topleft_off * 2;
+                if let Some(t512) = avx512_token {
+                    ipred_v_16bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_v_16bpc_inner(
                         token,
                         dst_bytes,
                         dst_base_bytes,
                         byte_stride,
                         tl_bytes,
-                        0, // tl_off: full array starts at 0
+                        tl_off_bytes,
                         w,
                         h,
-                        angle as i32,
-                        bd_c as i32,
-                        topleft_off,
                     )
                 }
-                _ => return false,
             }
-            true
-        },
-    ) // with_pixel_guard_mut
+            (BPC::BPC16, 2) => {
+                let tl_off_bytes = topleft_off * 2;
+                if let Some(t512) = avx512_token {
+                    ipred_h_16bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_h_16bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                }
+            }
+            (BPC::BPC16, 3) => {
+                let tl_off_bytes = topleft_off * 2;
+                if let Some(t512) = avx512_token {
+                    ipred_dc_left_16bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_dc_left_16bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                }
+            }
+            (BPC::BPC16, 4) => {
+                let tl_off_bytes = topleft_off * 2;
+                if let Some(t512) = avx512_token {
+                    ipred_dc_top_16bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_dc_top_16bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                }
+            }
+            (BPC::BPC16, 5) => {
+                if let Some(t512) = avx512_token {
+                    ipred_dc_128_16bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        w,
+                        h,
+                        bd_c as i32,
+                    )
+                } else {
+                    ipred_dc_128_16bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        w,
+                        h,
+                        bd_c as i32,
+                    )
+                }
+            }
+            (BPC::BPC16, 6) => {
+                let tl_off_bytes = topleft_off * 2;
+                ipred_z1_16bpc_inner(
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
+                    angle as i32,
+                    bd_c,
+                );
+            }
+            (BPC::BPC16, 7) => {
+                let tl_off_bytes = topleft_off * 2;
+                ipred_z2_16bpc_inner(
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
+                    angle as i32,
+                    max_width,
+                    max_height,
+                    bd_c,
+                );
+            }
+            (BPC::BPC16, 8) => {
+                let tl_off_bytes = topleft_off * 2;
+                ipred_z3_16bpc_inner(
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    tl_off_bytes,
+                    w,
+                    h,
+                    angle as i32,
+                    bd_c,
+                );
+            }
+            (BPC::BPC16, 9) => {
+                let tl_off_bytes = topleft_off * 2;
+                if let Some(t512) = avx512_token {
+                    ipred_smooth_16bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_smooth_16bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                }
+            }
+            (BPC::BPC16, 10) => {
+                let tl_off_bytes = topleft_off * 2;
+                if let Some(t512) = avx512_token {
+                    ipred_smooth_v_16bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_smooth_v_16bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                }
+            }
+            (BPC::BPC16, 11) => {
+                let tl_off_bytes = topleft_off * 2;
+                if let Some(t512) = avx512_token {
+                    ipred_smooth_h_16bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_smooth_h_16bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                }
+            }
+            (BPC::BPC16, 12) => {
+                let tl_off_bytes = topleft_off * 2;
+                if let Some(t512) = avx512_token {
+                    ipred_paeth_16bpc_avx512_inner(
+                        t512,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                } else {
+                    ipred_paeth_16bpc_inner(
+                        token,
+                        dst_bytes,
+                        dst_base_bytes,
+                        byte_stride,
+                        tl_bytes,
+                        tl_off_bytes,
+                        w,
+                        h,
+                    )
+                }
+            }
+            (BPC::BPC16, 13) => {
+                ipred_filter_16bpc_inner(
+                    token,
+                    dst_bytes,
+                    dst_base_bytes,
+                    byte_stride,
+                    tl_bytes,
+                    0, // tl_off: full array starts at 0
+                    w,
+                    h,
+                    angle as i32,
+                    bd_c as i32,
+                    topleft_off,
+                )
+            }
+            _ => return false,
+        }
+        true
+    }) // with_pixel_guard_mut
 }
 
 /// Safe dispatch for CFL prediction. Returns true if SIMD was used.
@@ -6335,7 +6330,7 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
 /// `dst = clip(dc + signed_round((alpha * ac) / 64), 0, bitdepth_max)`.
 #[cfg(target_arch = "x86_64")]
 pub fn cfl_pred_dispatch<BD: BitDepth>(
-    dst: PicOffset,
+    dst: &mut crate::src::owned_recon::ReconDst<'_>,
     width: c_int,
     height: c_int,
     dc: c_int,
@@ -6359,8 +6354,7 @@ pub fn cfl_pred_dispatch<BD: BitDepth>(
 
     let ac_slice = &ac[..w * h];
 
-    crate::include::dav1d::picture::with_pixel_guard_mut::<BD, _>(
-        &dst,
+    dst.with_block_mut::<BD, _>(
         w,
         h,
         |dst_bytes, dst_base_bytes, byte_stride| match BD::BPC {
@@ -6810,7 +6804,7 @@ fn cfl_ac_444_8bpc_inner(
 #[cfg(target_arch = "x86_64")]
 pub fn cfl_ac_dispatch<BD: BitDepth>(
     ac: &mut [i16],
-    y_src: PicOffset,
+    y_src: &crate::src::owned_recon::ReconSrc<'_>,
     w_pad: c_int,
     h_pad: c_int,
     width: usize,
@@ -6819,9 +6813,6 @@ pub fn cfl_ac_dispatch<BD: BitDepth>(
     is_ss_ver: bool,
 ) -> bool {
     use crate::include::common::bitdepth::BPC;
-    use crate::include::dav1d::picture::tile_threading_active;
-    use crate::src::strided::Strided as _;
-    use zerocopy::IntoBytes;
 
     // 16bpc not yet supported.
     if BD::BPC != BPC::BPC8 {
@@ -6845,54 +6836,11 @@ pub fn cfl_ac_dispatch<BD: BitDepth>(
 
     let ac_block = &mut ac[..width * height];
 
-    if tile_threading_active() {
-        // MT-safe path: per-row guards into a compact buffer.
-        let (src_compact, src_stride) = y_src.compact_read_per_row::<BD>(src_w, src_h);
-        let src_stride_i = src_stride as isize;
-        if is_ss_hor && is_ss_ver {
-            cfl_ac_420_8bpc_inner(
-                token,
-                ac_block,
-                width,
-                height,
-                active_w,
-                active_h,
-                &src_compact,
-                0,
-                src_stride_i,
-            );
-        } else if is_ss_hor && !is_ss_ver {
-            cfl_ac_422_8bpc_inner(
-                token,
-                ac_block,
-                width,
-                height,
-                active_w,
-                active_h,
-                &src_compact,
-                0,
-                src_stride_i,
-            );
-        } else {
-            cfl_ac_444_8bpc_inner(
-                token,
-                ac_block,
-                width,
-                height,
-                active_w,
-                active_h,
-                &src_compact,
-                0,
-                src_stride_i,
-            );
-        }
-        crate::include::dav1d::picture::recycle_compact_scratch(src_compact);
-    } else {
-        // Single-threaded fast path: read directly from the picture buffer
-        // via narrow_guard (no heap alloc, no memcpy).
-        let (src_guard, src_base) = y_src.narrow_guard::<BD>(src_w, src_h);
-        let src_bytes: &[u8] = src_guard.as_bytes();
-        let src_stride_i = y_src.data.stride();
+    // ONE shape for both backings: the picture arm is a compact per-row read
+    // under tile threading and a `narrow_guard` when single-threaded (exactly
+    // what the two branches here used to do by hand); the owned-band arm is the
+    // band itself, zero-copy and untracked.
+    y_src.with_block::<BD, _>(src_w, src_h, |src_bytes, src_base, src_stride_i| {
         if is_ss_hor && is_ss_ver {
             cfl_ac_420_8bpc_inner(
                 token,
@@ -6930,7 +6878,7 @@ pub fn cfl_ac_dispatch<BD: BitDepth>(
                 src_stride_i,
             );
         }
-    }
+    });
     true
 }
 

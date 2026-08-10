@@ -217,6 +217,12 @@ fn decode_md5(ivf_path: &Path, apply_grain: bool, threads: u32) -> Result<(Strin
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut group_filter: Option<String> = None;
+    // Groups to DROP. Issue #479: `rav1d_apply_grain_row` bands rows per worker
+    // while `filmgrain_arm.rs` takes a whole-plane mutable guard, which aborts
+    // 13 of 768 vectors at `threads > 1` on unmodified `main`. Dropping them
+    // from BOTH sides of a set-diff keeps the comparison honest; the TOTAL line
+    // prints what was skipped so an empty filter cannot pass as a full run.
+    let mut skip_groups: Vec<String> = Vec::new();
     let mut name_filter: Option<String> = None;
     let mut activity = false;
     // The corpus gate defaulted to one thread, which made it structurally
@@ -229,6 +235,14 @@ fn main() {
         match args[i].as_str() {
             "--group" => {
                 group_filter = args.get(i + 1).cloned();
+                i += 2;
+            }
+            "--skip-group" => {
+                skip_groups.push(
+                    args.get(i + 1)
+                        .cloned()
+                        .expect("--skip-group needs a value"),
+                );
                 i += 2;
             }
             "--name" => {
@@ -292,6 +306,9 @@ fn main() {
             if !group.contains(g.as_str()) {
                 continue;
             }
+        }
+        if skip_groups.iter().any(|g| group.contains(g.as_str())) {
+            continue;
         }
         let meson = base.join(group);
         if !meson.exists() {
@@ -369,5 +386,12 @@ fn main() {
         eprintln!("done {group_key}");
     }
 
-    eprintln!("TOTAL threads={threads} pass={pass} mismatch={fail} error={err} skip={skip}");
+    let skipped = if skip_groups.is_empty() {
+        "-".to_string()
+    } else {
+        skip_groups.join(",")
+    };
+    eprintln!(
+        "TOTAL threads={threads} pass={pass} mismatch={fail} error={err} skip={skip} skipped_groups={skipped}"
+    );
 }

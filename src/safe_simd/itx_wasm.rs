@@ -748,7 +748,7 @@ fn inv_txfm_add_dct_dct_8x8_8bpc(
 pub fn itxfm_add_dispatch<BD: BitDepth>(
     tx_size: usize,
     tx_type: usize,
-    dst: PicOffset,
+    dst: &mut crate::src::owned_recon::ReconDst<'_>,
     coeff: &mut [BD::Coef],
     eob: i32,
     bd: BD,

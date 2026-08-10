@@ -1,0 +1,8 @@
+base	v4k_8tile	t=1	104202240	99.4 MB
+base	v4k_8tile	t=8	111362048	106.2 MB
+base	v4k_8tile_10b	t=1	156303360	149.1 MB
+base	v4k_8tile_10b	t=8	164823040	157.2 MB
+head	v4k_8tile	t=1	104464384	99.6 MB
+head	v4k_8tile	t=8	113065984	107.8 MB
+head	v4k_8tile_10b	t=1	156762112	149.5 MB
+head	v4k_8tile_10b	t=8	168165376	160.4 MB

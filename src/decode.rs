@@ -4157,6 +4157,10 @@ pub(crate) fn rav1d_decode_tile_sbrow(
         frame_hdr.frame_type.is_key_or_intra(),
         t.frame_thread.pass,
     );
+    // Bind this worker's owned reconstruction band to the tile superblock row
+    // it is about to reconstruct. Declines (leaving the shared picture in use)
+    // for every frame `owned_recon::frame_setup` refused.
+    crate::src::owned_recon::arm_sbrow(f, t);
     if t.frame_thread.pass == 2 {
         let off_2pass = if c.tc.len() > 1 {
             f.sb128w * frame_hdr.tiling.rows as c_int
@@ -4182,6 +4186,7 @@ pub(crate) fn rav1d_decode_tile_sbrow(
             }
         }
         (f.bd_fn().backup_ipred_edge)(f, t);
+        (f.bd_fn().stitch_recon_band)(f, t);
         return Ok(());
     }
 
@@ -4317,6 +4322,13 @@ pub(crate) fn rav1d_decode_tile_sbrow(
     if t.frame_thread.pass != 1 {
         (f.bd_fn().backup_ipred_edge)(f, t);
     }
+
+    // Publish this tile's slice of the superblock row into the shared picture.
+    // Ordered BEFORE the caller stores `ts.progress`, which is what the filter
+    // task for this superblock row waits on, so the filter never sees a
+    // partially-stitched row. Also ordered AFTER `backup_ipred_edge`, which
+    // reads the band's last row.
+    (f.bd_fn().stitch_recon_band)(f, t);
 
     // backup t->a/l.tx_lpf_y/uv at tile boundaries to use them to "fix"
     // up the initial value in neighbour tiles when running the loopfilter
@@ -4676,6 +4688,12 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
             }
         }
     }
+
+    // Per-worker owned reconstruction bands. Must come after `f.cur`,
+    // `f.bw`/`f.bh` and the tiling are final; declines (leaving
+    // `f.owned_recon = false`, i.e. today's shared-picture path) for any frame
+    // it cannot serve.
+    crate::src::owned_recon::frame_setup(c, f);
 
     Ok(())
 }

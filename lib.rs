@@ -181,6 +181,7 @@ pub mod src {
     mod lr_apply;
     pub(crate) mod mem;
     mod obu;
+    pub(crate) mod owned_recon;
     pub(crate) mod pic_or_buf;
     /// THROWAWAY P1 measurement probe. Never merge.
     #[cfg(feature = "probe-tasktime")]

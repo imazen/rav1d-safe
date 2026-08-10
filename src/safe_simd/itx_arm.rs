@@ -8385,7 +8385,7 @@ impl_itxfm_direct_dispatch!(
 pub fn itxfm_add_dispatch<BD: BitDepth>(
     tx_size: usize,
     tx_type: usize,
-    dst: PicOffset,
+    dst: &mut crate::src::owned_recon::ReconDst<'_>,
     coeff: &mut [BD::Coef],
     eob: i32,
     bd: BD,
@@ -8499,8 +8499,8 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                 // row at a time, so the wide extent bought nothing; narrowing
                 // it is also the safe direction under tile threading.
                 let pxstride = dst.pixel_stride::<BD>();
-                let add_row = |y: usize, tmp_row: Option<&[i32]>, dc: i32| {
-                    let row = dst + (y as isize * pxstride);
+                let mut add_row = |y: usize, tmp_row: Option<&[i32]>, dc: i32| {
+                    let mut row = dst.at(y as isize * pxstride);
                     let mut guard = row.slice_mut::<BD>(w);
                     let px: &mut [u16] =
                         crate::src::safe_simd::pixel_access::reinterpret_slice_mut(&mut guard)
@@ -9483,6 +9483,9 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
         let (w, h) = txfm.to_wh();
 
         // Create tracked guard — ensures borrow tracker knows about this access
+        let dst = dst
+            .as_pic()
+            .expect("owned recon band is never armed under `c-ffi`/`asm`");
         let (mut dst_guard, _dst_base) = dst.strided_slice_mut::<BD>(w, h);
         let dst_ptr: *mut DynPixel = dst_guard.as_mut_bytes().as_mut_ptr() as *mut DynPixel;
         let dst_stride = dst.stride();

@@ -1,0 +1,52 @@
+RUN	v4k_8tile.avif	3840x2160	8bpc	threads=8	iters=3	ms_total=875.71	ms_per_frame=291.904
+SITES	total_per_frame=11401399	distinct=48	lost=0
+#site	per_frame	mut	immut	mean_bytes	where
+SITE	3835042	0	3835042	8.8	33.6%	src/loopfilter.rs:566:14
+SITE	2534988	2534988	0	2.1	55.9%	src/ctx.rs:99:27
+SITE	646912	646912	0	8.0	61.5%	src/safe_simd/cdef_arm.rs:622:9
+SITE	646912	0	646912	10.0	67.2%	src/safe_simd/cdef_arm.rs:192:9
+SITE	414592	0	414592	2.0	70.9%	src/cdef_apply.rs:121:33
+SITE	254784	0	254784	2.0	73.1%	src/cdef_apply.rs:104:32
+SITE	247040	0	247040	8.0	75.3%	src/safe_simd/cdef_arm.rs:1217:9
+SITE	188130	0	188130	1.0	76.9%	src/ipred_prepare.rs:37:21
+SITE	188130	0	188130	2.3	78.6%	src/recon.rs:2735:46
+SITE	188130	0	188130	1.0	80.2%	src/ipred_prepare.rs:47:23
+SITE	188130	0	188130	1.0	81.9%	src/ipred_prepare.rs:34:17
+SITE	188130	0	188130	2.3	83.5%	src/recon.rs:2734:46
+SITE	161728	0	161728	12.0	84.9%	src/safe_simd/cdef_arm.rs:223:18
+SITE	141344	0	141344	12.0	86.2%	src/safe_simd/cdef_arm.rs:247:26
+SITE	138714	0	138714	1.7	87.4%	src/recon.rs:2352:49
+SITE	138714	0	138714	1.7	88.6%	src/recon.rs:2353:44
+SITE	124820	0	124820	1.0	89.7%	src/env.rs:105:25
+SITE	124820	0	124820	1.0	90.8%	src/env.rs:105:72
+SITE	94065	0	94065	1.0	91.6%	src/env.rs:89:18
+SITE	94065	94065	0	2.3	92.4%	src/decode.rs:1973:34
+SITE	94065	0	94065	1.0	93.3%	src/decode.rs:1681:52
+SITE	94065	0	94065	1.0	94.1%	src/env.rs:90:24
+SITE	94065	94065	0	2.3	94.9%	src/decode.rs:1974:35
+SITE	94065	94065	0	2.3	95.7%	src/decode.rs:1976:47
+SITE	94065	0	94065	1.0	96.6%	src/decode.rs:1446:29
+SITE	94065	0	94065	1.0	97.4%	src/decode.rs:1682:53
+SITE	94065	94065	0	2.3	98.2%	src/decode.rs:1977:48
+SITE	94065	0	94065	1.0	99.0%	src/decode.rs:1446:61
+SITE	39505	0	39505	19.5	99.4%	src/ipred_prepare.rs:232:24
+SITE	25920	25920	0	960.0	99.6%	src/owned_recon.rs:956:42
+SITE	19712	0	19712	12.0	99.8%	src/safe_simd/cdef_arm.rs:256:25
+SITE	17852	17852	0	2.6	99.9%	src/loopfilter.rs:739:14
+SITE	960	0	960	1.0	99.9%	src/lf_apply.rs:623:54
+SITE	960	0	960	1.0	100.0%	src/lf_apply.rs:636:60
+SITE	944	944	0	3840.0	100.0%	src/cdef_apply.rs:83:30
+SITE	944	0	944	3840.0	100.0%	src/cdef_apply.rs:84:26
+SITE	472	472	0	3840.0	100.0%	src/cdef_apply.rs:59:26
+SITE	472	0	472	3840.0	100.0%	src/cdef_apply.rs:60:22
+SITE	396	396	0	3840.0	100.0%	src/lf_apply.rs:125:39
+SITE	396	0	396	3840.0	100.0%	src/lf_apply.rs:126:30
+SITE	272	272	0	960.0	100.0%	src/recon.rs:3904:35
+SITE	136	0	136	16.0	100.0%	src/decode.rs:4341:23
+SITE	136	0	136	16.0	100.0%	src/decode.rs:4350:24
+SITE	136	136	0	16.0	100.0%	src/internal.rs:719:40
+SITE	136	136	0	960.0	100.0%	src/recon.rs:3887:27
+SITE	136	136	0	16.0	100.0%	src/internal.rs:726:40
+SITE	102	0	102	15.9	100.0%	src/internal.rs:712:24
+SITE	102	0	102	15.9	100.0%	src/internal.rs:713:24
+(built without --features probe-count / probe-wide; no counters)
