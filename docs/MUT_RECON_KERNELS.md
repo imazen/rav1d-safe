@@ -962,3 +962,218 @@ is *expensive*: at 8bpc — the common case — t=2/4/8 are at parity and only t
 is measurably positive, at 0.8%.
 
 Every band above overlaps, and every arm-pair ratio here is from a loaded box.
+
+---
+
+## 19. The V pass's batch cap — taken, and the machinery cost three times the prize before it was made free
+
+§15 named this "a separate, smaller, and *much* cheaper change" than the band,
+"blocked on two mechanical things". Both asserts came out. The cheapness did
+not hold: the first cut MEASURED SLOWER THAN BASE, and the reason is worth more
+than the change.
+
+### 19a. What is NOT done
+
+* **The H pass is untouched and always will be by this route.** It is 69.3% of
+  `LfBlock::fill` and its cap ratio is exactly **1.000** at 4, 8, 16, 32 and 64
+  (`benchmarks/lf_cap_census_2026-08-10.txt`, `LFCAP` rows). H needs a
+  different mechanism, not a bigger batch.
+* **`cdef_arm`'s 1,863,648 and `ctx.rs:99`'s 2,534,988 are still not reduced.**
+  §20 attributes the second of them for the first time but does not shrink it.
+* **The final wall-clock sweep ran on a LOADED box** — three other agents'
+  jobs, `foreign` 1-7 per row — under `measlock --load-ok`. Paired, interleaved,
+  rotating-order ratios are reported; absolute ms/frame are not comparable to
+  an idle campaign's.
+* **Not measured:** x86_64 and wasm32 (compile-checked; x86 clippy set-diffed
+  against base and identical), `asm` / `c-ffi`, `unchecked`, t=16, and any
+  vector below 4K. The corpus gate covers 766 vectors at t=1 and 753 at t=8 for
+  CORRECTNESS at every size, not for speed.
+* **The write-back chunking is sound by construction, not by test.** §19d.
+
+### 19b. The lever, priced at every cap
+
+`--features __probe_lf_hist` (ported from PR #485, extended with `LFCAP`, which
+adds for each NATURAL run what that run would cost at each candidate cap). The
+base column reproduces #485's attribution **to the registration**:
+
+| t=8, `v4k_8tile` 8bpc | regs/frame | share | regs/open |
+|---|---|---|---|
+| H — `filter_plane_cols_*` | 2,656,552 | 69.3% | 14.30 |
+| V — `filter_plane_rows_*` | 1,178,490 | 30.7% | 6.33 |
+
+| cap | V regs/frame | vs cap 4 | H regs/frame | vs cap 4 |
+|---|---|---|---|---|
+| 4 | 1,178,490 | 1.000 | 2,656,552 | 1.000 |
+| 8 | 812,778 | 1.450 | 2,656,552 | 1.000 |
+| 16 | 657,708 | 1.792 | 2,656,552 | 1.000 |
+| **32** | **597,876** | **1.971** | 2,656,552 | 1.000 |
+| 64 | 597,876 | 1.971 | 2,656,552 | 1.000 |
+
+32 is the true maximum, not a tuning choice: `vm` is a `u32`, so a superblock
+edge has at most 32 groups and cap 64 buys nothing. Shipped census, one binary,
+`probe-sites`, `lost=0`:
+
+| site | base | head |
+|---|---|---|
+| whole decoder | **11,401,399** | **10,820,785** |
+| `fill`, V pass | 1,178,490 | **597,876** |
+| `fill`, H pass | 2,656,552 | 2,656,552 |
+
+−580,614/frame, −5.1% of the decoder's whole population, and the delta is
+*exactly* the V pass's — nothing else moved.
+
+### 19c. Why this is sound where #485's band was not
+
+The band is REFUTED (§18): the filter's read set is 2-D SPARSE, every
+contiguous band reserves bytes nothing reads, and under concurrent sbrow filter
+tasks that slack collided with a legitimate 8-pixel write. A fused run has **no
+slack**: every one of its `4 * groups` columns belongs to a group that filters,
+at the same `wd` and therefore over the same `2 * reach` rows, so the union of
+the members' rectangles IS the fused rectangle — which is the argument `open`
+already made at 4 groups and which does not weaken at 32. A non-filtering group
+still BREAKS the run rather than being spanned.
+
+So this changes the COUNT of registrations and nothing about the relationship
+between their extent and the read set. That is the distinction three schemes
+have now died on, stated as a test you can apply to the next one: *does the
+reservation contain a byte no member of the batch reads?* Hull: yes (the gaps
+between rows). Band: yes (the gaps between edges). Fused run: no.
+
+### 19d. The write side is not touched, and that is enforced, not hoped
+
+`close` scans and writes back in **16-column chunks**, so a 32-group run takes
+exactly the mutable guards eight 4-group runs took. `w <= 16` — every rectangle
+base could open — takes the single-span form base took, so its codegen does not
+move either.
+
+**An honest gap:** planting the un-chunked version (one mutable guard over the
+whole fused width, i.e. a genuine over-reservation above 16 columns) and running
+`md5_inventory --threads 8 --group 8-bit/data` gave **358/358 pass, 0 errors**.
+So the corpus did NOT catch it in one run — which is exactly #485's lesson
+("766 vectors passed" is evidence, not proof; its column band passed a full
+t=8 corpus run and failed later). The chunking is kept because it makes the
+write population identical BY CONSTRUCTION, not because a test demands it. Note
+also that this arm's liveness was not proved: wide V runs are known common on
+`v4k_8tile` (`LFNAT` mean 7.00, spike at 32) and were NOT verified on the
+corpus vectors, so the null bounds nothing.
+
+### 19e. The first cut was SLOWER, and the machinery is where it went
+
+`benchmarks/lf_vbatch_2026-08-10_v1.tsv` (n=6, load-tagged), v1 vs base:
+**8bpc t=1 +3.0%, t=8 +7.9%; 10bpc t=1 +2.1%, t=8 +7.3%.**
+
+An isolation arm — the whole machinery present, `LF_BATCH_V` pinned back to 4 —
+separated machinery from batching (`benchmarks/lf_vbatch_iso_2026-08-10_v1.tsv`,
+n=3, load-tagged, `v4k_8tile` 8bpc):
+
+| arm | t=1 | t=8 |
+|---|---|---|
+| base | 1.000 | 1.000 |
+| v1 (batch 32) | 1.030 | 1.086 |
+| **machinery only (batch 4)** | **1.187** | 1.049 |
+
+The cost was in the MACHINERY, not the wider runs. A `sample` profile of the
+machinery-only arm at t=1 named two leaves base does not have —
+`LfBlock::close` at 2.36% and `___arcane_lf_dispatch_u8` at 1.30%. Three causes,
+each removed:
+
+1. **`lane_thr` read from `params`.** Dropping the materialised `[u16; NG]`
+   threshold table (to avoid zero-filling 32 entries per run) put a slice bounds
+   check and an `Option` branch inside the 8-lane chunk loop of BOTH kernels —
+   and H, which gains nothing from a wider batch, paid it on 69.3% of the work.
+   The table is back, sized per direction by a const generic; `LF_GROUPS_H = 4`
+   is byte-for-byte what H had.
+2. **A fixed 128-pixel V scratch stride.** It made a 1-group V rectangle span
+   14 x 128 = 1,792 bytes of scratch where base spanned 224. The stride is now
+   the run's own, rounded to a power of two >= 16, so every run base could also
+   have opened keeps base's exact geometry — and it is a CONST generic on the
+   kernel, because a runtime stride turns every tap address into a multiply.
+3. **`close`'s chunk loop ran when `w <= 16`,** where it can only ever do one
+   iteration.
+
+After (`benchmarks/lf_vbatch_iso_2026-08-10_v3.tsv`, n=3, load-tagged):
+
+| arm | t=1 | t=8 |
+|---|---|---|
+| base | 1.000 | 1.000 |
+| **head** | **1.014** | **0.981** |
+| machinery only | 1.019 | 0.998 |
+
+**The general lesson, and it is the strided hull's lesson from the other side.**
+§11's meta-lesson was that a count reduction bought with a WIDER extent can be
+actively harmful. This adds: a count reduction bought with *more machinery* can
+be too, and the machinery does not have to touch the extent to cost more than
+the count is worth. The prize here is ~580 K registrations/frame; at #485's
+measured 4.04 ns each that is ~2.3 ms of frame CPU, and the first cut's
+machinery cost several times it. **Price the machinery, not just the count.**
+
+### 19f. The scratch is thread-local, and that is load-bearing
+
+`LF_SW_V * LF_BH` = 2,048 pixels, i.e. 4 KB across `buf` + `pristine` at 8bpc.
+`loop_filter_sb128_rust` runs ~100 K times a frame, so the per-call zero-init
+Rust requires would be hundreds of MB of `memset` per frame — more than the
+registrations removed are worth. Hoisting it to the thread also retires the
+512-byte zero-init the 16x16 stack version was already paying on every call.
+
+Reuse is sound for the same reason the old per-call scratch tolerated stale pad
+between opens: `fill` writes `[0, w)` of rows `[0, h)` before anything reads
+them, and `close` compares and writes back only inside that window. What
+changes is *which* stale bytes sit in the pad, not whether they can reach a
+picture.
+
+## 20. `ctx.rs:99` — attributed for the first time, NOT reduced
+
+2,534,988 registrations per frame at t=8, 22.2% of the decoder's population, and
+until now nobody could say what it was. `CaseSetter::set_disjoint` takes its
+borrow through one `index_mut` line, so `--features probe-sites` reported all of
+it as a single site. A **cfg-gated `#[track_caller]`** on `set_disjoint` (probe
+builds only — a `#[track_caller]` shim changes codegen at every call site, and a
+probe must not) pushes the `Location` up to the real caller.
+
+The 12 rows it splits into sum to **2,534,988 exactly**, so the attribution is
+complete and nothing is lost. `benchmarks/ctx99_sites_2026-08-10.tsv`:
+
+| regs/frame | site | what it writes |
+|---|---|---|
+| 376,260 | `src/recon.rs:2767` | `ccoef` context, both chroma planes |
+| 277,428 | `src/recon.rs:2380` | `lcoef` context |
+| 8 x 188,130 | `src/decode.rs:1997..2005` | `tx_intra`, `tx`, `mode`, `pal_sz`, `seg_pred`, `skip_mode`, `intra`, `skip` |
+| 188,130 | `src/decode.rs:2029` | `uvmode` |
+| 188,130 | `src/decode.rs:3811` | inter context |
+
+**All 12 are MUTABLE, and the mean extent is 2.3 bytes.** The count is that
+high for a structural reason and not a sloppy one: `BlockContext` is ~20
+SEPARATE `DisjointMut<Align8<[T; 32]>>` fields (`src/env.rs:32`), and a
+`CaseSet::many` call updates 8-13 of them for the same block at the same
+`offset..offset + len`. One registration per field per direction, on a 32-byte
+array.
+
+### 20a. The reduction that exists, and why it is not in this PR
+
+Every one of the 12 is a `CaseSet::<_, _>::many([(&t.l, ..), (ta, ..)], ..)`
+over exactly two directions, so the population splits **exactly 50/50**:
+
+* **`f.a[t.a]`** — `Vec<BlockContext>` on `Rav1dFrameData`, reached through the
+  shared `fc.data.try_read()` guard. This is §1's blocker verbatim: no `&mut`
+  exists at any point, and its disjointness across concurrent tiles is a
+  TILE-KEYED argument, which §3 measured and rejected as unsound when partial.
+  **1,267,494/frame, not reducible by ownership.**
+* **`t.l`** — a `BlockContext` field of `Rav1dTaskContext`, which is per worker
+  thread and is already reached through `&mut` everywhere `recon_band` is
+  (§4/#482's model, `src/internal.rs:1246`). `DisjointMut::get_mut(&mut self)`
+  already exists and takes no registration. **1,267,494/frame, 11.1% of the
+  decoder's whole population, removable with borrowck as the proof and no
+  `unsafe`.**
+
+What blocks it is shape, not soundness: `CaseSet::many` takes `[T; N]` — a
+HOMOGENEOUS array — so both directions must be the same type, and `&mut
+BlockContext` and `&BlockContext` are not. Converting means either splitting all
+22 `CaseSet` sites that mention `t.l` into two calls with duplicated closure
+bodies, or a macro that expands the body twice, plus a `set_exclusive` on
+`CaseSetter`. That is a real refactor across `decode.rs` and `recon.rs` with a
+full corpus + Miri gate behind it, and it is **not attempted here** — landing it
+half-done would be worse than the study.
+
+**Do not attack this by coalescing fields.** Laying the 8 same-offset fields out
+adjacently so one registration covers them makes the reservation span the gaps
+BETWEEN fields, which other blocks legitimately write — §19c's test says no.

@@ -1,0 +1,24 @@
+# ctx.rs:99 attributed to its REAL call sites
+#
+# `CaseSetter::set_disjoint` takes its borrow through one `index_mut` line,
+# so `--features probe-sites` reported all of it as src/ctx.rs:99 — the
+# decoder's second-largest registration site with no way to say which of its
+# callers it is. A cfg-gated `#[track_caller]` on `set_disjoint` pushes the
+# Location up to the caller. The 12 rows below sum to 2,534,988, which is
+# ctx.rs:99's whole population, so the split is exact and nothing is lost.
+#
+# v4k_8tile 8bpc, --threads 8, iters=3, probe-sites lost=0, base f87b12c.
+regs_per_frame	mut	immut	site	source
+376260	376260	0	src/recon.rs:2767:46	case.set_disjoint(dir, cf_ctx);
+277428	277428	0	src/recon.rs:2380:42	case.set_disjoint(&dir.lcoef, cf_ctx);
+188130	188130	0	src/decode.rs:3811:22	case.set_disjoint(
+188130	188130	0	src/decode.rs:2029:26	case.set_disjoint(&dir.uvmode, uv_mode);
+188130	188130	0	src/decode.rs:2005:22	case.set_disjoint(&dir.skip, b.skip);
+188130	188130	0	src/decode.rs:2004:22	case.set_disjoint(&dir.intra, 1);
+188130	188130	0	src/decode.rs:2003:22	case.set_disjoint(&dir.skip_mode, 0);
+188130	188130	0	src/decode.rs:2002:22	case.set_disjoint(&dir.seg_pred, seg_pred.into());
+188130	188130	0	src/decode.rs:2001:22	case.set_disjoint(&dir.pal_sz, pal_sz[0]);
+188130	188130	0	src/decode.rs:2000:22	case.set_disjoint(&dir.mode, y_mode_nofilt);
+188130	188130	0	src/decode.rs:1999:22	case.set_disjoint(&dir.tx, TxfmSize::from_repr(lw_lh as _).unwrap());
+188130	188130	0	src/decode.rs:1997:22	case.set_disjoint(&dir.tx_intra, lw_lh as i8);
+# TOTAL	2534988
