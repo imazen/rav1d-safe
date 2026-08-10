@@ -464,6 +464,11 @@ impl itxfm::Fn {
                     #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "wasm32")))]
                     { let _ = (tx_size, tx_type, &dst, &coeff, eob, &bd); false }
                 };
+                // Shape census (no-op without `__ablate`): which shapes the
+                // bitstream asks for, and which of them SIMD took. See
+                // `src/ablate.rs` — this is what refuted "16bpc itx above
+                // 16x16" as a target.
+                crate::src::ablate::note_itx_shape(tx_size, BD::BITDEPTH, simd_handled);
                 if simd_handled {
                     #[cfg(feature = "__simd_test")]
                     {
