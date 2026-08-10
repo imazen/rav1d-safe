@@ -603,10 +603,15 @@ pub(crate) fn inv_txfm_hbd_neon(
     shift: u32,
     coeff: &mut [i32],
     bitdepth_max: i32,
-    tmp: &mut [i32; MAXDIM * MAXDIM],
+    tmp: &mut [i32],
 ) {
     debug_assert!(w <= MAXDIM && h <= MAXDIM);
     debug_assert!(w % 4 == 0 && h % 4 == 0);
+    // The caller sizes `tmp` to `w * h` exactly (see `itx_arm::itxfm_add_dispatch`).
+    // Every element of `tmp[..w * h]` is written by the row pass before the
+    // column pass reads it, so its initial contents are never observed — but a
+    // short buffer would be, which is what this asserts.
+    assert!(tmp.len() >= w * h, "itx_arm_hbd: tmp shorter than w*h");
 
     let is_rect2 = w * 2 == h || h * 2 == w;
     let rnd: i32 = (1 << shift) >> 1;

@@ -8517,16 +8517,50 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                     return true;
                 }
 
-                let mut tmp = [0i32; 16 * 16];
-                super::itx_arm_hbd::inv_txfm_hbd_neon(
-                    token, w, h, first, second, shift, coeff_i32, bd_c, &mut tmp,
-                );
-                dst.for_rows_mut::<BD, _>(w, h, |y, row| {
-                    let px: &mut [u16] =
-                        crate::src::safe_simd::pixel_access::reinterpret_slice_mut(row)
-                            .expect("BD::Pixel layout matches u16");
-                    super::itx_arm_hbd::add_row_hbd_neon(token, px, &tmp[y * w..y * w + w], w, bd_c);
-                });
+                // `tmp` is sized to THIS shape, not to the largest shape the
+                // module handles. It used to be a flat `[0i32; 16 * 16]`, so
+                // every call zeroed 1 KiB — and on `L3840x2160_420_10b`,
+                // 181,768 of the 272,929 16bpc transform calls in the frame are
+                // 4x4, which needs 64 B (shape census, `__ablate` probe,
+                // 2026-08-10). That is 279 MB of `memset` per frame against
+                // 49.6 MB for the exact sizes, and it showed up as 0.76% of the
+                // frame in `_platform_memset` charged to `<itx::itxfm::Fn>::call`
+                // plus part of that symbol's own 3.36% self time.
+                //
+                // The five arms are exhaustive over `hbd_supported`: w and h are
+                // each 4, 8 or 16, so `w * h` is one of 16/32/64/128/256.
+                macro_rules! hbd_run {
+                    ($n:expr) => {{
+                        let mut tmp = [0i32; $n];
+                        super::itx_arm_hbd::inv_txfm_hbd_neon(
+                            token, w, h, first, second, shift, coeff_i32, bd_c, &mut tmp,
+                        );
+                        dst.for_rows_mut::<BD, _>(w, h, |y, row| {
+                            let px: &mut [u16] =
+                                crate::src::safe_simd::pixel_access::reinterpret_slice_mut(row)
+                                    .expect("BD::Pixel layout matches u16");
+                            super::itx_arm_hbd::add_row_hbd_neon(
+                                token,
+                                px,
+                                &tmp[y * w..y * w + w],
+                                w,
+                                bd_c,
+                            );
+                        });
+                    }};
+                }
+                match w * h {
+                    16 => hbd_run!(16),
+                    32 => hbd_run!(32),
+                    64 => hbd_run!(64),
+                    128 => hbd_run!(128),
+                    256 => hbd_run!(256),
+                    // Unreachable while `hbd_supported` is `w <= 16 && h <= 16`
+                    // and the `shift` match above rejects everything else. A
+                    // new shape must add its arm here rather than silently
+                    // under-allocating.
+                    n => unreachable!("itx_arm_hbd: no scratch arm for {w}x{h} (area {n})"),
+                }
                 return true;
             }
             if w == 4 && h == 4 && BD::BPC == BPC::BPC8 {
