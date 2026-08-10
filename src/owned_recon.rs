@@ -199,8 +199,16 @@ impl ReconBand {
         let (row0, col0) = self.origin[pl];
         let stride = self.stride[pl];
         let pixel_size = core::mem::size_of::<BD::Pixel>();
-        let brow = row - row0;
-        let bcol = col - col0;
+        // `checked_sub`, not `-`: a row above the band must fail the SAME way in
+        // every build profile. With plain subtraction, release wraps to a huge
+        // index and the assert below catches it, but a debug-assertions build
+        // (coverage, for one) panics earlier with "attempt to subtract with
+        // overflow" -- same safety outcome, different message, and the
+        // `#[should_panic(expected = ...)]` gate pins the message. Relying on
+        // wrapping to produce an out-of-range value is indirect anyway; this
+        // states the bound directly.
+        let brow = row.checked_sub(row0).expect("recon band row out of range");
+        let bcol = col.checked_sub(col0).expect("recon band col out of range");
         assert!(brow < self.rows[pl], "recon band row out of range");
         let bytes: &mut [u8] = zerocopy::IntoBytes::as_mut_bytes(&mut self.planes[pl][..]);
         Band {
