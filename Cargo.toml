@@ -140,6 +140,17 @@ blockshift-14 = ["rav1d-disjoint-mut/__blockshift_14"]
 blockshift-15 = ["rav1d-disjoint-mut/__blockshift_15"]
 blockshift-16 = ["rav1d-disjoint-mut/__blockshift_16"]
 blockshift-adaptive = ["rav1d-disjoint-mut/__blockshift_adaptive"]
+# Adaptive-shift GRANULARITY ladder (blocks per shard, as a rational). Re-swept
+# scored on TAIL concurrency as well as whole-frame wall — the objective the
+# original fit used was wall alone, and docs/TILED_SCALING.md §4 put 32-42% of
+# the t=8 gap in the idle-core tail. See `BPS` in the tracker.
+bps-quarter = ["rav1d-disjoint-mut/__bps_quarter"]
+bps-half = ["rav1d-disjoint-mut/__bps_half"]
+bps-1 = ["rav1d-disjoint-mut/__bps_1"]
+bps-4 = ["rav1d-disjoint-mut/__bps_4"]
+bps-8 = ["rav1d-disjoint-mut/__bps_8"]
+# MAX_SHARDS_PER_BORROW 4 -> 5 (BorrowId pairs narrowed to log2(N_SHARDS)+3 bits).
+msb-5 = ["rav1d-disjoint-mut/__msb_5"]
 
 # Test-only (double-underscore = private, never enable in production): arms a
 # one-shot worker-thread panic so tests can prove a worker death surfaces as a

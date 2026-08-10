@@ -1109,7 +1109,20 @@ pub mod r {
     /// Evaluations where every row sits in ONE block, i.e. the shipped per-row
     /// scheme took `rows` single-shard registrations.
     pub const N_PERROW_NARROW: usize = 14;
-    pub const NCTR: usize = 17;
+    /// Evaluations whose row set spans more than 5 / 8 / 16 distinct shards.
+    ///
+    /// `N_ROW_WIDE` prices the SHIPPED cap (`MAX_SHARDS_PER_BORROW`, handed in
+    /// via [`ShardGeom`]); these three price a RAISED cap without another build,
+    /// which is what decides whether raising it can collapse `pct_row_wide` at
+    /// all. `BorrowId` bounds the cap at 5 for 128 shards, so `>8` and `>16` are
+    /// there to say whether the distribution has a tail a bigger id could reach
+    /// or whether it is hopeless — a negative that saves the id redesign.
+    pub const N_ROW_WIDE_5: usize = 17;
+    pub const N_ROW_WIDE_8: usize = 18;
+    pub const N_ROW_WIDE_16: usize = 19;
+    /// Max distinct shards a row set mapped to. Saturates at `ROW_SHARD_CAP`.
+    pub const ROW_SHARDS_MAX: usize = 20;
+    pub const NCTR: usize = 21;
 }
 
 /// This instance's REAL shard geometry, handed in by the tracker.
@@ -1141,6 +1154,11 @@ static GAPS_N: AtomicUsize = AtomicUsize::new(0);
 /// conservatively. MUST stay 0 or the `N_GAP` counts are upper bounds.
 pub static RECT_ROWS_CAPPED: AtomicU64 = AtomicU64::new(0);
 const RECT_ROW_CAP: u64 = 512;
+
+/// Distinct shards counted exactly by [`Rect::row_shards`] before it saturates.
+/// Must exceed the largest cap the report prices (16) or that column is a
+/// tautology.
+const ROW_SHARD_CAP: usize = 32;
 
 /// An `h x w` rectangle at `lo`, rows `|stride|` apart.
 #[derive(Clone, Copy)]
@@ -1269,12 +1287,16 @@ impl Rect {
         n
     }
 
-    /// Distinct SHARDS the row set maps to, by the tracker's own `shard_of`,
-    /// capped at `max_shards + 1` (past that the tracker goes wide anyway).
+    /// Distinct SHARDS the row set maps to, by the tracker's own `shard_of`.
+    ///
+    /// Counted exactly up to [`ROW_SHARD_CAP`], then saturating at `CAP + 1`.
+    /// The cap used to be 8, which was enough to price the shipped
+    /// `MAX_SHARDS_PER_BORROW = 4` and nothing else: every value above 8 read as
+    /// 9, so "would a cap of 16 help?" was unanswerable from the same run.
     #[inline]
     fn row_shards(&self, g: &ShardGeom) -> u64 {
         let s = self.stride.max(1);
-        let mut set = [usize::MAX; 8];
+        let mut set = [usize::MAX; ROW_SHARD_CAP];
         let mut n = 0usize;
         for i in 0..self.rows.min(RECT_ROW_CAP) {
             let a0 = (self.lo + i * s) >> g.shift;
@@ -1473,6 +1495,17 @@ pub fn eval_rect(
     if row_shards as usize > geom.max_shards {
         a[r::N_ROW_WIDE].fetch_add(1, Relaxed);
     }
+    // Raised-cap counterfactuals, so one run answers "would 5 / 8 / 16 help?".
+    for (cap, ctr) in [
+        (5usize, r::N_ROW_WIDE_5),
+        (8, r::N_ROW_WIDE_8),
+        (16, r::N_ROW_WIDE_16),
+    ] {
+        if row_shards as usize > cap {
+            a[ctr].fetch_add(1, Relaxed);
+        }
+    }
+    agg_min_neg(&a[r::ROW_SHARDS_MAX], row_shards);
     if per_row_narrow {
         a[r::N_PERROW_NARROW].fetch_add(1, Relaxed);
     }
@@ -1496,7 +1529,7 @@ pub fn report_rect() -> String {
     let mut out = String::new();
     let _ = writeln!(
         out,
-        "#rectsite\tn\tn_conc\tpeers\thull_ovl\trect_ovl\tgap\tgap_mut\tgap_xstride\trows_mean\trows_max\thull_blocks_mean\trow_blocks_mean\trow_shards_mean\tpct_hull_wide\tpct_row_wide\tpct_perrow_narrow\tshifts\twhere"
+        "#rectsite\tn\tn_conc\tpeers\thull_ovl\trect_ovl\tgap\tgap_mut\tgap_xstride\trows_mean\trows_max\thull_blocks_mean\trow_blocks_mean\trow_shards_mean\trow_shards_max\tpct_hull_wide\tpct_row_wide\tpct_wide_c5\tpct_wide_c8\tpct_wide_c16\tpct_perrow_narrow\tshifts\twhere"
     );
     let mut any = false;
     for s in 0..NSITES {
@@ -1506,7 +1539,7 @@ pub fn report_rect() -> String {
         let mut c = [0u64; r::NCTR];
         for t in 0..MAX_TH {
             for i in 0..r::NCTR {
-                if i == r::ROWS_MAX {
+                if i == r::ROWS_MAX || i == r::ROW_SHARDS_MAX {
                     c[i] = c[i].max(RECT_AGG[t][s][i].load(Relaxed));
                 } else if i == r::SHIFT_SEEN {
                     c[i] |= RECT_AGG[t][s][i].load(Relaxed);
@@ -1522,7 +1555,7 @@ pub fn report_rect() -> String {
         let n = c[r::N] as f64;
         let _ = writeln!(
             out,
-            "RECT\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.2}\t{}\t{:.3}\t{:.3}\t{:.3}\t{:.2}\t{:.2}\t{:.2}\t{}\t{}",
+            "RECT\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.2}\t{}\t{:.3}\t{:.3}\t{:.3}\t{}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{}\t{}",
             c[r::N],
             c[r::N_CONC],
             c[r::N_PEERS],
@@ -1536,8 +1569,12 @@ pub fn report_rect() -> String {
             c[r::HULL_BLOCKS_SUM] as f64 / n,
             c[r::ROW_BLOCKS_SUM] as f64 / n,
             c[r::ROW_SHARDS_SUM] as f64 / n,
+            c[r::ROW_SHARDS_MAX],
             100.0 * c[r::N_HULL_WIDE] as f64 / n,
             100.0 * c[r::N_ROW_WIDE] as f64 / n,
+            100.0 * c[r::N_ROW_WIDE_5] as f64 / n,
+            100.0 * c[r::N_ROW_WIDE_8] as f64 / n,
+            100.0 * c[r::N_ROW_WIDE_16] as f64 / n,
             100.0 * c[r::N_PERROW_NARROW] as f64 / n,
             {
                 let m = c[r::SHIFT_SEEN];
