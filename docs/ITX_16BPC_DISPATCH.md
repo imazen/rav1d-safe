@@ -373,7 +373,7 @@ Restored byte-exact: `sha256 d4e03d4a…423176d` (the same hash
 | model | result |
 |---|---|
 | Stacked Borrows (`MIRIFLAGS=""`) | **rc=0**, no UB; `soundness` 5 passed in 992.7 s, plus 25 + 1 + 1 across the other targets |
-| Tree Borrows (`-Zmiri-tree-borrows`) | <!--TB--> |
+| Tree Borrows (`-Zmiri-tree-borrows`) | **rc=0**, no UB; `soundness` 5 passed in 993.1 s, plus 25 + 1 + 1 |
 
 ### 4.7 Compile matrix and lints
 
