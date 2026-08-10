@@ -1,0 +1,125 @@
+======================================================================================================================
+BUCKETED SELF TIME, normalised on BUSY samples (parked threads excluded and reported separately as idle%)
+======================================================================================================================
+cell                               busy  idle%  entropy  kernels       lf     cdef       lr  tracker     sync  runtime    other
+L1024x576_420_8b__t8              26924  86.84    58.78    12.95     7.39     4.95     0.00    11.16     0.00     2.66     2.11
+L1024x576_420_8b__t8__t1          22911   0.00    64.05    13.01     6.83     5.35     0.00     5.98     0.00     2.51     2.26
+L1024x576_420_8b__t8__t2          44418  35.37    58.48    12.35     7.27     5.23     0.00    12.06     0.00     2.39     2.21
+L1024x576_420_8b__t8__t8         115734  37.29    54.15    11.62     9.22     4.25     0.00    14.58     1.19     2.55     2.44
+L3840x2160_420_8b__t8__t1         23002   0.00    72.92    10.38     7.08     1.50     0.00     4.22     0.00     2.08     1.83
+L3840x2160_420_8b__t8__t2         46031  33.58    69.54     9.78     7.18     1.69     0.00     8.11     0.00     1.90     1.80
+L3840x2160_420_8b__t8__t8        139637  24.67    67.50     9.73     8.05     1.74     0.00     8.82     0.23     2.15     1.77
+
+======================================================================================================================
+DELTA in busy-normalised share: L1024x576_420_8b__t8   t=1 -> t=8   (pp = percentage points of busy self time)
+======================================================================================================================
+bucket          t1%      t8%       pp       x
+entropy       64.05    54.15    -9.90    0.85
+kernels       13.01    11.62    -1.39    0.89
+lf             6.83     9.22    +2.40    1.35
+cdef           5.35     4.25    -1.10    0.79
+tracker        5.98    14.58    +8.60    2.44
+sync           0.00     1.19    +1.19     nan
+runtime        2.51     2.55    +0.03    1.01
+other          2.26     2.44    +0.18    1.08
+  top risers (pp):
+     +6.39   2.72 ->  9.11  <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<false>
+     +1.19   0.00 ->  1.19  <rav1d_disjoint_mut::tracker_shard::TinyLock>::lock_slow
+     +0.86   0.94 ->  1.80  <rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>
+     +0.68   1.14 ->  1.82  <rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>
+     +0.65   1.79 ->  2.45  rav1d_safe::src::safe_simd::loopfilter_arm::lf_compact_run_neon
+     +0.61   0.00 ->  0.61  <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add_wide::<true>
+     +0.57   1.05 ->  1.62  core::ptr::drop_glue::<rav1d_disjoint_mut::DisjointMutGuard<aligned::Aligned<aligned::A8
+     +0.55   2.22 ->  2.77  <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<true>
+  top fallers (pp):
+     -8.87  57.55 -> 48.68  rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bitdepth::BitDepth8>
+     -0.49   1.01 ->  0.52  rav1d_safe::src::safe_simd::cdef_arm::cdef_dir_cost
+     -0.47   5.10 ->  4.63  rav1d_safe::src::recon::rav1d_recon_b_intra::<rav1d_safe::include::common::bitdepth::Bit
+     -0.42   3.07 ->  2.65  rav1d_safe::src::msac::rav1d_msac_decode_symbol_adapt_rust
+     -0.40   1.98 ->  1.58  rav1d_safe::src::safe_simd::cdef_arm::cdef_filter_block_8bpc_inner
+     -0.35   1.06 ->  0.71  rav1d_safe::src::recon::read_golomb
+
+======================================================================================================================
+DELTA in busy-normalised share: L1024x576_420_8b__t8   t=2 -> t=8   (pp = percentage points of busy self time)
+======================================================================================================================
+bucket          t2%      t8%       pp       x
+entropy       58.48    54.15    -4.33    0.93
+kernels       12.35    11.62    -0.73    0.94
+lf             7.27     9.22    +1.96    1.27
+cdef           5.23     4.25    -0.98    0.81
+tracker       12.06    14.58    +2.52    1.21
+sync           0.00     1.19    +1.19     nan
+runtime        2.39     2.55    +0.16    1.07
+other          2.21     2.44    +0.23    1.10
+  top risers (pp):
+     +1.78   7.33 ->  9.11  <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<false>
+     +1.19   0.00 ->  1.19  <rav1d_disjoint_mut::tracker_shard::TinyLock>::lock_slow
+     +0.95   0.85 ->  1.80  <rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>
+     +0.62   1.83 ->  2.45  rav1d_safe::src::safe_simd::loopfilter_arm::lf_compact_run_neon
+     +0.38   0.23 ->  0.61  <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add_wide::<true>
+     +0.29   1.95 ->  2.24  rav1d_safe::src::loopfilter::loopfilter_sb_direct::<rav1d_safe::include::common::bitdept
+     +0.25   0.25 ->  0.50  rav1d_safe::src::owned_recon::stitch_sbrow::<rav1d_safe::include::common::bitdepth::BitD
+     +0.23   0.49 ->  0.72  _platform_memmove
+  top fallers (pp):
+     -3.76  52.44 -> 48.68  rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bitdepth::BitDepth8>
+     -0.44   2.02 ->  1.58  rav1d_safe::src::safe_simd::cdef_arm::cdef_filter_block_8bpc_inner
+     -0.33   4.96 ->  4.63  rav1d_safe::src::recon::rav1d_recon_b_intra::<rav1d_safe::include::common::bitdepth::Bit
+     -0.24   2.88 ->  2.65  rav1d_safe::src::msac::rav1d_msac_decode_symbol_adapt_rust
+     -0.18   1.22 ->  1.04  rav1d_safe::src::cdef_apply::rav1d_cdef_brow::<rav1d_safe::include::common::bitdepth::Bi
+     -0.15   0.57 ->  0.42  rav1d_safe::src::safe_simd::cdef_arm::cdef_filter_row::<true, true>
+
+======================================================================================================================
+DELTA in busy-normalised share: L3840x2160_420_8b__t8   t=1 -> t=8   (pp = percentage points of busy self time)
+======================================================================================================================
+bucket          t1%      t8%       pp       x
+entropy       72.92    67.50    -5.43    0.93
+kernels       10.38     9.73    -0.64    0.94
+lf             7.08     8.05    +0.97    1.14
+cdef           1.50     1.74    +0.25    1.17
+tracker        4.22     8.82    +4.60    2.09
+sync           0.00     0.23    +0.23     nan
+runtime        2.08     2.15    +0.08    1.04
+other          1.83     1.77    -0.05    0.97
+  top risers (pp):
+     +3.85   1.93 ->  5.77  <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<false>
+     +0.56   1.34 ->  1.90  <rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>
+     +0.36   1.55 ->  1.91  <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<true>
+     +0.28   0.74 ->  1.03  core::ptr::drop_glue::<rav1d_disjoint_mut::DisjointMutGuard<aligned::Aligned<aligned::A8
+     +0.23   0.00 ->  0.23  <rav1d_disjoint_mut::tracker_shard::TinyLock>::lock_slow
+     +0.20   1.70 ->  1.90  rav1d_safe::src::safe_simd::loopfilter_arm::lf_compact_run_neon
+     +0.20   0.98 ->  1.18  <rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>
+     +0.17   0.53 ->  0.69  _platform_memmove
+  top fallers (pp):
+     -4.79  66.44 -> 61.65  rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bitdepth::BitDepth8>
+     -0.19   0.78 ->  0.59  rav1d_safe::src::msac::ctx_refill
+     -0.17   2.41 ->  2.24  rav1d_safe::src::recon::read_golomb
+     -0.16   3.83 ->  3.67  rav1d_safe::src::recon::rav1d_recon_b_intra::<rav1d_safe::include::common::bitdepth::Bit
+     -0.16   0.76 ->  0.60  rav1d_safe::src::ipred::intra_pred_direct::<rav1d_safe::include::common::bitdepth::BitDe
+     -0.15   1.33 ->  1.19  rav1d_safe::src::decode::decode_b
+
+======================================================================================================================
+DELTA in busy-normalised share: L3840x2160_420_8b__t8   t=2 -> t=8   (pp = percentage points of busy self time)
+======================================================================================================================
+bucket          t2%      t8%       pp       x
+entropy       69.54    67.50    -2.04    0.97
+kernels        9.78     9.73    -0.04    1.00
+lf             7.18     8.05    +0.87    1.12
+cdef           1.69     1.74    +0.05    1.03
+tracker        8.11     8.82    +0.71    1.09
+sync           0.00     0.23    +0.23     nan
+runtime        1.90     2.15    +0.25    1.13
+other          1.80     1.77    -0.03    0.99
+  top risers (pp):
+     +0.68   5.09 ->  5.77  <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<false>
+     +0.30   1.60 ->  1.90  rav1d_safe::src::safe_simd::loopfilter_arm::lf_compact_run_neon
+     +0.29   0.41 ->  0.69  _platform_memmove
+     +0.26   0.92 ->  1.18  <rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>
+     +0.23   0.00 ->  0.23  <rav1d_disjoint_mut::tracker_shard::TinyLock>::lock_slow
+     +0.16   1.74 ->  1.90  <rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>
+     +0.16   1.95 ->  2.10  rav1d_safe::src::loopfilter::loopfilter_sb_direct::<rav1d_safe::include::common::bitdept
+  top fallers (pp):
+     -1.65  63.30 -> 61.65  rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bitdepth::BitDepth8>
+     -0.18   2.42 ->  2.24  rav1d_safe::src::recon::read_golomb
+     -0.17   1.36 ->  1.19  rav1d_safe::src::decode::decode_b
+     -0.12   1.66 ->  1.54  <rav1d_safe::src::itx::itxfm::Fn>::call::<rav1d_safe::include::common::bitdepth::BitDept
+
