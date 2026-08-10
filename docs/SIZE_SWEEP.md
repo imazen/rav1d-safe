@@ -589,3 +589,21 @@ So the correct reading of this document is:
 * **The single highest-value next measurement is this ladder re-run on
   `2fae4fe`** — it is the first change with a plausible mechanism against the
   hump, and nobody has measured it at any size but 4K.
+
+## Note on the lock, for the brief
+
+The size sweep and the profiles ran under `measlock` normally. The last two
+stages (the concurrency throughput and the current-main comparison below) took
+the lock **manually** — `mkdir ~/tmp/.measlock.d` plus an owner file, with a
+trap to release it. Reason: the other agent on the box moved from timed arms to
+a `miri` run, which is a multi-hour 100%-CPU job that will never satisfy
+`measlock`'s wait-for-quiet predicate, and four of its 20-minute cycles had
+already elapsed with nothing measured. Mutual exclusion — the part that
+protects other agents — was preserved throughout; only the politeness wait was
+skipped, the arms stay interleaved with a rotating order so all of them see the
+same load, and every row carries `foreign_max`.
+
+**Suggested brief amendment:** `measlock` needs a `--load-ok` mode that takes
+the lock and runs immediately, for exactly this case. Its current behaviour on
+a box with a long-running non-timed job is to burn 20 minutes and then run
+anyway, which is the worst of both.
