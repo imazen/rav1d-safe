@@ -511,6 +511,28 @@ digest §7 of `MUT_RECON_KERNELS.md` recorded — and `git diff --exit-code` cle
 targets carry a `compile_error!` demanding `--release`; that is the repo's
 existing structure, not this branch.)
 
+### The read-side arm's gates, re-run after `f7c4e6f`
+
+Everything above was re-run on the read-side arm, not inherited:
+
+| gate | result |
+|---|---|
+| corpus by-name set-diff vs `base`, t=1 | **0 differences** (768 rows, 766 PASS / 2 SKIP) |
+| corpus by-name set-diff vs `base`, t=8 (`--skip-group film_grain`) | **0 differences** (755 rows, 753 PASS / 2 SKIP) |
+| `decode_md5_verify` | 14/14 |
+| teeth: off-by-one on a converted read | **13 of 14 FAILED**, restored |
+| 12 content vectors vs dav1d 1.5.4 | all bit-identical |
+| `forbid(unsafe_code)` plant → `lib.rs:13` | fires |
+| `mt_stress` 1/2/4/8/16 | pass |
+| `multi_decoder_pressure.sh` 12 processes | **PASS**, no wedge |
+| `cargo test --lib` DEBUG | 75 passed |
+| `cargo test --release` | **21 targets, 161 passed, 0 failed** |
+| compile matrix (6 configurations) | 0 errors each |
+
+Miri was NOT re-run for the read-side arm: `crates/rav1d-disjoint-mut` is
+byte-identical on it too, and the arm adds no new guard shape — it removes
+guards. Say that rather than claiming a run that did not happen.
+
 ### Compile matrix
 
 | configuration | |
@@ -553,7 +575,7 @@ else.
 **What Miri does NOT cover here.** Miri runs `rav1d-disjoint-mut`'s own tests,
 not the decoder. This change's soundness argument is not about the tracker's
 internals at all — it is that `&mut DisjointMut<_>` is exclusive, which is
-borrowck's claim and is checked at every one of the 22 sites by the compiler
+borrowck's claim and is checked at every one of the 22+17 sites by the compiler
 (see the `set_exclusive`-on-the-shared-direction plant in §7). There is no new
 guard SHAPE here to run Miri against, which is the case §6 of
 `OWNERSHIP_MODELS.md` says to reach for Miri on.
