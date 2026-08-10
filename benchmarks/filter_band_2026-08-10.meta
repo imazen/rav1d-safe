@@ -48,3 +48,13 @@ filter_band_md5_t{1,8}_2026-08-10.tsv.zst
   scripts/perf/md5_setdiff.py, film-grain groups dropped from BOTH sides for
   the t=8 comparison: t=1 766 PASS / 768 keys / 0 differing; t=8 753 PASS /
   755 keys / 0 differing.
+
+filter_band_tax_n15_2026-08-10.tsv
+  Follow-up focused sweep, ONLY the headoff-vs-base question, n=15 rounds on
+  4 cells (v4k_8tile t=1, t=8; v4k_8tile_10b t=1, t=2) to buy back the sign
+  test power the load costs. Same harness/columns as the main gap sweep.
+  A STRICT-gate attempt ran first and returned ZERO rows in 7 minutes
+  (rc=124, timeout): no idle window existed on this box at any point in the
+  session. This file is therefore ALSO load-tagged -- 116 of its 120 rows
+  carry foreign_max >= 1 (54 at 1, 54 at 2, 2 at 3, 4 at 4, 2 at 5; only 4
+  rows are clean).

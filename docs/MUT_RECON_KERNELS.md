@@ -865,3 +865,31 @@ Nothing in this round touches the sub-crate, and nothing in `rav1d-safe` here
 is reachable by Miri's test set — which is precisely why the corpus, `mt_stress`
 and `multi_decoder_pressure` gates in §13 carry the runtime claim and Miri only
 carries the tracker's.
+
+### 12b. The tax, re-measured at n=15 — REAL at 0.8–1.3%, and no idle window ever came
+
+§12's 9-round table left 8bpc t=1 at 1.0116 with p=0.180, i.e. not separated
+from noise. A strict-idle-gate re-run was attempted and **returned zero rows in
+seven minutes** (`rc=124`): at no point in this session was this box idle —
+three agents were measuring on it. So the retest is n=15 on four cells, still
+load-tagged (116 of 120 rows), trading breadth for sign-test power:
+
+| | median | band | wins for headoff | p |
+|---|---|---|---|---|
+| 8bpc t=1 | **1.0081** | [0.9944..1.0610] | 2/15 | **0.007** |
+| 8bpc t=8 | 1.0031 | [0.9634..1.0507] | 7/15 | 1.000 |
+| 10bpc t=1 | **1.0126** | [0.9115..1.1964] | 2/15 | **0.007** |
+| 10bpc t=2 | **1.0111** | [1.0000..1.0571] | 0/15 | **0.000** |
+
+**So the honest verdict is: the tax is REAL and it is NOT at parity.** It is
+~0.8% at 8bpc t=1, ~1.1–1.3% at 10bpc t=1 and t=2, and gone at 8bpc t=8. §9
+took it from #482's 1.15–3.01% band down to 0.3–1.3%, which is a real
+improvement and is not zero.
+
+An inter frame on a mixed-GOP 10bpc stream therefore still pays about 1% for a
+seam it gets nothing from. **That remains an argument for treating #482 as the
+first half of a conversion.** What it is no longer is an argument that the seam
+is *expensive*: at 8bpc — the common case — t=2/4/8 are at parity and only t=1
+is measurably positive, at 0.8%.
+
+Every band above overlaps, and every arm-pair ratio here is from a loaded box.
