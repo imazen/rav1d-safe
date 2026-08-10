@@ -690,76 +690,6 @@ impl<'a> ReconSrc<'a> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::include::common::bitdepth::BitDepth8;
-
-    fn band_of(rows: usize, cols: usize) -> ReconBand {
-        let mut b = ReconBand::default();
-        b.arm(
-            1,
-            &[(16, 32, rows, cols, 1), (0, 0, 0, 0, 1), (0, 0, 0, 0, 1)],
-        );
-        b
-    }
-
-    fn dst_at(b: &mut ReconBand, row: usize, col: usize) -> ReconDst<'_> {
-        ReconDst::Own(b.at::<BitDepth8>(0, row, col))
-    }
-
-    #[test]
-    fn translation_is_plane_coordinates_minus_origin() {
-        let mut b = band_of(8, 96);
-        // Plane (16, 32) is band (0, 0).
-        dst_at(&mut b, 16, 32).set::<BitDepth8>(7);
-        // Plane (17, 34) is band (1, 2).
-        dst_at(&mut b, 17, 34).set::<BitDepth8>(9);
-        let stride = b.stride[0];
-        assert_eq!(b.row_bytes(0, 0, stride)[0], 7);
-        assert_eq!(b.row_bytes(0, 1, stride)[2], 9);
-    }
-
-    #[test]
-    #[should_panic(expected = "recon band row out of range")]
-    fn a_row_above_the_band_panics_it_does_not_alias() {
-        let mut b = band_of(8, 96);
-        dst_at(&mut b, 15, 32).set::<BitDepth8>(1);
-    }
-
-    #[test]
-    #[should_panic]
-    fn a_row_below_the_band_panics() {
-        let mut b = band_of(8, 96);
-        dst_at(&mut b, 24, 32).set::<BitDepth8>(1);
-    }
-
-    #[test]
-    fn for_rows_mut_walks_the_bands_own_stride_not_the_pictures() {
-        let mut b = band_of(4, 96);
-        assert_eq!(b.stride[0], 128); // 96 rounded up to a 64-byte multiple.
-        dst_at(&mut b, 16, 32).for_rows_mut::<BitDepth8, _>(96, 4, |y, row| {
-            row.fill(y as u8 + 1);
-        });
-        for y in 0..4 {
-            let r = b.row_bytes(0, y, 96);
-            assert!(r.iter().all(|&v| v == y as u8 + 1), "row {y}");
-        }
-    }
-
-    // The exclusion property itself is a COMPILE-time fact and cannot be
-    // asserted at run time, so there is deliberately no test for it here — a
-    // test that "passes" because a string matches would prove nothing. It is
-    // proved the same way `forbid(unsafe_code)` is: by planting
-    //
-    //     let mut a = dst_at(&mut b, 16, 32);
-    //     let mut c = dst_at(&mut b, 17, 32);
-    //     a.set::<BitDepth8>(1);
-    //     c.set::<BitDepth8>(2);
-    //
-    // and observing `error[E0499]: cannot borrow 'b' as mutable more than once
-    // at a time`. See docs/MUT_RECON_KERNELS.md §6 for the recorded run.
-}
 
 /// The plane set one reconstruction call writes into: the shared picture, or
 /// this worker's owned band.
@@ -1010,4 +940,75 @@ pub(crate) fn stitch_sbrow<BD: BitDepth>(f: &Rav1dFrameData, t: &mut Rav1dTaskCo
         }
     }
     t.recon_band.disarm();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::include::common::bitdepth::BitDepth8;
+
+    fn band_of(rows: usize, cols: usize) -> ReconBand {
+        let mut b = ReconBand::default();
+        b.arm(
+            1,
+            &[(16, 32, rows, cols, 1), (0, 0, 0, 0, 1), (0, 0, 0, 0, 1)],
+        );
+        b
+    }
+
+    fn dst_at(b: &mut ReconBand, row: usize, col: usize) -> ReconDst<'_> {
+        ReconDst::Own(b.at::<BitDepth8>(0, row, col))
+    }
+
+    #[test]
+    fn translation_is_plane_coordinates_minus_origin() {
+        let mut b = band_of(8, 96);
+        // Plane (16, 32) is band (0, 0).
+        dst_at(&mut b, 16, 32).set::<BitDepth8>(7);
+        // Plane (17, 34) is band (1, 2).
+        dst_at(&mut b, 17, 34).set::<BitDepth8>(9);
+        let stride = b.stride[0];
+        assert_eq!(b.row_bytes(0, 0, stride)[0], 7);
+        assert_eq!(b.row_bytes(0, 1, stride)[2], 9);
+    }
+
+    #[test]
+    #[should_panic(expected = "recon band row out of range")]
+    fn a_row_above_the_band_panics_it_does_not_alias() {
+        let mut b = band_of(8, 96);
+        dst_at(&mut b, 15, 32).set::<BitDepth8>(1);
+    }
+
+    #[test]
+    #[should_panic]
+    fn a_row_below_the_band_panics() {
+        let mut b = band_of(8, 96);
+        dst_at(&mut b, 24, 32).set::<BitDepth8>(1);
+    }
+
+    #[test]
+    fn for_rows_mut_walks_the_bands_own_stride_not_the_pictures() {
+        let mut b = band_of(4, 96);
+        assert_eq!(b.stride[0], 128); // 96 rounded up to a 64-byte multiple.
+        dst_at(&mut b, 16, 32).for_rows_mut::<BitDepth8, _>(96, 4, |y, row| {
+            row.fill(y as u8 + 1);
+        });
+        for y in 0..4 {
+            let r = b.row_bytes(0, y, 96);
+            assert!(r.iter().all(|&v| v == y as u8 + 1), "row {y}");
+        }
+    }
+
+    // The exclusion property itself is a COMPILE-time fact and cannot be
+    // asserted at run time, so there is deliberately no test for it here — a
+    // test that "passes" because a string matches would prove nothing. It is
+    // proved the same way `forbid(unsafe_code)` is: by planting
+    //
+    //     let mut a = dst_at(&mut b, 16, 32);
+    //     let mut c = dst_at(&mut b, 17, 32);
+    //     a.set::<BitDepth8>(1);
+    //     c.set::<BitDepth8>(2);
+    //
+    // and observing `error[E0499]: cannot borrow 'b' as mutable more than once
+    // at a time`. See docs/MUT_RECON_KERNELS.md §6 for the recorded run.
 }
