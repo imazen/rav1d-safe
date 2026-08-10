@@ -88,6 +88,29 @@ campaigns. Every rule below cost real time to learn.
   file offset; an in-place edit that changes byte lengths makes it resume parsing at the wrong
   place. If you must change a tool that may be running (`measlock`), write a temp file and
   **`mv`** it into place — an atomic rename leaves the running process on the old inode.
+- **`--limit N` past the end of the stream halves the gap, silently and in dav1d's favour.** Our
+  drivers re-decode one OBU exactly `n` times whatever you ask; `dav1d --limit N` stops at end of
+  stream. A two-point fit then divides a SHORT total by a LONG frame delta: `n_hi = 24` on a
+  16-frame IVF made dav1d read **94.1 ms/frame instead of 152.1** (×24/13) and would have put the
+  4K t=1 gap at 1.96x instead of 1.21x. Count the stream's frames and refuse `n_hi > n_frames`
+  (`scripts/perf/tiled_wallcpu.sh` now fails loud). Caught only by disagreeing with a prior record —
+  so when a new harness makes the other decoder look suddenly *better*, suspect the harness.
+- **A stage's measured cost under a SPINNING lock is not that stage's opportunity.** rav1d-safe's
+  `TinyLock::lock_slow` spins on a relaxed load and never yields (its `yield_now` is behind
+  `__probe_lock_backoff`), so a waiting core burns CPU and a stage's cost partly reappears
+  elsewhere when its work is removed. Measured: at t=8 on a tiled 1024x576 vector, ablating deblock
+  saves 0.250 ms/frame and ablating CDEF 1.811, but ablating **both** saves 4.978 — super-additive.
+  With the tracker compiled out the same arms are additive to 0.6%. **Test additivity** (ablate each
+  and then all) before pricing any single-stage change on a contended path.
+- **An instrument that reads zero at `--threads 1` may not be measuring zero.** rav1d-safe's whole
+  task/stage census lives inside `rav1d_task_run`, which `n_tc == 1` never enters, so every stage
+  counter is 0.000 at t=1 — not "free", *not executed*. A t8/t1 ratio from such a probe does not
+  exist; use t=2 or t=4 as the low arm, which is the better comparison anyway (same code path, so
+  the ratio isolates adding workers from switching paths).
+- **macOS `sample` samples PARKED threads.** `__psynch_cvwait` was 37.3% of leaves at t=8 and 0.0%
+  at t=1, so leaving idle in the denominator deflates every busy symbol by exactly the amount the
+  pool sleeps — the opposite of what you are attributing. Bucket idle separately and normalise on
+  busy samples. (`scripts/perf/tiled_prof_report.py` does; `bucket_selftime.py` does not.)
 - **`measlock --load-ok`** (or `MEASLOCK_LOAD_OK=1`) keeps the mutual exclusion and skips the
   wait-for-quiet. Use it when another agent holds the box with a long-running NON-timed job (a
   multi-hour `miri`): the quiet gate can never be satisfied and the default behaviour is the worst
@@ -159,6 +182,10 @@ campaigns. Every rule below cost real time to learn.
 | Coarsening a guard extent at t=8 in rav1d-safe, ANY site | **measure it first, do not build it**: `--features __probe_bounds` (`docs/BOUNDS_MAP.md`) prints each site's distance to the nearest concurrently-live foreign WRITE. At t=8 every hot site already reserves exactly what it touches (`over_ratio = 1.000`, 1-16 bytes); `ctx.rs:99:27` has a concurrent write at gap **0**; `loopfilter.rs:710:14` has 232 bytes of room. The 4K gap vectors under-report collision risk ~1000x vs the corpus |
 | Raising the loop filter's **H** batch cap (rav1d-safe) | structurally null: `LFCAP` measures ratio **1.000** at caps 4/8/16/32/64, because H's rectangle grows in the ROW direction, so a run of `n` groups costs `4n` registrations however it is split |
 | The loop filter's **V** batch cap **with a fixed-wide scratch stride, a `params`-read threshold table, and an always-on write-back chunk loop** (rav1d-safe) | **+3.0% t=1 / +7.9% t=8** — and the cost was the MACHINERY, not the batch: an isolation arm holding the machinery at cap 4 was **+18.7% at t=1**. The cap itself is a win once the machinery is made free on the runs base could already open. `benchmarks/lf_vbatch_iso_2026-08-10_v1.tsv` |
+| **dav1d's tiled task scheduler as the explanation for the tiled t=8 deficit** (rav1d-safe #455) | **not the target, measured 2026-08-10**: `src/thread_task.rs` IS the port of dav1d's model, and profiling the tiled arm for the first time put **100% of the added-CPU half of the gap on the borrow tracker** — CPU growth t=1→t=8 is +27.3%/+10.5% for us, +4.4%/+3.6% with the tracker compiled out, +3.2%/+3.1% for dav1d. `deblock_cols` alone is +1.349 of +2.239 ms/frame (2.570x one stage) and `TinyLock::lock_slow` is 0.00% of busy self time at t=1 AND t=2 and 1.19% at t=8. `docs/TILED_SCALING.md` |
+| **Single-tile or t=1 profiles as a proxy for tiled t=8 behaviour** (rav1d-safe) | **REFUTED — this is why the deficit went 3 measurements / 0 profiles.** Every stage is flat from t=2 to t=8 on a single-tile vector in BOTH arms, so the whole effect is invisible there: a one-tile frame never has two tile workers or two filter tasks live at once. If the claim is about tiling, the vector must be tiled (`~/tmp/t8gap/vec/*__t8.avif`) |
+| **The post-tile filter tail** (rav1d-safe, the residual after the tracker) | **live, unpriced**: 34.1% of wall at a mean 3.22 of 8 workers at 1024x576/t=8 (17.5% at 2.59 with the tracker out), ~9-12% of wall structural at the ceiling. Instrument exists (`TAIL_CONC` in `probe-tasktime`). The axis is `sbh` vs `n_workers` — 9 rows on 8 workers is the hard case, 34 rows is visibly easier |
+| **rav1d-safe's filter chain vs dav1d's, single-threaded** | **the biggest number in the record and NOT a threading problem**: with the tracker compiled out our filter chain is 2.8x (1024x576) / 4.0x (4K) dav1d's at t=1, deblock alone **5.6x** (11.5 vs 2.07 ms/frame at 4K), and the ratio is flat across thread count. That is the compact copy-in/write-back the safe-guard model needs, not the tracker. Belongs to the single-thread campaign. `docs/TILED_SCALING.md` §6 |
 
 **The meta-lesson from the top two rows: a large self-time share is not automatically a large
 opportunity, and reducing the COUNT of an operation is not the same as reducing its COST.** The
