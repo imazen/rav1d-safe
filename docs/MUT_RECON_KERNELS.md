@@ -17,8 +17,8 @@ paid down in the same pass.
   recon plane has to move together — intra prediction, palette, CfL and the
   inverse transform all write the same pixels — so a subset conversion leaves
   the tracker on the path and measures null. Inter is the next coherent slice,
-  and it is bigger than this one (`src/mc.rs` alone has 54 `PicOffset`
-  parameters against `src/ipred.rs`'s 20).
+  and it is bigger than this one: **228 `PicOffset` parameters remain against
+  the 39 converted**, and `src/mc.rs` alone holds 59 (§8 names them all).
 * **The filter chain is not converted.** `loopfilter`, `cdef`, `looprestoration`
   and `filmgrain` genuinely cross tile boundaries and run after the stitch on
   the unified picture, exactly as before and with exactly today's tracking.
@@ -30,7 +30,9 @@ paid down in the same pass.
 * **Also declining:** `allow_intrabc`, frame threading (`n_fc > 1`), the
   `c-ffi`/`asm` configuration, `__simd_test`, negative strides, and a frame
   with no picture data. Each leaves `f.owned_recon = false`, i.e. today's path.
-* **Not measured:** x86_64 (compile-checked only), `--features unchecked`,
+* **Not measured:** x86_64 and wasm32 (compile-checked only), `--features asm`
+  and `--features c-ffi` (compile-checked only, and only cross — see §7b),
+  `--features unchecked`,
   t=16, any vector below 4K, and **any vector with loop restoration live** —
   #455 item 4's structural blindness is unchanged.
 
