@@ -1,8 +1,8 @@
-base	v4k_8tile	t=1	104267776 bytes	99.4 MB
-base	v4k_8tile	t=8	111460352 bytes	106.3 MB
-base	v4k_8tile_10b	t=1	156368896 bytes	149.1 MB
-base	v4k_8tile_10b	t=8	164954112 bytes	157.3 MB
-head	v4k_8tile	t=1	104628224 bytes	99.8 MB
-head	v4k_8tile	t=8	113295360 bytes	108.0 MB
-head	v4k_8tile_10b	t=1	156958720 bytes	149.7 MB
-head	v4k_8tile_10b	t=8	168394752 bytes	160.6 MB
+base	v4k_8tile	t=1	104202240	99.4 MB
+base	v4k_8tile	t=8	111362048	106.2 MB
+base	v4k_8tile_10b	t=1	156303360	149.1 MB
+base	v4k_8tile_10b	t=8	164823040	157.2 MB
+head	v4k_8tile	t=1	104464384	99.6 MB
+head	v4k_8tile	t=8	113065984	107.8 MB
+head	v4k_8tile_10b	t=1	156762112	149.5 MB
+head	v4k_8tile_10b	t=8	168165376	160.4 MB

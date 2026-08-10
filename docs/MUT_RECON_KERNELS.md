@@ -111,18 +111,112 @@ Peak RSS, `/usr/bin/time -l`, 20 frames, one decoder.
 
 | arm | 8bpc t=1 | 8bpc t=8 | 10bpc t=1 | 10bpc t=8 |
 |---|---|---|---|---|
-| `main` | 99.4 MB | 106.3 MB | 149.1 MB | 157.3 MB |
-| **band on** | **99.8** | **108.0** | **149.7** | **160.6** |
+| `main` | 99.4 MB | 106.2 MB | 149.1 MB | 157.2 MB |
+| **band on** | **99.6** | **107.8** | **149.5** | **160.4** |
 | #474 / #481 (measured there) | 195.7 | 202.5 | 340.1 | 348.3 |
 
-**+1.7 MB at 8bpc t=8 and +3.3 MB at 10bpc t=8**, against #474's +96.3 and
-+191.0 — 57× and 58× smaller, and the t=1 column is +0.4 / +0.6 MB.
+**+1.6 MB at 8bpc t=8 and +3.2 MB at 10bpc t=8**, against #474's +96.3 and
++191.0 — 59× and 60× smaller, and the t=1 column is +0.25 / +0.44 MB.
+The arithmetic: 8 workers × 960 columns × 128 rows × 3 planes ≈ 2.9 MB at
+8bpc, and the band is allocated once and reused across superblock rows and
+across frames.
 
-## 4. Wall clock
+## 4. Wall clock — the sound arm lands ON #481's unsound ceiling
 
-See §4 of the record below; measured with `scripts/perf/verify_gap.sh`,
-two-point fit at 2 and 20 frames, rotating arm order, dav1d 1.5.4
-`--framedelay 1` in the same interleaved sweep, strict idle gate.
+n = 9 complete rounds, 288 rows, **`foreign_max = 0` on every one**, idle Apple
+M4 Pro (12 cores, 8P+4E), macOS 26.5.2. `scripts/perf/verify_gap.sh`: two-point
+wall fit at 2 and 20 frames, rotating arm order, dav1d 1.5.4 `--framedelay 1` in
+the SAME interleaved sweep, strict idle gate, no `nice` on any timed run, no
+`-C target-cpu=native`. One cell-round discarded and re-run. `head` and
+`headoff` are the SAME BINARY (`RAV1D_OWNED_RECON=0`).
+
+ms/frame, median [min..max]:
+
+| | t=1 | t=2 | t=4 | t=8 |
+|---|---|---|---|---|
+| `base` 8bpc | 319.4 [317.9..322.8] | 197.1 [196.3..199.4] | 106.8 [106.5..108.3] | 67.8 [64.4..71.0] |
+| **`head`** 8bpc | **313.7** [312.7..325.3] | **166.7** [165.7..167.8] | **86.8** [86.1..87.6] | **53.4** [49.3..54.9] |
+| `headoff` 8bpc | 323.3 | 201.3 | 108.8 | 70.1 |
+| dav1d 8bpc | 246.4 | 125.2 | 65.7 | 36.2 |
+
+Ratio to dav1d `--framedelay 1`:
+
+| | t=1 | t=2 | t=4 | t=8 |
+|---|---|---|---|---|
+| `base` 8bpc | 1.296 | 1.574 | 1.627 | 1.873 |
+| **`head`** 8bpc | **1.273** | **1.332** | **1.321** | **1.474** |
+| `headoff` 8bpc | 1.312 | 1.609 | 1.657 | 1.936 |
+| **#481's unsound ceiling** | *1.276* | *1.333* | *1.313* | *1.475* |
+| whole-tracker ceiling (#467) | *1.160* | *1.264* | *1.262* | *1.345* |
+| `base` 10bpc | 1.442 | 1.621 | 1.658 | 1.915 |
+| **`head`** 10bpc | **1.395** | **1.456** | **1.471** | **1.591** |
+| #481's ceiling, 10bpc | *1.393* | *1.452* | *1.467* | *1.610* |
+
+**The sound arm reproduces #481's `tracker: None` ceiling at all eight cells**,
+to within 0.008 at 8bpc and 0.019 at 10bpc, and is marginally *better* at 10bpc
+t=8. 8bpc t=1 at **1.273** is under the ~1.30× bar — the only arm in this
+campaign that is.
+
+Paired within-round ratios (the arms in one round saw the same machine state;
+exact two-sided sign test):
+
+| `head` / `base` | median | band | wins | p |
+|---|---|---|---|---|
+| 8bpc t=1 | 0.9823 | [0.9699..1.0218] | 8/9 | 0.039 |
+| 8bpc t=2 | **0.8424** | [0.8376..0.8492] | 9/9 | 0.004 |
+| 8bpc t=4 | **0.8134** | [0.8000..0.8180] | 9/9 | 0.004 |
+| 8bpc t=8 | **0.7845** | [0.7551..0.7932] | 9/9 | 0.004 |
+| 10bpc t=1/2/4/8 | 0.9710 / 0.9004 / 0.8822 / 0.8279 | | 9/9 each | 0.004 |
+
+Arm-band disjointness (per `gap_bands.py`): **disjoint at 7 of 8 cells; 8bpc
+t=1 OVERLAPS** — its 1.8% is the one number here that is not separated, and it
+is reported as such rather than rounded into the headline.
+
+Scaling t=1 → t=8: base 4.71× → **head 5.88×** at 8bpc (dav1d 6.80×);
+4.97× → **5.79×** at 10bpc (dav1d 6.60×).
+
+### The honest negative: the seam costs the SHARED path 1.2–3.0%
+
+`headoff` is the same binary with the band disarmed, i.e. every frame the
+change declines — which today is **every inter frame**. It is consistently
+SLOWER than `base`:
+
+| `headoff` / `base` | t=1 | t=2 | t=4 | t=8 |
+|---|---|---|---|---|
+| 8bpc | 1.0115 | 1.0180 | 1.0193 | 1.0216 |
+| 10bpc | 1.0198 | 1.0266 | 1.0301 | 1.0245 |
+
+9/9 rounds slower at 7 of 8 cells (p = 0.004); 8bpc t=8 is 7/9 (p = 0.18). So
+the `ReconDst` enum's branch on the tracked path is **not free** — it is worth
+1–3%, and until the inter path is converted a mixed-GOP stream pays it on every
+inter frame while collecting the win only on key frames. That is the strongest
+argument for treating this as the first half of a conversion rather than a
+shippable end state.
+
+### The first sweep was invalid, and how it was caught
+
+A full n=9 / 288-row sweep was run and **thrown away**. It reported the head
+arm at 9.13× dav1d at 8bpc t=8 against base's 1.89× — a 5× regression with no
+thread scaling at all — and, tellingly, the band-DISARMED arm was *worse* than
+the band-armed one, which no memory- or seam-cost story explains.
+
+Cause: the staged `bench_head` binary had been overwritten by a
+`cargo build --release --features probe-sites --example bench_ab_decode`
+earlier in the session — cargo writes both feature sets to the same
+`target/release/examples/bench_ab_decode` path. The `base` arm was a clean
+build. So the A/B compared an instrumented binary against an uninstrumented
+one.
+
+A `sample` profile settled it in one command: `site_probe::record` was **51.4%
+of leaf samples** in the head arm. `/usr/bin/time -l` had already said the same
+thing more cheaply — head burned 45.5 s of user CPU against base's 10.0 s for
+the same work, i.e. the workers were running and doing 4.5× the work, not
+serializing.
+
+Two rules out of it: **`strings <binary> | grep site_probe` before staging any
+arm**, and **when an A/B shows a regression larger than the mechanism can
+explain, profile before believing it** — the arm's own composition is the first
+suspect, not the code under test.
 
 ## 5. Correctness gates
 
@@ -171,6 +265,32 @@ There is no compile-time feature to re-prove under: arming is a runtime switch
 (`RAV1D_OWNED_RECON`) precisely so both A/B arms are one binary. The band's code
 is in the default build either way.
 
+### And the exclusion property itself, the same way
+
+`forbid(unsafe_code)` says no `unsafe` was written. It does not say the design
+*needs* none. That is a separate claim — that two live regions over one band
+cannot exist — and it is also a compile-time fact, so it was planted too:
+
+```rust
+let mut a = dst_at(&mut b, 16, 32);
+let mut c = dst_at(&mut b, 17, 32);
+a.set::<BitDepth8>(1);
+c.set::<BitDepth8>(2);
+```
+
+```
+error[E0499]: cannot borrow `b` as mutable more than once at a time
+   --> src/owned_recon.rs:663:28
+662 |         let mut a = dst_at(&mut b, 16, 32);
+    |                            ------ first mutable borrow occurs here
+663 |         let mut c = dst_at(&mut b, 17, 32);
+    |                            ^^^^^^ second mutable borrow occurs here
+```
+
+Restored byte-exact (sha256 verified). There is deliberately **no run-time test
+asserting this** — a test that passes because a hardcoded string matches would
+prove nothing.
+
 ## 7. Standing hazards, replanted
 
 `--features __probe_wide` on `rav1d-disjoint-mut` (untouched by this branch —
@@ -199,16 +319,28 @@ Function signatures moved from `WithOffset<&Rav1dPictureDataComponent>` to
 
 | file | signatures |
 |---|---|
-| `src/ipred.rs` | 20 |
-| `src/itx.rs` | 4 |
+| `src/ipred.rs` | 24 |
+| `src/itx.rs` | 5 |
 | `src/safe_simd/ipred.rs` (x86-64) | 3 |
 | `src/safe_simd/ipred_arm.rs` | 2 |
 | `src/safe_simd/itx/part10_dispatch.rs` (x86-64) | 2 |
+| `include/common/dump.rs` | 2 |
 | `src/safe_simd/itx_arm.rs` | 1 |
 | `src/safe_simd/itx_wasm.rs` | 1 |
 | `src/ipred_prepare.rs` | 1 |
-| `include/common/dump.rs` | 2 |
-| `src/recon.rs` (the seam + 15 destination constructions) | 3 |
+| **converted total** | **39** |
+
+Plus the seam and 15 destination constructions in `src/recon.rs`.
+
+**228 `PicOffset` parameters remain**, and naming them is the honest measure of
+what is left: `src/mc.rs` 59, `src/looprestoration.rs` 25,
+`src/safe_simd/cdef.rs` 18, `src/safe_simd/mc.rs` 17,
+`src/safe_simd/mc_arm.rs` 17, `src/safe_simd/cdef_arm.rs` 16,
+`src/safe_simd/looprestoration.rs` 15, `looprestoration_arm.rs` 10,
+`cdef_wasm.rs` 9, `src/loopfilter.rs` 9, `src/lf_apply.rs` 7, `src/cdef.rs` 7,
+`src/filmgrain.rs` 5, `src/recon.rs` 4 (the inter path), `mc_wasm.rs` 3,
+`src/lr_apply.rs` 3, and 3 more. Inter is ~99 of those; the filter chain is
+~120.
 
 Two kernel bodies needed more than a type change:
 
