@@ -1,8 +1,13 @@
 # itx_16bpc_ab_2026-08-10 — the 16bpc itx dispatch A/B
 
-Record for `docs/ITX_16BPC_DISPATCH.md`. Branch `perf/itx-hbd-wide`,
-base `main` @ 2fae4fe (recorded SHA — do NOT diff against the `main` ref, it
-moves under you when other agents merge).
+Record for `docs/ITX_16BPC_DISPATCH.md`. Branch `perf/itx-hbd-wide`.
+
+`main` moved twice during this work: the sweeps in `itx_16bpc_ab_*` and
+`itx_16bpc_compose_*` were taken against **2fae4fe** (#482);
+`itx_16bpc_rebase_2026-08-10.tsv.zst` re-measures the whole change against
+**0f6bf10** (#483) after the rebase, arms `base2` / `HEAD2`. Always diff against
+a recorded SHA, never against the `main` ref — it moves under you when other
+agents merge.
 
 ## Host and instrument
 
@@ -59,6 +64,7 @@ arm that proves the census is a no-op without its feature). Its cells add
 | `itx_16bpc_shapes_2026-08-10.tsv` | the shape census that refuted "16bpc itx above 16x16" |
 | `itx_16bpc_selftime_2026-08-10.txt` | `sample` self-time leaves, base and ABC, 4K 10bpc |
 | `itx_16bpc_compose_2026-08-10.tsv.zst` | second sweep: `base`/`ABC`/`AC`/`HEAD`, t=1 and t=8 |
+| `itx_16bpc_rebase_2026-08-10.tsv.zst` | third sweep: `base2`/`HEAD2`/`dav1d_fd1` against `main` @ 0f6bf10 |
 
 ## Reproduce
 

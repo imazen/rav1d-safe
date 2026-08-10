@@ -1,8 +1,12 @@
 # The 16bpc itx dispatch: what the size sweep's ranking actually named
 
-Branch `perf/itx-hbd-wide`, base `main` @ `2fae4fe` (the sweep's brief said
-`b0f70ee`; `main` had moved twice — `b0a00c3` then `2fae4fe`/#482 — and this
-work is based on the newest).
+Branch `perf/itx-hbd-wide`. **`main` moved twice more while this was being
+measured** — the task named `b0f70ee`, the work was built and swept against
+`2fae4fe` (#482), and the branch is now rebased onto **`0f6bf10`** (#483,
+`perf/filter-band`, which touches `src/loopfilter.rs` and `src/owned_recon.rs`
+— the file `for_rows_mut` lives in). §3.1-3.4 are against `2fae4fe`; **§3.6
+re-measures the whole change against `0f6bf10` at n=9 and the win survives.**
+Diff against a recorded SHA, never against the `main` ref.
 
 Follow-on to [`SIZE_SWEEP.md`](SIZE_SWEEP.md) and issue #455. That round
 measured; this one builds. Worst news first.
@@ -269,6 +273,30 @@ streams at `--threads 8`, where `tile_threading_active()` is true and the add
 loop takes per-row guards. They are **0.9324 and 0.9294**, not 2.65x slower.
 `v4k_8tile:8` in §3.1 is the genuinely-8-tile version of the same control, at
 1.0000 for 8bpc (untouched) and 0.9408 for 10bpc.
+
+### 3.6 Re-measured against `main` @ 0f6bf10 after the rebase
+
+#483 landed while this branch was being swept, and it touches `owned_recon.rs`
+— the file `for_rows_mut` lives in. Both arms rebuilt from the rebased tree,
+fresh n=9 sweep (`benchmarks/itx_16bpc_rebase_2026-08-10.tsv.zst`), same
+harness. `DJ` again compares the two arms of the claim.
+
+| cell | t | base ms/f | head ms/f | **head/base** | band | | ours/dav1d |
+|---|---|---|---|---|---|---|---|
+| `L512x288_420_10b` | 1 | 3.119 | 3.043 | **0.9758** | [0.9589..0.9914] | **DJ** | 1.2338 -> **1.2040** |
+| `L1024x576_420_10b` | 1 | 17.52 | 16.54 | **0.9443** | [0.8979..0.9542] | **DJ** | 1.5340 -> **1.4478** |
+| `L2048x1152_420_10b` | 1 | 67.73 | 62.69 | **0.9216** | [0.9124..0.9400] | **DJ** | 1.6025 -> **1.4840** |
+| `L3840x2160_420_10b` | 1 | 221.0 | 207.9 | **0.9446** | [0.9376..0.9840] | **DJ** | 1.3808 -> **1.3091** |
+| `L3840x2160_444_10b` | 1 | 346.9 | 332.8 | **0.9586** | [0.9396..0.9720] | **DJ** | 1.3716 -> **1.3105** |
+| `v4k_8tile_10b` | 1 | 348.2 | 333.8 | **0.9573** | [0.9499..0.9669] | | 1.3687 -> **1.3129** |
+| `v4k_8tile_10b` | **8** | 62.78 | 59.56 | **0.9741** | [0.9476..0.9821] | | 1.6027 -> **1.5470** |
+| `L1024x576_420_8b` | 1 | 15.59 | 15.56 | 1.0007 | [0.9827..1.0061] | | 1.4131 -> 1.4124 |
+| `L3840x2160_420_8b` | 1 | 194.7 | 196.4 | 1.0055 | [0.9901..1.0216] | | 1.2727 -> 1.2748 |
+
+**Five of the seven 10bpc cells now have disjoint ms/frame bands**, including
+512x288 and 4K 4:4:4 which were not disjoint against `2fae4fe`; 8bpc still does
+not move. Corpus re-run on the rebased tree: **766/766 at `--threads 1` and
+753/753 at `--threads 8` minus film grain, both SETDIFF CLEAN.**
 
 ### 3.5 Where the itx family went
 
