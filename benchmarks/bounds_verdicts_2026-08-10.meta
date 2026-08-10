@@ -236,7 +236,7 @@ clean) and re-run after `touch`.
 | model | result |
 |---|---|
 | Stacked Borrows | **61 passed, 0 failed**, 0 UB (9 targets; `soundness` 992.7 s) |
-| Tree Borrows (`-Zmiri-tree-borrows`) | see below |
+| Tree Borrows (`-Zmiri-tree-borrows`) | **61 passed, 0 failed**, 0 UB (9 targets; `soundness` 993.1 s) |
 
 ### Everything else
 
