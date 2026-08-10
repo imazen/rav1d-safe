@@ -1,0 +1,7 @@
+arm	vec	threads	total_per_frame	distinct
+head	Cui_1024x576_q20	1	212602	72
+reads	Cui_1024x576_q20	1	189450	62
+head	Ctext_1024x576_q20	1	134158	42
+reads	Ctext_1024x576_q20	1	119983	36
+head	Cphoto_1024x576_q70	1	359377	48
+reads	Cphoto_1024x576_q70	1	318145	42
