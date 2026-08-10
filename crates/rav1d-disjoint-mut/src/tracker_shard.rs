@@ -2622,17 +2622,47 @@ mod tests {
             blocks >= MIN_BLOCKS / 2,
             "1024x192 kept only {blocks} blocks"
         );
-        // Never FINER than the block-count rule, at any cell or bit depth.
-        for (w, h) in [(512, 288), (1024, 576), (3840, 2160)] {
+        // Never FINER than the block-count rule, at any cell or bit depth. The
+        // narrow-and-tall cells are the ones that make this a real assertion:
+        // 256x2048's stride is 256, so its rows target lands at shift 10 while
+        // the block-count rule already chose 11. Without the `max` the rule
+        // would go a step FINER there, which is the opposite of its purpose —
+        // and a list of only wide cells would never notice.
+        let mut narrower = 0;
+        for (w, h) in [
+            (512, 288),
+            (1024, 576),
+            (3840, 2160),
+            (256, 2048),
+            (256, 4096),
+            (128, 2048),
+            (1024, 2048),
+        ] {
             for hbd in [0, 1] {
                 let (len, stride) = plane(w, h, hbd);
+                let base = block_shift_rule(len, SHARDS_CONCURRENT, 8);
                 assert!(
-                    block_shift_rule_rows(len, SHARDS_CONCURRENT, 8, stride)
-                        >= block_shift_rule(len, SHARDS_CONCURRENT, 8),
+                    block_shift_rule_rows(len, SHARDS_CONCURRENT, 8, stride) >= base,
                     "{w}x{h} hbd{hbd}: rows rule went finer than the block rule"
                 );
+                // Would the unclamped target have been finer? If it never is,
+                // the assertion above cannot fail and is decoration.
+                let want = (ROWS_PER_BLOCK_MIN as u64)
+                    .saturating_mul(stride as u64)
+                    .max(1);
+                let rows_shift = u64::BITS - (want - 1).leading_zeros();
+                let cap_shift =
+                    u64::BITS - 1 - ((len as u64 / MIN_BLOCKS as u64).max(1)).leading_zeros();
+                if rows_shift.min(cap_shift) < base {
+                    narrower += 1;
+                }
             }
         }
+        assert!(
+            narrower > 0,
+            "no cell in the list has an unclamped target finer than the block \
+             rule, so the never-finer assertion above is vacuous"
+        );
         // An undeclared stride keeps the shipped rule EXACTLY — this is what
         // stops every non-picture buffer moving under the arm.
         let (len, _) = plane(1024, 576, 0);

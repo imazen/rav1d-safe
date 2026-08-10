@@ -85,8 +85,20 @@ echo "mt_stress rows rc=$?" >&2
 nice -n 19 cargo test --release --test tile_threading_overlap --test reproduce_overlap \
   --test thread_cleanup_test > "$OUT/overlap_tests.log" 2>&1
 echo "overlap/cleanup tests rc=$?" >&2
-nice -n 19 bash scripts/perf/multi_decoder_pressure.sh > "$OUT/multi_decoder_pressure.log" 2>&1
+# It takes the bench binary and a vector dir as ARGUMENTS; called with none it
+# exits 1 on its own usage check, which reads as a failure and is not one.
+AVIF=${MDP_AVIF:-$HOME/tmp/shardsize/vec} \
+VECS=${MDP_VECS:-"C1024x576_420_8b__t8 C3840x256_420_8b__t8 C256x2048_420_8b__t8 C512x288_420_8b__t8 C3840x2160_420_8b__t8"} \
+  nice -n 19 bash scripts/perf/multi_decoder_pressure.sh \
+  "${MDP_BIN:-$HOME/tmp/shardsize/bin/bench_plain}" 12 3 600 \
+  > "$OUT/multi_decoder_pressure.log" 2>&1
 echo "multi_decoder_pressure rc=$?" >&2
+AVIF=${MDP_AVIF:-$HOME/tmp/shardsize/vec} \
+VECS=${MDP_VECS:-"C1024x576_420_8b__t8 C3840x256_420_8b__t8 C256x2048_420_8b__t8"} \
+  nice -n 19 bash scripts/perf/multi_decoder_pressure.sh \
+  "${MDP_BIN_ROWS:-$HOME/tmp/shardsize/bin/bench_bpsrows}" 12 3 600 \
+  > "$OUT/multi_decoder_pressure_rows.log" 2>&1
+echo "multi_decoder_pressure rows rc=$?" >&2
 
 # --- 5. clippy, both targets, reproduced locally ----------------------------
 run "x86_64 clippy"

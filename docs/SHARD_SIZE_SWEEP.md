@@ -158,48 +158,53 @@ Wall ratio vs the shipped rule; `*` = the two arms' bands are disjoint.
 
 | cell | rows/blk | wall ms | cores | bps1 | bpshalf | bpsq | **bpsrows** | untracked | dav1d |
 |---|---|---|---|---|---|---|---|---|---|
-| 3840x256 | 0.53 | 5.815 | 4.99 | 1.013 | 0.775\* | 0.760 | **0.756\*** | 0.629 | 0.462 |
-| 1024x192 | 0.94 | 1.448 | 3.92 | 0.820 | 0.785\* | 0.776 | **0.775\*** | 0.646 | 0.481 |
-| 1024x288 | 0.94 | 1.786 | 4.70 | 0.902 | 0.893\* | 0.899 | **0.897\*** | 0.726 | 0.569 |
-| 1024x384 | 0.94 | 2.448 | 4.98 | 0.890 | 0.761\* | 0.755 | **0.755\*** | 0.617 | 0.445 |
-| 512x288 | 1.00 | 0.967 | 4.54 | 0.983 | 0.992 | 1.025 | **0.998** | 0.711 | 0.548 |
-| 1024x576 | 1.88 | 3.250 | 5.40 | 0.879 | 0.863\* | 0.863 | **0.875\*** | 0.715 | 0.538 |
-| 1024x768 | 1.88 | 3.978 | 6.24 | 0.903 | 0.857\* | 0.866 | **0.870\*** | 0.717 | 0.534 |
-| 2048x576 | 1.94 | 6.356 | 5.44 | 0.881 | 0.878\* | 0.886 | **0.876\*** | 0.733 | 0.554 |
-| 512x576 | 2.00 | 1.675 | 5.35 | 0.927 | 0.930\* | 0.964 | **0.995** | 0.726 | 0.546 |
-| 3840x576 | 2.13 | 11.396 | 5.39 | 0.907 | 0.907\* | 0.910 | **0.894\*** | 0.762 | 0.578 |
-| 1024x1024 | 3.76 | 4.584 | 6.49 | 0.978 | 0.968 | 1.006 | **0.963** | 0.836 | 0.635 |
-| 1024x1440 | 3.76 | 6.597 | 6.46 | 0.987 | 0.987 | 1.006 | **0.977** | 0.851 | 0.657 |
-| 2048x1152 | 3.88 | 9.756 | 6.62 | 0.984 | 0.993 | 0.993 | **0.979** | 0.859 | 0.651 |
-| 3840x2160 | 4.27 | 30.143 | 6.82 | 1.007 | 0.995 | 0.995 | **0.998** | 0.886 | 0.711 |
-| 1024x2048 | 7.53 | 8.902 | 6.80 | 0.996 | 1.004 | 1.031 | **0.993** | 0.857 | 0.654 |
-| 1024x2160 | 7.53 | 8.688 | 6.72 | 0.990 | 0.981 | 1.002 | **0.983** | 0.854 | 0.683 |
-| 256x2048 | 8.00 | 3.808 | 6.65 | 0.987 | 0.987 | 0.995 | **0.988** | 0.549 | 0.420 |
+| 3840x256 | 0.53 | 5.815 | 4.99 | 1.013 | 0.775\* | 0.760\* | **0.756\*** | 0.629\* | 0.462\* |
+| 1024x192 | 0.94 | 1.448 | 3.92 | 0.820\* | 0.785\* | 0.776\* | **0.775\*** | 0.646\* | 0.481\* |
+| 1024x288 | 0.94 | 1.786 | 4.70 | 0.902\* | 0.893\* | 0.899\* | **0.897\*** | 0.726\* | 0.569\* |
+| 1024x384 | 0.94 | 2.448 | 4.98 | 0.890\* | 0.761\* | 0.755\* | **0.755\*** | 0.617\* | 0.445\* |
+| 512x288 | 1.00 | 0.967 | 4.54 | 0.983 | 0.992 | 1.025 | **0.998** | 0.711\* | 0.548\* |
+| 1024x576 | 1.88 | 3.250 | 5.40 | 0.879\* | 0.863\* | 0.863\* | **0.875\*** | 0.715\* | 0.538\* |
+| 1024x768 | 1.88 | 3.978 | 6.24 | 0.903\* | 0.857\* | 0.866\* | **0.870\*** | 0.717\* | 0.534\* |
+| 2048x576 | 1.94 | 6.356 | 5.44 | 0.881\* | 0.878\* | 0.886\* | **0.876\*** | 0.733\* | 0.554\* |
+| 512x576 | 2.00 | 1.675 | 5.35 | 0.927\* | 0.930\* | 0.964\* | **0.995** | 0.726\* | 0.546\* |
+| 3840x576 | 2.13 | 11.396 | 5.39 | 0.907\* | 0.907\* | 0.910\* | **0.894\*** | 0.762\* | 0.578\* |
+| 1024x1024 | 3.76 | 4.584 | 6.49 | 0.978 | 0.968 | 1.006 | **0.963** | 0.836\* | 0.635\* |
+| 1024x1440 | 3.76 | 6.597 | 6.46 | 0.987 | 0.987 | 1.006 | **0.977** | 0.851\* | 0.657\* |
+| 2048x1152 | 3.88 | 9.756 | 6.62 | 0.984 | 0.993 | 0.993 | **0.979** | 0.859\* | 0.651\* |
+| 3840x2160 | 4.27 | 30.143 | 6.82 | 1.007 | 0.995 | 0.995 | **0.998** | 0.886\* | 0.711\* |
+| 1024x2048 | 7.53 | 8.902 | 6.80 | 0.996 | 1.004 | 1.031 | **0.993** | 0.857\* | 0.654\* |
+| 1024x2160 | 7.53 | 8.688 | 6.72 | 0.990 | 0.981 | 1.002 | **0.983** | 0.854\* | 0.683\* |
+| 256x2048 | 8.00 | 3.808 | 6.65 | 0.987 | 0.987 | 0.995 | **0.988** | 0.549\* | 0.420\* |
 
 ### 5a. The crossover
 
 Sorted by rows-per-block the table is close to monotone, and the boundary is
-sharp:
+sharp. Counting `bps-half` against the shipped rule:
 
-* **rows/block ≤ 2.13 → a win with disjoint bands, 7 of 9 such cells**, ranging
-  0.756x to 0.907x. (The two exceptions are the two cells where the stride
-  divides the block; see below.)
-* **rows/block ≥ 3.76 → a null on all 7 such cells.** Point estimates 0.963-1.004,
+* **rows/block ≤ 2.13 → a win with disjoint bands on 9 of the 10 such cells**,
+  ranging 0.761x to 0.930x. The single exception is 512x288.
+* **rows/block ≥ 3.76 → a null on all 7 such cells.** Point estimates 0.968-1.004,
   bands overlapping, most of them inside the 1.2% floor.
+* Not one rung's band is disjoint anywhere in the null region, and every rung's
+  band is disjoint on 9 of the 10 cells in the win region. The boundary is not a
+  judgement call.
 
 So the crossover sits **between 2.1 and 3.8 rows per block**, which for a
 1024-wide 8-bit picture is a height between about 700 and 1000, and for 4K is a
 height between about 1100 and 2000. That is why the prior round saw 14.6% at
 1024x576 and nothing at 4K: those two cells sit on opposite sides of it.
 
-**The stride-divides-block cells behave differently, and only half-predictably.**
-Both 512-wide cells register zero multi-shard borrows at every rung, so the
-"fewer shard lines per borrow" mechanism has nothing to remove — and 512x288
-(1.00 rows/block) is indeed a null where its 1024-wide neighbours at 0.94 win
-21%. But **512x576 wins 7% anyway** (0.927x at `bps1`, bands disjoint) with
-`multi = 0`. So a second mechanism is live that the multi-shard counter does not
-see — most plausibly the size of each worker's shard-line working SET rather than
-the lines per borrow — and this grid does not separate the two.
+**The one exception, and what it half-explains.** Both 512-wide cells register
+**zero** multi-shard borrows at every rung (stride 512 divides every power-of-two
+block), so the "fewer shard lines per borrow" mechanism has nothing to remove
+there. 512x288 is accordingly a null where its 1024-wide neighbours at 0.94
+rows/block win 21%. But **512x576 wins 7% anyway** (0.927x at `bps1`, bands
+disjoint) with `multi = 0`, so a second mechanism is live that the multi-shard
+counter cannot see — most plausibly the size of each worker's shard-line working
+SET rather than the lines per borrow. This grid does not separate the two. The
+other thing that distinguishes 512x288 is that it is the least parallel cell in
+the grid (4.54 of 8 cores busy, against 5.4-6.8 elsewhere) and the smallest
+(0.97 ms/frame), so tracker traffic is a smaller share of its wall to begin with.
 
 ### 5b. The derived rule, and the two discriminating cells
 
@@ -300,7 +305,85 @@ ran.
    the sharper version is that **execution is not a function of size either — it
    is a function of content, and a downscale ladder confounds the two.**
 
-## 7. Recommendation
+## 7. Gates
+
+Driver `scripts/perf/shardsize_gates.sh`, logs `~/tmp/shardsize/gates`. Miri:
+`scripts/perf/shardsize_miri.sh`.
+
+| gate | result |
+|---|---|
+| `cargo test --lib`, release **and** debug | pass, both (77 passed, 8 ignored) |
+| tracker crate unit tests: default + `__bps_quarter` / `__bps_half` / `__bps_1` / `__bps_4` / `__bps_8` / `__bps_rows` / `__msb_5` / `__msb_5,__bps_rows` | 9 configurations, all pass |
+| **corpus, DEFAULT arm, t=1**, no `--skip-group` | **766 PASS + 2 SKIP** |
+| **corpus, DEFAULT arm, t=8**, no `--skip-group` | **766 PASS + 2 SKIP** |
+| **corpus, `bps-rows`, t=8** | **766 PASS + 2 SKIP** |
+| **corpus, `bps-rows`, t=1** | **766 PASS + 2 SKIP** |
+| set-diff BY NAME (key `(group, name)`, value `(status, ACTUAL md5)`) vs `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst` | **0 only-in-baseline, 0 only-in-head, 0 differing** on all four |
+| set-diff t=1 vs t=8, default arm | 0 differing |
+| loop-filter window `debug_assert`, `-C debug-assertions=on`, `8-bit/data` t=8, default **and** `bps-rows` | 358 vectors each, green |
+| `mt_stress` (threads 1/2/4/8/16 x 5 trials), default **and** `bps-rows` | pass, both |
+| `tile_threading_overlap`, `reproduce_overlap`, `thread_cleanup_test` | pass |
+| `multi_decoder_pressure` — 12 concurrent decoders, mixed thread counts, default **and** `bps-rows` | **PASS**, every md5 equals the serial reference |
+| 17 sweep vectors vs dav1d 1.5.4 at t=1 and t=8 | 17/17 identical, before any timing |
+| every arm's own `CHECKSUM` on 5 spot cells | identical to the dav1d md5 |
+
+The corpus gate covers the **default** arm because this branch adds a seam
+(`DisjointMut::declare_row_stride`, called unconditionally from
+`Rav1dPictureDataComponent::from_parts`) that is compiled on the shipped path
+even though its tracker side is a no-op there. 766/766 on the default arm is the
+evidence that "no-op" is true.
+
+**Test teeth, proven by planting.** The new
+`rows_rule_targets_picture_rows_not_block_count`:
+
+| planted mutation | test |
+|---|---|
+| `ROWS_PER_BLOCK_MIN` 4 -> 1 | **FAILS**, as it must |
+| drop the never-finer clamp (`base.max(...)` -> the bare target) | **FAILS** — but only after the assertion's cell list gained narrow-and-tall cells. With only wide cells the unclamped target is never finer, so the assertion could not fail and was decoration. The test now also asserts that at least one cell in its own list *would* have gone finer, so it cannot silently become vacuous again. |
+| remove the `stride == 0` early return | **passes** — and that is correct, not a gap: under `base.max(...)` a zero stride yields a target of 2, which loses to `base` anyway, so the mutation is behaviour-preserving. Reported as a non-mutation rather than as coverage. |
+
+`forbid(unsafe_code)` is proven ACTIVE, not read — and the anchor is corrected:
+
+* planting `unsafe { core::mem::transmute(x) }` in `src/loopfilter.rs` fails
+  against **`src/loopfilter.rs:1`**, because that file carries its own
+  module-level `#![cfg_attr(not(asm_loopfilter), forbid(unsafe_code))]`. It does
+  **not** exercise the crate attribute. `SHARD_GRANULARITY.md` §8 concluded from
+  exactly this experiment that "the attribute is at `lib.rs:1`, not `:13` as the
+  campaign brief says"; that conclusion is wrong.
+* planting the same block in `src/picture.rs`, which has no module-level forbid,
+  fails against **`lib.rs:13`** — the `forbid(unsafe_code)` inside the crate-level
+  `cfg_attr(not(any(feature = "asm", "c-ffi", "unchecked")))`. **The campaign
+  brief's anchor is the right one.**
+
+Both files were restored from `~/tmp` backup copies — never `git checkout --` —
+and verified byte-exact by sha256 before and after (`42ce9b71...` for
+`loopfilter.rs`, `fa02c12b...` for `picture.rs`), plus a clean `git diff` and a
+green rebuild.
+
+### Miri
+
+`cargo +nightly miri test -p rav1d-disjoint-mut --no-fail-fast --test <target>`,
+one target at a time (Miri aborts the process on first UB and cargo stops at the
+first failing TARGET, so a batch run lets later targets never execute and their
+silence reads as health), both aliasing models, and **both feature sets** —
+default and `__bps_rows`, because the arm is what moves block boundaries.
+
+MIRI_TABLE
+
+### Clippy — pre-existing, and none of it is here
+
+`cargo clippy --release --all-targets -- -D warnings` fails on this branch on
+aarch64 (**91 errors**) and on `x86_64-apple-darwin`. Every finding is in a file
+this branch does not touch — the complete set of files clippy names is
+`benches/tier_isolation.rs`, `examples/bench_ivf_limit.rs`,
+`examples/md5_ablate.rs`, `examples/md5_inventory.rs`, `examples/profile_ivf.rs`,
+`src/safe_simd/itx_arm.rs`, `src/safe_simd/itx_arm_neon_16x16.rs`. **Zero findings
+in `tracker_shard.rs`, `crates/rav1d-disjoint-mut/src/lib.rs`,
+`include/dav1d/picture.rs`, `examples/probe_tracker.rs` or
+`examples/decode_md5.rs`**, and the default-vs-`bps-rows` error sets differ only
+in which target clippy aborted at first.
+
+## 8. Recommendation
 
 **Do not ship a rung.** A global constant is now measured to be the wrong shape:
 it must be one step for every picture, and the right step ranges from 0 to 3
