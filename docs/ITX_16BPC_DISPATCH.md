@@ -363,6 +363,7 @@ Restored byte-exact: `sha256 d4e03d4a…423176d` (the same hash
 
 | gate | result |
 |---|---|
+| `cargo test --release --workspace --no-fail-fast` | **240 passed, 0 failed**, 30 ignored, rc=0 |
 | `mt_stress` at threads 1/2/4/8/16, 5 trials each | **25/25 ok** |
 | `multi_decoder_pressure.sh` — 12 concurrent decoders x 3 iters, thread counts 1/2/4/8/16, 5 vectors | **PASS**, every md5 matches the serial reference |
 
