@@ -1,0 +1,147 @@
+shard_size_sweep_2026-08-10 -- the shard-GRANULARITY rung swept across PICTURE
+SIZE, which is the one axis PR #500 refused to flip a default without. Narrative
++ verdict: docs/SHARD_SIZE_SWEEP.md. This file is provenance only.
+
+WHAT WAS MISSING BEFORE THIS
+  benchmarks/shard_granularity_2026-08-10.meta measured `bps-half` at 0.851x
+  wall / 0.904x CPU on ONE tiled cell (1024x576, 8 tiles, t=8) and a null at 4K,
+  and its own §6 named "two picture sizes" as the first reason not to ship:
+  docs/SHARD_GRANULARITY.md §2 argues the error is a function of picture HEIGHT,
+  so size is the axis that matters most and was the least covered. §7 then
+  sketched an unbuilt follow-up -- a shift keyed on ROWS PER BLOCK rather than on
+  a fixed block count -- and priced neither.
+
+HOST / BUILD
+  Apple M4 Pro (Mac16,11, 8P+4E, 24 GiB), macOS 26.5.2, rustc 1.97.1.
+  rav1d-safe perf/shard-size, base perf/shard-granularity @ e8b4c77, release,
+  default features except where an arm names one. NO -C target-cpu=native.
+  dav1d 1.5.4 (homebrew).
+
+  Changes shipped code ONLY behind a feature: `bps-rows`
+  (`rav1d-disjoint-mut/__bps_rows`) is default-off. What IS in the default build
+  is one new no-op seam -- `DisjointMut::declare_row_stride`, called by
+  `Rav1dPictureDataComponent::from_parts`, whose tracker side compiles to nothing
+  without the feature. That is deliberate: a hint wired up only under the arm is
+  a hint that has never been compiled on the shipped path. The corpus gate covers
+  the default arm for exactly that reason.
+
+ARMS
+  plain      default features -- what ships (BPS 2/1, block-count rule)
+  bps1       BPS 1/1     -> +1 shift vs default
+  bpshalf    BPS 1/2     -> +2
+  bpsq       BPS 1/4     -> +3
+  bpsrows    __bps_rows  -> DERIVED per instance: coarsen until a block spans
+                           ROWS_PER_BLOCK_MIN = 4 picture rows, never finer than
+                           the block-count rule, never past MIN_BLOCKS = 32
+                           blocks. Reads the stride the picture allocator
+                           declares; a buffer with no declared stride is
+                           untouched.
+  untracked  probe-untracked (borrow tracker compiled out) -- the ceiling
+  dav1d_fd1  dav1d --framedelay 1 (matched threading model)
+
+  LIVENESS of `bpsrows` is read off the tracker's own report, not predicted: the
+  `shifts` column of the __probe_bounds rect table. Measured luma shifts,
+  plain -> rows:
+      1024x576   11 -> 13   (+2, the cell the prior record measured)
+      1024x2048  13 -> 13   (no change -- already at 7.5 rows/block)
+      256x2048   11 -> 11   (no change -- 8 rows/block at the shipped rule)
+      3840x256   11 -> 14   (+3 -- half a row per block at the shipped rule)
+      512x288     9 -> 11   (+2)
+  A target of 8 rows instead of 4 would have moved 1024x2048 to 14; it does not,
+  which is how the shipped constant is pinned from the binary rather than the
+  source.
+
+VECTORS  (~/tmp/shardsize/vec, recipe scripts/perf/mk_shardsize_vectors.sh)
+  17 AVIF stills, all 4x2 = 8 tiles, YUV420 8bpc, avifenc -s 6 -q 70, all-intra,
+  one key-frame OBU re-decoded. CENTRED 1:1 CROPS of the campaign's src4k.png --
+  NOT downscales like benchmarks/size_sweep_*, so detail-per-pixel is constant
+  across the grid and geometry is the only thing moving. Bytes/pixel and absolute
+  ms/frame are therefore NOT comparable with the downscale ladder.
+
+    H axis (w = 1024):  h = 192 288 384 576 768 1024 1440 2048 2160
+    W axis (h = 576):   w = 512 1024 2048 3840
+    D axis (16:9):      512x288  1024x576  2048x1152  3840x2160
+    discriminating:     256x2048 (tall/narrow)  3840x256 (wide/short)
+
+  TILE GEOMETRY IS PARSED, NOT ASSUMED. libaom clamps a tile request against the
+  frame's superblock count and the encoder log records the REQUEST, so an
+  unnoticed clamp would be a silently VOID cell. scripts/perf/av1_tile_info.py
+  parses tile_cols/tile_rows out of each bitstream: 4x2 = 8 on all 17. It is
+  validated first against the known L1024x576_420_8b__t8 (4x2, 16x9 sb),
+  L1024x576_420_8b (1x1) and L3840x2160_420_8b__t8 (4x2, 60x34 sb).
+
+  BIT-IDENTITY BEFORE TIMING: 17/17 agree with dav1d 1.5.4 at t=1 AND t=8 --
+  shard_size_sweep_md5_2026-08-10.tsv, scripts/perf/shardsize_verify.sh. t=8 is
+  not optional here: the grid exists to exercise multi-tile behaviour, and a
+  tile-threading defect is exactly what a t=1-only gate cannot see.
+  Additionally every ARM's own CHECKSUM matches that md5 on five cells
+  (1024x576, 3840x256, 256x2048, 512x288, 3840x2160).
+
+  SCOPE, so a null from this grid is not over-read: loop restoration executes
+  ZERO blocks on all 17 (__ablate census below), so nothing here measures LR.
+  8-bit 4:2:0 only, one content class, one quality point, 8 tiles only, one box.
+
+INSTRUMENTS
+  1. --features probe-wide -- the SHIPPED multi-shard (`multi`) and all-shards
+     (`w_shards`) counts. Timer-free. No denominator by design; the per-frame
+     normalisation here divides by the run's iteration count, and the
+     registrations-per-frame denominator comes from the bounds probe's own
+     `total_per_frame`.
+  2. --features __probe_bounds -- rows_mean / row_shards_mean / row_shards_max /
+     pct_row_wide per site, and the `shifts` liveness column. Publishes, fences
+     and scans on every registration (~20x slower here): NO wall-clock number is
+     quoted from any bounds build.
+  3. --features __ablate -- per-stage execution units per frame (itx / cdef /
+     looprestoration are the only three with `ablate::note()` call sites; the
+     other six read 0 whatever ran). Added to examples/probe_tracker this round.
+  4. bash `time` with TIMEFORMAT='%3R %3U %3S', two frame counts per cell, fitted
+     `total = a + b*frames` separately for wall and user+sys.
+
+  INSTRUMENT TRAPS respected:
+  * `dav1d --muxer md5` REQUIRES `-o -`; without it dav1d exits with "Output file
+    is required" and an md5-scraping pipeline compares against an empty string,
+    which looks exactly like a decode mismatch. The verify script's first run
+    reported 15/15 MISMATCH for that reason and nothing else.
+  * n_hi never exceeds the IVF's frame count (tiled_wallcpu.sh FATALs).
+  * Frame counts are PER CELL, scaled by area, so no cell's `n_hi` run is short
+    enough to be measuring timer noise.
+  * A niced probe binary living in $BIN is invisible to the harness's foreign-load
+    counter (which excludes $BIN by name), so no counting run was allowed to
+    overlap a timed one.
+
+MEASUREMENT HYGIENE
+  Every timed run under `measlock` (three holds: shardsize-wallcpu,
+  shardsize-cal, shardsize-rows), rotating arm order inside every cell, n = 7
+  rounds, medians with min/max bands. Builds, vector generation, md5 verification
+  and all counting runs were `nice -n 19`; no timed run was ever niced.
+
+  NOISE FLOOR, MEASURED: the t=1 grid is the calibration and it is not
+  decoration. At one thread `block_shift_rule` provably returns the constant for
+  every rung, so plain/bps1/bpshalf/bpsq are the SAME code path and their true
+  ratio is exactly 1.000. Over five cells x 7 rounds they read 0.999-1.012, so
+  the floor is ~1.2% and every ratio inside [0.988, 1.012] is a null. A first
+  pass at n=2 read 1.136 on 512x288 and 0.755 on 1024x384; at n=7 the same cells
+  read 0.979 and 0.748. The 512x288 "regression" was noise and is recorded here
+  because it was nearly reported.
+
+FILES
+  shard_size_sweep_2026-08-10.txt          the reduced tables (crossover, timed, counts)
+  shard_size_sweep_wallcpu_2026-08-10.tsv  raw wall/CPU rows, t=8, all arms, 17 cells
+  shard_size_sweep_t1_2026-08-10.tsv       raw wall/CPU rows, t=1 noise calibration
+  shard_size_sweep_counts_2026-08-10.tsv   reduced probe-wide + __probe_bounds table
+  shard_size_sweep_md5_2026-08-10.tsv      dav1d vs ours at t=1 and t=8, per vector
+  shard_size_sweep_activity_2026-08-10.tsv per-stage execution units per frame
+  shard_size_sweep_tiles_2026-08-10.tsv    parsed tile geometry per vector
+
+COMMANDS
+  scripts/perf/mk_shardsize_vectors.sh  ~/tmp/shardsize
+  scripts/perf/av1_tile_info.py         ~/tmp/shardsize/vec/*.avif
+  scripts/perf/shardsize_verify.sh      <md5.tsv>
+  scripts/perf/shardsize_build.sh       ~/tmp/shardsize/bin
+  scripts/perf/shardsize_counts.sh      ~/tmp/shardsize/counts
+  scripts/perf/shardsize_counts_report.py ~/tmp/shardsize/counts --tsv <counts.tsv>
+  BIN=... AVIF=... IVF=... ARMS="plain bps1 bpshalf bpsq bpsrows untracked dav1d_fd1" \
+    CELLS="..." measlock shardsize-rows -- scripts/perf/tiled_wallcpu.sh <out.tsv> 7
+  scripts/perf/shardsize_report.py      <wallcpu.tsv>
+  scripts/perf/shardsize_crossover.py   <wallcpu.tsv> <counts.tsv>
+  scripts/perf/shardsize_gates.sh       ~/tmp/shardsize/gates

@@ -149,6 +149,7 @@ bps-half = ["rav1d-disjoint-mut/__bps_half"]
 bps-1 = ["rav1d-disjoint-mut/__bps_1"]
 bps-4 = ["rav1d-disjoint-mut/__bps_4"]
 bps-8 = ["rav1d-disjoint-mut/__bps_8"]
+bps-rows = ["rav1d-disjoint-mut/__bps_rows"]
 # MAX_SHARDS_PER_BORROW 4 -> 5 (BorrowId pairs narrowed to log2(N_SHARDS)+3 bits).
 msb-5 = ["rav1d-disjoint-mut/__msb_5"]
 

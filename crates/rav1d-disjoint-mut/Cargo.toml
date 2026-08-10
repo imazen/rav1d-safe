@@ -83,6 +83,12 @@ __bps_half = []
 __bps_1 = []
 __bps_4 = []
 __bps_8 = []
+# DERIVED shift: choose the block so it spans >= ROWS_PER_BLOCK_MIN picture rows,
+# from the buffer's declared row stride, instead of cutting every buffer into a
+# fixed BLOCK COUNT. Needs `DisjointMut::declare_row_stride`, which the picture
+# allocator calls unconditionally (a no-op for the shipped rule). A/B arm; see
+# `ROWS_PER_BLOCK_MIN` and benchmarks/shard_size_sweep_2026-08-10.meta.
+__bps_rows = []
 # Raise MAX_SHARDS_PER_BORROW from 4 to 5, which needs BorrowId's (shard, slot)
 # pairs narrowed from 12 bits to `log2(N_SHARDS) + 3`. A/B arm; see the const.
 __msb_5 = []

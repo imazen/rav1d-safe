@@ -556,19 +556,26 @@ impl Rav1dPictureDataComponent {
     /// For non-c-ffi, stride is stored separately.
     #[cfg(feature = "c-ffi")]
     fn from_parts(inner: Rav1dPictureDataComponentInner, _stride: isize) -> Self {
-        let this = Self {
+        let mut this = Self {
             data: crate::src::disjoint_mut::dm_new(inner),
         };
+        // The tracker's block shift is fixed at construction, so the stride has
+        // to reach it here — while `data` is still local and no borrow can
+        // exist. A no-op for the shipped `len`-only rule; see
+        // `BorrowTracker::set_row_stride`.
+        this.data.declare_row_stride(_stride.unsigned_abs());
         this.data.probe_declare_stride(_stride);
         this
     }
 
     #[cfg(not(feature = "c-ffi"))]
     fn from_parts(inner: Rav1dPictureDataComponentInner, stride: isize) -> Self {
-        let this = Self {
+        let mut this = Self {
             data: crate::src::disjoint_mut::dm_new(inner),
             stride,
         };
+        // See the c-ffi twin: the block shift is chosen once, at construction.
+        this.data.declare_row_stride(stride.unsigned_abs());
         // THROWAWAY (`__probe_bounds`): a no-op without the feature. Lets the
         // report price "widen this guard to the full picture rows it spans".
         this.data.probe_declare_stride(stride);

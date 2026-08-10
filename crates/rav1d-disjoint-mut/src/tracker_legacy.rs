@@ -315,6 +315,11 @@ impl BorrowTracker {
     /// No-op: the legacy tracker's table does not depend on the length.
     pub fn reprovision(&mut self, _len: usize) {}
 
+    /// No-op: with one lock per instance and no block shift, there is no
+    /// granularity for a row stride to choose. Present so the picture allocator
+    /// can call it unconditionally against either tracker.
+    pub fn set_row_stride(&mut self, _len: usize, _stride: usize) {}
+
     /// Mark this tracker as poisoned. All future borrow attempts will panic.
     pub fn poison(&self) {
         self.poisoned.store(true, Ordering::Release);

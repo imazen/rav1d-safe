@@ -1497,6 +1497,31 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
             tracker.reprovision(len);
         }
     }
+
+    /// Declare this buffer's picture row stride in BYTES, so the tracker can
+    /// size its blocks in picture ROWS instead of in blocks-per-buffer.
+    ///
+    /// `&mut self` is the safety argument, exactly as for the resize path: no
+    /// borrow can be outstanding while the block boundaries move.
+    ///
+    /// The shipped rule reads `len` only and this is a no-op for it; it feeds
+    /// the `__bps_rows` A/B arm. Buffers that never call it (everything that is
+    /// not a picture plane — there is no stride to declare) keep the block-count
+    /// rule under every arm.
+    ///
+    /// Not sticky: a later [`Self::resize`] re-derives the shift from `len`
+    /// alone and drops the hint. That degrades to the shipped rule, which is a
+    /// performance question and never a correctness one — the boundaries only
+    /// have to agree between the two registrants of a shared byte, and both read
+    /// the same live `shift`. Picture planes are allocated at a fixed size and
+    /// never resized, so today no caller hits it.
+    #[inline]
+    pub fn declare_row_stride(&mut self, stride_bytes: usize) {
+        let len = self.as_mut_slice().len();
+        if let Some(tracker) = self.tracker.as_mut() {
+            tracker.set_row_stride(len, stride_bytes);
+        }
+    }
 }
 
 /// Fallible version of [`Resizable`]. Returns `Err` on allocation failure.
