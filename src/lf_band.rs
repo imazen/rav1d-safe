@@ -73,17 +73,66 @@ use crate::src::loopfilter::LF_TAP_REACH;
 /// pixels before it and ends the same distance after the last edge.
 pub(crate) const LF_BAND_PAD: usize = LF_TAP_REACH as usize;
 
-/// Runtime A/B switch, default **ON**: `RAV1D_LF_BAND=0` makes every column
-/// call take the picture path.
+/// Whether a band may be armed at all.
 ///
-/// One binary, two arms — the `RAV1D_OWNED_RECON` convention this campaign
-/// uses so that an A/B pair cannot differ in anything but the arm. Disarmed,
-/// the only residual is the `Option` argument threaded through the dispatch,
-/// which is what the `bandoff`-vs-`main` column of the measurement prices.
+/// # The band is REFUTED under tile threading — measured, not argued
+///
+/// A band takes ONE immutable guard per picture row over a CONTIGUOUS span.
+/// The loop filter's read set is not contiguous: it is the 2-D SPARSE union of
+/// `+-reach` tap windows around the edges that actually filter, and a row in
+/// which nothing filters is not read at all. So any per-row span
+/// over-reserves — columns no call reads, in rows some call does.
+///
+/// Under tile threading that over-reservation collides with legitimate
+/// concurrent narrow writes. Measured on the 8-bit/data group (358 vectors) at
+/// `--threads 8`, `examples/md5_inventory`:
+///
+/// | arm | pass | error |
+/// |---|---|---|
+/// | band off | 358 | 0 |
+/// | band off (repeat) | 358 | 0 |
+/// | column band only | 357 / 356 / 358 | **1 / 2 / 0** |
+/// | column + row band | 294 | **64** |
+///
+/// — i.e. NONDETERMINISTIC decode failures, and the recorded overlap is
+///
+/// ```text
+/// current:  &     _[163840..163968]   <- the band's 128-px row copy-in
+/// existing: &mut  _[163944..163952]   <- a concurrent 8-px write inside it
+/// ```
+///
+/// The first `--threads 8` corpus run of the column-only band passed 753/755
+/// CLEAN. **That was one lucky sample**, which is exactly why "766 vectors
+/// passed" is evidence and not a proof.
+///
+/// This is the third refutation of "cut the guard COUNT by widening the
+/// reservation" in this campaign, and the first where the widening was
+/// CONTIGUOUS rather than the strided hull's inter-row gaps
+/// (`docs/MUT_RECON_KERNELS.md` §11c).
+///
+/// # And the obvious gate does NOT rescue it
+///
+/// `tile_threading_active()` — the latch that already lets `fill_hull`,
+/// `block_mut` and `compact_read` widen a reservation — was tried and is the
+/// WRONG condition here. It gates against concurrent TILE workers, but the
+/// loop filter's concurrency is between SBROW FILTER TASKS, which exist
+/// whenever `n_tc > 1` however many tiles a frame has
+/// (`src/thread_task.rs:1030-1043`: the task for `sby+1` is inserted before
+/// the selected one runs). Gated that way the census at `--threads 8` is
+/// byte-identical to `main` (11,401,399, so the band provably never armed on
+/// `v4k_8tile`), and the 8-bit/data group STILL produced 8 errors in one run
+/// of two — against 0/0/0 on the base commit's own binary, same group, same
+/// box, same load.
+///
+/// So the band ships **default OFF**, opt-in with `RAV1D_LF_BAND=1`, in the
+/// shape `__probe_lf_hull` already uses for the strided-hull negative: a
+/// reproduction, not a policy. A gate that is right for this site would have
+/// to be "no other thread can be filtering this picture", which is not a
+/// condition the decoder currently exposes.
 pub(crate) fn lf_band_enabled() -> bool {
     use std::sync::OnceLock;
-    static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| !matches!(std::env::var("RAV1D_LF_BAND").as_deref(), Ok("0")))
+    static ENV: OnceLock<bool> = OnceLock::new();
+    *ENV.get_or_init(|| matches!(std::env::var("RAV1D_LF_BAND").as_deref(), Ok("1")))
 }
 
 /// Widest band either pass needs, on either axis.
