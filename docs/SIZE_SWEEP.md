@@ -466,3 +466,25 @@ loop filter and intra-edge prep never amortise.
 That distinction matters for what to do about it: a smaller decoder-construction
 path would buy ~1.8 us; the other ~6 us is boundary handling, which is the same
 code the rest of the ladder runs.
+
+## The same ranking holds at the tiny cell, and it names the scalar gap directly
+
+64x36 4:2:0, +0.0144 ms/frame (+31.6%), ranked (ms/frame):
+
+```
++0.0040  src::itx_1d::inv_dct32_1d_internal_c            0 -> 0.0040   SCALAR
++0.0022  src::safe_simd::cdef_arm::cdef_filter_block_16bpc_inner
++0.0021  _platform_memmove
++0.0016  src::itx_1d::inv_dct16_1d_internal_c            0 -> 0.0016   SCALAR
++0.0013  BorrowTracker::add
++0.0011  src::itx::inv_txfm_add                          0 -> 0.0011   SCALAR driver
++0.0009  src::safe_simd::itx_arm_hbd::apply1d            0 -> 0.0009   4-lane
++0.0007  src::itx_1d::inv_dct8_1d_internal_c             0 -> 0.0007   SCALAR
+```
+
+**The four `itx_1d::*_internal_c` entries are the generic scalar reference**, and
+they are 50% of the whole tiny-cell depth penalty. They appear because a 64x64
+superblock still gets 32-point transforms and rectangular shapes taller than 16,
+which `hbd_supported(w, h) = w <= 16 && h <= 16` sends to the reference. That is
+the known unfinished port (issue #455 open item 5) showing up as the #1 line
+item at the small end as well as inside the 4K number.

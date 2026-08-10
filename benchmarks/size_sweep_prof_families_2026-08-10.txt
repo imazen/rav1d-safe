@@ -1,0 +1,128 @@
+== L512x288_420_8b   leaves=38424   ms/frame=2.8478
+   family        ms/frame       %   live?   top leaf
+   entropy         2.1530  75.60%   yes     rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bi
+   tracker         0.1674   5.88%   yes     <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<true>
+   recon           0.1593   5.60%   yes     rav1d_safe::src::recon::rav1d_recon_b_intra::<rav1d_safe::include::com
+   loopfilter      0.1544   5.42%   yes     rav1d_safe::src::safe_simd::loopfilter_arm::lf_compact_run_neon
+   itx             0.0881   3.09%   yes     <rav1d_safe::src::itx::itxfm::Fn>::call::<rav1d_safe::include::common:
+   ipred           0.0640   2.25%   yes     rav1d_safe::src::ipred_prepare::rav1d_prepare_intra_edges::<rav1d_safe
+   other           0.0345   1.21%   yes     <rav1d_safe::src::with_offset::WithOffset<&rav1d_safe::include::dav1d:
+   runtime         0.0257   0.90%   yes     rav1d_safe::src::ctx::small_memset::<u8, 32, false>
+   cdef            0.0015   0.05%   yes     rav1d_safe::src::cdef_apply::rav1d_cdef_brow::<rav1d_safe::include::co
+   cast_u16        0.0000   0.00%   NO      <no leaf sample in this stream>
+   looprestor      0.0000   0.00%   NO      <no leaf sample in this stream>
+   mc              0.0000   0.00%   NO      <no leaf sample in this stream>
+   filmgrain       0.0000   0.00%   NO      <no leaf sample in this stream>
+
+== L1024x576_420_8b   leaves=38450   ms/frame=16.1750
+   family        ms/frame       %   live?   top leaf
+   entropy         9.1102  56.32%   yes     rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bi
+   tracker         2.0083  12.42%   yes     <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<true>
+   recon           1.5716   9.72%   yes     rav1d_safe::src::recon::rav1d_recon_b_intra::<rav1d_safe::include::com
+   loopfilter      0.9015   5.57%   yes     rav1d_safe::src::loopfilter::loopfilter_sb_direct::<rav1d_safe::includ
+   ipred           0.7963   4.92%   yes     rav1d_safe::src::ipred_prepare::rav1d_prepare_intra_edges::<rav1d_safe
+   cdef            0.6445   3.98%   yes     rav1d_safe::src::safe_simd::cdef_arm::cdef_filter_block_8bpc_inner
+   itx             0.4615   2.85%   yes     <rav1d_safe::src::itx::itxfm::Fn>::call::<rav1d_safe::include::common:
+   runtime         0.3593   2.22%   yes     rav1d_safe::src::ctx::small_memset::<u8, 32, false>
+   other           0.3218   1.99%   yes     rav1d_safe::src::recon::get_skip_ctx
+   cast_u16        0.0000   0.00%   NO      <no leaf sample in this stream>
+   looprestor      0.0000   0.00%   NO      <no leaf sample in this stream>
+   mc              0.0000   0.00%   NO      <no leaf sample in this stream>
+   filmgrain       0.0000   0.00%   NO      <no leaf sample in this stream>
+
+== L1024x576_420_10b   leaves=38557   ms/frame=18.3639
+   family        ms/frame       %   live?   top leaf
+   entropy         9.1731  49.95%   yes     rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bi
+   tracker         2.6048  14.18%   yes     <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<true>
+   recon           1.6913   9.21%   yes     rav1d_safe::src::recon::rav1d_recon_b_intra::<rav1d_safe::include::com
+   itx             1.3950   7.60%   yes     <rav1d_safe::src::itx::itxfm::Fn>::call::<rav1d_safe::include::common:
+   loopfilter      1.0192   5.55%   yes     rav1d_safe::src::loopfilter::loopfilter_sb_direct::<rav1d_safe::includ
+   ipred           0.9183   5.00%   yes     rav1d_safe::src::ipred_prepare::rav1d_prepare_intra_edges::<rav1d_safe
+   runtime         0.7230   3.94%   yes     _platform_memmove
+   cdef            0.5377   2.93%   yes     rav1d_safe::src::safe_simd::cdef_arm::cdef_filter_block_16bpc_inner
+   other           0.3015   1.64%   yes     rav1d_safe::src::recon::get_skip_ctx
+   cast_u16        0.0000   0.00%   NO      <no leaf sample in this stream>
+   looprestor      0.0000   0.00%   NO      <no leaf sample in this stream>
+   mc              0.0000   0.00%   NO      <no leaf sample in this stream>
+   filmgrain       0.0000   0.00%   NO      <no leaf sample in this stream>
+
+== L2048x1152_420_8b   leaves=38679   ms/frame=62.1444
+   family        ms/frame       %   live?   top leaf
+   entropy        32.4756  52.26%   yes     rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bi
+   tracker         8.9042  14.33%   yes     <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<true>
+   recon           6.1455   9.89%   yes     rav1d_safe::src::recon::rav1d_recon_b_intra::<rav1d_safe::include::com
+   ipred           4.2030   6.76%   yes     rav1d_safe::src::ipred_prepare::rav1d_prepare_intra_edges::<rav1d_safe
+   loopfilter      4.0376   6.50%   yes     rav1d_safe::src::loopfilter::loopfilter_sb_direct::<rav1d_safe::includ
+   itx             2.3072   3.71%   yes     <rav1d_safe::src::itx::itxfm::Fn>::call::<rav1d_safe::include::common:
+   other           1.6838   2.71%   yes     <rav1d_safe::src::with_offset::WithOffset<&rav1d_safe::include::dav1d:
+   runtime         1.3126   2.11%   yes     rav1d_safe::src::ctx::small_memset::<u8, 32, false>
+   cdef            1.0749   1.73%   yes     rav1d_safe::src::safe_simd::cdef_arm::cdef_filter_row::<true, true>
+   cast_u16        0.0000   0.00%   NO      <no leaf sample in this stream>
+   looprestor      0.0000   0.00%   NO      <no leaf sample in this stream>
+   mc              0.0000   0.00%   NO      <no leaf sample in this stream>
+   filmgrain       0.0000   0.00%   NO      <no leaf sample in this stream>
+
+== L3840x2160_420_8b   leaves=38665   ms/frame=199.1786
+   family        ms/frame       %   live?   top leaf
+   entropy       131.0926  65.82%   yes     rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bi
+   tracker        19.6886   9.88%   yes     <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<true>
+   recon          14.1560   7.11%   yes     rav1d_safe::src::recon::rav1d_recon_b_intra::<rav1d_safe::include::com
+   loopfilter     12.3118   6.18%   yes     rav1d_safe::src::loopfilter::loopfilter_sb_direct::<rav1d_safe::includ
+   ipred           7.2995   3.66%   yes     rav1d_safe::src::ipred_prepare::rav1d_prepare_intra_edges::<rav1d_safe
+   itx             5.0381   2.53%   yes     <rav1d_safe::src::itx::itxfm::Fn>::call::<rav1d_safe::include::common:
+   other           3.7090   1.86%   yes     rav1d_safe::src::decode::decode_sb
+   cdef            3.0599   1.54%   yes     rav1d_safe::src::safe_simd::cdef_arm::cdef_filter_block_8bpc_inner
+   runtime         2.8230   1.42%   yes     rav1d_safe::src::ctx::small_memset::<u8, 32, false>
+   cast_u16        0.0000   0.00%   NO      <no leaf sample in this stream>
+   looprestor      0.0000   0.00%   NO      <no leaf sample in this stream>
+   mc              0.0000   0.00%   NO      <no leaf sample in this stream>
+   filmgrain       0.0000   0.00%   NO      <no leaf sample in this stream>
+
+== L3840x2160_420_10b   leaves=38642   ms/frame=231.7500
+   family        ms/frame       %   live?   top leaf
+   entropy       138.4491  59.74%   yes     rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bi
+   tracker        25.1649  10.86%   yes     <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<true>
+   itx            17.9201   7.73%   yes     <rav1d_safe::src::itx::itxfm::Fn>::call::<rav1d_safe::include::common:
+   recon          15.5452   6.71%   yes     rav1d_safe::src::recon::rav1d_recon_b_intra::<rav1d_safe::include::com
+   loopfilter     13.6440   5.89%   yes     rav1d_safe::src::loopfilter::loopfilter_sb_direct::<rav1d_safe::includ
+   ipred           8.6902   3.75%   yes     rav1d_safe::src::ipred_prepare::rav1d_prepare_intra_edges::<rav1d_safe
+   runtime         6.6991   2.89%   yes     _platform_memset
+   other           3.0167   1.30%   yes     rav1d_safe::src::decode::decode_sb
+   cdef            2.6208   1.13%   yes     rav1d_safe::src::safe_simd::cdef_arm::cdef_filter_block_16bpc_inner
+   cast_u16        0.0000   0.00%   NO      <no leaf sample in this stream>
+   looprestor      0.0000   0.00%   NO      <no leaf sample in this stream>
+   mc              0.0000   0.00%   NO      <no leaf sample in this stream>
+   filmgrain       0.0000   0.00%   NO      <no leaf sample in this stream>
+
+== L64x36_420_8b   leaves=38532   ms/frame=0.0455
+   family        ms/frame       %   live?   top leaf
+   entropy         0.0252  55.46%   yes     rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bi
+   cdef            0.0055  12.14%   yes     rav1d_safe::src::safe_simd::cdef_arm::cdef_filter_row::<true, true>
+   tracker         0.0039   8.55%   yes     <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<true>
+   recon           0.0028   6.08%   yes     rav1d_safe::src::recon::rav1d_recon_b_intra::<rav1d_safe::include::com
+   runtime         0.0023   5.14%   yes     _platform_memmove
+   other           0.0018   4.02%   yes     <rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponent>::from
+   loopfilter      0.0018   3.85%   yes     rav1d_safe::src::loopfilter::loopfilter_sb_direct::<rav1d_safe::includ
+   itx             0.0014   3.02%   yes     rav1d_safe::src::safe_simd::itx_arm_neon_32::idct32_odd_q
+   ipred           0.0008   1.75%   yes     rav1d_safe::src::ipred_prepare::rav1d_prepare_intra_edges::<rav1d_safe
+   cast_u16        0.0000   0.00%   NO      <no leaf sample in this stream>
+   looprestor      0.0000   0.00%   NO      <no leaf sample in this stream>
+   mc              0.0000   0.00%   NO      <no leaf sample in this stream>
+   filmgrain       0.0000   0.00%   NO      <no leaf sample in this stream>
+
+== L64x36_420_10b   leaves=38495   ms/frame=0.0599
+   family        ms/frame       %   live?   top leaf
+   entropy         0.0251  41.88%   yes     rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bi
+   itx             0.0096  16.10%   yes     rav1d_safe::src::itx_1d::inv_dct32_1d_internal_c
+   cdef            0.0065  10.92%   yes     rav1d_safe::src::safe_simd::cdef_arm::cdef_filter_block_16bpc_inner
+   tracker         0.0056   9.30%   yes     <rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<false>
+   runtime         0.0051   8.46%   yes     _platform_memmove
+   recon           0.0030   5.08%   yes     rav1d_safe::src::recon::rav1d_recon_b_intra::<rav1d_safe::include::com
+   loopfilter      0.0019   3.23%   yes     rav1d_safe::src::loopfilter::loopfilter_sb_direct::<rav1d_safe::includ
+   other           0.0018   3.03%   yes     <rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponent>::from
+   ipred           0.0012   2.00%   yes     rav1d_safe::src::ipred_prepare::rav1d_prepare_intra_edges::<rav1d_safe
+   cast_u16        0.0000   0.00%   NO      <no leaf sample in this stream>
+   looprestor      0.0000   0.00%   NO      <no leaf sample in this stream>
+   mc              0.0000   0.00%   NO      <no leaf sample in this stream>
+   filmgrain       0.0000   0.00%   NO      <no leaf sample in this stream>
+
