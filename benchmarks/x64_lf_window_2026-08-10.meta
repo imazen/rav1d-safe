@@ -203,6 +203,14 @@ All at `--threads 8` unless stated. `8-bit/data` = 358 vectors, full = 768.
   head pass 2               8-bit/data     358      0         0               0
   head full corpus          all            766      0         0               0
                                            (+2 SKIP: features/annexb, section5)
+  head full corpus, t=1     all            766      0         0               0
+
+**Cross-arm MD5 identity, by name, over all 768 rows:** x86 head t=1 ==
+x86 head t=8 == aarch64 head t=1 == aarch64 head t=8 == aarch64 BASE t=1/t=8.
+Every one of those five `diff`s is empty on `(name, status, actual_md5)`. The
+t=1 arm matters on its own account: at t=1 `tile_threading_active()` is false, so
+x86 takes the NON-compact single-guard path, which this change also narrows —
+766/766 there says the narrowed guard is in bounds and the pixels did not move.
 
 **The by-name set-diff at t=8** (`(name, status, actual_md5)`, base vs head,
 `8-bit/data`) has exactly four differing rows, all repairs onto the expected
