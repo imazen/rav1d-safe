@@ -144,7 +144,7 @@ def main():
             print(f"=== {title}: {vec}  ({g['w']}x{g['h']} YUV{g['fmt']} {g['depth']}bpc, "
                   f"{g['tiles']} tile{'s' if g['tiles'] > 1 else ''}) ===")
             hdr = (f"{'arm':<10} {'t':>2} | {'wall ms/frame':>26} | {'cpu ms/frame':>26} | "
-                   f"{'speedup':>18} {'S/t':>5} | {'cpu x t1':>18}")
+                   f"{'cores':>5} | {'speedup':>18} {'S/t':>5} | {'cpu x t1':>18}")
             print(hdr)
             for arm in arms:
                 for t in threads:
@@ -157,8 +157,13 @@ def main():
                     cm = paired(cpu, cpu, arm, vec, t, arm, vec, 1)
                     smed = median(su) if su else float("nan")
                     cmed = median(cm) if cm else float("nan")
+                    # cores busy on average during the decode: CPU per frame
+                    # divided by wall per frame. 1.0 = one core; anything above
+                    # is parallelism, and anything above the speedup is waste.
+                    cores = median(paired(cpu, wall, arm, vec, t, arm, vec, t))
                     print(f"{arm:<10} {t:>2} | {fmt_band(median(w), min(w), max(w), 8, 3):>26} | "
                           f"{fmt_band(median(c), min(c), max(c), 8, 3):>26} | "
+                          f"{cores:5.2f} | "
                           f"{fmt_band(smed, min(su) if su else 0, max(su) if su else 0, 5, 3):>18} "
                           f"{smed/t:5.2f} | "
                           f"{fmt_band(cmed, min(cm) if cm else 0, max(cm) if cm else 0, 5, 3):>18}")
