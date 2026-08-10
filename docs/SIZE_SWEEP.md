@@ -723,3 +723,18 @@ ours 53.3 / 369.2 / 441.5 dec/s against dav1d's 87.2 / 627.7 / 761.6, ratios
 1.641 / 1.683 / 1.744, scaling **8.29x against dav1d's 8.73x** at N=12. Same
 conclusion, one ratio-point-and-a-half worse across the board — which is the
 10bpc single-thread penalty from Q2 showing through, not a concurrency effect.
+
+## Continuity anchor — this instrument reproduces the campaign's published 4K cells
+
+The campaign's own two gap vectors, re-measured with THIS round's harness on the
+same box and the same day (n=3 complete rounds, load-tagged, `bench_rs` =
+`main` @ b0a00c3):
+
+| vector | ours ms/frame | dav1d ms/frame | ratio | band | published |
+|---|---|---|---|---|---|
+| `v4k_8tile` (4:4:4, 8 tiles) | 322.83 | 249.78 | **1.292** | [1.290..1.295] | 1.296 (#480, idle, n=9) |
+| `v4k_8tile_10b` | 361.78 | 255.33 | **1.417** | [1.415..1.423] | 1.429-1.437 |
+
+Three digits on the 8bpc cell, under load, four days after the reference. The
+ladder is therefore comparable to everything this issue has recorded, and the
+4K-versus-1024x576 contrast above is not an artifact of new vectors.
