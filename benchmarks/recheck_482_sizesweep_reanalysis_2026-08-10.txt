@@ -1,0 +1,51 @@
+# /Users/lilith/tmp/szsweep/p23/mainarm_gap.tsv
+# cell L3840x2160_420_8b t=1,  rounds [0, 1, 2, 3, 4]
+
+## the rows, as fitted ms/frame, in execution order
+
+round  execution order                            rs         rs2
+------------------------------------------------------------------------------
+0      rs -> rs2 -> dav1d_fd1                 216.79      237.21
+1      rs2 -> dav1d_fd1 -> rs                 209.00      217.93
+2      dav1d_fd1 -> rs -> rs2                 212.43      230.57
+3      rs -> rs2 -> dav1d_fd1                 208.07      233.71
+4      rs2 -> dav1d_fd1 -> rs                 232.64      205.21
+
+## reduction 1 -- paired per-round ratio, then median (as published)
+
+   per round: 1.0942  1.0427  1.0854  1.1232  0.8821
+   median 1.0854   band [0.8821..1.1232]   spread 24.1 points
+   rounds >= 1.04: 4 of 5
+
+## reduction 2 -- per-arm MINIMUM over rounds, then ratio
+
+   rs   min  208.07   median  212.43   max  232.64   spread  11.8%
+   rs2  min  205.21   median  230.57   max  237.21   spread  15.6%
+
+   rs2/rs by MINIMUM : 0.9863
+   rs2/rs by MEDIAN  : 1.0854
+
+   (#482's own two rounds on v4k_8tile reported 0.9823 and 0.9790.)
+
+## the noise is not random -- it is ORDERED within the group
+
+   round  earlier                later                   later/earlier
+   ------------------------------------------------------------------
+   0      rs @0 216.79           rs2 @1 237.21                 1.0942
+   1      rs2 @0 217.93          rs @2 209.00                  0.9590   (1 arm between)
+   2      rs @1 212.43           rs2 @2 230.57                 1.0854
+   3      rs @0 208.07           rs2 @1 233.71                 1.1232
+   4      rs2 @0 205.21          rs @2 232.64                  1.1337   (1 arm between)
+
+   the LATER arm was slower in 4 of 5 rounds; median later/earlier = 1.0942
+   Position, not code: it lands on whichever arm the rotation put
+   second, and a 3-arm rotation does not put each arm there equally
+   often -- so it does not average out of a 5-round median.
+
+## the same rows compared at MATCHED position (n is small -- shown)
+
+   position                   rs                rs2     rs2/rs
+   ----------------------------------------------------------
+   0                212.43 (n=2)       211.57 (n=2)     0.9960
+   1                212.43 (n=1)       235.46 (n=2)     1.1084
+   2                220.82 (n=2)       230.57 (n=1)     1.0442

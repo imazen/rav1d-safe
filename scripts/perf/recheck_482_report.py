@@ -52,19 +52,25 @@ def main():
     pairs = ["head/parent", "headoff/parent", "head/headoff",
              "main/parent", "mainoff/parent", "main/head"]
     dump = None
-    for i, a in enumerate(args):
-        if a == "--pairs":
+    positional = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--pairs" and i + 1 < len(args):
             pairs = args[i + 1].split(",")
-        if a == "--dump":          # "<pair>:<vector> t=<n>"
+            i += 2
+        elif a == "--dump" and i + 1 < len(args):   # "<pair>:<vector> t=<n>"
             p, c = args[i + 1].split(":", 1)
             dump = (p, c)
-    args = [a for a in args if not a.startswith("--")]
-    skip = set()
-    for i, a in enumerate(sys.argv[1:]):
-        if a in ("--pairs", "--dump"):
-            skip.add(sys.argv[1:][i + 1])
-    args = [a for a in args if a not in skip]
-    path = args[0]
+            i += 2
+        elif a.startswith("--"):
+            i += 1
+        else:
+            positional.append(a)
+            i += 1
+    if not positional:
+        sys.exit(__doc__)
+    path = positional[0]
     per_round = {}
 
     # (cell, arm, round) -> {"ext": ms/frame, "int": ms/frame, "pos": k}

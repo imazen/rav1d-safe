@@ -27,13 +27,21 @@ else
   now_ms() { python3 -c 'import time;print(int(time.time()*1000))'; }
 fi
 
-printf 'rep\text_ms\tint_ms_per_frame\n' > "$OUT"
+BIN_RE=$(printf '%s' "$BIN" | sed 's/[][\.*^$/(){}?+|]/\\&/g')
+busy_count() {
+  ps -A -o %cpu,comm -r | awk -v me="$BIN_RE" \
+    'NR>1 && $1>25 && $2 !~ /claude|ClaudeCode|versions\/|dav1d|python3/ && $2 !~ me {c++} END {print c+0}'
+}
+
+# `foreign` is recorded per rep so a drift cannot be silently attributed to
+# burst duration when it was actually a neighbour's job starting.
+printf 'rep\text_ms\tint_ms_per_frame\tforeign\n' > "$OUT"
 for i in $(seq 0 $((REPS-1))); do
   t0=$(now_ms)
   out=$(RAV1D_OWNED_RECON=1 "$BIN/bench_$ARM" "$AVIF/$VEC.avif" "$THR" "$N" 1 w 2>/dev/null)
   t1=$(now_ms)
   ipf=$(printf '%s\n' "$out" | awk -F'\t' '/^RESULT/{print $8}')
-  printf '%s\t%s\t%s\n' "$i" "$((t1 - t0))" "${ipf:-NA}" >> "$OUT"
+  printf '%s\t%s\t%s\t%s\n' "$i" "$((t1 - t0))" "${ipf:-NA}" "$(busy_count)" >> "$OUT"
 done
 column -t -s $'\t' "$OUT" >&2
 awk -F'\t' 'NR>2{s+=$3; n++} END{if(n) printf "\nrep0 vs mean(rep1..): %.3f vs %.3f  ->  %+.2f%%\n", f, s/n, (f/(s/n)-1)*100}' \

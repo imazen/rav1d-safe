@@ -1,0 +1,13 @@
+# L3840x2160_420_8b t=1   head/parent   instrument=int   n=20
+# per-round ratios: 0.9944 1.0739 0.9539 0.9201 0.9836 0.9905 1.0290 0.9466 1.0002 0.9967 0.9921 1.0100 0.9647 0.9668 0.9955 0.9837 0.9970 0.9894 0.9984 0.9898
+
+median 0.9913   95% bootstrap CI [0.9837..0.9968]   (20,000 resamples, seed 20260810)
+   1.0854 (the size sweep's median): OUTSIDE the CI
+   1.0000 (parity): OUTSIDE the CI
+
+## the median of a 5-round window (all 15,504 ways to draw 5 of 20)
+
+   range [0.9539..1.0100]   p5 0.9668   p50 0.9921   p95 0.9984
+   P(5-round median >= 1.0000) =   3.20%   (496 of 15,504)
+   P(5-round median >= 1.0400) =   0.00%   (0 of 15,504)
+   P(5-round median >= 1.0854) =   0.00%   (0 of 15,504)

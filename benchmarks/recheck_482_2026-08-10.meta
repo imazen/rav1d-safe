@@ -1,0 +1,91 @@
+# Did #482 regress 4K 8bpc? Settling the one cell the size sweep could not.
+
+date: 2026-08-10
+host: Apple M4 Pro (Mac16,11, 8P+4E, 24 GB), macOS 26.5.2 build 25F84
+toolchain: rustc 1.97.1 (8bab26f4f 2026-07-14), default features, no `asm`,
+      no `-C target-cpu=native`, no `nice` on any timed run
+branch: verify/recheck-482-4k, base `main` @ 0f6bf10
+write-up: docs/RECHECK_482_4K.md
+issue: #455 (campaign index)
+
+## arms
+
+    parent   b0a00c3   #482's first parent on main
+    head     2fae4fe   #482 as merged
+    main     0f6bf10   current main
+    headoff  2fae4fe   SAME BINARY as head, RAV1D_OWNED_RECON=0
+    mainoff  0f6bf10   SAME BINARY as main, RAV1D_OWNED_RECON=0
+    szrs     b0a00c3   the SIZE SWEEP's own staged binary, reused unmodified
+    szrs2    2fae4fe   the SIZE SWEEP's own staged binary, reused unmodified
+
+Binary provenance, checked before timing: `nm` counts 28 `owned_recon` symbols
+in head, 16 in main, 0 in parent; the three binaries reproduce byte-for-byte
+the sizes recorded in commit 2a7ff51's message (2,868,624 / 2,888,816 /
+2,887,376). NOTE: 2a7ff51 (the 37 `#[inline]` -> `#[inline(always)]` seam fix)
+is NOT in 2fae4fe -- it landed in the 2fae4fe..0f6bf10 range.
+
+## vectors
+
+Reused unchanged from the size-sweep ladder (`~/tmp/szsweep/vec`, 1.1 GB of
+IVF kept out of git; recipe in `~/tmp/szsweep/enc.sh` + `mkivf.sh`) plus the
+campaign's `v4k_8tile` (`~/tmp/rav1d-perf/vec`). `L3840x2160_444_8b` is
+byte-identical to the campaign's `v4k_1tile` (md5 690b8601...).
+
+## load
+
+NOT idle. 140 of 140 main-sweep groups and 22 of 22 mirror groups carry
+foreign load. Absolutes are inflated; paired within-round ratios are the claim.
+
+## files
+
+    recheck_482_gap_2026-08-10.tsv          main sweep, 5 arms x 7 cells x 20
+                                            rounds = 700 rows, rotating order.
+                                            cols: round arm vec threads nlo
+                                            ext_lo nhi ext_hi int_lo int_hi
+                                            f_arm f_grp
+    recheck_482_mirror_2026-08-10.tsv       counterbalanced confirmation,
+                                            4 arms (incl. the size sweep's own
+                                            binaries) x 2 cells x 11 rounds,
+                                            A,B,C,D,D,C,B,A order, 176 rows.
+                                            extra col 13: pass index
+    recheck_482_md5_2026-08-10.tsv          correctness gate, 12/12 keys MATCH
+    recheck_482_md5_sizesweep_bins_*.tsv    same gate over 5 arms, 4/4 MATCH
+    recheck_482_report_2026-08-10.txt       reduced main sweep
+    recheck_482_mirror_report_2026-08-10.txt   reduced confirmation
+    recheck_482_power_2026-08-10.txt        bootstrap CI + 5-round window power
+    recheck_482_sizesweep_reanalysis_*.txt  the size sweep's own rows, re-fitted
+    recheck_482_position_probe_2026-08-10.txt  16 back-to-back reps, one arm,
+                                            foreign load recorded PER REP
+
+## tooling added
+
+    scripts/perf/recheck_482.sh                       main sweep
+    scripts/perf/recheck_482_mirror.sh                counterbalanced sweep
+    scripts/perf/recheck_482_md5.sh                   correctness gate
+    scripts/perf/recheck_482_position.sh              single-arm burst probe
+    scripts/perf/recheck_482_report.py                reduction + verdicts
+    scripts/perf/recheck_482_power.py                 bootstrap + window power
+    scripts/perf/recheck_482_reanalyse_sizesweep.py   needs no new measurement
+
+## headline
+
+L3840x2160_420_8b t=1 (the disputed cell), in-process instrument, n=20:
+
+    head/parent      0.9913  [0.9201..1.0739]  16/20  p=0.012
+    headoff/parent   1.0303  [0.9024..1.1156]   3/20  p=0.003   seam alone
+    head/headoff     0.9621  [0.8937..1.1044]  17/20  p=0.003   band alone
+    main/parent      0.9724  [0.8531..1.0275]  17/20  p=0.003
+    mainoff/parent   1.0060  [0.8899..1.1179]   8/20  p=0.503   main's seam
+
+    bootstrap 95% CI of head/parent median: [0.9837..0.9968]
+    P(5-round median >= 1.04) over all 15,504 draws of 5 from 20: 0.00%
+
+Counterbalanced, the size sweep's OWN binaries on its OWN vector, n=11:
+
+    szrs2/szrs       0.9913  [0.9391..1.0366]  10/11  p=0.012
+
+v4k_8tile t=8, n=20: head/parent 0.7826, 20/20, p=0.0000, BAND-DISJOINT
+(#482 reported 0.7845 idle / 0.7662 loaded).
+
+VERDICT: #482 did not regress 4K 8bpc. The size sweep's 1.0854 does not
+reproduce; its binaries, vector and fit give 0.9913 when re-measured.

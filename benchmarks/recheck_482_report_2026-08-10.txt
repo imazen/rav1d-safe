@@ -1,0 +1,201 @@
+# source: /Users/lilith/tmp/recheck482/out/gap.tsv
+# rows kept: 700
+# groups: 140   under foreign load: 140   idle: 0
+
+## ms/frame per arm  (median [min..max], n)
+
+cell                       arm        ext median              ext band  int median              int band   n
+------------------------------------------------------------------------------------------------------------
+L3840x2160_420_8b t=1      parent        206.250      [201.36..235.00]     205.967      [202.19..230.68]  20
+L3840x2160_420_8b t=1      head          203.714      [199.71..232.79]     203.791      [201.28..229.91]  20
+L3840x2160_420_8b t=1      headoff       212.464      [207.93..227.71]     212.194      [208.17..227.25]  20
+L3840x2160_420_8b t=1      main          201.821      [196.64..208.71]     201.329      [196.79..210.04]  20
+L3840x2160_420_8b t=1      mainoff       206.214      [201.29..235.79]     205.960      [201.94..233.74]  20
+
+L3840x2160_420_8b t=8      parent        218.750      [212.14..367.64]     218.956      [212.75..348.00]  20
+L3840x2160_420_8b t=8      head          188.321      [178.07..382.43]     188.365      [179.87..374.02]  20
+L3840x2160_420_8b t=8      headoff       227.143      [223.50..420.64]     227.149      [223.65..419.40]  20
+L3840x2160_420_8b t=8      main          185.571      [178.57..370.71]     185.653      [178.96..367.43]  20
+L3840x2160_420_8b t=8      mainoff       220.750      [213.79..248.93]     220.833      [213.71..247.74]  20
+
+L3840x2160_420_10b t=1     parent        236.893      [222.43..404.64]     236.772      [232.07..396.03]  20
+L3840x2160_420_10b t=1     head          232.786      [225.93..400.57]     233.545      [225.76..396.80]  20
+L3840x2160_420_10b t=1     headoff       242.071      [237.00..455.64]     242.097      [237.21..445.31]  20
+L3840x2160_420_10b t=1     main          227.286      [218.86..447.00]     227.457      [219.69..441.13]  20
+L3840x2160_420_10b t=1     mainoff       240.000      [233.29..386.43]     239.365      [233.31..397.88]  20
+
+L3840x2160_420_10b t=8     parent        234.571      [225.71..426.79]     234.530      [225.94..426.64]  20
+L3840x2160_420_10b t=8     head          212.679      [208.21..392.86]     212.575      [208.50..396.10]  20
+L3840x2160_420_10b t=8     headoff       238.321      [232.43..430.86]     238.945      [232.76..432.11]  20
+L3840x2160_420_10b t=8     main          209.036      [203.71..419.50]     209.125      [204.02..416.90]  20
+L3840x2160_420_10b t=8     mainoff       234.893      [198.86..430.86]     235.619      [228.24..431.24]  20
+
+L3840x2160_444_8b t=1      parent        328.071      [320.64..533.29]     331.112      [320.99..534.28]  20
+L3840x2160_444_8b t=1      head          327.500      [318.57..521.79]     329.751      [319.11..520.51]  20
+L3840x2160_444_8b t=1      headoff       335.321      [324.29..472.21]     335.464      [330.32..482.98]  20
+L3840x2160_444_8b t=1      main          319.643      [310.71..574.50]     319.633      [310.75..539.20]  20
+L3840x2160_444_8b t=1      mainoff       331.893      [321.50..578.50]     331.583      [321.48..570.34]  20
+
+v4k_8tile t=1              parent        328.571      [292.00..388.79]     330.714      [321.40..383.51]  20
+v4k_8tile t=1              head          327.893      [321.14..458.14]     328.312      [321.39..449.77]  20
+v4k_8tile t=1              headoff       337.536      [324.29..445.07]     337.285      [326.40..432.37]  20
+v4k_8tile t=1              main          319.714      [313.93..379.93]     320.300      [314.68..376.30]  20
+v4k_8tile t=1              mainoff       332.357      [323.93..465.36]     331.888      [324.95..446.50]  20
+
+v4k_8tile t=8              parent         77.643       [71.86..137.57]      77.728       [71.98..133.45]  20
+v4k_8tile t=8              head           60.679       [54.64..106.86]      60.518       [55.08..106.44]  20
+v4k_8tile t=8              headoff        78.893       [73.71..167.57]      78.874       [73.73..166.40]  20
+v4k_8tile t=8              main           60.250       [54.43..134.79]      60.548       [54.62..126.18]  20
+v4k_8tile t=8              mainoff        78.393       [72.57..150.07]      78.525       [72.26..144.81]  20
+
+## execution-position effect  (per-arm ms/frame / that arm's own median)
+## flat = position is free; sloped = the rotation biases paired ratios
+
+cell                           pos0     pos1     pos2     pos3     pos4   spread
+--------------------------------------------------------------------------------
+L3840x2160_420_8b t=1        1.0019   1.0019   1.0036   0.9945   0.9924    1.12%
+L3840x2160_420_8b t=8        0.9972   1.0007   0.9975   1.0011   1.0019    0.47%
+L3840x2160_420_10b t=1       1.0157   1.0162   0.9992   0.9993   0.9995    1.70%
+L3840x2160_420_10b t=8       1.0048   1.0024   0.9990   0.9970   0.9940    1.09%
+L3840x2160_444_8b t=1        1.0057   1.0182   1.0028   0.9953   0.9933    2.48%
+v4k_8tile t=1                0.9956   0.9958   1.0041   1.0008   1.0085    1.29%
+v4k_8tile t=8                0.9998   0.9888   1.0025   1.0125   1.0099    2.37%
+
+## paired within-round ratios  (the arms the claim compares)
+## VERDICT: 'disjoint' means the ratio band excludes 1.0.
+
+cell                       pair               inst   median                 band    wins       p  verdict
+---------------------------------------------------------------------------------------------------------
+L3840x2160_420_8b t=1      head/parent        ext    0.9892     [0.9015..1.0754]   14/20   0.115  -1.08%, straddles 1.0
+                                              int    0.9913     [0.9201..1.0739]   16/20   0.012  -0.87%, straddles 1.0
+                                                ^ by order num-first 1.0195 (n=4)   num-last 0.9896 (n=16)   gap -2.99%
+L3840x2160_420_8b t=1      headoff/parent     ext    1.0291     [0.8848..1.1309]    4/20   0.012  +2.91%, straddles 1.0
+                                              int    1.0303     [0.9024..1.1156]    3/20   0.003  +3.03%, straddles 1.0
+                                                ^ by order num-first 1.0263 (n=8)   num-last 1.0370 (n=12)   gap +1.06%
+L3840x2160_420_8b t=1      head/headoff       ext    0.9633     [0.8883..1.1195]   17/20   0.003  -3.67%, straddles 1.0
+                                              int    0.9621     [0.8937..1.1044]   17/20   0.003  -3.79%, straddles 1.0
+                                                ^ by order num-first 0.9622 (n=16)   num-last 0.9533 (n=4)   gap -0.89%
+L3840x2160_420_8b t=1      main/parent        ext    0.9673     [0.8368..1.0168]   18/20   0.000  -3.27%, straddles 1.0
+                                              int    0.9724     [0.8531..1.0275]   17/20   0.003  -2.76%, straddles 1.0
+                                                ^ by order num-first 0.9796 (n=12)   num-last 0.9658 (n=8)   gap -1.38%
+L3840x2160_420_8b t=1      mainoff/parent     ext    1.0054     [0.8717..1.1236]    8/20   0.503  +0.54%, straddles 1.0
+                                              int    1.0060     [0.8899..1.1179]    8/20   0.503  +0.60%, straddles 1.0
+                                                ^ by order num-first 1.0095 (n=16)   num-last 1.0000 (n=4)   gap -0.95%
+L3840x2160_420_8b t=1      main/head          ext    0.9880     [0.8447..1.0390]   16/20   0.012  -1.20%, straddles 1.0
+                                              int    0.9887     [0.8559..1.0381]   15/20   0.041  -1.13%, straddles 1.0
+                                                ^ by order num-first 0.9966 (n=8)   num-last 0.9784 (n=12)   gap -1.83%
+
+L3840x2160_420_8b t=8      head/parent        ext    0.8565     [0.6295..1.8027]   17/20   0.003  -14.35%, straddles 1.0
+                                              int    0.8569     [0.6559..1.7581]   16/20   0.012  -14.31%, straddles 1.0
+                                                ^ by order num-first 0.8560 (n=4)   num-last 0.8575 (n=16)   gap +0.15%
+L3840x2160_420_8b t=8      headoff/parent     ext    1.0350     [0.8353..1.9828]    2/20   0.000  +3.50%, straddles 1.0
+                                              int    1.0301     [0.8550..1.9714]    2/20   0.000  +3.01%, straddles 1.0
+                                                ^ by order num-first 1.0323 (n=8)   num-last 1.0271 (n=12)   gap -0.52%
+L3840x2160_420_8b t=8      head/headoff       ext    0.8323     [0.5388..1.3346]   18/20   0.000  -16.77%, straddles 1.0
+                                              int    0.8317     [0.5416..1.3442]   18/20   0.000  -16.83%, straddles 1.0
+                                                ^ by order num-first 0.8317 (n=16)   num-last 0.8292 (n=4)   gap -0.25%
+L3840x2160_420_8b t=8      main/parent        ext    0.8481     [0.6909..1.3325]   17/20   0.003  -15.19%, straddles 1.0
+                                              int    0.8488     [0.7073..1.3519]   17/20   0.003  -15.12%, straddles 1.0
+                                                ^ by order num-first 0.8470 (n=12)   num-last 0.8513 (n=8)   gap +0.44%
+L3840x2160_420_8b t=8      mainoff/parent     ext    1.0100     [0.5819..1.1099]    5/20   0.041  +1.00%, straddles 1.0
+                                              int    1.0096     [0.6149..1.1055]    4/20   0.012  +0.96%, straddles 1.0
+                                                ^ by order num-first 1.0096 (n=16)   num-last 1.0023 (n=4)   gap -0.73%
+L3840x2160_420_8b t=8      main/head          ext    0.9876     [0.4669..1.7086]   13/20   0.263  -1.24%, straddles 1.0
+                                              int    0.9873     [0.4785..1.7367]   13/20   0.263  -1.27%, straddles 1.0
+                                                ^ by order num-first 0.9840 (n=8)   num-last 0.9893 (n=12)   gap +0.54%
+
+L3840x2160_420_10b t=1     head/parent        ext    0.9772     [0.6073..1.1461]   15/20   0.041  -2.28%, straddles 1.0
+                                              int    0.9763     [0.6187..1.1196]   14/20   0.115  -2.37%, straddles 1.0
+                                                ^ by order num-first 1.0420 (n=4)   num-last 0.9763 (n=16)   gap -6.58%
+L3840x2160_420_10b t=1     headoff/parent     ext    1.0247     [0.6467..1.1270]    5/20   0.041  +2.47%, straddles 1.0
+                                              int    1.0247     [0.6599..1.1311]    5/20   0.041  +2.47%, straddles 1.0
+                                                ^ by order num-first 1.0175 (n=8)   num-last 1.0269 (n=12)   gap +0.95%
+L3840x2160_420_10b t=1     head/headoff       ext    0.9485     [0.8633..1.1125]   15/20   0.041  -5.15%, straddles 1.0
+                                              int    0.9486     [0.8601..1.1045]   15/20   0.041  -5.14%, straddles 1.0
+                                                ^ by order num-first 0.9469 (n=16)   num-last 0.9563 (n=4)   gap +0.94%
+L3840x2160_420_10b t=1     main/parent        ext    0.9575     [0.8044..1.1364]   15/20   0.041  -4.25%, straddles 1.0
+                                              int    0.9572     [0.7916..1.1139]   15/20   0.041  -4.28%, straddles 1.0
+                                                ^ by order num-first 0.9611 (n=12)   num-last 0.9560 (n=8)   gap -0.51%
+L3840x2160_420_10b t=1     mainoff/parent     ext    1.0057     [0.9289..1.5246]    8/20   0.503  +0.57%, straddles 1.0
+                                              int    1.0055     [0.9526..1.4778]    8/20   0.503  +0.55%, straddles 1.0
+                                                ^ by order num-first 1.0052 (n=16)   num-last 1.0077 (n=4)   gap +0.25%
+L3840x2160_420_10b t=1     main/head          ext    0.9841     [0.8426..1.3246]   13/20   0.263  -1.59%, straddles 1.0
+                                              int    0.9846     [0.8569..1.2887]   14/20   0.115  -1.54%, straddles 1.0
+                                                ^ by order num-first 1.0130 (n=8)   num-last 0.9806 (n=12)   gap -3.24%
+
+L3840x2160_420_10b t=8     head/parent        ext    0.9175     [0.5555..1.0360]   19/20   0.000  -8.25%, straddles 1.0
+                                              int    0.9190     [0.5933..1.0276]   19/20   0.000  -8.10%, straddles 1.0
+                                                ^ by order num-first 0.9497 (n=4)   num-last 0.9140 (n=16)   gap -3.57%
+L3840x2160_420_10b t=8     headoff/parent     ext    1.0274     [0.5632..1.2153]    4/20   0.012  +2.74%, straddles 1.0
+                                              int    1.0276     [0.5635..1.2163]    4/20   0.012  +2.76%, straddles 1.0
+                                                ^ by order num-first 1.0340 (n=8)   num-last 1.0254 (n=12)   gap -0.85%
+L3840x2160_420_10b t=8     head/headoff       ext    0.8947     [0.6086..0.9863]   20/20   0.000  -10.53% FASTER, disjoint
+                                              int    0.8947     [0.6641..1.0662]   19/20   0.000  -10.53%, straddles 1.0
+                                                ^ by order num-first 0.8951 (n=16)   num-last 0.8947 (n=4)   gap -0.03%
+L3840x2160_420_10b t=8     main/parent        ext    0.8989     [0.5855..1.7805]   17/20   0.003  -10.11%, straddles 1.0
+                                              int    0.8991     [0.5739..1.6634]   17/20   0.003  -10.09%, straddles 1.0
+                                                ^ by order num-first 0.9069 (n=12)   num-last 0.8944 (n=8)   gap -1.25%
+L3840x2160_420_10b t=8     mainoff/parent     ext    1.0051     [0.8164..1.2117]    5/20   0.041  +0.51%, straddles 1.0
+                                              int    1.0069     [0.8531..1.1885]    4/20   0.012  +0.69%, straddles 1.0
+                                                ^ by order num-first 1.0092 (n=16)   num-last 1.0044 (n=4)   gap -0.48%
+L3840x2160_420_10b t=8     main/head          ext    0.9811     [0.9058..1.8837]   15/20   0.041  -1.89%, straddles 1.0
+                                              int    0.9803     [0.9086..1.8348]   15/20   0.041  -1.97%, straddles 1.0
+                                                ^ by order num-first 0.9828 (n=8)   num-last 0.9784 (n=12)   gap -0.44%
+
+L3840x2160_444_8b t=1      head/parent        ext    0.9943     [0.7121..1.6162]   14/20   0.115  -0.57%, straddles 1.0
+                                              int    0.9943     [0.7412..1.6133]   14/20   0.115  -0.57%, straddles 1.0
+                                                ^ by order num-first 1.0053 (n=4)   num-last 0.9939 (n=16)   gap -1.13%
+L3840x2160_444_8b t=1      headoff/parent     ext    1.0040     [0.7904..1.1754]   10/20   1.000  +0.40%, straddles 1.0
+                                              int    1.0067     [0.7906..1.2056]   10/20   1.000  +0.67%, straddles 1.0
+                                                ^ by order num-first 1.0182 (n=8)   num-last 0.9978 (n=12)   gap -2.04%
+L3840x2160_444_8b t=1      head/headoff       ext    0.9748     [0.9010..1.3749]   14/20   0.115  -2.52%, straddles 1.0
+                                              int    0.9732     [0.8860..1.3381]   14/20   0.115  -2.68%, straddles 1.0
+                                                ^ by order num-first 0.9724 (n=16)   num-last 0.9883 (n=4)   gap +1.58%
+L3840x2160_444_8b t=1      main/parent        ext    0.9687     [0.7367..1.0773]   18/20   0.000  -3.13%, straddles 1.0
+                                              int    0.9682     [0.7488..1.0092]   18/20   0.000  -3.18%, straddles 1.0
+                                                ^ by order num-first 0.9706 (n=12)   num-last 0.9526 (n=8)   gap -1.79%
+L3840x2160_444_8b t=1      mainoff/parent     ext    0.9979     [0.8820..1.0848]   11/20   0.824  -0.21%, straddles 1.0
+                                              int    1.0042     [0.8400..1.0675]    9/20   0.824  +0.42%, straddles 1.0
+                                                ^ by order num-first 1.0050 (n=16)   num-last 0.9638 (n=4)   gap -4.12%
+L3840x2160_444_8b t=1      main/head          ext    0.9771     [0.6207..1.1778]   17/20   0.003  -2.29%, straddles 1.0
+                                              int    0.9759     [0.6235..1.0858]   17/20   0.003  -2.41%, straddles 1.0
+                                                ^ by order num-first 0.9778 (n=8)   num-last 0.9629 (n=12)   gap -1.49%
+
+v4k_8tile t=1              head/parent        ext    0.9990     [0.8772..1.3351]   10/20   1.000  -0.10%, straddles 1.0
+                                              int    0.9979     [0.8913..1.1777]   12/20   0.503  -0.21%, straddles 1.0
+                                                ^ by order num-first 0.9904 (n=4)   num-last 0.9994 (n=16)   gap +0.90%
+v4k_8tile t=1              headoff/parent     ext    1.0281     [0.9143..1.1448]    4/20   0.019  +2.81%, straddles 1.0
+                                              int    1.0261     [0.9244..1.1274]    6/20   0.115  +2.61%, straddles 1.0
+                                                ^ by order num-first 1.0157 (n=8)   num-last 1.0304 (n=12)   gap +1.47%
+v4k_8tile t=1              head/headoff       ext    0.9736     [0.9083..1.2022]   16/20   0.012  -2.64%, straddles 1.0
+                                              int    0.9734     [0.9176..1.2246]   16/20   0.012  -2.66%, straddles 1.0
+                                                ^ by order num-first 0.9710 (n=16)   num-last 1.0179 (n=4)   gap +4.70%
+v4k_8tile t=1              main/parent        ext    0.9759     [0.8564..1.3011]   15/20   0.041  -2.41%, straddles 1.0
+                                              int    0.9764     [0.8755..1.1087]   16/20   0.012  -2.36%, straddles 1.0
+                                                ^ by order num-first 0.9756 (n=12)   num-last 0.9850 (n=8)   gap +0.94%
+v4k_8tile t=1              mainoff/parent     ext    1.0095     [0.9036..1.5937]    7/20   0.263  +0.95%, straddles 1.0
+                                              int    1.0080     [0.9139..1.3156]    6/20   0.115  +0.80%, straddles 1.0
+                                                ^ by order num-first 1.0080 (n=16)   num-last 1.0650 (n=4)   gap +5.70%
+v4k_8tile t=1              main/head          ext    0.9752     [0.7585..1.0559]   17/20   0.003  -2.48%, straddles 1.0
+                                              int    0.9772     [0.7806..1.0487]   17/20   0.003  -2.28%, straddles 1.0
+                                                ^ by order num-first 0.9788 (n=8)   num-last 0.9736 (n=12)   gap -0.51%
+
+v4k_8tile t=8              head/parent        ext    0.7817     [0.5985..0.9956]   20/20   0.000  -21.83% FASTER, disjoint
+                                              int    0.7826     [0.5975..0.9699]   20/20   0.000  -21.74% FASTER, disjoint
+                                                ^ by order num-first 0.7682 (n=4)   num-last 0.7888 (n=16)   gap +2.06%
+v4k_8tile t=8              headoff/parent     ext    1.0294     [0.7397..1.7391]    7/20   0.263  +2.94%, straddles 1.0
+                                              int    1.0257     [0.7721..1.7306]    7/20   0.263  +2.57%, straddles 1.0
+                                                ^ by order num-first 1.0065 (n=8)   num-last 1.0303 (n=12)   gap +2.38%
+v4k_8tile t=8              head/headoff       ext    0.7642     [0.5725..1.1570]   19/20   0.000  -23.58%, straddles 1.0
+                                              int    0.7687     [0.5604..1.1271]   19/20   0.000  -23.13%, straddles 1.0
+                                                ^ by order num-first 0.7710 (n=16)   num-last 0.7455 (n=4)   gap -2.55%
+v4k_8tile t=8              main/parent        ext    0.7790     [0.5893..1.0795]   18/20   0.000  -22.10%, straddles 1.0
+                                              int    0.7769     [0.6331..1.0461]   18/20   0.000  -22.31%, straddles 1.0
+                                                ^ by order num-first 0.7669 (n=12)   num-last 0.7895 (n=8)   gap +2.26%
+v4k_8tile t=8              mainoff/parent     ext    1.0151     [0.7002..1.5336]    7/20   0.263  +1.51%, straddles 1.0
+                                              int    1.0156     [0.7747..1.4866]    7/20   0.263  +1.56%, straddles 1.0
+                                                ^ by order num-first 1.0156 (n=16)   num-last 1.0002 (n=4)   gap -1.54%
+v4k_8tile t=8              main/head          ext    0.9839     [0.7893..1.7671]   13/20   0.263  -1.61%, straddles 1.0
+                                              int    0.9904     [0.8436..1.6701]   12/20   0.503  -0.96%, straddles 1.0
+                                                ^ by order num-first 0.9751 (n=8)   num-last 0.9949 (n=12)   gap +1.98%
+

@@ -87,6 +87,60 @@ def main():
     print(f"   rs2/rs by MEDIAN  : {md['rs2'] / md['rs']:.4f}")
     print()
     print("   (#482's own two rounds on v4k_8tile reported 0.9823 and 0.9790.)")
+    print()
+
+    # --- is the noise random, or ordered? -----------------------------------
+    # If the disturbance were random per run, "which arm ran later" would carry
+    # no information. Test it directly: within each round, compare the arm that
+    # ran later against the one that ran earlier.
+    print("## the noise is not random -- it is ORDERED within the group")
+    print()
+    print(f"   {'round':<6} {'earlier':<22} {'later':<22} {'later/earlier':>14}")
+    print("   " + "-" * 66)
+    lat = []
+    for r in rounds:
+        pos = {a: i for i, a in enumerate(order[r])}
+        a, b = ("rs", "rs2") if pos["rs"] < pos["rs2"] else ("rs2", "rs")
+        ratio = beta[b][r] / beta[a][r]
+        lat.append(ratio)
+        sep = pos[b] - pos[a] - 1
+        print(f"   {r:<6} {a + ' @' + str(pos[a]) + ' ' + format(beta[a][r], '.2f'):<22} "
+              f"{b + ' @' + str(pos[b]) + ' ' + format(beta[b][r], '.2f'):<22} "
+              f"{ratio:>13.4f}" + (f"   ({sep} arm between)" if sep else ""))
+    slower = sum(1 for v in lat if v > 1.0)
+    print()
+    print(f"   the LATER arm was slower in {slower} of {len(lat)} rounds; "
+          f"median later/earlier = {median(lat):.4f}")
+    print("   Position, not code: it lands on whichever arm the rotation put")
+    print("   second, and a 3-arm rotation does not put each arm there equally")
+    print("   often -- so it does not average out of a 5-round median.")
+    print()
+
+    # --- compare the arms at MATCHED position -------------------------------
+    # The confound-free comparison. Five rounds over three positions leaves
+    # only 1-2 samples per (arm, position) cell, so this is reported WITH its n
+    # and is not decisive by itself -- but it is the only reduction of these
+    # rows that does not let position masquerade as code.
+    print("## the same rows compared at MATCHED position (n is small -- shown)")
+    print()
+    print(f"   {'position':<10} {'rs':>18} {'rs2':>18} {'rs2/rs':>10}")
+    print("   " + "-" * 58)
+    npos = max(len(order[r]) for r in rounds)
+    for k in range(npos):
+        got = {}
+        for a in ("rs", "rs2"):
+            vals = [beta[a][r] for r in rounds
+                    if r in beta[a] and order[r].index(a) == k]
+            if vals:
+                got[a] = sum(vals) / len(vals), len(vals)
+        if len(got) == 2:
+            (ra, na), (rb, nb) = got["rs"], got["rs2"]
+            print(f"   {k:<10} {format(ra, '.2f') + ' (n=' + str(na) + ')':>18} "
+                  f"{format(rb, '.2f') + ' (n=' + str(nb) + ')':>18} "
+                  f"{rb / ra:>10.4f}")
+        else:
+            have = ", ".join(f"{a} n={v[1]}" for a, v in got.items()) or "none"
+            print(f"   {k:<10} {'-- only ' + have:>48}")
 
 
 if __name__ == "__main__":

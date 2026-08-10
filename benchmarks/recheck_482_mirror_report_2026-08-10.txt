@@ -1,0 +1,57 @@
+# source: /Users/lilith/tmp/recheck482/out/mirror.tsv
+# rows kept: 88
+# groups: 22   under foreign load: 22   idle: 0
+
+## ms/frame per arm  (median [min..max], n)
+
+cell                       arm        ext median              ext band  int median              int band   n
+------------------------------------------------------------------------------------------------------------
+L3840x2160_420_8b t=1      parent        202.714      [193.86..346.50]     203.805      [201.15..337.45]  11
+L3840x2160_420_8b t=1      head          200.929      [198.79..347.00]     201.344      [199.00..342.94]  11
+L3840x2160_420_8b t=1      szrs          202.929      [201.57..362.50]     202.977      [201.82..349.37]  11
+L3840x2160_420_8b t=1      szrs2         201.714      [197.64..330.21]     202.008      [198.21..328.09]  11
+
+L3840x2160_420_8b t=8      parent        218.929      [215.07..410.36]     218.745      [215.01..407.66]  11
+L3840x2160_420_8b t=8      head          184.857      [160.29..365.07]     184.951      [181.85..364.70]  11
+L3840x2160_420_8b t=8      szrs          217.071      [211.50..398.29]     217.448      [211.86..395.39]  11
+L3840x2160_420_8b t=8      szrs2         187.500      [180.93..359.57]     187.598      [182.02..358.72]  11
+
+## execution-position effect  (per-arm ms/frame / that arm's own median)
+## flat = position is free; sloped = the rotation biases paired ratios
+
+cell                           pos0     pos1     pos2     pos3   spread
+-----------------------------------------------------------------------
+L3840x2160_420_8b t=1        0.9997   1.0010   0.9995   1.0000    0.16%
+L3840x2160_420_8b t=8        1.0000   1.0087   1.0021   0.9988    0.99%
+
+## paired within-round ratios  (the arms the claim compares)
+## VERDICT: 'disjoint' means the ratio band excludes 1.0.
+
+cell                       pair               inst   median                 band    wins       p  verdict
+---------------------------------------------------------------------------------------------------------
+L3840x2160_420_8b t=1      head/parent        ext    0.9975     [0.9366..1.0852]    6/11   1.000  -0.25%, straddles 1.0
+                                              int    0.9909     [0.9428..1.1018]    8/11   0.227  -0.91%, straddles 1.0
+                                                ^ by order num-first 0.9909 (n=3)   num-last 0.9926 (n=8)   gap +0.17%
+L3840x2160_420_8b t=1      szrs2/szrs         ext    0.9940     [0.9109..1.0524]   10/11   0.012  -0.60%, straddles 1.0
+                                              int    0.9913     [0.9391..1.0366]   10/11   0.012  -0.87%, straddles 1.0
+                                                ^ by order num-first 0.9965 (n=2)   num-last 0.9888 (n=9)   gap -0.77%
+L3840x2160_420_8b t=1      head/szrs2         ext    0.9964     [0.9478..1.1002]    6/11   1.000  -0.36%, straddles 1.0
+                                              int    1.0027     [0.9494..1.1134]    5/11   1.000  +0.27%, straddles 1.0
+                                                ^ by order num-first 0.9974 (n=6)   num-last 1.0040 (n=5)   gap +0.66%
+L3840x2160_420_8b t=1      parent/szrs        ext    0.9965     [0.9424..1.0563]    6/11   0.754  -0.35%, straddles 1.0
+                                              int    0.9944     [0.9659..1.0481]    7/11   0.549  -0.56%, straddles 1.0
+                                                ^ by order num-first 1.0056 (n=5)   num-last 0.9942 (n=6)   gap -1.14%
+
+L3840x2160_420_8b t=8      head/parent        ext    0.8511     [0.7408..1.1712]   10/11   0.012  -14.89%, straddles 1.0
+                                              int    0.8505     [0.8268..1.1204]   10/11   0.012  -14.95%, straddles 1.0
+                                                ^ by order num-first 0.8505 (n=3)   num-last 0.8547 (n=8)   gap +0.42%
+L3840x2160_420_8b t=8      szrs2/szrs         ext    0.8548     [0.8452..1.3576]   10/11   0.012  -14.52%, straddles 1.0
+                                              int    0.8582     [0.8417..1.3579]   10/11   0.012  -14.18%, straddles 1.0
+                                                ^ by order num-first 0.8674 (n=2)   num-last 0.8582 (n=9)   gap -0.91%
+L3840x2160_420_8b t=8      head/szrs2         ext    1.0023     [0.8772..1.0255]    5/11   1.000  +0.23%, straddles 1.0
+                                              int    1.0024     [0.9275..1.0239]    4/11   0.549  +0.24%, straddles 1.0
+                                                ^ by order num-first 1.0031 (n=6)   num-last 1.0020 (n=5)   gap -0.10%
+L3840x2160_420_8b t=8      parent/szrs        ext    1.0115     [0.9887..1.0846]    4/11   0.549  +1.15%, straddles 1.0
+                                              int    1.0111     [0.9811..1.1241]    4/11   0.549  +1.11%, straddles 1.0
+                                                ^ by order num-first 1.0288 (n=5)   num-last 1.0105 (n=6)   gap -1.83%
+
