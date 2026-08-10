@@ -49,7 +49,7 @@
 #![cfg(feature = "probe-sites")]
 
 use rav1d_safe::include::dav1d::picture::{
-    TILE_THREADED_PIC_EXTENT_MAX_BYTES, extent_budget, pic_extent_ceiling,
+    TILE_THREADED_PIC_EXTENT_MAX_BYTES, extent_budget, pic_extent_ceiling_const,
 };
 use rav1d_safe::src::managed::{Decoder, Settings};
 use std::path::{Path, PathBuf};
@@ -173,18 +173,23 @@ fn picture_reservations_stay_inside_the_measured_ceiling() {
     );
     let mut over = Vec::new();
     for (file, bytes, site, n, rows) in extent_budget::per_file() {
-        // `row_bytes = 0` asks for the constant entry alone; a file with no
-        // entry falls back to one picture row, which this summary cannot know
-        // per plane, so it reports the constant floor and relies on `rows == 1`.
-        let ceiling = pic_extent_ceiling(&file, 0);
-        let over_here = bytes > ceiling && rows > 1;
-        let c = ceiling.to_string();
+        // A file with a tight `PIC_EXTENT_CEILINGS` entry is held to it exactly,
+        // which is what the in-decoder check does. A file WITHOUT one is held to
+        // one picture row, which this per-file summary cannot know (it is a
+        // property of the plane, not the file) — those are covered by the
+        // `MAX_ROWS_TT == 1` assertion below, which is the same bound.
+        let tight = pic_extent_ceiling_const(&file);
+        let over_here = tight.is_some_and(|c| bytes > c);
+        let c = match tight {
+            Some(c) => c.to_string(),
+            None => "1 row".to_string(),
+        };
         println!(
             "{file:<38} {bytes:>8} {c:>9} {rows:>5} {n:>12}  {site}{}",
             if over_here { "  <-- OVER" } else { "" }
         );
         if over_here {
-            over.push(format!("{site}: {bytes} B spanning {rows} rows > {c}"));
+            over.push(format!("{site}: {bytes} B > the {c} B ceiling for {file}"));
         }
     }
     assert_eq!(

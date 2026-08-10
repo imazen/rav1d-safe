@@ -183,6 +183,24 @@ pub mod extent_budget {
     }
 }
 
+/// The tight [`PIC_EXTENT_CEILINGS`] entry for `file`, if it has one.
+///
+/// `None` means the file is held to one picture row instead, which
+/// [`pic_extent_ceiling`] cannot express without knowing the plane. The gate
+/// uses this to apply exactly the bound the decoder applies.
+#[inline]
+pub fn pic_extent_ceiling_const(file: &str) -> Option<usize> {
+    let mut i = 0;
+    while i < PIC_EXTENT_CEILINGS.len() {
+        let (f, c) = PIC_EXTENT_CEILINGS[i];
+        if file.ends_with(f) {
+            return Some(c);
+        }
+        i += 1;
+    }
+    None
+}
+
 /// The ceiling that applies to a reservation taken at `file`, on a plane whose
 /// row is `row_bytes` long.
 ///
