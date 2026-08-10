@@ -73,17 +73,27 @@ fn contend(mutable_only: bool, move_the_guard: bool) -> (usize, usize) {
     let granted = Arc::new(AtomicUsize::new(0));
     let refused = Arc::new(AtomicUsize::new(0));
 
+    // Threads must be INSIDE their contended section at the same time, or the
+    // arm proves nothing. Spawning and looping leaves that to the scheduler:
+    // on Windows the `scoped` control reached ROUNDS with ZERO refusals (the
+    // anti-vacuity assert caught it) while the `moved` arm refused 43,267 --
+    // the control's guards simply never overlapped. A barrier makes the
+    // overlap a property of the test rather than of the host's scheduling.
+    let start = Arc::new(std::sync::Barrier::new(THREADS));
+
     let mut hs = Vec::new();
     for t in 0..THREADS {
         let dm = Arc::clone(&dm);
         let granted = Arc::clone(&granted);
         let refused = Arc::clone(&refused);
+        let start = Arc::clone(&start);
         // In the mixed arm most threads read: shared borrows COEXIST, so a
         // reader's release overlaps other readers' live borrows, and a writer
         // arriving next is the foreign retag that pops the protected shared
         // reference.
         let reader = !mutable_only && t < 5;
         hs.push(std::thread::spawn(move || {
+            start.wait();
             for _ in 0..ROUNDS {
                 let ok = panic::catch_unwind(AssertUnwindSafe(|| {
                     if reader {

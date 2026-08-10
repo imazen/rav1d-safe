@@ -349,6 +349,25 @@ fn here() -> Loc {
 /// A borrow touching more distinct shards than this goes to the wide list
 /// instead. Measured 0.000% of hot borrows at the shipped BLOCK_SHIFT
 /// (0.009% at shift 8).
+///
+/// **The cap is not free to raise, and the binding constraint is [`BorrowId`],
+/// not the tracker.** The id has to stay one register-sized word, so
+/// `KIND_BITS + N_BITS + PAIR_BITS * MAX_SHARDS_PER_BORROW <= 64` — pinned by a
+/// const assert below. At the 12-bit pair the id shipped with, 4 pairs fit and 5
+/// do not; narrowing the pair to `log2(N_SHARDS) + 3` (10 bits at the default
+/// 128 shards) buys the fifth. `__msb_5` is that arm.
+///
+/// Why an arm at all: the strided-2D record's refuting quantity is
+/// `pct_row_wide` — the fraction of would-be 2-D registrations that exceed this
+/// cap — measured 0.54%-70.59% per site
+/// (`benchmarks/strided_2d_2026-08-10.meta` §4). If a cap raise collapses that,
+/// the exact 2-D record becomes viable and the per-row split (2.86x the
+/// registrations) can go. Measure `__probe_wide` and the `eval_rect` cap columns
+/// BEFORE timing anything: under the shipped per-row scheme a wide promotion is
+/// rare, so a cap raise can only pay through the counterfactual.
+#[cfg(feature = "__msb_5")]
+const MAX_SHARDS_PER_BORROW: usize = 5;
+#[cfg(not(feature = "__msb_5"))]
 const MAX_SHARDS_PER_BORROW: usize = 4;
 
 /// Blocks scanned before giving up and going wide. Bounds the fast path's work
@@ -815,11 +834,16 @@ const _: () = assert!(
 /// travels inside every guard.
 ///
 /// ```text
-///   bits  0..2   kind
-///   bits  2..4   narrow: number of (shard, slot) pairs, minus one
-///   bits  4..40  narrow: four 9-bit (slot:3, shard:6) pairs
-///   bits  4..20  wide:   index into the wide list
+///   bits  0..2                 kind
+///   bits  2..2+N_BITS          narrow: number of (shard, slot) pairs, minus one
+///   bits  PAIR_SHIFT..         narrow: MAX_SHARDS_PER_BORROW (slot:3, shard) pairs
+///   bits  PAIR_SHIFT..+16      wide:   index into the wide list
 /// ```
+///
+/// `PAIR_BITS` is `3 + log2(N_SHARDS)` — exactly what the shard index needs, not
+/// a round number — because the whole word must hold
+/// `MAX_SHARDS_PER_BORROW` pairs plus the kind and the count in 64 bits. At the
+/// default 128 shards that is 10 bits per pair, so five pairs cost 55 bits.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct BorrowId(u64);
 
@@ -830,18 +854,31 @@ const KIND_UNCHECKED: u64 = 3;
 
 const KIND_BITS: u32 = 2;
 const KIND_MASK: u64 = (1 << KIND_BITS) - 1;
-const N_BITS: u32 = 2;
+/// Bits holding `pairs - 1`, i.e. `ceil(log2(MAX_SHARDS_PER_BORROW))`.
+///
+/// Written with `leading_zeros` rather than `ilog2` on purpose: `ilog2` panics on
+/// zero, so a cap of 1 would fail const evaluation with a message about a
+/// logarithm instead of about the cap. This form yields 0 there, which is
+/// correct — with one possible pair the count field is empty.
+const N_BITS: u32 = usize::BITS - (MAX_SHARDS_PER_BORROW - 1).leading_zeros();
+const N_MASK: u64 = (1 << N_BITS) - 1;
 const PAIR_SHIFT: u32 = KIND_BITS + N_BITS;
-/// 3 bits of slot + 9 bits of shard.
-const PAIR_BITS: u32 = 12;
+/// 3 bits of slot + exactly as many shard bits as `N_SHARDS` needs.
+const SHARD_ID_BITS: u32 = N_SHARDS.trailing_zeros();
+const PAIR_BITS: u32 = 3 + SHARD_ID_BITS;
 const SLOT_MASK: u64 = 0b111;
-const SHARD_MASK_BITS: u64 = 0b1_1111_1111;
+const SHARD_MASK_BITS: u64 = (1u64 << SHARD_ID_BITS) - 1;
 
 const _: () = assert!(SLOTS <= (SLOT_MASK as usize) + 1);
 const _: () = assert!(N_SHARDS <= (SHARD_MASK_BITS as usize) + 1);
 const _: () = assert!(N_SHARDS.is_power_of_two());
 const _: () = assert!(SHARDS_SERIAL.is_power_of_two() && SHARDS_SERIAL <= N_SHARDS);
-const _: () = assert!(MAX_SHARDS_PER_BORROW <= 4);
+/// The whole reason [`MAX_SHARDS_PER_BORROW`] cannot just be raised: the id is
+/// ONE word and every pair has to fit in it beside the kind and the count.
+const _: () = assert!(
+    (KIND_BITS + N_BITS + PAIR_BITS * MAX_SHARDS_PER_BORROW as u32) as usize <= u64::BITS as usize
+);
+const _: () = assert!(MAX_SHARDS_PER_BORROW >= 1);
 
 impl BorrowId {
     pub const UNCHECKED: Self = Self(KIND_UNCHECKED);
@@ -866,7 +903,7 @@ impl BorrowId {
     /// Number of `(shard, slot)` pairs. Only meaningful for `KIND_NARROW`.
     #[inline(always)]
     fn pairs(self) -> usize {
-        (((self.0 >> KIND_BITS) & 0b11) as usize) + 1
+        (((self.0 >> KIND_BITS) & N_MASK) as usize) + 1
     }
 
     /// `(shard, slot)` of pair `i`. Both are masked, so the caller can index
@@ -971,6 +1008,31 @@ pub(super) struct BorrowTracker {
 
 const POISON_BIT: u32 = 1 << 31;
 
+/// THROWAWAY (`__probe_bounds`): the shard geometry a counterfactual extent
+/// must be priced against — this instance's REAL block shift and shard mask,
+/// plus the two promotion limits.
+///
+/// Mirroring these as constants in the probe is wrong and was caught being
+/// wrong: the shipped shift is `block_shift_for(len)`, which is 12 for a serial
+/// or single-tile decode and 14-15 for a multi-tile 4K plane, so a hull that
+/// spans 15 blocks in one configuration spans 3 in another.
+#[cfg(feature = "__probe_bounds")]
+impl BorrowTracker {
+    pub(super) fn probe_geometry(&self) -> crate::bounds_probe::ShardGeom {
+        crate::bounds_probe::ShardGeom {
+            shift: self.shift,
+            mask: self.mask,
+            max_shards: MAX_SHARDS_PER_BORROW,
+            max_blocks: MAX_BLOCKS_SCAN,
+        }
+    }
+
+    /// [`shard_of`], for the probe. Same function the tracker registers with.
+    pub(super) fn probe_shard_of(block: usize, mask: usize) -> usize {
+        shard_of(block, mask)
+    }
+}
+
 // SAFETY: `wide` and every `Shard::recs` are only accessed under the relevant
 // `TinyLock`(s), per the module-level rules.
 unsafe impl Send for BorrowTracker {}
@@ -999,10 +1061,65 @@ unsafe impl Sync for BorrowTracker {}
 /// 1 would give ~8.5 rows and shift 15/16 — a hair better on 10-bit, at half
 /// the shard utilisation on every small buffer, which is the wrong trade for a
 /// rule that has to hold at all sizes.
-const BLOCKS_PER_SHARD: usize = 2;
+///
+/// **Re-opened 2026-08-10 on a different OBJECTIVE, and that is the point of
+/// the `__bps_*` ladder below.** The value 2 was fitted against WHOLE-FRAME
+/// WALL on `v4k_8tile`. The tiled t=8 attribution
+/// (`docs/TILED_SCALING.md` §4, §7 item 1) then found that 42.2% / 32.4% of the
+/// t=8 wall gap is IDLE CORES, most of it in the post-tile filter TAIL — and a
+/// shift that minimises mean wall can be wrong exactly where the cores are
+/// idle, because the tail's contention is between ADJACENT SUPERBLOCK ROWS
+/// filtering at once and the block size decides whether those land on the same
+/// shard. So the ladder is re-swept scored on tail concurrency as well as on
+/// wall. `benchmarks/shard_granularity_2026-08-10.*`.
+///
+/// The ratio is a rational so the ladder can go BELOW one block per shard
+/// (coarser blocks than the default), which a `usize` count cannot express.
+/// `__bps_half` = 1/2 is one shift COARSER than the default, `__bps_4` = 4/1 is
+/// one shift FINER. Rungs are `__`-gated A/B arms; the default is unchanged.
+#[cfg(feature = "__bps_quarter")]
+const BPS: (usize, usize) = (1, 4);
+#[cfg(all(feature = "__bps_half", not(feature = "__bps_quarter")))]
+const BPS: (usize, usize) = (1, 2);
+#[cfg(all(
+    feature = "__bps_1",
+    not(any(feature = "__bps_quarter", feature = "__bps_half"))
+))]
+const BPS: (usize, usize) = (1, 1);
+#[cfg(all(
+    feature = "__bps_4",
+    not(any(feature = "__bps_quarter", feature = "__bps_half", feature = "__bps_1"))
+))]
+const BPS: (usize, usize) = (4, 1);
+#[cfg(all(
+    feature = "__bps_8",
+    not(any(
+        feature = "__bps_quarter",
+        feature = "__bps_half",
+        feature = "__bps_1",
+        feature = "__bps_4"
+    ))
+))]
+const BPS: (usize, usize) = (8, 1);
+#[cfg(not(any(
+    feature = "__bps_quarter",
+    feature = "__bps_half",
+    feature = "__bps_1",
+    feature = "__bps_4",
+    feature = "__bps_8"
+)))]
+const BPS: (usize, usize) = (2, 1);
+
+/// Blocks the adaptive rule aims to split an instance into, i.e.
+/// `N_SHARDS * BPS`. Named so the rule and its test assert against ONE
+/// expression rather than two copies of the arithmetic.
+const TARGET_BLOCKS: usize = {
+    let t = (N_SHARDS * BPS.0) / BPS.1;
+    if t == 0 { 1 } else { t }
+};
 
 /// Block shift for an instance of `len` bytes: the power of two that lands
-/// `len` on about `BLOCKS_PER_SHARD * N_SHARDS` blocks.
+/// `len` on about [`TARGET_BLOCKS`] = `N_SHARDS * BPS` blocks.
 ///
 /// At 128 shards and a ratio of 2 that is `log2(len) - 8`, clamped. An 8.3 MB
 /// 4K 8-bit luma plane gets 14 and its 16.6 MB 10-bit twin gets 15 — the same
@@ -1047,7 +1164,7 @@ fn block_shift_rule(len: usize, shards: usize, tiles: usize) -> u32 {
             return BLOCK_SHIFT;
         }
     }
-    let target = (BLOCKS_PER_SHARD * N_SHARDS) as u64;
+    let target = TARGET_BLOCKS as u64;
     let want = (len as u64 / target.max(1)).max(1);
     // `ilog2` rounds down, so the block count lands at or above the target.
     (u64::BITS - 1 - want.leading_zeros()).clamp(6, 24)
@@ -2213,7 +2330,7 @@ mod tests {
     }
 
     /// The adaptive shift must keep the block count near
-    /// `BLOCKS_PER_SHARD * N_SHARDS` across the whole range of buffer sizes the
+    /// [`TARGET_BLOCKS`] across the whole range of buffer sizes the
     /// decoder allocates — that is the entire point of it over a constant.
     ///
     /// The sizes below are real: a 4K 8-bit luma plane, its chroma planes, the
@@ -2237,7 +2354,7 @@ mod tests {
         // poking the monotone globals (which the gate test below must be able
         // to see un-poked).
         let sh = |len: usize| block_shift_rule(len, SHARDS_CONCURRENT, 8);
-        let target = BLOCKS_PER_SHARD * N_SHARDS;
+        let target = TARGET_BLOCKS;
         for len in [
             64 * 1024,       // just at SHARD_MIN_LEN
             1024 * 1024,     // 1024x1024 8-bit plane
@@ -2253,17 +2370,30 @@ mod tests {
                 "len {len}: shift {shift} gives {nblocks} blocks, target {target}"
             );
         }
-        // The two 4K planes the fixed ladder was measured on must land on the
-        // shift that ladder measured best for each...
-        assert_eq!(sh(3840 * 2160), 14);
-        assert_eq!(sh(2 * 3840 * 2160), 15);
-        // ...at the SAME picture-rows-per-block, which is the quantity that
-        // actually drives the win (4.3 rows either way).
-        assert_eq!((1usize << sh(3840 * 2160)) / 3840, 4);
-        assert_eq!((1usize << sh(2 * 3840 * 2160)) / 7680, 4);
-        // ...and a small buffer must NOT be handed that shift, which would
-        // collapse it onto one or two shards.
-        assert!(sh(64 * 1024) <= 9);
+        // The invariant the RATIO exists for, and it has to hold at every rung
+        // of the `__bps_*` ladder: the 8-bit and 10-bit 4K luma planes land on
+        // the same PICTURE ROWS PER BLOCK, because a 10-bit plane is twice the
+        // bytes AND twice the stride, so a rule keyed on `len` tracks the stride
+        // for free.
+        assert_eq!(
+            (1usize << sh(3840 * 2160)) / 3840,
+            (1usize << sh(2 * 3840 * 2160)) / 7680,
+            "rows/block must match across bit depth at BPS {BPS:?}"
+        );
+        // A small buffer must NOT be handed the 4K plane's shift, which would
+        // collapse it onto one or two shards. Relative, so it is a real
+        // assertion at every rung rather than a constant that only fits one.
+        assert!(sh(64 * 1024) < sh(2 * 3840 * 2160));
+        // The DEFAULT rung's two measured shifts, pinned by value: the fixed
+        // ladder (`benchmarks/tracker_blockshift_2026-08-08.meta`) measured 14
+        // joint-best for the 8-bit 4K plane and 15 within 1.2% of best for its
+        // 10-bit twin, and this is what stops a ladder rung silently becoming
+        // the shipped default.
+        if BPS == (2, 1) {
+            assert_eq!(sh(3840 * 2160), 14);
+            assert_eq!(sh(2 * 3840 * 2160), 15);
+            assert_eq!((1usize << sh(3840 * 2160)) / 3840, 4);
+        }
     }
 
     /// The other side of the gate: with a fixed rung compiled in, nothing
@@ -2308,10 +2438,87 @@ mod tests {
         // Both: adapt. And this must be a real change, or the test is vacuous.
         let adapted = block_shift_rule(LEN, SHARDS_CONCURRENT, 8);
         assert_ne!(adapted, BLOCK_SHIFT);
-        assert_eq!(adapted, 15);
+        if BPS == (2, 1) {
+            assert_eq!(adapted, 15);
+        }
         // Two tiles is already "multi-tile"; the gate is a threshold, not a
         // proportion.
         assert_eq!(block_shift_rule(LEN, SHARDS_CONCURRENT, 2), adapted);
+    }
+
+    /// Distinct shards a strided access maps to, i.e. the number of cache lines
+    /// the tracker touches for it and the quantity `MAX_SHARDS_PER_BORROW` is
+    /// compared against. Test-only mirror of what `add_multi` walks.
+    #[cfg(test)]
+    fn strided_shards(lo: usize, w: usize, rows: usize, stride: usize, shift: u32) -> usize {
+        let mut set = std::vec::Vec::new();
+        for i in 0..rows {
+            let a0 = (lo + i * stride) >> shift;
+            let a1 = (lo + i * stride + w - 1) >> shift;
+            for b in a0..=a1 {
+                let s = shard_of(b, N_SHARDS - 1);
+                if !set.contains(&s) {
+                    set.push(s);
+                }
+            }
+        }
+        set.len()
+    }
+
+    /// **The granularity ladder IS the whole shard-set lever, and "keep a short
+    /// RUN of consecutive blocks on one shard" is not a second one.**
+    ///
+    /// A run mapping groups `2^k` consecutive blocks by hashing `block >> k`.
+    /// But `block == addr >> shift`, so `block >> k == addr >> (shift + k)` — the
+    /// grouped index IS the block index at a shift `k` coarser. Anything that
+    /// depends only on an access's SHARD SET (`pct_row_wide`, the shard lines a
+    /// strided read touches, the `MAX_SHARDS_PER_BORROW` promotion door) is
+    /// therefore already covered by the `__bps_*` rungs, and a separate run
+    /// mapping cannot reach a point the ladder does not.
+    ///
+    /// What this test pins is the CONSEQUENCE for the worst strided shape in the
+    /// decoder — `rav1d_prepare_intra_edges`' one-byte-wide left column, 16 rows
+    /// at a 4K luma stride: the shard count falls as the block grows and crosses
+    /// `MAX_SHARDS_PER_BORROW` between shift 12 and 14.
+    ///
+    /// **HOW MUCH THIS GUARDS, honestly: it is a derivation-pin, not a guard on
+    /// the hash.** Two planted mutations of `shard_of` — a different
+    /// multiplicative constant taking the LOW bits, and the same constant taking
+    /// bits 32.. instead of 40.. — both left the vector at `[15, 8, 4, 2, 1, 1]`
+    /// and the test green. That is not a weak test so much as the point: the
+    /// count is dominated by the number of distinct BLOCKS, which is arithmetic,
+    /// and among 16 blocks in 128 shards any decent hash collides about once
+    /// (birthday: `C(16,2)/128 = 0.94`). So the ladder — not the mapping — is
+    /// where the shard set is decided, which is exactly the claim above.
+    /// `__shard_ident` is the arm that changes the mapping's LOCALITY rather than
+    /// its cardinality, and it is excluded here for that reason.
+    #[cfg(not(feature = "__shard_ident"))]
+    #[test]
+    fn coarser_blocks_collapse_a_strided_access_onto_fewer_shards() {
+        // 16 rows, 1 byte each, 3840-byte stride: the 4K left-column read.
+        let n: std::vec::Vec<usize> = (12u32..=17)
+            .map(|s| strided_shards(0, 1, 16, 3840, s))
+            .collect();
+        // Non-increasing, and it must actually MOVE — a flat sequence would make
+        // the ladder pointless and the test vacuous.
+        for w in n.windows(2) {
+            assert!(
+                w[1] <= w[0],
+                "shard count must not grow with the block: {n:?}"
+            );
+        }
+        assert!(n[0] > n[n.len() - 1], "ladder is inert: {n:?}");
+        // Pinned values, so a change to `shard_of` shows up here rather than as a
+        // silent shift in every granularity conclusion.
+        // 15, not 16, at shift 12: two of the sixteen blocks collide under the
+        // Fibonacci hash. The doc comment above says "16 distinct shard lines"
+        // for this access; the measured number is 15.
+        assert_eq!(n, [15, 8, 4, 2, 1, 1], "shard counts by shift 12..=17");
+        // ...and the cross-over past the promotion cap is what the ladder buys:
+        // at the shipped shift-12 constant this access is over the cap, at 14 it
+        // is not.
+        assert!(n[0] > MAX_SHARDS_PER_BORROW);
+        assert!(n[2] <= MAX_SHARDS_PER_BORROW);
     }
 
     /// A later single-tile frame must not undo a multi-tile declaration, for

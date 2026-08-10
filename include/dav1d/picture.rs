@@ -44,6 +44,34 @@ pub fn tile_threading_active() -> bool {
     TILE_THREADING.load(Ordering::Relaxed)
 }
 
+/// THROWAWAY (`__probe_rect_hull` + `RAV1D_RECT_HULL=1`): make the recon/MC
+/// block helpers take ONE strided-HULL guard under tile threading instead of
+/// `h` per-row ones.
+///
+/// This is the falsification arm for the strided-rectangle counterfactual in
+/// `bounds_probe::eval_rect`. That instrument measures, over
+/// `8-bit/data` at t=8, that the hull at `block_mut`'s write-back intersects a
+/// concurrently-live foreign reservation ~15.4 K times — ~8.0 K of them a
+/// foreign WRITE — while the exact rectangle intersects **zero** times. A
+/// reservation overlap involving a mutable record is a `DisjointMut` panic, so
+/// this arm MUST fail to decode. If it passes, the counterfactual's `hull_ovl`
+/// column is not measuring what it claims.
+///
+/// UNSOUND BY CONSTRUCTION — measurement only, never a shipping path.
+#[cfg(feature = "__probe_rect_hull")]
+pub fn rect_hull_arm() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| matches!(std::env::var("RAV1D_RECT_HULL").as_deref(), Ok("1")))
+}
+
+/// The default build: a constant, so the arm folds away entirely.
+#[cfg(not(feature = "__probe_rect_hull"))]
+#[inline(always)]
+pub fn rect_hull_arm() -> bool {
+    false
+}
+
 thread_local! {
     /// Reusable scratch buffers backing [`WithOffset::compact_read_per_row`]
     /// (and the pristine copy kept by the loopfilter's diff write-back).
@@ -164,7 +192,7 @@ pub fn with_pixel_guard_immut<BD: BitDepth, R>(
 ) -> R {
     use crate::src::strided::Strided as _;
     let pixel_size = core::mem::size_of::<BD::Pixel>();
-    if tile_threading_active() {
+    if tile_threading_active() && !rect_hull_arm() {
         let (buf, byte_stride) = pic.compact_read_per_row::<BD>(w, h);
         let result = f(&buf, 0, byte_stride as isize);
         recycle_compact_scratch(buf);
@@ -835,7 +863,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// from the picture, because the compact buffer has its own stride.
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn block_mut<BD: BitDepth>(&self, w: usize, h: usize) -> BlockMut<'a, BD> {
-        if tile_threading_active() {
+        if tile_threading_active() && !rect_hull_arm() {
             #[cfg(feature = "held-row-guards")]
             if w != 0 && h != 0 && h <= MAX_HELD_ROWS {
                 return self.block_mut_held::<BD>(w, h);
@@ -1028,6 +1056,15 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         }
         let pxstride = self.data.pixel_stride::<BD>();
         if tile_threading_active() {
+            let ps = mem::size_of::<BD::Pixel>();
+            self.data.dm().probe_eval_rect(
+                core::panic::Location::caller(),
+                false,
+                self.offset * ps,
+                w * ps,
+                h,
+                pxstride * ps as isize,
+            );
             for row in 0..h {
                 let off = self.offset.wrapping_add_signed(row as isize * pxstride);
                 let guard = self.data.slice::<BD, _>((off.., ..w));
@@ -1072,6 +1109,15 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         }
         let pxstride = self.data.pixel_stride::<BD>();
         if tile_threading_active() {
+            let ps = mem::size_of::<BD::Pixel>();
+            self.data.dm().probe_eval_rect(
+                core::panic::Location::caller(),
+                true,
+                self.offset * ps,
+                w * ps,
+                h,
+                pxstride * ps as isize,
+            );
             for row in 0..h {
                 let off = self.offset.wrapping_add_signed(row as isize * pxstride);
                 let mut guard = self.data.slice_mut::<BD, _>((off.., ..w));
@@ -1167,6 +1213,14 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         // returned `Vec` is byte-identical to the former `vec![0u8; needed]`.
         let mut buf = take_compact_scratch();
         buf.resize(needed, 0);
+        self.data.dm().probe_eval_rect(
+            core::panic::Location::caller(),
+            false,
+            self.offset * pixel_size,
+            w * pixel_size,
+            h,
+            pxstride * pixel_size as isize,
+        );
         for row in 0..h {
             let row_off = if pxstride >= 0 {
                 self.offset + row * abs_stride
@@ -1228,6 +1282,14 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         let byte_stride = w * pixel_size;
         let pxstride = self.data.pixel_stride::<BD>();
         let abs_stride = pxstride.unsigned_abs();
+        self.data.dm().probe_eval_rect(
+            core::panic::Location::caller(),
+            true,
+            self.offset * pixel_size,
+            w * pixel_size,
+            h,
+            pxstride * pixel_size as isize,
+        );
         for row in 0..h {
             let row_off = if pxstride >= 0 {
                 self.offset + row * abs_stride

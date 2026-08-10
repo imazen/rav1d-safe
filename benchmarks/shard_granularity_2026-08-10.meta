@@ -1,0 +1,149 @@
+shard_granularity_2026-08-10 -- the granularity ladder re-fitted, scored on TAIL
+concurrency as well as wall, plus the wide-path collapse it turned out to carry.
+Narrative + verdict: docs/SHARD_GRANULARITY.md. This file is provenance only.
+
+WHAT WAS MISSING BEFORE THIS
+  `BLOCKS_PER_SHARD = 2` was fitted against WHOLE-FRAME WALL on `v4k_8tile`
+  (benchmarks/tracker_blockshift_2026-08-08.meta). docs/TILED_SCALING.md then put
+  32-42% of the t=8 wall gap in IDLE CORES, most of it in the post-tile filter
+  tail, and named a re-fit "scored on the tail (TAIL_CONC, not whole-frame wall)"
+  as the one lever the data points at. Unbuilt until now.
+  Separately, benchmarks/strided_2d_2026-08-10.meta refuted the exact strided-2D
+  record on `pct_row_wide` -- the fraction of would-be 2-D registrations that
+  exceed MAX_SHARDS_PER_BORROW and take ALL 128 shards -- without measuring
+  whether any knob moves it.
+
+HOST / BUILD
+  Apple M4 Pro (Mac16,11, 8P+4E, 24 GiB), macOS 26.5.2, rustc 1.97.1.
+  rav1d-safe perf/shard-granularity, base main @ ca26fd6, release, default
+  features except where an arm names a feature. NO -C target-cpu=native.
+  dav1d 1.5.4 (homebrew).
+
+  NOT MEASURE-ONLY, unlike the two records above: this branch changes shipped
+  code. `BorrowId::PAIR_BITS` is derived (`3 + log2(N_SHARDS)` = 10 at the default
+  128 shards) instead of a hardcoded 12, which is a live change in the DEFAULT
+  build and is why the corpus gate below covers the default arm and not only the
+  ladder rungs. The `bps-*` and `msb-5` features are compile-time A/B arms and
+  are OFF by default; `BPS = (2, 1)` reproduces the shipped rule exactly.
+
+ARMS
+  plain / tt         default features -- what ships (BPS 2/1)
+  bps8  / tt_bps8    BPS 8/1  -> adaptive block shift -2 vs default
+  bps4  / tt_bps4    BPS 4/1  -> shift -1
+  bps1  / tt_bps1    BPS 1/1  -> shift +1
+  bpshalf / tt_bpshalf  BPS 1/2  -> shift +2
+  bpsq  / tt_bpsq    BPS 1/4  -> shift +3
+  untracked          + probe-untracked (borrow tracker compiled out) -- ceiling
+  ttu                + probe-tasktime-untracked
+  dav1d_fd1          dav1d --framedelay 1 (matched threading model: our checked
+                     build hard-pins n_fc = 1, so frame threading is not an axis
+                     we have)
+
+  The `tt*` arms add `probe-tasktime` (per-stage/per-worker busy + the 50 us
+  concurrency sampler + TAIL_CONC). That adds a 9th thread on an 8P+4E box, so
+  its absolute wall is not comparable with the `plain` family -- it is used only
+  for arm-vs-arm comparisons within its own family, which is what the tail
+  objective needs.
+
+  LIVENESS of each rung is read off the instances themselves: the `shifts` column
+  of the __probe_bounds rect table is the set of block shifts the tracker actually
+  used. plain reads 9,11 / 12,14; bpshalf reads 11,13 / 14,16; bpsq 12,14 / 15,17.
+  A rung whose shifts equalled the default's did not arm.
+
+VECTORS
+  ~/tmp/t8gap/vec/L1024x576_420_8b__t8.avif   1024x576  YUV420 8bpc, 4x2 = 8 tiles,  9 sbrows
+  ~/tmp/t8gap/vec/L3840x2160_420_8b__t8.avif  3840x2160 YUV420 8bpc, 4x2 = 8 tiles, 34 sbrows
+  controls: L1024x576_420_8b.avif (single tile), and the same 8-tile vector at t=1
+  IVF twins in ~/tmp/t8gap/ivf/ (200 frames at 1024x576, 16 at 4K).
+  Provenance: benchmarks/size_sweep_t8_gap_2026-08-10.meta + ~/tmp/t8gap/enc_tiles.sh.
+
+  ALL-INTRA, one key-frame OBU re-decoded. No inter prediction, no reference
+  management. Loop restoration and super-resolution execute ZERO blocks on both,
+  so a null from either here is not a result.
+
+INSTRUMENTS
+  1. --features probe-wide (crates/rav1d-disjoint-mut, wide_probe) -- the SHIPPED
+     wide-path promotion counts, by door (w_shards / w_blocks / w_full). Timer-free
+     and cheap: the three counters fire 10^4-10^5 times per frame. There is
+     deliberately no denominator (see `N_ADD`: one shared fetch_add per
+     registration at 136 M/frame serialises the decoder hard enough that slot
+     pressure disappears and w_full reads zero for the wrong reason).
+  2. --features __probe_bounds (bounds_probe::eval_rect) -- the strided-2D
+     counterfactual with the instance's REAL geometry. Extended this round:
+     pct_wide_c5/c8/c16 (raised-cap counterfactuals) and row_shards_max, and the
+     distinct-shard counter widened from 8 to 32 so values above 8 are real
+     rather than saturated at 9. At the old cap the question "would a cap of 16
+     help?" was unanswerable from the same run.
+  3. --features probe-tasktime -- per-stage and per-worker busy ns, the 50 us
+     time-weighted concurrency histogram, and TAIL_CONC (the same histogram
+     restricted to samples where NO tile worker is live and >= 1 filter worker is).
+  4. bash `time` with TIMEFORMAT='%3R %3U %3S' (the child's getrusage), two frame
+     counts per cell, total = a + b*frames fitted separately for wall and for
+     user+sys, so exec/mmap/decoder-construction/pool-spinup drop out of both.
+
+  INSTRUMENT TRAPS carried over and respected here:
+  * At --threads 1 EVERY probe-tasktime stage counter reads 0.000 (n_tc == 1
+    creates no task worker, so rav1d_task_run is never entered). The low arm for
+    any per-stage ratio is t=2, which is also the better comparison: same code
+    path as t=8. t=1 is still the right denominator for a speedup and appears in
+    the wall/CPU grid for exactly that.
+  * __probe_bounds publishes, fences and scans on every registration (~3.5x
+    slower). NO wall-clock number is quoted from any bounds build.
+  * n_hi must not exceed the IVF's frame count -- `bench_*` re-decodes one OBU
+    exactly n times whatever you ask, `dav1d --limit N` stops at end of stream.
+    tiled_wallcpu.sh counts each stream and refuses with a FATAL.
+
+MEASUREMENT HYGIENE
+  Every timed run under `measlock` (two holds: shardgran-tail, shardgran-wallcpu),
+  rotating arm order inside every cell, medians with min/max bands printed per arm.
+  Builds and all counting runs were `nice -n 19`; no timed run was ever niced
+  (Darwin maps a positive nice to background QoS -> E-cores).
+
+FILES
+  shard_granularity_2026-08-10.txt        the reduced tables (wide, rect, tail, wall/CPU)
+  shard_granularity_wide_2026-08-10.txt   raw probe-wide dumps, concatenated
+  shard_granularity_rect_2026-08-10.txt   raw __probe_bounds rect tables
+  shard_granularity_wallcpu_2026-08-10.tsv  raw wall/CPU rows
+  shard_granularity_probe_2026-08-10.tar.zst  raw probe-tasktime dumps
+
+COMMANDS
+  scripts/perf/shardgran_build.sh   ~/tmp/shardgran/bin
+  PROBES=probe-wide     scripts/perf/shardgran_counts.sh ~/tmp/shardgran/wide
+  PROBES=__probe_bounds scripts/perf/shardgran_counts.sh ~/tmp/shardgran/rect
+  scripts/perf/shardgran_counts_report.py <dir>
+  scripts/perf/shardgran_timed.sh   ~/tmp/shardgran/timed 5 5
+  scripts/perf/shardgran_tail_report.py ~/tmp/shardgran/timed/probe
+  scripts/perf/tiled_wallcpu_report.py  ~/tmp/shardgran/timed/wallcpu.tsv
+
+ADDENDA (same day)
+  shard_granularity_msb5_2026-08-10.txt   probe-wide counts for the `msb-5` cap
+                                          arm and `msb-5 + bps-half`, 1024x576 and
+                                          4K 8-tile at t=8. Timer-free.
+  shard_granularity_confirm_2026-08-10.tsv  the 10-bit + 2048x1152 grid, run under
+                                          `measlock --load-ok` against this
+                                          branch's own niced gates. LOAD-TAGGED:
+                                          foreign reaches 9 on many rows, so it
+                                          reports paired ratios only. Its t=1 cell
+                                          is the noise calibration (the rungs are
+                                          provably the same code path at one
+                                          thread, so its true ratio is 1.000 and it
+                                          reads 1.014-1.032 -> floor ~3.2%).
+  shard_granularity_msb5_void_2026-08-10.tsv  VOID, kept so the mistake is on the
+                                          record: the msb-5 timing grid was
+                                          launched before the `msb5half` binary
+                                          finished building, so four of seven
+                                          rounds timed a missing executable and
+                                          that arm's median is 0.000. Its t=1
+                                          calibration also reads 0.970-0.988 where
+                                          the arms are the same code path, so its
+                                          floor was ~3.0% and no sub-3% claim could
+                                          have come out of it anyway. Superseded by
+                                          shard_granularity_msb5_clean_* if that
+                                          run is present; if it is absent, the cap
+                                          arm has NO timed result.
+
+  Re-run command for the outstanding cell:
+    BIN=~/tmp/shardgran/bin AVIF=~/tmp/t8gap/vec IVF=~/tmp/t8gap/ivf \
+    ARMS="plain msb5 bpshalf msb5half" \
+    CELLS="L1024x576_420_8b__t8:8:20:200 L1024x576_420_8b__t8:1:20:200" \
+    measlock shardgran-msb5c -- scripts/perf/tiled_wallcpu.sh <out.tsv> 7

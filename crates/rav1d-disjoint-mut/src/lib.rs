@@ -801,6 +801,45 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         let _ = stride_bytes;
     }
 
+    /// THROWAWAY (`__probe_bounds`): evaluate the STRIDED-RECTANGLE
+    /// counterfactual for the `rows` per-row guards the caller is about to
+    /// take, WITHOUT registering anything.
+    ///
+    /// Answers the question `884b4b5`/`424cbbb` settled by argument in March
+    /// 2026 and #472 re-opened: would ONE exact `rows x w` record ever reject a
+    /// foreign record that `rows` per-row records permit — i.e. is there
+    /// concurrent traffic in the inter-row gaps? See
+    /// `bounds_probe::eval_rect` (not a doc link: that module is `__probe_bounds`-gated
+    /// and absent from a default doc build, which is what broke the Documentation leg).
+    ///
+    /// A no-op, and absent from codegen, without the feature.
+    #[inline(always)]
+    pub fn probe_eval_rect(
+        &self,
+        loc: &'static core::panic::Location<'static>,
+        is_mut: bool,
+        lo: usize,
+        w: usize,
+        rows: usize,
+        stride: isize,
+    ) {
+        #[cfg(feature = "__probe_bounds")]
+        if let Some(tracker) = self.tracker.as_ref() {
+            bounds_probe::eval_rect(
+                loc,
+                self.as_mut_ptr() as usize,
+                is_mut,
+                lo,
+                w,
+                rows,
+                stride,
+                tracker.probe_geometry(),
+            );
+        }
+        #[cfg(not(feature = "__probe_bounds"))]
+        let _ = (loc, is_mut, lo, w, rows, stride);
+    }
+
     /// Mutably borrow a slice or element.
     ///
     /// Validates that the requested range doesn't overlap with any outstanding
