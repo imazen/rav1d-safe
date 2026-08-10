@@ -126,7 +126,7 @@ one column range. Two planted mutations are caught. **Verdict, both depths at
 t=8** (`benchmarks/strided_2d_2026-08-10.meta`):
 
 * **YES, the gap traffic is real: 34,547 hull-only collisions on `8-bit/data`,
-  17,704 of them against a concurrently-live foreign WRITE** (3,923 / 2,119 at
+  17,804 of them against a concurrently-live foreign WRITE** (3,923 / 2,119 at
   10-bit). The largest pair is `picture.rs:2061:22` against ITSELF,
   write-vs-write — two tile workers on the same rows at different columns.
 * **`rect_ovl = 0` at every site.** Every hull collision is a gap collision; the

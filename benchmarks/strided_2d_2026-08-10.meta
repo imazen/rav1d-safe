@@ -90,12 +90,18 @@ caught two real defects in the predicate before any decode was run.
     src/safe_simd/cdef_arm.rs:622:9   13725636  4447570         0        0        0       0
     src/cdef_apply.rs:104:32           5086198  2431485         0        0        0       0
     ----------------------------------------------------------------------------------------
-    8-bit/data TOTAL                                        34547        0    34547   17704
+    8-bit/data TOTAL                                        34547        0    34547   17804
     10-bit/data TOTAL (71 vec, 490 f)                        3923        0     3923    2119
 
-### THE ANSWER: yes, and 17,704 of them are writes
+Whole-table totals, computed from the TSV rather than by hand (a hand sum of the
+`gap_mut` column first gave 17,704 and was wrong):
 
-* **`gap_mut = 17,704`** at 8-bit and **2,119** at 10-bit. A concurrently-live
+    8-bit/data   evals 73,014,020  peers 19,883,327  hull 34,547  rect 0  gap 34,547  gap_mut 17,804
+    10-bit/data  evals  1,112,894  peers     51,806  hull  3,923  rect 0  gap  3,923  gap_mut  2,119
+
+### THE ANSWER: yes, and 17,804 of them are writes
+
+* **`gap_mut = 17,804`** at 8-bit and **2,119** at 10-bit. A concurrently-live
   foreign MUTABLE reservation lands in the inter-row gap that often, per corpus
   pass, at t=8. The largest single pair is `picture.rs:2061:22` against ITSELF,
   write-vs-write: two tile workers writing the same picture rows at different

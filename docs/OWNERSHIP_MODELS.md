@@ -160,7 +160,7 @@ whole campaign. Re-examined 2026-08-10 (`benchmarks/strided_2d_2026-08-10.meta`)
   as an unchecked precondition. Both are now unit tests, not opinions.
 * **Wrong to generalise to the record shape.** Measured over both corpora at t=8: an exact 2-D
   record would have permitted **all 34,547** of the inter-row-gap collisions the hull produces
-  (**17,704** of them against a concurrently-live foreign WRITE), colliding **zero** times itself.
+  (**17,804** of them against a concurrently-live foreign WRITE), colliding **zero** times itself.
   Soundness is not what stops it.
 * **What stops it is the sharded tracker's cost.** A record must lock every shard its bytes map to,
   and >`MAX_SHARDS_PER_BORROW` promotes to the all-shards wide path. Measured saving 1.4-3.7x
