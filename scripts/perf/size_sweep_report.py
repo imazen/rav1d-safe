@@ -117,6 +117,7 @@ def main():
             print(f"{'size':>12} {'Mpx':>7} | {'ours ms/f':>10} {'[min..max]':>18} | "
                   f"{'dav1d ms/f':>10} {'[min..max]':>18} | {'ratio':>6} {'[min..max]':>16} band")
             xs_l, xs_s, y_ours, y_dav = [], [], [], []
+            prev_pr = None
             for v in sel:
                 g = geom(v)
                 o = [cell[(ours, v, rd)] for rd in rounds if (ours, v, rd) in cell]
@@ -124,7 +125,17 @@ def main():
                 pr = [cell[(ours, v, rd)] / cell[(ref, v, rd)] for rd in rounds
                       if (ours, v, rd) in cell and (ref, v, rd) in cell]
                 om, dm, rm = median(o), median(d), median(pr)
-                disj = "disjoint" if (max(o) < min(d) or max(d) < min(o)) else "OVERLAP"
+                # The claim this table makes is about how the RATIO moves with
+                # size, so the disjointness that matters is this size's ratio
+                # band against the PREVIOUS size's -- not ours-vs-dav1d, which
+                # is trivially disjoint and would be a vacuous green tick.
+                if prev_pr is None:
+                    disj = "-"
+                elif max(pr) < min(prev_pr) or max(prev_pr) < min(pr):
+                    disj = "vs-prev:disjoint"
+                else:
+                    disj = "vs-prev:OVERLAP"
+                prev_pr = pr
                 print(f"{g['w']}x{g['h']:<7} {g['luma']/1e6:7.4f} | {om:10.4f} "
                       f"[{min(o):8.4f}..{max(o):8.4f}] | {dm:10.4f} "
                       f"[{min(d):8.4f}..{max(d):8.4f}] | {rm:6.3f} "
