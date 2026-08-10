@@ -73,9 +73,9 @@ its per-registration hash plus three atomic RMWs perturb the window away. But
 helpers are gated on `any(debug_assertions, feature = "probe-sites")`, so a
 plain **release build with `-C debug-assertions=on -C overflow-checks=off`**
 keeps per-record `Loc`s at the cost of one non-atomic store per registration and
-no hash. It reproduced at a comparable rate — **2 aborts in the first 220
-vectors** of `8-bit/data` at t=8 (`00000037`, `00000051`) against release's 4 in
-358 — and named both sides:
+no hash. It reproduced at a HIGHER rate than release — its two aborts
+(`00000037`, `00000051`) were the **20th and 27th vectors attempted** of
+`8-bit/data` at t=8, against release's 4 in a full 358 — and named both sides:
 
      current:    & _[98304..98432] at src/safe_simd/loopfilter.rs:5134:44
     existing: &mut _[98304..98688] at src/owned_recon.rs:937:42

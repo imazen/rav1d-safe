@@ -21,7 +21,8 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   written concurrently. Reproduced as 4 aborts per 358-vector `8-bit/data` pass
   at t=8 (the failing set is a timing window, not content — three passes named
   seven different vectors), with both sides identified by a
-  `-C debug-assertions=on` release build: the V-run compact read
+  `-C debug-assertions=on` release build (which reproduces it at a HIGHER rate
+  than release — its two aborts were the 20th and 27th vectors attempted): the V-run compact read
   (`loopfilter.rs:5134`) against `owned_recon.rs:937`'s `stitch_sbrow` copy-out
   of the next superblock row, and against that row's own DeblockCols
   write-back. In an `unchecked` build there is no panic — the read returns

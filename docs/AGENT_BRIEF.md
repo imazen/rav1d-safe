@@ -183,8 +183,8 @@ reduction.
   helpers are gated on `any(debug_assertions, feature = "probe-sites")`, so the debug-assertions
   build names both sides for one non-atomic store per registration and no hash table. `probe-sites`
   adds a hash plus three atomic RMWs per registration and PERTURBED THE #494 RACE AWAY (358/358
-  clean); the debug-assertions build reproduced it at a comparable rate and named the writer on the
-  first try. It also arms every `debug_assert!` in the decoder, which is how #494's invariant became
+  clean); the debug-assertions build reproduced it at a HIGHER rate (its two aborts were the 20th and
+  27th vectors attempted) and named the writer on the first try. It also arms every `debug_assert!` in the decoder, which is how #494's invariant became
   a t=1 abort instead of a t=8 race.
   Perf harness: `scripts/perf/verify_gap.sh` for the 4K AVIF grid,
   `scripts/perf/verify_gap_ivf.sh` for real multi-frame streams — the 4K grid is **structurally

@@ -220,9 +220,9 @@ own superblock row** — rows owned by whoever is working on the next one.
 hash + three atomic RMWs perturb the window away). What does reproduce, and keeps per-record
 `Loc`s, is a plain **`-C debug-assertions=on` release build**: `ShardRecs::locs` and the
 `track_caller` propagation through `picture.rs`'s helpers are both `debug_assertions`-gated, so this
-costs one non-atomic store per registration and no hash. It reproduced at a similar rate to release
-(2 aborts in the first 220 vectors of `8-bit/data` at t=8 vs release's 4 in 358) and named both
-sides:
+costs one non-atomic store per registration and no hash. It reproduced at a HIGHER rate than release — its two aborts
+(`00000037`, `00000051`) were the 20th and 27th vectors attempted of `8-bit/data` at t=8, against
+release's 4 in a full 358 — and named both sides:
 
 ```
  current:    & _[98304..98432] at src/safe_simd/loopfilter.rs:5134:44   <- the V-run compact read
