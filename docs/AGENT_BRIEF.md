@@ -82,6 +82,23 @@ campaigns. Every rule below cost real time to learn.
 - **A "disjoint bands" tick has to compare the arms the CLAIM compares.** Printing
   ours-vs-dav1d disjointness for a claim about base-vs-head is trivially true for two different
   decoders: a green tick that can never fail. Same family as a vacuous `wide_exclusion`.
+- **`kill`ing a `measlock` used to release the lock and keep running the payload UNLOCKED.**
+  A bash trap handler *returns* unless it exits, and `trap cleanup EXIT INT TERM` never exited,
+  so a TERM'd holder deleted its own lock, sat out the 20-minute politeness wait with no lock at
+  all, and then started a timed sweep on top of another agent's — truncating the first run's TSV
+  (2026-08-10, this happened to one agent's own two runs). Fixed in `~/bin/measlock`: `INT`/`TERM`
+  go to a handler that kills the payload and exits, and the payload runs in the background so
+  `wait` is interruptible. Two consequences that remain yours to handle: **the trap can take up to
+  10 s to fire** (bash defers it until the in-flight `sleep 10` returns), and **`kill -9` on a
+  holder leaves the lock dir behind** — the stale-reclaim path now `rm -rf`s it after re-reading
+  the owner, but only on the *next* acquire, so verify `~/tmp/.measlock.d` is gone before you
+  believe a relaunch is exclusive. Always confirm with `ps` that a killed run is actually dead.
+- **A same-code control arm is the only way to know a sub-2% A/B's floor.** Two binaries that
+  differ only inside `if BD::BPC == BPC16` still have different code LAYOUT, and that alone
+  measured **+1.4% (0 of 6 rounds faster, sign-test p=0.031) on an 8bpc cell whose code path
+  cannot have changed** — larger than every 10bpc effect in the same sweep. Put at least two
+  provably-unaffected cells in every A/B and report them next to the claim; a "significant"
+  sign test on the unaffected arm is the number that tells you to stop claiming.
 - **Diff against your recorded base SHA, never against the `main` ref.** All worktrees share one
   `.git`, so another agent's merge silently turns up in `git diff main..HEAD` as reverse-deletions
   in your branch. `main` moved twice under one 2026-08-10 sweep.

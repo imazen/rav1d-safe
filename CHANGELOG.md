@@ -4,6 +4,23 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Changed
+- **16bpc CDEF padding copies through a fixed-size array instead of
+  `copy_from_slice`** (`src/safe_simd/cdef_arm.rs`). `padding_8bpc` already went
+  through `widen_row` -> `widen_n::<N>`, a compile-time trip count; the 16bpc
+  twin needed no widening and so was spelled `copy_from_slice`, whose runtime
+  length lowers to a `_platform_memmove` call for 4 to 12 `u16`s -- up to `h + 4`
+  of them per CDEF block. `docs/SIZE_SWEEP.md` Q2 profiled that asymmetry (381 of
+  549 memmove samples at 1024x576 came from `cdef_filter_block_16bpc_inner`,
+  8bpc CDEF contributed zero). Byte-identical by construction and corpus-verified
+  766/766 at `--threads 1` and 753/753 at `--threads 8`.
+  **NOT a measured win**: over 9 paired rounds the 10bpc cells land in
+  [0.98, 1.01] while two 8bpc control cells -- code the change cannot reach --
+  land at 1.014 (0/9 rounds faster) and 1.000, so the layout-noise floor of this
+  A/B is larger than every 10bpc effect in it. Shipped for consistency with
+  `padding_8bpc`, not for the number. Record: `docs/CONTENT_CLASS.md` §5 +
+  `benchmarks/cdef16_padding_ab_2026-08-10.tsv.zst`.
+
 ### Fixed
 - **`wide_exclusion` had gone vacuous, and with it the only gate for the
   wide-path TOCTOU** (`crates/rav1d-disjoint-mut/tests/wide_exclusion.rs`).
