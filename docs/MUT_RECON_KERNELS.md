@@ -855,6 +855,14 @@ alone; re-run `headoff` against `base` on an idle box.**
   #482 recorded.
 * **Miri, both models**, `cargo +nightly miri test -p rav1d-disjoint-mut
   --no-fail-fast`: see §14.
+* **The corpus was re-run AFTER the last probe commit** (`6dc7cd5`, which adds a
+  branch to `LfBlock::fill` — the decoder's hottest guard site — even though it
+  folds to `false` in the default build): `--threads 1` 766 PASS / 768 keys /
+  **0 differing**; `--threads 8` 753 PASS / 755 keys / **0 differing**; frame
+  md5 `a00c11f454328023c58af14d55544cff` at t=1 and t=8 with the band both
+  armed and disarmed. The default binary is the same 2,887,376 bytes it was
+  before either probe feature existed, which is the evidence that the branches
+  fold rather than merely being cheap.
 
 ### Memory, re-measured on this branch
 
