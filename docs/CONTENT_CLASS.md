@@ -17,11 +17,17 @@ Worst news first.
   patch: the ratio-to-dav1d is a content property, our worst content class is
   screen content at 2.1–3.2x, and nobody has profiled that class yet. This
   round profiles it and names the leaves; it does not port anything.
-* **The one code change here is 16bpc CDEF padding**, worth low single digits at
-  10bpc, and it is the *smaller* half of `SIZE_SWEEP.md`'s Q2 "check while you
-  are there" item. Its sibling (the itx scratch memset) was already fixed by
-  PR #484, which also **refuted** the headline 16bpc-itx candidate by census —
-  see §5. This round adds nothing to 16bpc itx.
+* **The one code change here is 16bpc CDEF padding, and it is NOT a measured
+  win.** Its mechanism is verified (CDEF's `memmove` traffic goes to zero, total
+  memmove −66%) and its wall clock is null outside the 64x36 cell, because an
+  8bpc control cell the change cannot execute measures +0.94% — §5 gives both
+  readings. It is also only the *smaller* half of `SIZE_SWEEP.md`'s Q2 "check
+  while you are there" item: the sibling (the itx scratch memset) is fixed by
+  PR #484, which also **refuted** the headline 16bpc-itx candidate by census.
+  This round adds nothing to 16bpc itx, and confirms in §5 that the itx memset
+  is **still live on `main`** because #484 is unmerged.
+* **The size ladder here is 4:2:0 8bpc only for content, and 4:2:0/4:4:4 10bpc
+  only for the A/B.** No 4:4:4 content cells, no 10bpc content cells.
 * **Loop restoration is off in every vector used here** as well
   (`enable_restoration = 0` in all 24 new vectors, verified with
   `scripts/perf/seq_header_flags.py` from the size-sweep branch). The
