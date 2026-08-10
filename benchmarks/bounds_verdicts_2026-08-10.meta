@@ -114,14 +114,14 @@ Restores verified with `shasum -a 256 -c` on `src/loopfilter.rs` and
 `include/dav1d/picture.rs` AND `git diff --exit-code`, then `touch`ed and
 re-run per the mtime trap in `docs/MUT_RECON_KERNELS.md` §7.
 
-## 4. The in-flight V-batch, priced (a PREDICTION, not a measurement)
+## 4. The V-batch's soundness TEST, contradicted (a PREDICTION, and one observation against it)
 
-`perf/lf-v-batch` @ `61f88dc` raises `LF_BATCH_V` 4 -> 32, which takes
-`fill_v`'s per-row reservation from 16 px to 128 px under tile threading. Its
-own claim is "a COUNT reduction with NO extent widening"; the count half is
-correct, the extent half is not — the union is spatially exact but the LIVE
-reservation grows 8x, and collision is decided by the absolute extent of a live
-reservation.
+`LF_BATCH_V` 4 -> 32 is **not in flight**: PR #488 built it, measured no
+wall-clock win (t=8 1.0005, p=1.000) and reverted it. What it keeps is the
+soundness argument, and that is what is contradicted here — its one-line test
+("does the reservation contain a byte no member of the batch reads?") is not the
+collision criterion. `DisjointMut` compares one LIVE reservation against
+another, and `fill_v`'s live reservation goes from 16 px to 128 px.
 
 | cell | widening | predicted collisions | x V-pass share (30.7%) |
 |---|---|---|---|
@@ -129,15 +129,28 @@ reservation.
 | corpus `10-bit/data` t=8, 284 frames | +224 B | 0 .. 1 | 0.0 .. 0.3 |
 | `v4k_8tile` t=8 / `v4k_8tile_10b` t=8 | +112 / +224 B | 0 | 0 |
 
-Same arithmetic that retrodicted #485's measured 1, 2 and 0. **This is a
-prediction from the 2026-08-10 histogram, not a run of that branch** — the
-branch was read (`git show`), never built, and its worktree was not touched.
-The decisive experiment is one corpus pass of `--features __probe_bounds` on
-top of `61f88dc`.
+**Against it:** PR #488 reports corpus 766/766 at t=1 and 753/753 at t=8 on the
+implementation. **Why that does not settle it:** the same PR planted a genuine
+over-reservation (un-chunked write-back) and measured 358/358 clean on
+`8-bit/data --threads 8`, and #485 measured 1, 2 and **0** on three passes of
+that group. One pass cannot resolve a ~1-5-per-pass rate. Not confirmed, not
+refuted; the settling measurement is one `--features __probe_bounds` corpus pass
+on top of `61f88dc`.
 
-Caveats that do not move the sign: the histogram is not split H vs V (the 30.7%
-scaling is an assumption), it is direction-blind (a one-sided widening collides
-with ~half the column), and `min_gap_mut = 60` is an observed minimum.
+**Unsettled and important:** a collision here is necessarily on a byte the run
+DOES read, so it is either a true ordering hazard (the fused run reads all 32
+tap windows up front, possibly before their writers are done — wrong pixels in
+an `unchecked` build) or a spurious panic. Which one depends on the sbrow-filter
+task's ordering contract, which neither PR #488 nor this map establishes.
+
+This branch never built `61f88dc`; it was read with `git show` and its worktree
+was not touched.
+
+Caveats: the histogram is not split H vs V (the 30.7% scaling is an assumption);
+it is direction-blind (a one-sided widening collides with ~half the column);
+`min_gap_mut = 60` is an observed minimum; and the standing check's `rows` metric
+is `bytes.div_ceil(row_bytes)`, which is alignment-blind, so on the corpus's
+small frames a 60-byte gap may be a different row rather than an adjacent column.
 
 ## 5. Correctness gates, this branch
 

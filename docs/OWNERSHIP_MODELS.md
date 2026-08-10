@@ -277,8 +277,18 @@ The options that remain, in the order the evidence supports:
 
 1. **Cut the guard cost rather than the guard.** `LfBlock::fill` (`src/loopfilter.rs:566`) is
    **3,835,042 registrations/frame at t=8 — 33.6% of the whole decoder's**, measured by a doubling
-   arm at **3.61 ms/frame of wall, 4.04 ns each**. One site. Coarsening it (per tap row, or per
-   fused group, instead of per tap) is sound, local, and does not need any ownership change.
+   arm at **3.61 ms/frame of wall, 4.04 ns each**. One site.
+   **This option is now CLOSED, by two independent measurements.** PR #488 built the fused-run
+   coarsening (`LF_BATCH_V` 4 -> 32, a 1.971x count cut on the V pass) and measured **no wall-clock
+   win** (t=8 ratio 1.0005, p=1.000) — the machinery cost more than the registrations were worth —
+   then reverted it. And the bounds map (`docs/BOUNDS_MAP.md` Part 2) prices the extent it needs:
+   the fused run's live reservation goes 16 px -> 128 px against a measured clearance of **60 bytes**
+   to a concurrent `loopfilter.rs:887:14` write-back, i.e. 2..16 collisions per 1406 corpus frames.
+   The largest coarsening the budget allows is `LF_BATCH_V = 8` at 8bpc only, whose whole prize is
+   ~2.4 ms/frame of CPU — under what this box resolves. **A 60-byte clearance and a sub-noise prize.**
+   Note also that PR #488's soundness test ("does the reservation contain a byte no member of the
+   batch reads?") is necessary but NOT sufficient: `DisjointMut` compares live reservations, not
+   reservation-against-read-set.
 2. **Partition by edge class, not by region.** Filter the edges wholly interior to a band in
    parallel, and the boundary edges in a separate pass. This is a *scheduling* answer to a
    write-write overlap, and it is the only one that gets the filter off coordination entirely.

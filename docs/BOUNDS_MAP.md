@@ -354,83 +354,114 @@ first full 4K-shaped sample came back 753/755 clean.
 
 All three are marked. The map passes its own correctness check.
 
-## CONTRADICTED: the in-flight V-pass batch lift (`LF_BATCH_V` 4 -> 32)
+## CONTRADICTED: the V-pass fused run's soundness TEST (PR #488 §19d)
 
-**Read this before merging `perf/lf-v-batch` (commit `61f88dc`, worktree
-`rav1d-safe--lfvbatch`).** Its argument is "a COUNT reduction with NO extent
-widening". The map contradicts the second half. The count claim is correct and
-is not in dispute.
+**Status first, so nothing here is read as an objection to a merge that is not
+being proposed.** PR #488 built `LF_BATCH_V` 4 -> 32, measured it as **no
+wall-clock win** (t=8 ratio 1.0005, 4/8 rounds faster, p=1.000), and **reverted
+it** — `src/loopfilter.rs` on that branch is back to `f87b12c`. What it keeps is
+the record and an explicit soundness argument, preserved deliberately as "the
+useful part". **That argument is what this section contradicts**, because it will
+be the basis of the next attempt at this site.
 
-**What the change does, from its own source.** `LfBlock::open` computes the V
-pass's rectangle as `w = 4 * groups`, `h = 2 * reach`; `fill_v` then takes, under
-tile threading, **one immutable reservation per picture row of `w` pixels**
-(`git show 61f88dc:src/loopfilter.rs`, `fill_v`, and `LF_SW_V = 4 * LF_BATCH_V`).
-Raising `LF_BATCH_V` from 4 to 32 therefore takes each of those per-row
-reservations from **16 px to 128 px** — 128 B at 8bpc, 256 B at 10/12bpc — while
-cutting their number 8x. The V pass's rectangle is not what changes shape; the
-*live reservation* is.
+### The test, quoted, and why it is not the collision criterion
 
-**Why "the union is exact" does not answer the question.** It is true that a run
-of 32 adjacent 4-px groups is contiguous and that every column in it belongs to
-a group that filters, so the fused rectangle has no slack relative to the read
-set. But the tracker does not compare read sets. It compares **live
-reservations**, and fusing makes the whole union live at once for the duration
-of the run, where before only one group's 4 px was. Collision is decided by the
-absolute extent of a live reservation, not by its ratio to what it will
-eventually read. That is precisely the distinction the map was built to make:
-#485's band ALSO kept `reserved == footprint` per row, and it still failed.
+> *does the reservation contain a byte no member of the batch reads?*
+> Strided hull — yes, the gaps between rows. Read band — yes, the gaps between
+> edges. Fused run — **no** (sound).
+> — PR #488, `docs/MUT_RECON_KERNELS.md` §19d
 
-**The price, from the budget table for `loopfilter.rs:710:14`:**
+The premise is correct: a fused run of adjacent filtering groups is slack-free.
+The conclusion does not follow, because **`DisjointMut` does not compare a
+reservation against a read set. It compares one live reservation against
+another.** Slack-freedom rules out #485's specific failure mode (a foreign write
+landing in a gap nothing reads); it does not rule out a foreign write landing in
+a byte the run *does* read, and a reservation 8x wider is 8x more of a target.
 
-| cell | widening | predicted collisions | x the V pass's 30.7% share |
+From the change's own source (`git show 61f88dc:src/loopfilter.rs`, `fill_v`,
+`LF_SW_V = 4 * LF_BATCH_V`): under tile threading each live reservation goes from
+**16 px to 128 px** — 128 B at 8bpc, 256 B at 10/12bpc.
+
+### The price, from the budget column for `loopfilter.rs:710:14`
+
+| cell | widening | acquisitions with a concurrent WRITE that close | x V-pass share (30.7%) |
 |---|---|---|---|
 | corpus `8-bit/data` t=8, 1406 frames | +112 B | **2 .. 16** | **0.6 .. 4.9** |
 | corpus `10-bit/data` t=8, 284 frames | +224 B | 0 .. 1 | 0.0 .. 0.3 |
 | `v4k_8tile` t=8 | +112 B | **0** | 0 |
 | `v4k_8tile_10b` t=8 | +224 B | **0** | 0 |
 
-Each collision is an `overlapping DisjointMut` panic, i.e. a decode failure. The
-range is because the histogram is bucketed: the true count is above the `k<=64`
-cumulative and at or below the `k<=256` one. It is the same arithmetic that
-retrodicted #485's measured 1, 2 and 0.
+and the site's headroom is **60 B**, to `loopfilter.rs:887:14` — the loop
+filter's own write-back in another superblock-row filter task — not the 232 B
+the earlier record named.
 
-**And the headroom is 60 bytes, not 232.** The nearest concurrent writer to
-`loopfilter.rs:710:14` is `loopfilter.rs:887:14` — the loop filter's own
-write-back, running in another superblock-row filter task — at a closest
-observed approach of **60 B** over 1,176,771 co-live pairs. A 128-byte
-reservation does not fit inside 60 bytes of clearance.
+### The evidence AGAINST this prediction, stated before the argument for it
 
-**What the map does NOT say, stated plainly:**
+**PR #488 ran the corpus on the implementation and reports 766/766 at t=1 and
+753/753 at t=8.** That is a direct observation and it is not consistent with the
+high end of the range above.
 
-* It does not split `loopfilter.rs:710:14` by H vs V pass. The 30.7% scaling
-  above assumes the V acquisitions carry the same gap distribution as the H
-  ones; that is an assumption, not a measurement. The change's own
-  `__probe_lf_hist` splits the count but not the gaps.
-* The histogram is direction-blind: it records the distance to the nearest
-  concurrent write without recording which side. A widening that is entirely on
-  one side collides with about half of what the column predicts.
-* `min_gap_mut = 60` is an **observed** minimum over 1406 frames. Unmeasured
-  content can be closer.
+It is not consistent with the low end being wrong either, and the reason is in
+that PR's own honest gap: it also planted a **genuine** over-reservation (the
+un-chunked write-back, above 16 columns) and measured **358/358 pass, 0 errors**
+on `8-bit/data --threads 8`. One corpus pass could not see a real widening. #485
+is the same story from the other side — 1, 2 and **0** errors on three passes of
+the same group. **A single clean pass at a predicted rate of ~1-5 per pass is
+weak evidence of absence, which is the whole reason this instrument exists.**
 
-None of those caveats move the sign. The two directly-relevant numbers are
-"128 B of reservation" and "60 B of clearance".
+So: prediction not confirmed, not refuted. What would settle it, cheaply:
+`--features __probe_bounds` on top of `61f88dc` for one `8-bit/data` t=8 pass —
+`mutable_overlaps` must stay 0 and the decode must not panic. That measures the
+disputed quantity directly instead of sampling a rare event once.
 
-**The decisive experiment, if the prediction is to be contested** (cheap, one
-build): put `--features __probe_bounds` on top of `61f88dc` and re-run
-`examples/probe_bounds_corpus.rs` for `8-bit/data` at t=8. `mutable_overlaps`
-must stay 0 and the decode must not panic. That is a direct measurement of the
-thing in dispute and it costs one corpus pass. Running the plain corpus MD5 gate
-at `--threads 8` a few times is the same experiment with less resolution — which
-is how #485 found its 1, 2 and 0.
+### What a collision here would MEAN — and this is the part nobody has settled
 
-**What IS available at this site without leaving the budget.** At 8bpc a run of
-8 groups is 32 px = 32 B, inside the 60 B clearance; 16 groups is 64 B, outside
-it. At 16bpc a run of 4 groups is already 32 B and 8 groups is 64 B, outside it.
-So the evidence supports **`LF_BATCH_V = 8` at 8bpc only** — a 2x count cut on
-30.7% of the site, ~589 K registrations/frame at 4K, ~5.2% of the decoder's
-population, worth up to ~0.55 ms/frame at the 4.04 ns marginal rate measured in
-`docs/MUT_RECON_KERNELS.md` §11f. That is a quarter of what the 4 -> 32 lift
-promises, and it is the part the measurement supports.
+If a fused reservation overlaps a concurrent foreign write, the byte is one the
+run genuinely reads (slack-freedom guarantees that much). Two readings, and they
+have opposite consequences:
+
+* **True positive.** The unfused schedule reads group `g`'s tap window at the
+  moment it filters `g`; the fused schedule reads all 32 windows **up front**.
+  If the decoder's ordering only guarantees "edge `g`'s inputs are final before
+  `g` is filtered", reading edge `g+31`'s window early can read pre-write data
+  where the sequential schedule read post-write data — **different pixels**, in
+  an `unchecked` build with no panic to notice it. Then the fusion is not sound
+  and the tracker is right.
+* **False positive.** If the ordering guarantee is per-run or coarser, the early
+  read is harmless and the panic is spurious.
+
+**Which one holds is a question about the filter task's ordering contract, and
+neither PR #488 nor this map answers it.** It is answerable by reading
+`src/thread_task.rs`'s sbrow-filter dependency edges, and it should be answered
+BEFORE the next attempt, because the two readings call for opposite fixes.
+Either way the operational outcome is the same: the tracker panics and the
+decode fails.
+
+### What the budget DOES support at this site
+
+At 8bpc a run of 8 groups is 32 px = 32 B, inside the 60 B clearance; 16 groups
+is 64 B, outside it. At 16bpc 4 groups already reach 32 B and 8 groups reach
+64 B, outside it. So the evidence supports **`LF_BATCH_V = 8`, 8bpc only** — a 2x
+count cut on 30.7% of the site, ~589 K registrations/frame at 4K. PR #488's
+milliseconds arithmetic then applies to it in full: at the 4.04 ns/registration
+marginal rate that is ~2.4 ms/frame of CPU, **<= 0.5% of a t=8 frame**, which
+that PR measured as indistinguishable from zero on this box. **The honest joint
+conclusion of both rounds is that this site is not worth attacking on extent at
+all** — its prize is under the noise floor and its clearance is 60 bytes.
+
+### Caveats on the prediction, all of which I could not remove
+
+* The histogram is **not split H vs V**. The 30.7% scaling assumes the V
+  acquisitions carry the H acquisitions' gap distribution.
+* It is **direction-blind**: it records distance to the nearest concurrent write
+  without recording which side, so a one-sided widening collides with roughly
+  half the column.
+* `min_gap_mut = 60` is an **observed** minimum over 1406 frames.
+* The `rows` figure the standing check computes is `bytes.div_ceil(row_bytes)`,
+  which is alignment-blind: a 128-byte reservation on a 128-byte row reads as
+  one row even if it straddles two. On the corpus's small frames a 60-byte gap
+  can therefore be a *different row* rather than an adjacent column, and the map
+  cannot tell those apart from a 1-D byte range.
 
 ## The standing assertions
 
@@ -559,16 +590,16 @@ Two cautions, both measured:
 ### 2. `loopfilter.rs:710:14` — 3,835,042/frame, 33.6% (HIGH confidence, budget = 60 B)
 
 `COARSEN-60`. The decoder's largest site, and the tightest budget in the table.
-What the evidence supports is stated in the V-batch section above:
-**`LF_BATCH_V = 8` at 8bpc only** (32 B, inside 60), not 32 (128 B, outside it),
-and nothing at all at 16bpc where 4 groups already reach 32 B. Expected
-registration delta: -589 K/frame at 4K (-5.2% of the decoder's population),
-against -1.03 M/frame (-9.0%) for the 4 -> 32 lift that the budget refuses.
-
-The H pass (69.3%) cannot be helped by batching in any form: its rectangle grows
-in the ROW direction, so a fused run takes proportionally more per-row guards
-and the count is unchanged. That is arithmetic, not measurement, and the
-in-flight change's own census confirms it (`1.000x`).
+**Demoted to a non-candidate by the joint reading of this map and PR #488.** The
+extent the budget allows is `LF_BATCH_V = 8` at 8bpc only (32 B, inside 60), not
+32 (128 B, outside it), and nothing at 16bpc where 4 groups already reach 32 B —
+and that 2x cut is ~589 K registrations/frame at 4K, ~2.4 ms/frame of CPU at the
+4.04 ns marginal rate, which PR #488 measured as indistinguishable from zero
+(t=8 ratio 1.0005, p=1.000) for a change twice as large. **A 60-byte clearance
+and a prize under the noise floor: leave it.** The H pass (69.3%) cannot be
+helped by batching in any form — its rectangle grows in the ROW direction, so a
+fused run takes proportionally more per-row guards and the count is unchanged
+(the change's own census: `1.000x`).
 
 ### 3. `ctx.rs:99:27` — 2,534,988/frame, 22.2% (HIGH confidence, budget = ZERO)
 
