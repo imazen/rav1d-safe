@@ -228,6 +228,29 @@ pass was thrown away because a `cargo build` rewrote the musl binary the running
 container had exec'd. A bind-mounted mmap of a replaced file is not a trustworthy
 arm. Every arm after that runs a pinned copy cargo never writes.
 
+## 7b. Two LOCAL gate recipes that fail for reasons that predate this change
+
+Both verified to be in files this branch does not touch, and CI's own legs pass:
+
+* **`just clippy`** (`--no-default-features --features bitdepth_8,bitdepth_16
+  --all-targets -- -D warnings`, no `--release`) fails on this box because
+  `integration_decode`, `decode_cpu_levels` and `cancellation` carry intentional
+  `compile_error!("... require release mode")`, plus an unused import in
+  `tests/thread_cleanup_test.rs`, an unused `vectors_filmgrain` in
+  `tests/decode_md5_committed.rs` and a const-value assertion in
+  `examples/md5_inventory.rs`. None of those five files is touched here, and
+  CI's **Clippy** leg passes on this branch (50 s).
+* **`just api-doc-check`** fails with `rustdoc JSON build failed` because it
+  builds the surface over ALL manifest features including `asm`, whose build
+  script cannot run on this host. Same shape as the documented `just fmt`
+  problem in zenavif. Nothing in this change is public API — `lf_run_reach` and
+  `lf_group_wd` are `pub(crate)`/private and the only public-facing edit is a
+  doc comment on `CpuLevel::X86V2`.
+
+`cargo fmt --check` is clean, `cargo clippy --release --all-targets` emits 95
+warning/error lines — **the same count as the base source files, measured both
+ways on this box** — and `cargo test --lib` passes in DEBUG and release.
+
 ## 8. Coverage this does NOT have
 
 * **AVX-512 is unexecuted.** The guest has no AVX-512, so the `x16` V-kernel
