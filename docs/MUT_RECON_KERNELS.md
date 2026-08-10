@@ -483,6 +483,18 @@ multiply it saves. Re-confirmed at n=7 after reverting: 1.0060.
   `loopfilter.rs:140,182` — the whole-plane-guard shape named in §0 — were not
   audited or changed. The two film-grain groups are still skipped at
   `--threads 8`.
+* **The seam tax is reduced, not gone.** §12b: 1.0081 at 8bpc t=1
+  (p=0.007), 1.0126 / 1.0111 at 10bpc t=1 / t=2 (p=0.007 / 0.000). The brief
+  for this round set parity as the bar for shippability; it is met at 8bpc
+  t=2/4/8 and NOT met at the other three cells retested.
+* **No idle box, at any point.** All 288 rows of §12's sweep, all 120 of
+  §12b's, and every user-CPU table here were taken with at least one foreign
+  95-110% CPU process. A strict-idle-gate attempt returned zero rows in seven
+  minutes. Ratios only; the absolute ms/frame in §12 are ~10% inflated.
+* **`RAV1D_LF_DOUBLE`'s number is a marginal cost, not the prize** (§11f), and
+  the difference between the two was not measured — only bounded.
+* **The band's copy cost is not measured.** §11f sizes the budget; nothing here
+  spends against it.
 * Not measured, unchanged: x86_64 and wasm32 (compile-checked only), `asm` /
   `c-ffi` (compile-checked only), `unchecked`, t=16, any vector below 4K, and
   **any vector with loop restoration live** — the structural blindness of
@@ -614,8 +626,12 @@ extent for it.
 
 The switch is kept, behind `#[cfg(feature = "__probe_lf_hull")]`, as the
 reproduction. The default build compiles `lf_hull_reads()` to `false` and the
-branch folds out of `fill`; the default binary is byte-for-byte the same size
-it was before the feature existed (2,887,376).
+branch folds out of `fill`. Evidence that it folds rather than merely being
+cheap: the default binary's SIZE is unchanged at 2,887,376 bytes across the
+build before either probe feature existed, the build after the hull switch, and
+the build after the doubling switch — three edits to the decoder's hottest
+guard site, zero bytes of code. (Size, not a byte-for-byte compare: the
+binaries carry debug info that differs per build.)
 
 ### 11d. The clean ablation: the count IS worth something — you just cannot buy it with extent
 
@@ -860,9 +876,9 @@ alone; re-run `headoff` against `base` on an idle box.**
   folds to `false` in the default build): `--threads 1` 766 PASS / 768 keys /
   **0 differing**; `--threads 8` 753 PASS / 755 keys / **0 differing**; frame
   md5 `a00c11f454328023c58af14d55544cff` at t=1 and t=8 with the band both
-  armed and disarmed. The default binary is the same 2,887,376 bytes it was
-  before either probe feature existed, which is the evidence that the branches
-  fold rather than merely being cheap.
+  armed and disarmed. The default binary's SIZE is unchanged at 2,887,376 bytes
+  across all three probe-adding commits, which is the evidence that the
+  branches fold rather than merely being cheap.
 
 ### Memory, re-measured on this branch
 
