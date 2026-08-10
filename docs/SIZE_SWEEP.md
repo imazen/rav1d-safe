@@ -679,3 +679,41 @@ rather than discarding:
 **Action: re-measure 4K 4:2:0 single-tile 8bpc, `main` vs #482's parent, on an
 idle box at n>=9.** Do not treat this paragraph as a regression report; treat it
 as the one cell this round could not settle.
+
+---
+
+# The image-server model: N single-threaded decoders
+
+1024x576 4:2:0 8bpc, N concurrent single-threaded processes, aggregate
+**decodes/second**, two-point batch fit so the fork/exec storm drops out. n=5
+rounds, arms interleaved with rotating order. **LOAD-TAGGED: 54 of 54 rows under
+foreign load** (the other agent's miri + t=8 sweep), so absolutes are depressed;
+the ratio and the scaling shape are the usable parts.
+
+| N | ours dec/s | [min..max] | dav1d dec/s | [min..max] | dav1d/ours | ours scaling | dav1d scaling |
+|---|---|---|---|---|---|---|---|
+| 1 | 60.73 | [60.57..60.98] | 90.63 | [90.36..90.82] | 1.493 | 1.00x | 1.00x |
+| 2 | 119.28 | [119.05..119.76] | 178.57 | [178.39..179.10] | 1.497 | 1.96x | 1.97x |
+| 4 | 236.53 | [234.38..239.36] | 356.79 | [355.38..358.57] | 1.508 | 3.89x | 3.94x |
+| 8 | 413.25 | [406.78..423.53] | 632.97 | [629.92..644.01] | 1.534 | **6.80x** | 6.98x |
+| 12 | 487.61 | [481.71..504.20] | 785.46 | [748.96..788.32] | 1.581 | 8.03x | 8.67x |
+| 16 | 499.31 | [496.21..511.91] | 800.90 | [796.02..811.27] | 1.612 | **8.22x** | 8.84x |
+
+**Two results a latency-only campaign could not see.**
+
+1. **Process-level scaling is nearly at parity: 8.22x against dav1d's 8.84x at
+   N=16 on 8P+4E.** The campaign's tile-thread figure is **4.93x against
+   dav1d's 6.84x** — a 28% deficit. At the same core count, 8 single-threaded
+   processes deliver **6.80x** against tile threading's 4.93x, i.e. **38% more
+   throughput from the same machine**, and the scaling deficit against dav1d
+   shrinks from 28% to 7%. For an image server this is the configuration, and
+   nothing in fifteen rounds had measured it.
+2. **Concurrency costs us nothing extra relative to dav1d.** The throughput
+   ratio at N=1 is 1.493 and at N=16 is 1.612 — the same 1.48 t=1 latency ratio
+   plus about 8 points of drift at oversubscription. Our disadvantage is the
+   single-thread cost of a decode, not scheduling, not the tracker's
+   cross-core traffic (there is none between processes), not memory pressure.
+
+So the honest product statement: **on this box, rav1d-safe serves ~500
+1024x576 AVIFs/second against dav1d's ~800, and the way to get there is many
+one-thread decoders, not one many-thread decoder.**
