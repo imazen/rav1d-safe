@@ -106,6 +106,13 @@ pub mod src {
     pub(crate) mod c_arc;
     #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub(crate) mod c_box;
+    // `pub` ONLY under the measurement probe, so `examples/x86_tier_census.rs`
+    // can read `cpu::tier_census`. A default build keeps it `pub(crate)` — the
+    // public API is unchanged (`docs/public-api/` snapshots are taken without
+    // probe features).
+    #[cfg(feature = "__probe_x86tier")]
+    pub mod cpu;
+    #[cfg(not(feature = "__probe_x86tier"))]
     pub(crate) mod cpu;
     pub(crate) mod disjoint_mut;
     mod ffi_safe;
