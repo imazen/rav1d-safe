@@ -488,3 +488,78 @@ superblock still gets 32-point transforms and rectangular shapes taller than 16,
 which `hbd_supported(w, h) = w <= 16 && h <= 16` sends to the reference. That is
 the known unfinished port (issue #455 open item 5) showing up as the #1 line
 item at the small end as well as inside the 4K number.
+
+---
+
+# The ranked, actionable map
+
+Ordered by ms/frame recoverable at the sizes a still-image product actually
+serves. Everything here is measured on this branch's data unless marked
+INFERENCE.
+
+### 1. The 0.6-2.4 MP band, 8bpc — the largest miss, and it is new
+
+1.48x and 1.56x against dav1d, versus 1.31x at 4K and 1.14x at 256x144. In
+absolute terms at 1024x576 4:2:0 that is 5.26 ms/frame over dav1d (16.17 vs
+10.92). **Fifteen rounds of gap work were measured at the one size where the
+ratio happens to be near its minimum for large frames.** The non-entropy half
+is where it lives: 11.47 ms/MP against 4.56 at 512x288 and 7.88 at 4K, humped
+in every per-block family at once (tracker 3.0x, recon 2.5x, ipred 3.1x, libc
+3.6x from 512x288). Next step is a `probe-sites` registration census per size —
+this round did not run one, and it is the measurement that would turn the
+per-block inference into a count.
+
+### 2. 16bpc inverse transforms — 40% of the whole 10bpc penalty
+
++12.88 ms/frame at 4K, +0.93 at 1024x576, and 50% of the tiny cell's penalty.
+Two distinct gaps, both in `src/safe_simd/itx_arm_hbd.rs`:
+* **`MAXDIM = 16`** — everything above 16x16, plus every rectangular shape with
+  a side above 16, plus `WHT_WHT`, runs `src/itx_1d.rs`'s **scalar** reference.
+  Visible by name: `inv_dct32_1d_internal_c`, `inv_dct16_1d_internal_c`,
+  `inv_dct8_1d_internal_c` all go 0 -> nonzero at 10bpc.
+* **4 lanes where it is vectorised at all** — `int32x4_t` against 8bpc's
+  `int16x8_t`. That is structural (the spec's clips do not fit in 16 bits at
+  10bpc) and is not a bug, but it means even a complete port lands at half
+  8bpc's lane throughput.
+This is issue #455's open item 5, and it is the single largest named line item
+in this round.
+
+### 3. `<itx::itxfm::Fn>::call` memsets a scratch buffer per call, 16bpc only
+
+267 of 377 `_platform_memset` samples at 1024x576 10bpc come from there; at
+8bpc itx contributes **zero**. Worth 2.04 ms/frame at 4K. A per-call clear of a
+buffer whose live region the kernel is about to overwrite anyway is the classic
+shape of a removable memset.
+
+### 4. `cdef_filter_block_16bpc_inner` memmoves; its 8bpc twin does not
+
+381 of 549 `_platform_memmove` samples at 1024x576 10bpc. Worth 1.36 ms/frame
+at 4K. Note the same kernel is otherwise a **win** — 16bpc CDEF is faster than
+8bpc CDEF (3.06 -> 2.62 ms/frame at 4K), so this is a wart on a good port.
+
+### 5. The tracker's depth sensitivity
+
++5.48 ms/frame at 4K going 8 -> 10 bpc (19.69 -> 25.16), +0.60 at 1024x576.
+A 10-bit plane is 2x the bytes and 2x the stride, so every strided registration
+covers more blocks and every guard spans more bytes at the same `BLOCK_SHIFT`.
+Issue #455's closing comment already named "key on pixel stride or `BD::BPC`
+rather than buffer length" as an unattempted lever; this round prices what it
+is competing for.
+
+### 6. Per-frame fixed cost — real, small, and NOT what it looked like
+
+~1.8 us/frame of genuine setup (`from_parts`, `gen_picture`,
+`rav1d_decode_frame_init_cdf`, `cdf_thread_copy`, one header `Arc`). Worth 4%
+of a 64x36 frame and nothing above it. **Do not spend time here.** The 7.9 us
+affine intercept that first suggested otherwise is mostly frame-edge work, not
+construction.
+
+## What this round says NOT to do
+
+* **Do not port another kernel at 4K t=1 to close the ratio there.** 4K 8bpc is
+  1.311 and is the second-best cell on the ladder; the campaign's own closing
+  measurement already showed zeroing every pixel kernel leaves 1.28x.
+* **Do not chase the u16 cast path.** Zero leaf samples at either depth at every
+  profiled size. It is finished.
+* **Do not treat 16bpc CDEF as a target.** It is already faster than the 8bpc
+  kernel; only its memmove is worth touching.
