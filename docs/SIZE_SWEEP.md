@@ -169,3 +169,99 @@ That table is also an instrument cross-check: its **dav1d** column reproduces
 this round's to under 1% four days apart (256x144 0.770 vs 0.765; 1024x576
 15.431 vs 15.392; 4K 1-tile 246.514 vs 246.179), which is worth more confidence
 than any single sweep's internal spread.
+
+---
+
+# Q1 — the answer is not the one the question expected
+
+n=4 complete rounds, **0 of 220 rows under foreign load**, dav1d 1.5.4 in the
+same interleaved sweep, t=1. A fifth round was started and dropped: a second
+agent began its own timed campaign on the box without taking `measlock`, and
+partial rounds are excluded automatically so every cell in the table has the
+same n. Full tables: `benchmarks/size_sweep_report_2026-08-10.txt`.
+
+## Our ratio to dav1d does NOT get worse as images get smaller
+
+YUV420, t=1, ratio ours/dav1d, with each size's ratio band checked against the
+previous size's:
+
+| size | Mpx | 8bpc | band | 10bpc | band |
+|---|---|---|---|---|---|
+| 64x36 | 0.0023 | 1.312 | [1.301..1.322] | **1.648** | [1.647..1.655] |
+| 256x144 | 0.0369 | **1.144** | [1.140..1.153] | 1.288 | [1.284..1.298] |
+| 512x288 | 0.1475 | **1.165** | [1.147..1.168] | **1.266** | [1.262..1.269] |
+| 1024x576 | 0.5898 | 1.479 | [1.454..1.487] | 1.625 | [1.605..1.668] |
+| 2048x1152 | 2.3593 | **1.562** | [1.542..1.605] | **1.739** | [1.707..1.751] |
+| 3840x2160 | 8.2944 | 1.311 | [1.309..1.314] | 1.459 | [1.451..1.469] |
+
+Every step is disjoint from the previous size except 256->512 at 8bpc, and the
+YUV444 ladder has the same shape (1.319 / 1.131 / 1.150 / 1.542 / 1.459 / 1.298
+at 8bpc). **The curve is a U with a hump in the middle, not a slope.**
+
+Three things follow, and the middle one is the finding:
+
+1. **256x144 and 512x288 are our BEST cells in the entire campaign** — 1.13 to
+   1.17, comfortably under the ~1.30x bar that has been met at exactly one 4K
+   cell in fifteen rounds. Small AVIFs are not worse off. That worry is retired
+   for 8bpc.
+2. **The worst cells are 0.59 and 2.36 MP — 1.48 and 1.56 at 8bpc, 1.63 and
+   1.74 at 10bpc — and that is the size range a web image server actually
+   serves.** 4K, where every gap number in the campaign was taken, is our
+   *second-best* cell at 1.31. The campaign has not been optimising the wrong
+   END; it has been optimising the wrong SIZE, by 15 to 27 ratio points.
+3. **The exception is the 10bpc tiny cell**, 1.648 (4:2:0) and 1.728 (4:4:4) —
+   the two worst ratios in the whole 24-cell matrix. A 10-bit thumbnail IS
+   worse off than the 4K numbers suggest.
+
+## alpha and beta, reported separately
+
+`ms/frame` versus pixels is **not** a straight line for either decoder, so the
+standard OLS is misspecified and its intercept is an artifact — it hands back
+**alpha = -587 us/frame for dav1d**, which is not a physical quantity. The
+ms/MP column is the tell (YUV420 8bpc, ours/dav1d):
+
+```
+2 kpx 19.7/15.0   37 kpx 16.5/14.4   147 kpx 19.3/16.6
+590 kpx 27.4/18.5  2.36 Mpx 26.3/16.9  8.29 Mpx 24.0/18.3
+```
+
+Both curve; ours curves more. The intercept therefore has to come from an
+affine fit through the two SMALLEST cells, which assumes nothing about the rest
+of the ladder:
+
+| | alpha (us/frame) | beta (ms/MP) | alpha as % of the 64x36 frame |
+|---|---|---|---|
+| ours, 420 8bpc | **+7.9** | 16.3 | 17.4% |
+| dav1d, 420 8bpc | **+1.5** | 14.4 | 4.3% |
+| ours, 420 10bpc | **+17.1** | 18.6 | 28.5% |
+| dav1d, 420 10bpc | **+2.4** | 14.7 | 6.6% |
+| ours, 444 8bpc | +3.2 | 23.4 | 5.5% |
+| dav1d, 444 8bpc | -4.9 | 20.9 | (indistinguishable from 0) |
+| ours, 444 10bpc | +10.8 | 28.3 | 14.2% |
+| dav1d, 444 10bpc | -5.3 | 21.4 | (indistinguishable from 0) |
+
+**Our per-frame fixed cost is 6 to 16 us larger than dav1d's.** dav1d's own is
+indistinguishable from zero at this resolution of measurement (two of four
+ladders fit it slightly negative). So the ratio of the alphas is large, but the
+DIFFERENCE is 6-16 us — which is 17-29% of a 64x36 frame, ~1-2% of a 256x144
+frame, and under 0.3% of anything from 512x288 up.
+
+**Verdict on the question as posed:** our alpha is bigger than dav1d's, and it
+matters only below about 0.04 MP. It is not what makes small AVIFs slow,
+because small AVIFs are not slow — the 0.6-2.4 MP band is. The intercept worry
+is retired above thumbnail size and quantified below it.
+
+## Two harness hazards worth a line in the brief
+
+* **Never edit a shell script while it is running.** Bash reads a script
+  incrementally and keeps a file offset; an in-place edit that changes byte
+  lengths makes it resume parsing at the wrong place. I added a load-recording
+  line to `depth_profile.sh` mid-run and reverted it within the minute to
+  restore the original byte layout. The recorder now lives in a separate
+  process (`~/tmp/szsweep/loadwatch.sh`) that watches from outside.
+* **A "disjoint bands" tick has to compare the arms the CLAIM compares.** The
+  first version of the size table printed ours-vs-dav1d disjointness, which is
+  trivially true for two different decoders and could never have failed. The
+  claim the table makes is about how the RATIO moves with size, so it now
+  compares each size's ratio band with the previous size's — and that check
+  does fire (256->512 at 8bpc reads OVERLAP).
