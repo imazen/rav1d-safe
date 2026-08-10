@@ -467,9 +467,18 @@ branch touches is `src/safe_simd/cdef_arm.rs`.
   all 11 are `_dev` examples/benches/tests plus one `src/safe_simd/mod.rs`
   cfg-dead site, none in the changed file.
 
-Still to run at hand-off, listed so nobody assumes they passed: Miri both
-models (in flight), `mt_stress` 1/2/4/8/16, `multi_decoder_pressure.sh`,
-`cargo test --lib` in the DEBUG profile, and CI on the branch.
+* **Miri, both models**, `cargo +nightly miri test -p rav1d-disjoint-mut
+  --no-fail-fast`, each target in isolation: Stacked Borrows **9 targets, 61
+  passed, 0 failed, rc=0, no UB**. Tree Borrows **still running at hand-off** —
+  29 passed / 0 failed / 0 UB over the first 5 targets, with `soundness` (992 s
+  under Stacked) outstanding. Do not read this as green; it is unfinished.
+* `mt_stress` (which loops 1/2/4/8/16 internally): **ok**.
+  `scripts/perf/multi_decoder_pressure.sh` 12 concurrent decoders x 3 iters over
+  the 10bpc and screen vectors: **all md5s match the serial reference**.
+* `cargo test --lib` in the **DEBUG** profile: **75 passed, 0 failed**.
+* **CI green on the code-bearing commit**: run 31387297878 (`be289f4`..),
+  **21 of 21 jobs success**, including both Conformance (decode permutations)
+  legs and every per-platform build.
 
 ## 8. The ranked next step, from this round's numbers
 
