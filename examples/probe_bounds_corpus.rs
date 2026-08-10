@@ -245,4 +245,6 @@ fn main() {
     print!("{}", rav1d_disjoint_mut::site_probe::report(1));
     #[cfg(feature = "__probe_bounds")]
     print!("{}", rav1d_disjoint_mut::bounds_probe::report(1));
+    #[cfg(feature = "__probe_bounds")]
+    print!("{}", rav1d_disjoint_mut::bounds_probe::report_rect());
 }

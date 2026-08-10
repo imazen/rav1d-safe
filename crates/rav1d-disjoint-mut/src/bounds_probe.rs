@@ -1040,6 +1040,821 @@ pub fn release(tk: Ticket) {
 }
 
 // =============================================================================
+// STRIDED-RECT counterfactual: would a 2-D record be sound, and would it pay?
+// =============================================================================
+//
+// The question this answers is the one the March-2026 strided tracker
+// (`884b4b5`, reverted by `424cbbb` the next day on an ARGUMENT) was never
+// measured against, and which #472's per-row reference view re-opened:
+//
+// > If ONE registration covered an `h x w` rectangle exactly — a 2-D record,
+// > with per-row references so both sides are exact (§6 of
+// > `docs/OWNERSHIP_MODELS.md`) — would it ever REJECT a foreign record that
+// > the shipped `h` per-row registrations permit?
+//
+// A 2-D record only differs from `h` 1-D records in the inter-row gaps. So the
+// decisive event is: a foreign record that intersects the rectangle's HULL but
+// NOT the rectangle itself. If the overlap test is exact, that pair is
+// permitted and the scheme is sound; if the test falls back to the hull (as
+// `884b4b5` did whenever the two strides differed), that pair PANICS and the
+// scheme is a decode failure. Either way the count of such pairs — split by
+// whether the counterparty was a WRITE — is what decides it, and it is a
+// measurement, not an argument.
+//
+// This evaluator REGISTERS NOTHING and holds no guard. It is called by the
+// strided helper immediately before that helper takes its shipped per-row
+// guards, so the live set it scans is the set the counterfactual registration
+// would itself have seen. Behaviour is unchanged.
+
+/// Counters, indexed the same way as [`c`]/[`p`].
+pub mod r {
+    /// Counterfactual evaluations.
+    pub const N: usize = 0;
+    /// Evaluations that had at least one co-live foreign record.
+    pub const N_CONC: usize = 1;
+    /// Co-live foreign records seen (not evaluations).
+    pub const N_PEERS: usize = 2;
+    /// Peers intersecting the HULL — what a 1-D test over the hull rejects.
+    pub const N_HULL: usize = 3;
+    /// Peers intersecting the exact RECTANGLE — what a correct 2-D test rejects.
+    pub const N_RECT: usize = 4;
+    /// **THE ANSWER, read direction.** Peers in the hull but NOT in the
+    /// rectangle: the inter-row-gap traffic a 2-D record must permit.
+    pub const N_GAP: usize = 5;
+    /// **THE ANSWER.** As [`N_GAP`], and the peer was a MUTABLE reservation —
+    /// i.e. a concurrently-live foreign WRITE inside the strided read's gap.
+    pub const N_GAP_MUT: usize = 6;
+    /// Gap peers whose exactness needed the general (different-stride) test.
+    pub const N_GAP_XSTRIDE: usize = 7;
+    /// Rows in the evaluated rectangle, summed (for a mean).
+    pub const ROWS_SUM: usize = 8;
+    /// Max rows seen — bounds the row-iteration cap's validity.
+    pub const ROWS_MAX: usize = 9;
+    /// Distinct 4096-element blocks the HULL spans, summed.
+    pub const HULL_BLOCKS_SUM: usize = 10;
+    /// Distinct blocks the ROW SET spans, summed (a shard-aware 2-D record's
+    /// registration footprint — the cost a 2-D scheme cannot avoid).
+    pub const ROW_BLOCKS_SUM: usize = 11;
+    /// Evaluations whose hull spans more than `MAX_SHARDS_PER_BORROW` blocks,
+    /// hence would promote to the tracker's WIDE path (all active shards).
+    pub const N_HULL_WIDE: usize = 12;
+    /// Evaluations whose ROW SET spans more than `MAX_SHARDS_PER_BORROW`
+    /// blocks — a shard-aware 2-D record goes wide too.
+    pub const N_ROW_WIDE: usize = 13;
+    /// Distinct SHARDS the row set maps to, summed. This is the cost a 2-D
+    /// record pays per registration; the shipped per-row scheme pays 1 each.
+    pub const ROW_SHARDS_SUM: usize = 15;
+    /// Bitmask of the block shifts observed at this site.
+    pub const SHIFT_SEEN: usize = 16;
+    /// Evaluations where every row sits in ONE block, i.e. the shipped per-row
+    /// scheme took `rows` single-shard registrations.
+    pub const N_PERROW_NARROW: usize = 14;
+    pub const NCTR: usize = 17;
+}
+
+/// This instance's REAL shard geometry, handed in by the tracker.
+///
+/// It is NOT a mirrored constant. The shipped block shift is
+/// `block_shift_for(len)` — 12 for a serial or single-tile decode, 14 for a
+/// multi-tile 4K 8-bit luma plane, 15 at 10-bit — so the number of blocks a
+/// hull spans, and hence whether it promotes to the all-shards wide path,
+/// depends on the configuration. An earlier draft of this probe mirrored 12 and
+/// would have reported "100% wide" for a cell that is not wide at all.
+#[derive(Clone, Copy)]
+pub struct ShardGeom {
+    pub shift: u32,
+    pub mask: usize,
+    pub max_shards: usize,
+    pub max_blocks: usize,
+}
+
+static RECT_AGG: [[[AtomicU64; r::NCTR]; NSITES]; MAX_TH] =
+    [const { [const { [const { AtomicU64::new(0) }; r::NCTR] }; NSITES] }; MAX_TH];
+
+/// Gap events captured in full, so the report can name the SITE PAIR rather
+/// than a count (a count cannot be set-diffed).
+const NGAPS: usize = 512;
+static GAPS: [[AtomicU64; 10]; NGAPS] = [const { [const { AtomicU64::new(0) }; 10] }; NGAPS];
+static GAPS_N: AtomicUsize = AtomicUsize::new(0);
+
+/// Rectangle rows iterated before the exact test gives up and answers
+/// conservatively. MUST stay 0 or the `N_GAP` counts are upper bounds.
+pub static RECT_ROWS_CAPPED: AtomicU64 = AtomicU64::new(0);
+const RECT_ROW_CAP: u64 = 512;
+
+/// An `h x w` rectangle at `lo`, rows `|stride|` apart.
+#[derive(Clone, Copy)]
+struct Rect {
+    lo: u64,
+    w: u64,
+    rows: u64,
+    stride: u64,
+}
+
+impl Rect {
+    #[inline]
+    fn hull(&self) -> (u64, u64) {
+        (self.lo, self.lo + (self.rows - 1) * self.stride + self.w)
+    }
+
+    /// Exact: does any row of this rectangle intersect `[b0, b1)`?
+    ///
+    /// Closed form, no iteration: the rows that can reach `[b0, b1)` are those
+    /// whose index lies in a contiguous range, and only the endpoints need
+    /// testing.
+    #[inline]
+    fn hits_interval(&self, b0: u64, b1: u64) -> bool {
+        if b0 >= b1 || self.rows == 0 || self.w == 0 {
+            return false;
+        }
+        let s = self.stride.max(1);
+        // Row i covers [lo + i*s, lo + i*s + w). It intersects [b0,b1) iff
+        // lo + i*s < b1  &&  b0 < lo + i*s + w.
+        let i_hi = if b1 > self.lo {
+            ((b1 - 1 - self.lo) / s).min(self.rows - 1)
+        } else {
+            return false;
+        };
+        let i_lo = if b0 + 1 > self.lo + self.w {
+            (b0 + 1 - self.lo - self.w).div_ceil(s)
+        } else {
+            0
+        };
+        i_lo <= i_hi
+    }
+
+    /// A rectangle whose rows are at least as wide as its stride has NO gaps:
+    /// consecutive rows touch or overlap, so its byte set is exactly its hull.
+    /// (Degenerate for a picture — `w <= stride` always holds there — but the
+    /// oracle grid covers it and an inexact predicate here is worthless.)
+    #[inline]
+    fn contiguous(&self) -> bool {
+        self.rows <= 1 || self.w >= self.stride.max(1)
+    }
+
+    /// A row that starts late enough in its stride period spills into the next
+    /// one, so the rectangle occupies two column ranges rather than one and the
+    /// closed-form column test does not apply. `w < stride` is NOT enough to
+    /// rule this out — the oracle caught exactly that mistake.
+    #[inline]
+    fn wraps(&self) -> bool {
+        let s = self.stride.max(1);
+        self.rows > 1 && (self.lo % s) + self.w > s
+    }
+
+    /// Exact: does this rectangle intersect `o`?
+    ///
+    /// Returns `(hit, needed_general_path)`. Three cases, all exact:
+    ///
+    /// * either side gap-free -> rectangle-vs-interval, closed form;
+    /// * equal strides, both gapped -> the column/row product test;
+    /// * different strides -> iterate this rectangle's rows as intervals,
+    ///   bounded by [`RECT_ROW_CAP`].
+    #[inline]
+    fn hits_rect(&self, o: &Rect) -> (bool, bool) {
+        if o.contiguous() {
+            let (b0, b1) = o.hull();
+            return (self.hits_interval(b0, b1), false);
+        }
+        if self.contiguous() {
+            let (a0, a1) = self.hull();
+            return (o.hits_interval(a0, a1), false);
+        }
+        // Both gapped and neither wrapping: one column range per side.
+        if self.stride == o.stride && !self.wraps() && !o.wraps() {
+            let s = self.stride;
+            let a_col = self.lo % s;
+            let b_col = o.lo % s;
+            if !(a_col < b_col + o.w && b_col < a_col + self.w) {
+                return (false, false);
+            }
+            let a_r0 = self.lo / s;
+            let b_r0 = o.lo / s;
+            return (
+                a_r0 <= b_r0 + o.rows - 1 && b_r0 <= a_r0 + self.rows - 1,
+                false,
+            );
+        }
+        let xstride = self.stride != o.stride;
+        if self.rows > RECT_ROW_CAP {
+            RECT_ROWS_CAPPED.fetch_add(1, Relaxed);
+            return (true, xstride);
+        }
+        for i in 0..self.rows {
+            let a0 = self.lo + i * self.stride;
+            if o.hits_interval(a0, a0 + self.w) {
+                return (true, xstride);
+            }
+        }
+        (false, xstride)
+    }
+
+    /// Distinct blocks the ROW SET touches, at the instance's real shift.
+    /// Rows ascend, so a run-length dedup is exact.
+    #[inline]
+    fn row_blocks(&self, g: &ShardGeom) -> u64 {
+        let s = self.stride.max(1);
+        let mut n = 0u64;
+        let mut last = u64::MAX;
+        for i in 0..self.rows.min(RECT_ROW_CAP) {
+            let a0 = (self.lo + i * s) >> g.shift;
+            let a1 = (self.lo + i * s + self.w - 1) >> g.shift;
+            for b in a0..=a1 {
+                if b != last {
+                    n += 1;
+                    last = b;
+                }
+            }
+        }
+        n
+    }
+
+    /// Distinct SHARDS the row set maps to, by the tracker's own `shard_of`,
+    /// capped at `max_shards + 1` (past that the tracker goes wide anyway).
+    #[inline]
+    fn row_shards(&self, g: &ShardGeom) -> u64 {
+        let s = self.stride.max(1);
+        let mut set = [usize::MAX; 8];
+        let mut n = 0usize;
+        for i in 0..self.rows.min(RECT_ROW_CAP) {
+            let a0 = (self.lo + i * s) >> g.shift;
+            let a1 = (self.lo + i * s + self.w - 1) >> g.shift;
+            for b in a0..=a1 {
+                let sh = crate::checked::BorrowTracker::probe_shard_of(b as usize, g.mask);
+                if set[..n].contains(&sh) {
+                    continue;
+                }
+                if n == set.len() {
+                    return set.len() as u64 + 1;
+                }
+                set[n] = sh;
+                n += 1;
+            }
+        }
+        n as u64
+    }
+}
+
+/// Evaluate the strided-rectangle counterfactual for the acquisition the caller
+/// is ABOUT to make as `rows` per-row guards. Registers nothing.
+///
+/// `lo`/`w`/`stride` are in ELEMENT offsets of the instance identified by
+/// `base`, exactly as the tracker would register them. `stride` may be
+/// negative; the rectangle is normalised to its lowest row.
+pub fn eval_rect(
+    loc: &'static Location<'static>,
+    base: usize,
+    is_mut: bool,
+    lo: usize,
+    w: usize,
+    rows: usize,
+    stride: isize,
+    geom: ShardGeom,
+) {
+    if rows == 0 || w == 0 {
+        return;
+    }
+    let t = tid();
+    if t >= MAX_TH {
+        return;
+    }
+    let Some(site) = site_id(loc) else { return };
+    let inst = inst_id(base);
+    if inst == u32::MAX {
+        return;
+    }
+    let astride = stride.unsigned_abs() as u64;
+    let base_lo = if stride >= 0 {
+        lo as u64
+    } else {
+        (lo as u64).saturating_sub((rows as u64 - 1) * astride)
+    };
+    let me = Rect {
+        lo: base_lo,
+        w: w as u64,
+        rows: rows as u64,
+        stride: astride,
+    };
+    let (h0, h1) = me.hull();
+
+    let epoch = EPOCH.fetch_add(1, Relaxed);
+    fence(core::sync::atomic::Ordering::SeqCst);
+
+    let mut n_peers = 0u64;
+    let mut n_hull = 0u64;
+    let mut n_rect = 0u64;
+    let mut n_gap = 0u64;
+    let mut n_gap_mut = 0u64;
+    let mut n_gap_x = 0u64;
+
+    let mut inuse = SLOTS_INUSE.load(Relaxed) & !(1u64 << t);
+    while inuse != 0 {
+        let ft = inuse.trailing_zeros() as usize;
+        inuse &= inuse - 1;
+        let fmask = LIVE[ft].mask.load(Acquire);
+        if fmask == 0 {
+            continue;
+        }
+        let mut bits = fmask;
+        while bits != 0 {
+            let b = bits.trailing_zeros() as usize;
+            bits &= bits - 1;
+            let cell = &LIVE[ft].slots[b];
+            let v0 = cell.ver.load(Acquire);
+            if v0 & 1 != 0 {
+                continue;
+            }
+            if cell.inst.load(Relaxed) != inst {
+                continue;
+            }
+            let f_site = cell.site.load(Relaxed);
+            let f_mut = cell.ismut.load(Relaxed) != 0;
+            let f_start = cell.start.load(Relaxed);
+            let f_end = cell.end.load(Relaxed);
+            let f_fp = read_fp(cell, f_start, f_end);
+            let f_rel = cell.rel.load(Acquire);
+            fence(Acquire);
+            if cell.ver.load(Acquire) != v0 {
+                LOST_SCAN.fetch_add(1, Relaxed);
+                continue;
+            }
+            if f_rel != 0 && f_rel < epoch {
+                continue;
+            }
+            n_peers += 1;
+
+            // A 1-D test over the hull — what a hull-extent registration (#475,
+            // #485, `lf_hull_reads`) rejects.
+            if !overlaps(h0, h1, f_start, f_end) {
+                continue;
+            }
+            n_hull += 1;
+
+            // The exact 2-D answer. The foreign side is its DECLARED rectangle
+            // where it has one and its reservation interval otherwise — the
+            // reservation is a superset of the bytes it touches, so using it
+            // can over-predict a conflict and never miss one.
+            let (hit, xstride) = if f_fp.declared && f_fp.rows > 0 && f_fp.w > 0 {
+                let fs = f_fp.stride.unsigned_abs();
+                let f_lo = if f_fp.stride >= 0 {
+                    f_fp.lo
+                } else {
+                    f_fp.lo.saturating_sub((f_fp.rows - 1) * fs)
+                };
+                me.hits_rect(&Rect {
+                    lo: f_lo,
+                    w: f_fp.w,
+                    rows: f_fp.rows,
+                    stride: fs,
+                })
+            } else {
+                (me.hits_interval(f_start, f_end), false)
+            };
+            if hit {
+                n_rect += 1;
+                continue;
+            }
+            // Hull yes, rectangle no: inter-row-gap traffic.
+            n_gap += 1;
+            if xstride {
+                n_gap_x += 1;
+            }
+            if f_mut {
+                n_gap_mut += 1;
+            }
+            let n = GAPS_N.fetch_add(1, Relaxed);
+            if n < NGAPS {
+                let g = &GAPS[n];
+                g[0].store(site as u64, Relaxed);
+                g[1].store(f_site as u64, Relaxed);
+                g[2].store(base_lo, Relaxed);
+                g[3].store(me.w, Relaxed);
+                g[4].store(me.rows, Relaxed);
+                g[5].store(me.stride, Relaxed);
+                g[6].store(f_start, Relaxed);
+                g[7].store(f_end, Relaxed);
+                g[8].store(u64::from(f_mut) | (u64::from(is_mut) << 1), Relaxed);
+                g[9].store(u64::from(xstride), Relaxed);
+            }
+        }
+    }
+
+    let hull_blocks = ((h1 - 1) >> geom.shift) - (h0 >> geom.shift) + 1;
+    let row_blocks = me.row_blocks(&geom);
+    let row_shards = me.row_shards(&geom);
+    let per_row_narrow = (0..me.rows.min(RECT_ROW_CAP)).all(|i| {
+        let a0 = me.lo + i * me.stride.max(1);
+        (a0 >> geom.shift) == ((a0 + me.w - 1) >> geom.shift)
+    });
+
+    let a = &RECT_AGG[t][site as usize];
+    a[r::N].fetch_add(1, Relaxed);
+    a[r::N_PEERS].fetch_add(n_peers, Relaxed);
+    if n_peers > 0 {
+        a[r::N_CONC].fetch_add(1, Relaxed);
+    }
+    a[r::N_HULL].fetch_add(n_hull, Relaxed);
+    a[r::N_RECT].fetch_add(n_rect, Relaxed);
+    a[r::N_GAP].fetch_add(n_gap, Relaxed);
+    a[r::N_GAP_MUT].fetch_add(n_gap_mut, Relaxed);
+    a[r::N_GAP_XSTRIDE].fetch_add(n_gap_x, Relaxed);
+    a[r::ROWS_SUM].fetch_add(me.rows, Relaxed);
+    agg_min_neg(&a[r::ROWS_MAX], me.rows);
+    a[r::HULL_BLOCKS_SUM].fetch_add(hull_blocks, Relaxed);
+    a[r::ROW_BLOCKS_SUM].fetch_add(row_blocks, Relaxed);
+    a[r::ROW_SHARDS_SUM].fetch_add(row_shards, Relaxed);
+    a[r::SHIFT_SEEN].fetch_or(1u64 << (geom.shift.min(63)), Relaxed);
+    // The tracker promotes to the WIDE path (every ACTIVE shard) when a borrow
+    // touches more than `max_shards` distinct shards or more than `max_blocks`
+    // blocks. Priced with the instance's own geometry, not a mirrored constant.
+    if hull_blocks as usize > geom.max_blocks || row_shards as usize > geom.max_shards {
+        a[r::N_HULL_WIDE].fetch_add(1, Relaxed);
+    }
+    if row_shards as usize > geom.max_shards {
+        a[r::N_ROW_WIDE].fetch_add(1, Relaxed);
+    }
+    if per_row_narrow {
+        a[r::N_PERROW_NARROW].fetch_add(1, Relaxed);
+    }
+}
+
+/// Running maximum.
+#[inline]
+fn agg_min_neg(cell: &AtomicU64, v: u64) {
+    let mut cur = cell.load(Relaxed);
+    while v > cur {
+        match cell.compare_exchange_weak(cur, v, Relaxed, Relaxed) {
+            Ok(_) => return,
+            Err(c) => cur = c,
+        }
+    }
+}
+
+/// The strided-rectangle counterfactual, per site plus the named gap pairs.
+pub fn report_rect() -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "#rectsite\tn\tn_conc\tpeers\thull_ovl\trect_ovl\tgap\tgap_mut\tgap_xstride\trows_mean\trows_max\thull_blocks_mean\trow_blocks_mean\trow_shards_mean\tpct_hull_wide\tpct_row_wide\tpct_perrow_narrow\tshifts\twhere"
+    );
+    let mut any = false;
+    for s in 0..NSITES {
+        if SITE_KEY[s].load(Relaxed) == 0 {
+            continue;
+        }
+        let mut c = [0u64; r::NCTR];
+        for t in 0..MAX_TH {
+            for i in 0..r::NCTR {
+                if i == r::ROWS_MAX {
+                    c[i] = c[i].max(RECT_AGG[t][s][i].load(Relaxed));
+                } else if i == r::SHIFT_SEEN {
+                    c[i] |= RECT_AGG[t][s][i].load(Relaxed);
+                } else {
+                    c[i] += RECT_AGG[t][s][i].load(Relaxed);
+                }
+            }
+        }
+        if c[r::N] == 0 {
+            continue;
+        }
+        any = true;
+        let n = c[r::N] as f64;
+        let _ = writeln!(
+            out,
+            "RECT\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{:.2}\t{}\t{:.3}\t{:.3}\t{:.3}\t{:.2}\t{:.2}\t{:.2}\t{}\t{}",
+            c[r::N],
+            c[r::N_CONC],
+            c[r::N_PEERS],
+            c[r::N_HULL],
+            c[r::N_RECT],
+            c[r::N_GAP],
+            c[r::N_GAP_MUT],
+            c[r::N_GAP_XSTRIDE],
+            c[r::ROWS_SUM] as f64 / n,
+            c[r::ROWS_MAX],
+            c[r::HULL_BLOCKS_SUM] as f64 / n,
+            c[r::ROW_BLOCKS_SUM] as f64 / n,
+            c[r::ROW_SHARDS_SUM] as f64 / n,
+            100.0 * c[r::N_HULL_WIDE] as f64 / n,
+            100.0 * c[r::N_ROW_WIDE] as f64 / n,
+            100.0 * c[r::N_PERROW_NARROW] as f64 / n,
+            {
+                let m = c[r::SHIFT_SEEN];
+                let mut v = String::new();
+                for b in 0..64 {
+                    if m >> b & 1 == 1 {
+                        if !v.is_empty() {
+                            v.push(',');
+                        }
+                        let _ = write!(v, "{b}");
+                    }
+                }
+                v
+            },
+            site_name(s as u32),
+        );
+    }
+    if !any {
+        let _ = writeln!(
+            out,
+            "RECT\t(no strided helper declared a rectangle — the counterfactual never armed)"
+        );
+    }
+    let _ = writeln!(
+        out,
+        "RECTMETA\trows_capped={}\tgaps_sampled={}",
+        RECT_ROWS_CAPPED.load(Relaxed),
+        GAPS_N.load(Relaxed).min(NGAPS),
+    );
+    let _ = writeln!(
+        out,
+        "#gapsite\tmine\tpeer\tlo\tw\trows\tstride\tf_start\tf_end\tpeer_mut\tmine_mut\txstride"
+    );
+    for i in 0..GAPS_N.load(Relaxed).min(NGAPS) {
+        let g = &GAPS[i];
+        let fl = g[8].load(Relaxed);
+        let _ = writeln!(
+            out,
+            "GAP\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            site_name(g[0].load(Relaxed) as u32),
+            site_name(g[1].load(Relaxed) as u32),
+            g[2].load(Relaxed),
+            g[3].load(Relaxed),
+            g[4].load(Relaxed),
+            g[5].load(Relaxed),
+            g[6].load(Relaxed),
+            g[7].load(Relaxed),
+            fl & 1,
+            (fl >> 1) & 1,
+            g[9].load(Relaxed),
+        );
+    }
+    out
+}
+
+#[cfg(test)]
+mod rect_oracle {
+    //! Differential test of [`Rect`]'s closed-form intersection against a
+    //! brute-force byte-set oracle.
+    //!
+    //! The whole strided-2-D question turns on this predicate being EXACT: a
+    //! false negative permits two aliasing references (the March-2026 defect),
+    //! a false positive is a decode failure. So it is checked against the
+    //! definition — the literal set of bytes each rectangle covers — over an
+    //! exhaustive small grid, not against a transcription of itself.
+    use super::*;
+    use std::collections::BTreeSet;
+    use std::vec::Vec;
+
+    fn bytes(r: &Rect) -> BTreeSet<u64> {
+        let mut s = BTreeSet::new();
+        for i in 0..r.rows {
+            let a0 = r.lo + i * r.stride.max(1);
+            for b in a0..a0 + r.w {
+                s.insert(b);
+            }
+        }
+        s
+    }
+
+    fn grid() -> Vec<Rect> {
+        let mut v = Vec::new();
+        for stride in [1u64, 2, 3, 5, 7] {
+            for w in 1u64..=7 {
+                for rows in 1u64..=4 {
+                    for lo in 0u64..=11 {
+                        v.push(Rect {
+                            lo,
+                            w,
+                            rows,
+                            stride,
+                        });
+                    }
+                }
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn hits_interval_matches_the_byte_set() {
+        let mut checked = 0u64;
+        let mut trues = 0u64;
+        for r in grid() {
+            let set = bytes(&r);
+            for b0 in 0u64..=24 {
+                for len in 1u64..=9 {
+                    let b1 = b0 + len;
+                    let want = (b0..b1).any(|x| set.contains(&x));
+                    assert_eq!(
+                        r.hits_interval(b0, b1),
+                        want,
+                        "rect lo={} w={} rows={} stride={} vs [{b0},{b1})",
+                        r.lo,
+                        r.w,
+                        r.rows,
+                        r.stride
+                    );
+                    checked += 1;
+                    trues += u64::from(want);
+                }
+            }
+        }
+        // Liveness: the grid must actually exercise both answers.
+        assert!(checked > 300_000, "grid too small: {checked}");
+        assert!(
+            trues > checked / 20,
+            "almost never intersects: {trues}/{checked}"
+        );
+        assert!(
+            trues < checked - checked / 20,
+            "almost always intersects: {trues}/{checked}"
+        );
+    }
+
+    #[test]
+    fn hits_rect_matches_the_byte_set() {
+        let g = grid();
+        let mut checked = 0u64;
+        let mut trues = 0u64;
+        let mut xstride_seen = 0u64;
+        for a in &g {
+            let sa = bytes(a);
+            for b in &g {
+                let sb = bytes(b);
+                let want = sa.intersection(&sb).next().is_some();
+                let (got, xstride) = a.hits_rect(b);
+                // The general path is exact; the same-stride closed form must be
+                // exact too. Neither is allowed to under-report.
+                assert_eq!(
+                    got, want,
+                    "A(lo={},w={},rows={},s={}) vs B(lo={},w={},rows={},s={}) xstride={xstride}",
+                    a.lo, a.w, a.rows, a.stride, b.lo, b.w, b.rows, b.stride
+                );
+                checked += 1;
+                trues += u64::from(want);
+                xstride_seen += u64::from(xstride);
+            }
+        }
+        assert!(checked > 100_000, "grid too small: {checked}");
+        assert!(
+            trues > checked / 20 && trues < checked - checked / 20,
+            "degenerate: {trues}/{checked}"
+        );
+        // Liveness: BOTH branches must have run, or half the predicate is untested.
+        assert!(xstride_seen > 0, "the different-stride path never ran");
+        assert!(xstride_seen < checked, "the same-stride path never ran");
+    }
+
+    /// The March-2026 (`884b4b5`) test, transcribed verbatim from
+    /// `git show 884b4b5`, and the two inputs on which it is WRONG.
+    ///
+    /// This is archaeology, not a shipping predicate. It exists so the campaign
+    /// record contains the defect as a executed fact rather than a claim.
+    #[allow(clippy::too_many_arguments)]
+    fn ranges_overlap_884b4b5(
+        a_start: usize,
+        a_end: usize,
+        a_stride: usize,
+        a_width: usize,
+        b_start: usize,
+        b_end: usize,
+        b_stride: usize,
+        b_width: usize,
+    ) -> bool {
+        if a_start >= b_end || b_start >= a_end {
+            return false;
+        }
+        let (
+            strided_start,
+            strided_end,
+            stride,
+            s_width,
+            other_start,
+            other_end,
+            o_stride,
+            o_width,
+        ) = if a_stride > 0 && a_width > 0 {
+            (
+                a_start, a_end, a_stride, a_width, b_start, b_end, b_stride, b_width,
+            )
+        } else if b_stride > 0 && b_width > 0 {
+            (
+                b_start, b_end, b_stride, b_width, a_start, a_end, a_stride, a_width,
+            )
+        } else {
+            return true;
+        };
+        if o_stride == stride && o_width > 0 {
+            let s_col = strided_start % stride;
+            let o_col = other_start % stride;
+            if s_col >= o_col + o_width || o_col >= s_col + s_width {
+                return false;
+            }
+            let s_row = strided_start / stride;
+            let o_row = other_start / stride;
+            let s_h = (strided_end - strided_start).div_ceil(stride);
+            let o_h = (other_end - other_start).div_ceil(stride);
+            if s_row >= o_row + o_h || o_row >= s_row + s_h {
+                return false;
+            }
+        } else if o_stride == 0 {
+            let other_len = other_end - other_start;
+            let o_col = other_start % stride;
+            let s_col = strided_start % stride;
+            let s_row = strided_start / stride;
+            let o_row = other_start / stride;
+            let s_h = (strided_end - strided_start).div_ceil(stride);
+            let o_h = (other_end - other_start).div_ceil(stride);
+            if s_row >= o_row + o_h || o_row >= s_row + s_h {
+                return false;
+            }
+            if other_len < stride && o_col + other_len <= stride {
+                if o_col >= s_col + s_width || s_col >= o_col + other_len {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// `884b4b5` had a FALSE NEGATIVE — it declares two genuinely overlapping
+    /// borrows disjoint — whenever a row wraps past the stride
+    /// (`start % stride + width > stride`), which its safe public API
+    /// (`index_mut_strided(index, stride, width)`) never checked for.
+    #[test]
+    fn the_2026_03_predicate_has_a_false_negative_on_a_wrapping_row() {
+        // Strided: stride 100, one row of 20 bytes starting at column 90, so it
+        // covers [90..110) — i.e. columns 90..100 of row 0 AND 0..10 of row 1.
+        // Flat: one byte at 105, squarely inside that.
+        let ours = Rect {
+            lo: 90,
+            w: 20,
+            rows: 1,
+            stride: 100,
+        };
+        assert!(
+            ours.hits_interval(105, 106),
+            "the byte-set definition says these overlap"
+        );
+        assert!(
+            !ranges_overlap_884b4b5(90, 110, 100, 20, 105, 106, 0, 0),
+            "884b4b5 is expected to MISS this — that is the point of the test"
+        );
+    }
+
+    /// The other direction: `884b4b5` also answers conservatively (a false
+    /// POSITIVE, i.e. a decode failure if it ever fires) for two strided
+    /// borrows with DIFFERENT strides, which its own commit message admits.
+    #[test]
+    fn the_2026_03_predicate_falls_back_to_1d_on_mixed_strides() {
+        // A: stride 10, rows at 0 and 10, 2 bytes each -> {0,1,10,11}.
+        // B: stride 7, rows at 3 and 10, 2 bytes each -> {3,4,10,11}. Overlap at
+        // {10,11}, so `true` is correct here...
+        let a = Rect {
+            lo: 0,
+            w: 2,
+            rows: 2,
+            stride: 10,
+        };
+        let b = Rect {
+            lo: 3,
+            w: 2,
+            rows: 2,
+            stride: 7,
+        };
+        assert!(a.hits_rect(&b).0);
+        // ...but shift B down one and the sets are disjoint ({2,3,9,10} vs
+        // {0,1,10,11} still shares 10; use 4 instead) — pick a truly disjoint
+        // pair and show 884b4b5 still says "overlap".
+        let b2 = Rect {
+            lo: 4,
+            w: 2,
+            rows: 2,
+            stride: 7,
+        };
+        // {4,5,11,12} vs {0,1,10,11} shares 11 -> also overlapping. Use stride 7
+        // rows at 2,9: {2,3,9,10} vs {0,1,10,11} shares 10. Take w=1.
+        let b3 = Rect {
+            lo: 2,
+            w: 1,
+            rows: 2,
+            stride: 7,
+        }; // {2, 9}
+        assert!(
+            !a.hits_rect(&b3).0,
+            "{{0,1,10,11}} and {{2,9}} are disjoint"
+        );
+        assert!(
+            ranges_overlap_884b4b5(0, 12, 10, 2, 2, 10, 7, 1),
+            "884b4b5 falls back to the 1-D hull answer and rejects a disjoint pair"
+        );
+        let _ = b2;
+    }
+}
+
+// =============================================================================
 // Reset / report
 // =============================================================================
 
@@ -1061,6 +1876,15 @@ pub fn reset() {
             }
         }
     }
+    for t in 0..MAX_TH {
+        for s in 0..NSITES {
+            for i in 0..r::NCTR {
+                RECT_AGG[t][s][i].store(0, Relaxed);
+            }
+        }
+    }
+    GAPS_N.store(0, Relaxed);
+    RECT_ROWS_CAPPED.store(0, Relaxed);
     SAMP_N.store(0, Relaxed);
     OVL_N.store(0, Relaxed);
     OVL_MUT.store(0, Relaxed);

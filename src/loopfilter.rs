@@ -798,6 +798,22 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         {
             return Self::fill_hull::<W>(scratch, origin, stride, h);
         }
+        // THROWAWAY (`__probe_bounds`): price the strided-rectangle
+        // counterfactual against the live set BEFORE taking the `h` per-row
+        // guards, i.e. at the instant a single 2-D registration would have
+        // been made. Registers nothing; absent from codegen without the
+        // feature. See `bounds_probe::eval_rect`.
+        {
+            let ps = core::mem::size_of::<BD::Pixel>();
+            origin.data.dm().probe_eval_rect(
+                core::panic::Location::caller(),
+                false,
+                origin.offset * ps,
+                W * ps,
+                h,
+                stride * ps as isize,
+            );
+        }
         for row in 0..h {
             let off = origin.offset.wrapping_add_signed(row as isize * stride);
             // The MARGINAL price of one filter-chain registration, measured on
