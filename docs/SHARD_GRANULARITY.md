@@ -416,18 +416,26 @@ and their silence read as health.
 
 | target | Stacked Borrows | Tree Borrows |
 |---|---|---|
+| `--lib` (27 tests, incl. the new granularity one) | 27 passed (67.2 s) | 27 passed (67.4 s) |
 | `narrow_release` | 1 passed (92.8 s) | 1 passed (93.0 s) |
 | `soundness` | 25 passed | 25 passed |
 | `wide_exclusion` | 1 passed (91.9 s) | 1 passed (91.5 s) |
+| `guard_move_release` | 2 passed (111.0 s) | 2 passed (112.2 s) |
 | `pic_buf_overflow` | **0 tests ran** | **0 tests ran** |
 | `aligned_miri` | **0 tests ran** | **0 tests ran** |
-| `guard_move_release` | see log | see log |
-| `--lib` (27 tests incl. the new one) | see log | see log |
-| `shard_liveness` | see log | see log |
+| `shard_liveness` | see below | see below |
 
 **"0 tests ran" is reported as 0, not as green** — those two targets are
 feature-gated and select nothing under default features, so they prove nothing
 here; CI's Linux legs run the whole package with `--all-features`.
+
+**`shard_liveness`'s first invocation did not run the test and its `rc=1` was my
+bug, not a failure:** the target selector was passed as one shell word
+(`"--test shard_liveness"`), so cargo rejected the argument and the log contains
+`error: unexpected argument`, not a test result. Re-issued correctly. A `rc=1`
+whose log has no `test result:` line is an invocation error; a timeout is `rc=124`
+and is reported as a timeout, never as green. CI's Linux legs cover this target
+either way.
 
 ### Clippy — pre-existing failures, reproduced on `main`
 
