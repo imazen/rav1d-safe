@@ -347,6 +347,15 @@ fn px_mut<BD: BitDepth>(bytes: &mut [u8], off: usize, len: usize) -> &mut [BD::P
     zerocopy::FromBytes::mut_from_bytes(s).expect("band row pixel reinterpretation")
 }
 
+// The recon conversion is INTRA-ONLY today (PR #482): inter and the whole
+// filter chain still write the shared picture through the tracker. Several
+// accessors here exist for those unconverted halves, and the live subset also
+// DIFFERS BY ARCHITECTURE -- the x86 ipred/itx dispatchers use `with_block_mut`
+// and `as_mut_bytes`/`base`/`byte_stride` where aarch64 does not, so x86 CI and
+// an aarch64 dev box flag different items. A per-arch `cfg_attr` would rot on
+// the next dispatcher change; this allow comes off when the inter and filter
+// conversions land and every accessor has a caller.
+#[allow(dead_code)]
 impl<'a> ReconDst<'a> {
     /// Byte stride between rows.
     #[inline]
@@ -565,6 +574,15 @@ impl<'a> ReconDst<'a> {
     }
 }
 
+// The recon conversion is INTRA-ONLY today (PR #482): inter and the whole
+// filter chain still write the shared picture through the tracker. Several
+// accessors here exist for those unconverted halves, and the live subset also
+// DIFFERS BY ARCHITECTURE -- the x86 ipred/itx dispatchers use `with_block_mut`
+// and `as_mut_bytes`/`base`/`byte_stride` where aarch64 does not, so x86 CI and
+// an aarch64 dev box flag different items. A per-arch `cfg_attr` would rot on
+// the next dispatcher change; this allow comes off when the inter and filter
+// conversions land and every accessor has a caller.
+#[allow(dead_code)]
 impl<'a> ReconSrc<'a> {
     #[inline]
     pub(crate) fn stride(&self) -> isize {
@@ -753,6 +771,9 @@ pub(crate) enum ReconPlanes<'a> {
     Own(&'a mut ReconBand),
 }
 
+// See the note on `impl ReconDst` above: intra-only scope plus an
+// arch-dependent live subset.
+#[allow(dead_code)]
 impl<'a> ReconPlanes<'a> {
     /// Bind to the owned band if it is armed for this task, else to the shared
     /// picture.
