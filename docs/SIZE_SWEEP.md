@@ -265,3 +265,204 @@ is retired above thumbnail size and quantified below it.
   claim the table makes is about how the RATIO moves with size, so it now
   compares each size's ratio band with the previous size's — and that check
   does fire (256->512 at 8bpc reads OVERLAP).
+
+## Why the hump exists: our NON-ENTROPY cost per pixel triples at 0.6 MP
+
+`sample`, 50 s steady state, t=1, ~38.5k leaf samples per cell, bucket shares
+multiplied by the ms/frame measured in the CLEAN sweep (not by anything the
+profile itself timed). YUV420 8bpc:
+
+| cell | ms/MP | entropy ms/MP | non-entropy ms/MP | non-entropy share |
+|---|---|---|---|---|
+| 512x288 | 19.31 | 14.75 | **4.56** | 23.6% |
+| 1024x576 | 27.42 | 15.95 | **11.47** | 41.8% |
+| 2048x1152 | 26.34 | 14.28 | **12.06** | 45.8% |
+
+**Entropy per pixel is flat (14.3-16.0) and everything else per pixel goes up
+2.5x between 512x288 and 1024x576, then plateaus.** dav1d's TOTAL over the same
+step moves 16.6 -> 18.5 ms/MP, i.e. 11%. So whatever tripled on our side has no
+counterpart on theirs — no parity assumption about entropy is needed to say
+that, only dav1d's own measured total.
+
+Per bucket, 512x288 -> 1024x576, ms/MP: tracker 1.14 -> 3.41 (3.0x), kernels
+2.81 -> 6.29 (2.2x), libc runtime 0.17 -> 0.61 (3.6x), other 0.44 -> 1.17
+(2.7x). Nothing is spared; the whole non-entropy half changes regime.
+
+That is consistent with a working-set transition — the padded picture is
+~0.4 MB at 512x288 and ~1.04 MB at 1024x576 — but this round did NOT prove a
+cause. What it establishes is *where* to look and that the answer is ours, not
+the encoder's (the tool flags are identical, table above).
+
+### Load tag on the profiles
+
+The size sweep above ran with **0 of 220 rows under foreign load**. The
+profiles did not get the same luxury: an independent recorder
+(`~/tmp/szsweep/loadwatch.sh`, sampling every 10 s, committed as
+`benchmarks/size_sweep_prof_foreign_load_2026-08-10.tsv`) shows a second
+agent's `bench_base`/`bench_head`/`dav1d` arms on the box from 23:20:26 onward,
+up to 377% CPU. The `512x288` profile is clean; `1024x576` (both depths),
+`2048x1152` and the 4K/tiny pairs overlap that window.
+
+What that does and does not damage. A `sample` self-time share is a share of
+OUR thread's own samples, so contention shifts shares only insofar as it
+changes where our thread stalls — it does not mix in the other process's work.
+The ms values here are (clean-sweep ms/frame) x (possibly-perturbed share), so
+treat the third digit as soft.
+
+The internal control says the perturbation is not driving the result:
+contention inflates memory-bound work across the board, yet **entropy per
+megapixel stayed flat (14.75 -> 15.95) across exactly the step where
+non-entropy tripled**. A global inflation cannot produce that split.
+
+### What turns on: CDEF does not execute at 512x288 and does at 1024x576
+
+The sequence header says `enable_cdef = 1` at every size, so the permission is
+constant — but permission is not execution, which is why the profile has to be
+the oracle. Leaf samples naming a CDEF kernel:
+
+| cell | `cdef_filter_block_8bpc_inner` | `cdef_dir_cost` | `padding_8bpc` | cdef ms/MP |
+|---|---|---|---|---|
+| 512x288 | **0** | **0** | **0** | **0.01** |
+| 1024x576 | 706 (1.84%) | 360 | 150 | 1.09 |
+| 2048x1152 | 180 | 121 | — | 0.46 |
+| 3840x2160 | 247 | 113 | 75 | 0.37 |
+
+At 512x288 the only CDEF leaf in the whole profile is `rav1d_cdef_brow` at
+0.05% — the frame-level walker deciding there is nothing to do. **CDEF runs
+zero blocks there.** So one of our two best cells is best partly because a
+kernel we are relatively bad at is absent from it.
+
+CDEF's cost is not only its own kernel: `cdef_arm.rs` padding and block-write
+are two of the top-seven borrow sites in #467's census (4.1% each), so CDEF
+turning on also raises the tracker. Per-family ms/MP, YUV420 8bpc:
+
+| family | 512x288 | 1024x576 | 2048x1152 | 3840x2160 |
+|---|---|---|---|---|
+| entropy | 14.60 | 15.45 | 13.76 | 15.80 |
+| tracker | 1.13 | **3.40** | **3.77** | 2.37 |
+| recon | 1.08 | **2.66** | 2.60 | 1.71 |
+| ipred | 0.43 | **1.35** | **1.78** | 0.88 |
+| loopfilter | 1.05 | 1.53 | 1.71 | 1.48 |
+| cdef | **0.01** | 1.09 | 0.46 | 0.37 |
+| itx | 0.60 | 0.78 | 0.98 | 0.61 |
+| libc runtime | 0.17 | 0.61 | 0.56 | 0.34 |
+| looprestoration | 0 | 0 | 0 | 0 |
+| mc / filmgrain / u16 cast | 0 | 0 | 0 | 0 |
+
+Every per-BLOCK family (tracker, recon, ipred, and the libc traffic behind
+them) peaks at 0.6-2.4 MP and falls back at 4K, while entropy — the per-BIT
+family — is flat. So the hump is a per-block-count effect, not a per-pixel one:
+these renditions are downscales of one photo, so the 0.6-2.4 MP cells carry the
+most detail per pixel and the encoder answers with the deepest partitioning.
+CDEF switching on at the same step compounds it.
+
+**That is where the mechanism stops being measured and starts being inference.**
+This round did not count blocks or registrations per cell (that needs a
+`probe-sites` build, which was not run). The measured facts are: the tool
+permissions are identical, CDEF executes zero blocks at 512x288, and every
+per-block family humps together while the per-bit family does not.
+
+---
+
+# Q2 — where 10bpc loses: itx first, then the tracker, then libc. NOT the cast path.
+
+Our 8->10 bpc penalty against dav1d's, per size (YUV420, t=1, from the clean
+n=4 sweep — `benchmarks/size_sweep_depth_2026-08-10.tsv`):
+
+| size | ours 8b | ours 10b | ours +% | dav1d +% | excess ms/frame | ratio 8b | ratio 10b |
+|---|---|---|---|---|---|---|---|
+| 64x36 | 0.0454 | 0.0600 | **+32.1%** | +4.6% | 0.013 | 1.309 | **1.653** |
+| 256x144 | 0.608 | 0.704 | +15.8% | +2.3% | 0.084 | 1.140 | 1.291 |
+| 512x288 | 2.851 | 3.177 | +11.4% | +2.6% | 0.261 | 1.166 | 1.266 |
+| 1024x576 | 16.167 | 18.361 | +13.6% | +3.7% | 1.789 | 1.482 | 1.623 |
+| 2048x1152 | 61.778 | 72.544 | +17.4% | +4.9% | 8.833 | 1.552 | 1.738 |
+| 3840x2160 | 199.21 | 231.75 | +16.3% | +4.5% | 25.64 | 1.311 | 1.459 |
+
+**We pay 11-34% to go from 8 to 10 bits; dav1d pays 1-5%. That factor of 3-7 is
+the whole 10bpc story, and it holds at every size.** YUV444 is the same shape
+(ours +12 to +34%, dav1d +1 to +3%).
+
+## Ranked attribution at 4K, in ms/frame
+
+`sample`, 50 s, 38.7k leaf samples per arm, self-time leaves folded to families
+and scaled by the clean-sweep ms/frame. Total delta +32.57 ms/frame (+16.4%).
+
+| # | family / symbol | 8bpc ms | 10bpc ms | delta | share of the +32.57 |
+|---|---|---|---|---|---|
+| 1 | **itx** (`itx_arm_hbd::apply1d` +6.50, `itxfm_add_dispatch::{closure#0}` +4.34, `itxfm::Fn::call` +4.02, less the 8bpc-only NEON kernels) | 5.04 | 17.92 | **+12.88** | **40%** |
+| 2 | **entropy** (`decode_coefs` +6.74, `msac_decode_symbol_adapt` +0.43) | 131.09 | 138.45 | **+7.36** | 23% |
+| 3 | **borrow tracker** (`add` +3.95, guard `drop_glue` +1.28, `LfBlock::close` +1.00) | 19.69 | 25.16 | **+5.48** | 17% |
+| 4 | **libc** (`_platform_memset` +2.04, `_platform_memmove` +1.36) | 2.82 | 6.70 | **+3.88** | 12% |
+| 5 | recon | 14.16 | 15.55 | +1.39 | 4% |
+| 6 | ipred | 7.30 | 8.69 | +1.39 | 4% |
+| 7 | loopfilter | 12.31 | 13.64 | +1.33 | 4% |
+| 8 | **cdef** | 3.06 | 2.62 | **-0.44** | **-1%** |
+| — | **u16 cast path** | **0.00** | **0.00** | **0** | **0%** |
+
+## The plain answer the question asked for
+
+**It is kernels first — specifically inverse transforms — then the tracker,
+then libc traffic that two 16bpc kernels generate. It is NOT the cast path:
+`slice_as` / `mut_slice_as` / `cast_slice` produce ZERO leaf samples at either
+depth, at every profiled size. #459's zerocopy frame did not reduce that path,
+it removed it.**
+
+Why itx is 40%: at 8bpc the `itx_arm_neon_*` family keeps transform state in
+`int16x8_t` — **8 lanes**. Those kernels are not bit-exact at high bit depth
+(`src/safe_simd/itx_arm.rs:8437-8449` records 5,038 `ITX_MISMATCH` on
+`v4k_8tile_10b` for 16x16 alone), so 10bpc runs `itx_arm_hbd` instead, a
+32-bit-lane vectorisation of the generic reference — **4 lanes** — and only for
+`w <= 16 && h <= 16` (`MAXDIM = 16`, `hbd_supported`). Above that, and for
+`WHT_WHT`, it is the scalar reference. So 10bpc pays half throughput where it
+is vectorised at all and 1/8th where it is not.
+
+Two named, specific costs inside item 4, from `sample_callers.py` at 1024x576:
+
+* `_platform_memmove` — **381 of 549 samples come from
+  `cdef_arm::cdef_filter_block_16bpc_inner`**. At 8bpc, CDEF contributes ZERO
+  memmove samples. The 16bpc CDEF kernel is moving bytes its 8bpc twin does not.
+* `_platform_memset` — **267 of 377 samples come from `<itx::itxfm::Fn>::call`**.
+  At 8bpc, itx contributes ZERO memset samples. The HBD path clears a scratch
+  buffer per call.
+
+And one finding that runs the other way: **16bpc CDEF is FASTER than 8bpc CDEF**
+here (3.06 -> 2.62 ms/frame at 4K, 0.64 -> 0.54 at 1024x576). The 16bpc CDEF
+port over-delivered; the memmove above is its remaining wart, not a reason to
+revisit the kernel.
+
+## The entropy line is a caveat, not a target
+
+`decode_coefs` +6.74 ms is 23% of the delta, but the two arms are DIFFERENT
+BITSTREAMS — the 10-bit AVIF is 2,866,795 bytes against the 8-bit's 2,826,978
+(+1.4%), and 10-bit coefficients carry larger magnitudes, so more golomb/extra
+bits per coefficient. dav1d pays that too. Its whole 10bpc penalty at this cell
+is +6.89 ms — about the size of our entropy delta alone. Subtracting the
+entropy line leaves ~25.2 ms of our +32.57 unexplained by the format, against a
+measured excess-over-dav1d of 25.68 ms. The two agree to 2%, which is the
+consistency check that the ranking above is complete.
+
+## Correction to my own Q1 alpha reading, from the tiny-cell profile
+
+The affine fit puts our intercept at 7.9 us/frame (8bpc) — 17.4% of the 64x36
+frame. The profile says that is **not** decoder construction. Per-frame setup
+work identifiable by name at 64x36 8bpc:
+
+| leaf / caller | % of frame | us |
+|---|---|---|
+| `Rav1dPictureDataComponent::from_parts` (self) | 0.92 | 0.42 |
+| `from_parts` -> `_platform_memmove` | 1.06 | 0.48 |
+| `lib::gen_picture` (self + memmove) | 0.85 | 0.39 |
+| `decode::rav1d_decode_frame_init_cdf` -> memmove | 0.44 | 0.20 |
+| `cdf::rav1d_cdf_thread_copy` -> memmove | 0.43 | 0.20 |
+| `mem::try_arc::<DRav1d<headers>>` -> memmove | 0.14 | 0.06 |
+| **total** | **3.84** | **~1.75** |
+
+So real fixed setup is **~1.8 us**, not 7.9. The rest of the fitted intercept
+is per-pixel work that is simply more expensive at 64x36 — the frame is one
+64x64 superblock wide and tall, so **every** block is a frame-edge block and
+the edge paths in CDEF (12.1% of the tiny frame against 3.98% at 1024x576),
+loop filter and intra-edge prep never amortise.
+
+That distinction matters for what to do about it: a smaller decoder-construction
+path would buy ~1.8 us; the other ~6 us is boundary handling, which is the same
+code the rest of the ladder runs.
