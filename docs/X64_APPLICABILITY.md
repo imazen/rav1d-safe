@@ -337,10 +337,14 @@ suppress it and in fact failed at a higher rate.
 
 What is NOT established, and must be before anyone "fixes" it:
 
-* **Who the writer is.** The `existing:` record prints no location in a release build (no
-  `track_caller` past the wrapper). A `--features probe-sites` build keeps per-record `Loc`s and
-  will name BOTH sides; that pass is the next step. Prime suspect from the shape: a tile worker's
-  recon write into rows the deblock task is reading.
+* **Who the writer is — attempted and NOT caught.** The `existing:` record prints no location in a
+  release build (no `track_caller` past the wrapper). A `--features probe-sites` build keeps
+  per-record `Loc`s and would name BOTH sides; one full `--group 8-bit/data --threads 8` pass with
+  that build came back **358/358 PASS, 0 overlaps**. So either the per-record `Loc` store perturbs
+  the window, or ~2 hits per 358 vectors simply needs several passes. Prime suspect from the shape
+  is still a tile worker's recon write into rows the deblock task is reading. (That pass is also a
+  third independent x86 t=8 run with **0 MISMATCH**, so bit-exactness holds under threading even
+  where the abort fires.)
 * **Whether A2 (the `check_tile` deblock-barrier removal) is the enabling change.** The removed
   barrier gated *reconstruction* of sbrow N on deblock progress reaching N-1 — exactly the
   ordering whose absence would let these two overlap — and A3 already records that the barrier had

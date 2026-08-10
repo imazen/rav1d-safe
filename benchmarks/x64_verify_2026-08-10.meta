@@ -194,3 +194,14 @@
 #       row must not be read as-is: on x86 the tracker chain is a measured net
 #       LOSS at t=1, and the only x86 data on the barrier and the batching came
 #       from the VOID arms, so nobody has a valid x86 measurement of either.
+#
+# 10. FOLLOW-UP ATTEMPT, NEGATIVE (recorded so it is not repeated blind)
+#     `--features probe-sites` (which keeps per-record Locs and would name BOTH
+#     sides of the F2 collision), one full pass `--group 8-bit/data --threads 8`
+#     on x86_64: 358/358 PASS, 0 overlapping-DisjointMut. Did NOT reproduce.
+#     Either the per-record Loc store perturbs the window, or ~2 hits per 358
+#     vectors needs several passes. Also a third independent x86 t=8 run with
+#     0 MISMATCH.
+#     A targeted 12-pass loop over the four originally-failing vectors (t=8,
+#     RUST_BACKTRACE=1, probe-sites) likewise produced 0 overlaps -- the window
+#     needs the long sequential run, not the vector.
