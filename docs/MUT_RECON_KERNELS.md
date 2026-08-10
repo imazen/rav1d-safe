@@ -502,8 +502,9 @@ which is the instrument's control.
 | whole decoder, band ON | 6,005,602 | 11,401,399 |
 | **filter chain** | **995,665** (16.6%) | **6,391,462** (56.1%) |
 | `src/loopfilter.rs:566` (`LfBlock::fill`) | on the hull path | **3,835,042** (33.6% of everything) |
-| `src/safe_simd/cdef_arm.rs` (5 sites) | | 1,622,288 |
+| `src/safe_simd/cdef_arm.rs` (6 sites) | | 1,863,648 |
 | `src/cdef_apply.rs:104,121` | | 669,376 |
+| 8 remaining filter sites (`lf_apply`, `cdef_apply` line buffers) | | 5,544 |
 | `src/loopfilter.rs:739` (`LfBlock::close`, the WRITE side) | | 17,852 |
 | `src/ctx.rs:99` (not the filter chain, not a picture) | | 2,534,988 |
 
@@ -809,3 +810,58 @@ alone; re-run `headoff` against `base` on an idle box.**
   #482 recorded.
 * **Miri, both models**, `cargo +nightly miri test -p rav1d-disjoint-mut
   --no-fail-fast`: see §14.
+
+### Memory, re-measured on this branch
+
+Peak RSS, `/usr/bin/time -l` maximum resident set size, 20 frames, one decoder.
+Unchanged by §9's edit, as it must be — nothing here allocates:
+
+| arm | 8bpc t=1 | 8bpc t=8 | 10bpc t=1 | 10bpc t=8 |
+|---|---|---|---|---|
+| `base` | 99.4 MB | 106.3 MB | 149.2 MB | 157.3 MB |
+| `head` (band armed) | 99.7 | 107.9 | 149.5 | 160.4 |
+| `headoff` | 99.5 | 106.3 | 149.1 | 157.5 |
+
+which reproduces §3 (99.4 / 107.8 / 149.1 / 160.4) to 0.1 MB.
+
+### How close to the all-tracking-off ceiling
+
+`head` against #467's whole-tracker-off ceiling, 8bpc — **the head column is
+loaded and the ceiling column is #467's idle measurement, so this comparison is
+indicative, not a like-for-like**:
+
+| | t=1 | t=2 | t=4 | t=8 |
+|---|---|---|---|---|
+| `base` (loaded) | 1.29 | 1.60 | 1.79 | 1.91 |
+| **`head`** (loaded) | **1.26** | **1.31** | **1.35** | **1.48** |
+| whole-tracker ceiling (#467, idle) | 1.160 | 1.264 | 1.262 | 1.345 |
+
+The remaining distance to the ceiling is ~0.10 / 0.05 / 0.09 / 0.14. §11a says
+where 6.39 M of the 11.4 M registrations that produce it live, and §11c/§11d
+say the obvious way to remove them does not work.
+
+Arm-band disjointness (`gap_bands.py`), `head` vs `base`: **disjoint at 7 of 8
+cells; 8bpc t=1 OVERLAPS** — the same cell #482 reported as its one
+unseparated number, for the same reason (the win there is only 1.8%).
+
+## 14. Miri, both models — re-run, not inherited
+
+`crates/rav1d-disjoint-mut` is byte-identical to `cebb97f` on this branch
+(`git diff cebb97f -- crates/` is empty; `src/tracker_shard.rs` hashes to
+`d4e03d4a70183660cde4ef18cde777d5ef29530501c5a0e029a524e9c423176d`, the value
+#482 recorded), so neither model can regress from a change that is not there.
+Both were re-run anyway, each target in isolation via `--no-fail-fast`:
+`cargo +nightly miri test -p rav1d-disjoint-mut`.
+
+| model | targets | result | UB |
+|---|---|---|---|
+| Stacked Borrows (`MIRIFLAGS=""`) | 9 | **61 passed, 0 failed**, `rc=0` | none reported |
+| Tree Borrows (`-Zmiri-tree-borrows`) | 9 | **61 passed, 0 failed**, `rc=0` | none reported |
+
+Same 61/61 as §7b. `soundness` is the long pole at 992.7 s under Stacked
+Borrows.
+
+Nothing in this round touches the sub-crate, and nothing in `rav1d-safe` here
+is reachable by Miri's test set — which is precisely why the corpus, `mt_stress`
+and `multi_decoder_pressure` gates in §13 carry the runtime claim and Miri only
+carries the tracker's.

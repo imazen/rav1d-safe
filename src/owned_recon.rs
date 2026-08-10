@@ -690,7 +690,6 @@ impl<'a> ReconSrc<'a> {
     }
 }
 
-
 /// The plane set one reconstruction call writes into: the shared picture, or
 /// this worker's owned band.
 ///
