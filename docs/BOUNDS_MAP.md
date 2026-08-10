@@ -194,8 +194,14 @@ quoting a per-pair figure, not the site's.
 Full machine-readable form: `benchmarks/bounds_verdicts_2026-08-10.tsv` (129 sites).
 `res B` and `over` come from the cell named in the TSV's last column; `k=N` is the
 cumulative count of acquisitions whose nearest concurrent foreign WRITE was within
-N bytes, i.e. how often a widening by N collides.
+N bytes, i.e. how often a widening by N collides. `headroom N` is the site's
+`min_gap_mut` — the closest OBSERVED approach to a concurrent foreign write, from
+the corpus cell; `4K-cell N` is the same quantity on `v4k_8tile` t=8, printed
+side by side because the difference between the two columns IS the blindness
+finding. A site whose counterparty is `-` had no entry in the pair table, which
+keeps only the 120 hottest ordered pairs per cell.
 
+### Table 1 — sites live on `v4k_8tile` t=8, by registrations/frame
 
 | site | reg/frame | R/W | res B | over | waste | conc-write encounters | headroom N | 4K-cell N | k=64 | k=256 | k=1K | verdict | nearest concurrent writer |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -248,7 +254,7 @@ N bytes, i.e. how often a widening by N collides.
 | `internal.rs:712:24` | 102 | R | 24.36 | 1.000 | <= 24 B | 0 | INF | INF | 0 | 0 | 0 | **COARSENABLE-INF** | - |
 | `internal.rs:713:24` | 102 | R | 12.55 | 1.000 | <= 13 B | 0 | INF | 2144 | 0 | 0 | 0 | **COARSENABLE-INF** | - |
 
-## Table 2 — sites the 4K gap vectors NEVER EXECUTE, by corpus registrations/frame
+### Table 2 — sites the 4K gap vectors NEVER EXECUTE, by corpus registrations/frame
 
 | site | reg/frame | R/W | res B | over | waste | conc-write encounters | headroom N | 4K-cell N | k=64 | k=256 | k=1K | verdict | nearest concurrent writer |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
