@@ -31,6 +31,27 @@
 //! against a grain-off reference), and `some_vector_spans_multiple_row_bands`
 //! fails if no vector is tall enough for two workers to contend in the first
 //! place. Both are preconditions for this test to mean anything.
+//!
+//! **What this does NOT cover.** The corpus has 13 film-grain vectors and that
+//! is the whole of the coverage; census (`examples/decode_md5`, 2026-08-10):
+//!
+//! ```text
+//!  8-bit  I420  64x63 (odd height), 352x288
+//!  8-bit  I422  64x63 (odd height), 63x64 (odd WIDTH)
+//!  8-bit  I444  64x64 x3
+//! 10-bit  I420  352x288
+//! 10-bit  I422  64x63 (odd height), 63x64 (odd WIDTH)
+//! 10-bit  I444  64x64 x3
+//! ```
+//!
+//! So all three layouts and both bit depths are exercised, and the odd-width
+//! `ss_x` path — the one that makes `rav1d_apply_grain_row` write two padding
+//! pixels into the INPUT luma plane while other workers read it — is covered by
+//! the two `422_oddwidth` vectors. Missing, in the order it would matter:
+//! **4:2:0 at odd width** (nothing exercises `ss_x` and `ss_y` together with the
+//! padding write), **12-bit film grain** (no vector at all), and **any grain
+//! frame larger than 352x288** — so the narrowed guard extents are only ever
+//! checked at small strides, and 352x288 gives at most 9 row bands.
 
 #![forbid(unsafe_code)]
 
