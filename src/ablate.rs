@@ -182,3 +182,98 @@ pub fn activity_reset() {
         slot.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Inverse-transform shape census
+// ---------------------------------------------------------------------------
+//
+// The activity counters above answer "was this family called at all?". This
+// answers the next question down, for the one family where it changed a
+// decision: **which transform SHAPES does a bitstream actually ask for, and
+// which of them did SIMD handle?**
+//
+// It exists because a profile alone got the ranking wrong. Issue #455 open item
+// 5 ("16bpc itx above 16x16 is still scalar") looked like the top 10bpc target:
+// `<itx::itxfm::Fn>::call` carries the largest itx self-time share at 4K 10bpc,
+// and the scalar reference is inlined into it. The census says the fallback is
+// **20 calls out of 272,949** on that vector — 0.15% of coefficient area — and
+// 0 on `v4k_8tile_10b`. What `Fn::call` actually holds is the *hbd dispatch and
+// driver*, also inlined into it. Porting 32/64-point 16bpc kernels would have
+// been days of work for nothing measurable on any vector this campaign has.
+//
+// Sixteen counters and two atomics per transform call, all behind `__ablate`;
+// without the feature `note_itx_shape` is a no-op and the call site vanishes.
+
+#[cfg(feature = "__ablate")]
+const ITX_SIZES: usize = 19;
+
+/// `[bpc16 as usize * 2 + handled as usize][tx_size]`.
+#[cfg(feature = "__ablate")]
+static ITX_SHAPES: [[std::sync::atomic::AtomicU64; ITX_SIZES]; 4] =
+    [const { [const { std::sync::atomic::AtomicU64::new(0) }; ITX_SIZES] }; 4];
+
+/// Record one inverse-transform call: its size index, its bit depth, and
+/// whether a SIMD kernel took it (`false` = fell through to the reference).
+#[inline(always)]
+pub fn note_itx_shape(tx_size: usize, bitdepth: u8, handled: bool) {
+    #[cfg(feature = "__ablate")]
+    {
+        let row = (bitdepth != 8) as usize * 2 + handled as usize;
+        if tx_size < ITX_SIZES {
+            ITX_SHAPES[row][tx_size].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    #[cfg(not(feature = "__ablate"))]
+    let _ = (tx_size, bitdepth, handled);
+}
+
+/// The census as TSV: `depth  path  shape  calls  coeff_area`.
+///
+/// Header only without `__ablate` — assert [`ENABLED`] in the harness.
+#[cfg(feature = "__ablate")]
+pub fn itx_shape_report() -> String {
+    use crate::src::levels::TxfmSize;
+    use core::fmt::Write as _;
+    let mut out = String::from(ITX_CENSUS_HEADER);
+    for row in 0..4 {
+        for i in 0..ITX_SIZES {
+            let n = ITX_SHAPES[row][i].load(std::sync::atomic::Ordering::Relaxed);
+            if n == 0 {
+                continue;
+            }
+            let (w, h) = match TxfmSize::from_repr(i) {
+                Some(t) => t.to_wh(),
+                None => continue,
+            };
+            let _ = writeln!(
+                out,
+                "{}\t{}\t{}x{}\t{}\t{}",
+                if row >= 2 { "16bpc" } else { "8bpc" },
+                if row % 2 == 1 { "simd" } else { "SCALAR" },
+                w,
+                h,
+                n,
+                n * (w * h) as u64,
+            );
+        }
+    }
+    out
+}
+
+/// Header only: the counters do not exist without `__ablate`.
+#[cfg(not(feature = "__ablate"))]
+pub fn itx_shape_report() -> String {
+    String::from(ITX_CENSUS_HEADER)
+}
+
+const ITX_CENSUS_HEADER: &str = "depth\tpath\tshape\tcalls\tcoeff_area\n";
+
+/// Zero the census (call between vectors to get per-vector numbers).
+pub fn itx_shape_reset() {
+    #[cfg(feature = "__ablate")]
+    for row in ITX_SHAPES.iter() {
+        for slot in row.iter() {
+            slot.store(0, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}

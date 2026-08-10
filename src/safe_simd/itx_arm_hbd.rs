@@ -431,11 +431,19 @@ fn adst16_core(c: &[V; 16], min: V, max: V) -> [V; 16] {
 ///
 /// `kind` and `n` are runtime values, but the branch is taken once per group of
 /// four transforms, not per element, so it is far below the cost of the
-/// transform itself. Keeping them runtime is what holds the monomorphisation
-/// count at one for the whole 16bpc itx path.
+/// transform itself.
+///
+/// `N` is a const parameter (three instantiations: 4, 8, 16) rather than a
+/// runtime length. A runtime length is what forced the caller's `[V; N]` state
+/// array into memory: LLVM cannot promote an array whose address escapes into a
+/// slice of unknown length, so every 1-D transform round-tripped its inputs and
+/// outputs through the stack. `kind` stays runtime — it does not affect
+/// addressing, so it costs one predictable branch per group of four transforms.
 #[cfg(target_arch = "aarch64")]
 #[rite(neon)]
-fn apply1d(kind: Kind, n: usize, v: &mut [V], min: V, max: V) {
+#[inline(always)]
+fn apply1d<const N: usize>(kind: Kind, v: &mut [V; N], min: V, max: V) {
+    let n = N;
     match (kind, n) {
         (Kind::Dct, 4) => dct4((&mut v[..4]).try_into().unwrap(), min, max),
         (Kind::Dct, 8) => dct8((&mut v[..8]).try_into().unwrap(), min, max),
@@ -592,6 +600,9 @@ pub(crate) fn add_row_dc_hbd_neon(
 /// `w, h <= 16` (so `sw == w` and `sh == h`, and the reference's
 /// zero-padded-tail cases cannot arise). The residual lands in `tmp` row-major
 /// and the caller adds it a row at a time.
+///
+/// This entry point is the shape dispatcher; [`txfm_core`] is the body, with
+/// `W`/`H` as const parameters. See that function for why.
 #[cfg(target_arch = "aarch64")]
 #[arcane]
 pub(crate) fn inv_txfm_hbd_neon(
@@ -603,12 +614,64 @@ pub(crate) fn inv_txfm_hbd_neon(
     shift: u32,
     coeff: &mut [i32],
     bitdepth_max: i32,
-    tmp: &mut [i32; MAXDIM * MAXDIM],
+    tmp: &mut [i32],
 ) {
-    debug_assert!(w <= MAXDIM && h <= MAXDIM);
-    debug_assert!(w % 4 == 0 && h % 4 == 0);
+    macro_rules! shape {
+        ($w:literal, $h:literal) => {
+            txfm_core::<$w, $h>(first, second, shift, coeff, bitdepth_max, tmp)
+        };
+    }
+    // Exhaustive over `hbd_supported` + the caller's `shift` table: w and h are
+    // each 4, 8 or 16.
+    match (w, h) {
+        (4, 4) => shape!(4, 4),
+        (4, 8) => shape!(4, 8),
+        (4, 16) => shape!(4, 16),
+        (8, 4) => shape!(8, 4),
+        (8, 8) => shape!(8, 8),
+        (8, 16) => shape!(8, 16),
+        (16, 4) => shape!(16, 4),
+        (16, 8) => shape!(16, 8),
+        (16, 16) => shape!(16, 16),
+        _ => unreachable!("itx_arm_hbd: no kernel for {w}x{h}"),
+    }
+}
 
-    let is_rect2 = w * 2 == h || h * 2 == w;
+/// [`inv_txfm_hbd_neon`]'s body, monomorphised on the transform shape.
+///
+/// `W` and `H` are const rather than runtime for one reason: the row- and
+/// column-pass state arrays. They used to be `[V; MAXDIM]` — 16 vectors —
+/// indexed by a runtime bound and handed to `apply1d` as a slice, so LLVM had
+/// to materialise them on the stack, zero all 16 lanes on entry to every group,
+/// and reload each element across the 1-D call. On this ladder the dominant
+/// shape is the *smallest*: 181,768 of the 272,949 16bpc transform calls in
+/// L3840x2160_420_10b are 4x4 (`__ablate` shape census, 2026-08-10), where 4 of
+/// those 16 vectors carry data. With the shape const, every index and trip
+/// count is a constant, the arrays are exactly `W`/`H` long, and SROA can keep
+/// them in NEON registers.
+///
+/// Nine instantiations (3 widths x 3 heights); `apply1d` adds three more.
+#[cfg(target_arch = "aarch64")]
+#[rite(neon)]
+fn txfm_core<const W: usize, const H: usize>(
+    first: Kind,
+    second: Kind,
+    shift: u32,
+    coeff: &mut [i32],
+    bitdepth_max: i32,
+    tmp: &mut [i32],
+) {
+    const { assert!(W % 4 == 0 && H % 4 == 0) };
+    // The caller sizes `tmp` to `W * H` exactly (see `itx_arm::itxfm_add_dispatch`).
+    // Every element of `tmp[..W * H]` is written by the row pass before the
+    // column pass reads it, so its initial contents are never observed — but a
+    // SHORT buffer would be, so bound both slices once, here, rather than
+    // letting a short one surface as an out-of-range read deep in a loop. Both
+    // bounds are also what lets the per-element `try_from`s below fold away.
+    let tmp = &mut tmp[..W * H];
+    let coeff = &mut coeff[..W * H];
+
+    let is_rect2 = W * 2 == H || H * 2 == W;
     let rnd: i32 = (1 << shift) >> 1;
 
     let row_clip_min = vdupq_n_s32((!bitdepth_max) << 7);
@@ -620,19 +683,19 @@ pub(crate) fn inv_txfm_hbd_neon(
 
     // ---- row pass: four rows per iteration, lanes = rows ----
     let mut y0 = 0usize;
-    while y0 < h {
-        let mut v = [vdupq_n_s32(0); MAXDIM];
-        for x in 0..w {
-            let base = y0 + x * h;
+    while y0 < H {
+        let mut v = [vdupq_n_s32(0); W];
+        for x in 0..W {
+            let base = y0 + x * H;
             let a = <&[i32; 4]>::try_from(&coeff[base..base + 4]).expect("4 coeffs");
             let t = safe_simd::vld1q_s32(a);
             v[x] = if is_rect2 { m181(t) } else { t };
         }
 
-        apply1d(first, w, &mut v, row_clip_min, row_clip_max);
+        apply1d::<W>(first, &mut v, row_clip_min, row_clip_max);
 
         // Reference: `tmp[i] = iclip(tmp[i] + rnd >> shift, col_clip_*)`.
-        for e in v[..w].iter_mut() {
+        for e in v.iter_mut() {
             *e = clip4(
                 vshlq_s32(vaddq_s32(*e, rnd_v), shr),
                 col_clip_min,
@@ -640,10 +703,10 @@ pub(crate) fn inv_txfm_hbd_neon(
             );
         }
 
-        for x0 in (0..w).step_by(4) {
+        for x0 in (0..W).step_by(4) {
             let t = transpose4x4([v[x0], v[x0 + 1], v[x0 + 2], v[x0 + 3]]);
             for (j, tj) in t.iter().enumerate() {
-                let off = (y0 + j) * w + x0;
+                let off = (y0 + j) * W + x0;
                 let slot = <&mut [i32; 4]>::try_from(&mut tmp[off..off + 4]).expect("4 lanes");
                 safe_simd::vst1q_s32(slot, *tj);
             }
@@ -651,19 +714,19 @@ pub(crate) fn inv_txfm_hbd_neon(
         y0 += 4;
     }
 
-    coeff[..w * h].fill(0);
+    coeff.fill(0);
 
     // ---- column pass: four columns per iteration, lanes = columns ----
-    for x0 in (0..w).step_by(4) {
-        let mut u = [vdupq_n_s32(0); MAXDIM];
-        for y in 0..h {
-            let off = y * w + x0;
+    for x0 in (0..W).step_by(4) {
+        let mut u = [vdupq_n_s32(0); H];
+        for y in 0..H {
+            let off = y * W + x0;
             let a = <&[i32; 4]>::try_from(&tmp[off..off + 4]).expect("4 lanes");
             u[y] = safe_simd::vld1q_s32(a);
         }
-        apply1d(second, h, &mut u, col_clip_min, col_clip_max);
-        for y in 0..h {
-            let off = y * w + x0;
+        apply1d::<H>(second, &mut u, col_clip_min, col_clip_max);
+        for y in 0..H {
+            let off = y * W + x0;
             let slot = <&mut [i32; 4]>::try_from(&mut tmp[off..off + 4]).expect("4 lanes");
             safe_simd::vst1q_s32(slot, u[y]);
         }

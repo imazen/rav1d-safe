@@ -1,0 +1,84 @@
+# itx_16bpc_ab_2026-08-10 — the 16bpc itx dispatch A/B
+
+Record for `docs/ITX_16BPC_DISPATCH.md`. Branch `perf/itx-hbd-wide`.
+
+`main` moved twice during this work: the sweeps in `itx_16bpc_ab_*` and
+`itx_16bpc_compose_*` were taken against **2fae4fe** (#482);
+`itx_16bpc_rebase_2026-08-10.tsv.zst` re-measures the whole change against
+**0f6bf10** (#483) after the rebase, arms `base2` / `HEAD2`. Always diff against
+a recorded SHA, never against the `main` ref — it moves under you when other
+agents merge.
+
+## Host and instrument
+
+- Apple M4 Pro (8P + 4E), 24 GB, macOS 26.5.2. Rust stable, default features,
+  **no `-C target-cpu=native`**, **no `nice` on any timed run**.
+- dav1d 1.5.4, `--framedelay 1`, interleaved in the same sweep with a rotating
+  arm order inside every cell.
+- Two-point wall fit: each cell runs at `n_lo` and `n_hi` frames and
+  `beta = (ms_hi - ms_lo) / (n_hi - n_lo)` is the reported ms/frame, so process
+  startup drops out. Frame counts are PER CELL (5,000/50,000 at 64x36 down to
+  2/16 at 4K) because a 64x36 frame decodes in ~45 us and a 2-vs-20 fit there
+  would be timer noise.
+- Harness: `scripts/perf/size_sweep.sh` (from the `measure/size-sweep-intercept`
+  branch), driven by `~/tmp/itxwork/run_sweep1.sh`, under
+  `measlock --load-ok`.
+
+## THE BOX WAS NOT IDLE — read the ratios, not the absolutes
+
+Another agent held a multi-hour `miri` job at ~100% of a core for this entire
+session, and this session's own correctness gates ran `nice -n 19` alongside
+(the brief's E-core rule). `measlock --load-ok` was therefore used: it keeps the
+cross-agent mutual exclusion and skips the wait-for-quiet, which on a box with a
+long-running non-timed job can never be satisfied.
+
+Every row carries `foreign_max` in its last column. **Absolute ms/frame is
+inflated and is not comparable to an idle campaign's numbers.** Arm-vs-arm and
+ours-vs-dav1d ratios are paired within a round, with the arms interleaved
+back-to-back in rotating order, and those are the statistic to read.
+
+## Arms
+
+| arm | tree |
+|---|---|
+| `base` | `main` @ 2fae4fe |
+| `A` | + `50e878b` — `for_rows_mut` in the 16bpc itx pixel-add loop |
+| `AB` | + `032d917` — scratch sized to the shape |
+| `ABC` | + `6d4a937` — hbd driver monomorphised on the shape |
+| `dav1d_fd1` | dav1d 1.5.4 `--framedelay 1` |
+
+A second sweep, `itx_16bpc_compose_2026-08-10.tsv.zst`, adds two arms the first
+one cannot express: **`AC`** (A and C, with B reverted — the arm that shows B is
+worth 0.9-1.8% once C has landed, where the incremental `AB/A` reading says
+null) and **`HEAD`** (`7bc62f3`, A+B+C plus the `__ablate` shape census — the
+arm that proves the census is a no-op without its feature). Its cells add
+`--threads 8` on SINGLE-TILE streams, the configuration in which
+`for_rows_mut` takes per-row guards rather than a hull.
+
+## Files
+
+| file | what |
+|---|---|
+| `itx_16bpc_ab_2026-08-10.tsv.zst` | raw rows: `round arm vec threads n_lo ms_lo n_hi ms_hi foreign_max` |
+| `itx_16bpc_ab_report_2026-08-10.txt` | per-cell medians, per-arm bands, paired ratio bands |
+| `itx_16bpc_shapes_2026-08-10.tsv` | the shape census that refuted "16bpc itx above 16x16" |
+| `itx_16bpc_selftime_2026-08-10.txt` | `sample` self-time leaves, base and ABC, 4K 10bpc |
+| `itx_16bpc_compose_2026-08-10.tsv.zst` | second sweep: `base`/`ABC`/`AC`/`HEAD`, t=1 and t=8 |
+| `itx_16bpc_rebase_2026-08-10.tsv.zst` | third sweep: `base2`/`HEAD2`/`dav1d_fd1` against `main` @ 0f6bf10 |
+
+## Reproduce
+
+```
+cargo build --release --example bench_ab_decode          # per arm, staged as bench_<arm>
+BIN=<dir> AVIF=<dir> IVF=<dir> ARMS="base A AB ABC dav1d_fd1" ALLOW_LOAD=1 \
+  CELLS="<vec>:<threads>:<n_lo>:<n_hi> ..." \
+  measlock --load-ok itx-sweep -- bash scripts/perf/size_sweep.sh out.tsv 9
+
+# the census
+cargo build --release --features __ablate --example itx_shape_census
+./target/release/examples/itx_shape_census <vec>.avif ...
+```
+
+Vectors: the 24-cell size ladder from `docs/SIZE_SWEEP.md`
+(`~/tmp/szsweep/{vec,ivf}`, deliberately out of git at 1.1 GB) plus the
+campaign's `v4k_8tile{,_10b}` (`~/tmp/rav1d-perf/vec`, `~/tmp/recon-yard/vec`).
