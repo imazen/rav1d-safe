@@ -104,7 +104,7 @@ campaigns. Every rule below cost real time to learn.
 | Loop-filter reads as one strided HULL instead of `h` per-row guards (rav1d-safe) | **2.65x SLOWER at t=8** despite removing 3.46 M registrations/frame — the hull is 50-60 KB and lands on the tracker's wide path. `--features __probe_lf_hull` reproduces it |
 | Restoring `rav1d_recon_b_intra`'s incremental destination addressing (rav1d-safe) | 1.021 vs 1.0060 — the hoist keeps a live 40-byte `ReconDst` across `decode_coefs` |
 | Raising the loop filter's **H** batch cap (rav1d-safe) | structurally null: `LFCAP` measures ratio **1.000** at caps 4/8/16/32/64, because H's rectangle grows in the ROW direction |
-| The V batch cap **with a fixed-wide scratch stride, a `params`-read threshold, and an always-on chunk loop** | +3.0% t=1 / +7.9% t=8 — the machinery, not the batch: an isolation arm at cap 4 was +18.7%. The cap itself is a win once the machinery is made free on short runs |
+| The loop filter's **V** batch cap 4 -> 32 (rav1d-safe) | **NOT SHIPPED — the count is real and the wall clock is not.** 1.971x fewer registrations on the V pass, exactly as priced, = 580,614/frame x 4.04 ns = **<= 0.51% of a t=8 frame's CPU**. Measured 8bpc t=8 1.0005 (4/8 rounds faster), t=1/t=2 **+1.6%** sign-consistent, no cell disjoint, n=7-8 load-tagged. Its first form was +7.9% at t=8 and an isolation arm put +18.7% of that in the MACHINERY. **Convert a ratio into milliseconds BEFORE building.** `docs/MUT_RECON_KERNELS.md` §19 |
 
 **The meta-lesson from the top two rows: a large self-time share is not automatically a large
 opportunity, and reducing the COUNT of an operation is not the same as reducing its COST.** The last
