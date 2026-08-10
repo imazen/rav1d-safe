@@ -339,7 +339,7 @@ registration count.
 **Not flipped in this branch, and these are the reasons, not modesty:**
 
 * **Two picture sizes.** 1024x576 and 4K (plus 2048x1152 and both 10-bit twins in
-  the load-tagged confirm grid, §5c). The sweep discipline this repo works to asks
+  the load-tagged confirm grid, §5d). The sweep discipline this repo works to asks
   for tiny / 256 / 1024 / 4K, and §2 says the error is a function of picture HEIGHT,
   so the sizes are the axis that matters most and are the least covered.
 * **8-bit 4:2:0 only in the idle-box grid**, all-intra, 8 tiles (4x2), one box
