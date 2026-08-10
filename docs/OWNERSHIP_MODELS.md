@@ -250,12 +250,35 @@ count by widening the reservation", and the first where the widening was contigu
   has to match the sparsity — per edge, or per tap window — not per row or per band. At which point
   you are back to a fine-grained record, which is what we already have.
 
+**The one thing that IS available here, and it is a COUNT change with no extent change.**
+`LfBlock::open` already fuses consecutive same-`wd` groups into one rectangle, and that rectangle is
+**exactly the union of its members'** — every column belongs to a group that filters, over the same
+`2 * reach` rows — so it has none of the slack a band has. Raising the fusing cap therefore removes
+registrations without moving the boundary between "reserved" and "read" at all. Done for the V pass
+(`docs/MUT_RECON_KERNELS.md` §19): 1,178,490 -> 597,876 per frame, whole decoder 11,401,399 ->
+10,820,785. **H's cap ratio is exactly 1.000 at every cap** because its rectangle grows in the ROW
+direction, so 69.3% of the site is untouched by this lever and needs a different one.
+
+**The test that distinguishes it from the three schemes that died**, stated so the next attempt can
+apply it in one line: *does the reservation contain a byte no member of the batch reads?* Strided
+hull: yes, the gaps between rows (2.65x slower). Read band: yes, the gaps between edges (decode
+failure). Fused run: no.
+
+**And a second lesson, measured the hard way.** The first cut of that cap lift was SLOWER than base
+(+3.0% at t=1, +7.9% at t=8) even though its count was correct, and an isolation arm put +18.7% of
+it in the MACHINERY — a materialised threshold table dropped for a slice read, a fixed-wide scratch
+stride, a chunk loop that ran when it could only iterate once — rather than in the wider runs. §11's
+meta-lesson was *price the extent, not just the count*. Add: **price the machinery too.** A count
+reduction that needs new machinery to reach it is worth what the count is worth MINUS what the
+machinery costs, and the machinery does not have to touch the extent to cost more.
+
 The options that remain, in the order the evidence supports:
 
 1. **Cut the guard cost rather than the guard.** `LfBlock::fill` (`src/loopfilter.rs:566`) is
    **3,835,042 registrations/frame at t=8 — 33.6% of the whole decoder's**, measured by a doubling
    arm at **3.61 ms/frame of wall, 4.04 ns each**. One site. Coarsening it (per tap row, or per
    fused group, instead of per tap) is sound, local, and does not need any ownership change.
+   The V half of this is DONE (above); the H half is open.
 2. **Partition by edge class, not by region.** Filter the edges wholly interior to a band in
    parallel, and the boundary edges in a separate pass. This is a *scheduling* answer to a
    write-write overlap, and it is the only one that gets the filter off coordination entirely.
@@ -267,6 +290,28 @@ The options that remain, in the order the evidence supports:
 
 Also live here: `src/loopfilter.rs:140,182` uses the same whole-plane-guard shape as #479, which
 stops 13 of 768 vectors decoding above one thread. Unaudited.
+
+### 7e. `ctx.rs:99` — a context array, and the half of it that ownership CAN own
+
+2,534,988 registrations/frame at t=8, 22.2%, and larger than the whole recon population #482
+converted. It is not a picture buffer, so none of §1-§4's blockers apply automatically — and the
+answer is that §4's model applies to exactly half of it.
+
+`CaseSetter::set_disjoint` reported all of it as one line until a cfg-gated `#[track_caller]` split
+it across its 12 real callers (`benchmarks/ctx99_sites_2026-08-10.tsv`; they sum to it exactly).
+Every one is a `CaseSet::many([(&t.l, ..), (&f.a[t.a], ..)], ..)` over two directions, so:
+
+* `f.a[t.a]` lives on `Rav1dFrameData` behind the shared `try_read()` guard — §1 verbatim, no `&mut`
+  at any point, and its cross-tile disjointness is the TILE-KEYED argument §3 rejected. Half is not
+  reducible by ownership.
+* `t.l` is a field of `Rav1dTaskContext`, per worker, already reached through `&mut` wherever
+  `recon_band` is. **1,267,494/frame — 11.1% of the decoder's population — is a §4 owned buffer that
+  simply has not been converted.** `DisjointMut::get_mut(&mut self)` already exists and registers
+  nothing.
+
+The obstruction is shape, not soundness: `CaseSet::many` takes a HOMOGENEOUS `[T; N]`, and `&mut
+BlockContext` and `&BlockContext` are different types. See `docs/MUT_RECON_KERNELS.md` §20a for what
+converting costs and for the coalescing idea that must NOT be tried (it fails §7d's one-line test).
 
 ## 8. Picking a model
 

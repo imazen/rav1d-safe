@@ -103,9 +103,15 @@ campaigns. Every rule below cost real time to learn.
 | 2D-dot hoist in `compute_stats` (zenav1-svt) | 0.944-0.977x regression |
 | Loop-filter reads as one strided HULL instead of `h` per-row guards (rav1d-safe) | **2.65x SLOWER at t=8** despite removing 3.46 M registrations/frame — the hull is 50-60 KB and lands on the tracker's wide path. `--features __probe_lf_hull` reproduces it |
 | Restoring `rav1d_recon_b_intra`'s incremental destination addressing (rav1d-safe) | 1.021 vs 1.0060 — the hoist keeps a live 40-byte `ReconDst` across `decode_coefs` |
+| Raising the loop filter's **H** batch cap (rav1d-safe) | structurally null: `LFCAP` measures ratio **1.000** at caps 4/8/16/32/64, because H's rectangle grows in the ROW direction |
+| The V batch cap **with a fixed-wide scratch stride, a `params`-read threshold, and an always-on chunk loop** | +3.0% t=1 / +7.9% t=8 — the machinery, not the batch: an isolation arm at cap 4 was +18.7%. The cap itself is a win once the machinery is made free on short runs |
 
 **The meta-lesson from the top two rows: a large self-time share is not automatically a large
-opportunity, and reducing the COUNT of an operation is not the same as reducing its COST.** The
+opportunity, and reducing the COUNT of an operation is not the same as reducing its COST.** The last
+two rows add a third: **price the MACHINERY a count reduction needs, not only the count and the
+extent.** A correct count reduction whose new machinery costs more than the registrations it removes
+is a regression, and you find that out only by building an isolation arm that keeps the machinery
+and removes the reduction. The
 loop-filter hull row sharpens it in the other direction: a count reduction bought with a WIDER
 extent can be actively harmful. Price the extent, not just the count — and price the count on its
 own by ADDING a duplicate rather than removing the original, which is sound for immutable
