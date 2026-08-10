@@ -168,8 +168,8 @@ fn picture_reservations_stay_inside_the_measured_ceiling() {
         failed.len()
     );
     println!(
-        "{:<38} {:>8} {:>9} {:>5} {:>12}  {}",
-        "file", "max B", "ceiling", "rows", "n", "site of max"
+        "{:<38} {:>8} {:>9} {:>5} {:>12}  site of max",
+        "file", "max B", "ceiling", "rows", "n"
     );
     let mut over = Vec::new();
     for (file, bytes, site, n, rows) in extent_budget::per_file() {
