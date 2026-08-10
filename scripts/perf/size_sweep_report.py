@@ -136,6 +136,40 @@ def main():
                     f"{om:.5f}\t{min(o):.5f}\t{max(o):.5f}\t{dm:.5f}\t{min(d):.5f}\t{max(d):.5f}\t"
                     f"{rm:.4f}\t{min(pr):.4f}\t{max(pr):.4f}\t{disj}")
 
+            # A two-parameter linear model over 3.5 decades of pixel count is
+            # misspecified whenever ms/MP is not flat -- and it is not, for
+            # either decoder. Print ms/MP per size so the misspecification is
+            # visible rather than hidden inside an R^2, and fit the small end
+            # separately, where a line IS defensible and the intercept is a
+            # physical per-frame fixed cost rather than a 4K extrapolation.
+            print("  -- ms per megapixel (the model check: a flat column means alpha ~ 0) --")
+            print("     " + "  ".join(f"{g//1000}k:{o/(g/1e6):.1f}/{d/(g/1e6):.1f}"
+                                      for g, o, d in zip(xs_l, y_ours, y_dav)))
+            # The least model-dependent alpha available: an affine fit through
+            # the two SMALLEST cells only. It assumes nothing about the rest of
+            # the ladder, and at 2,304 px the pixel term is small enough that
+            # the intercept is not an extrapolation from far away.
+            def two_pt(ys):
+                b = (ys[1] - ys[0]) / (xs_l[1] - xs_l[0])
+                return ys[0] - b * xs_l[0], b
+            a2o, b2o = two_pt(y_ours)
+            a2d, b2d = two_pt(y_dav)
+            print(f"  -- two-point alpha ({xs_l[0]} and {xs_l[1]} px only) --")
+            print(f"     ours : alpha = {a2o*1000:7.2f} us/frame   beta = {b2o*1e6:6.2f} ms/MP"
+                  f"   (alpha is {100*a2o/y_ours[0]:4.1f}% of the tiny frame)")
+            print(f"     dav1d: alpha = {a2d*1000:7.2f} us/frame   beta = {b2d*1e6:6.2f} ms/MP"
+                  f"   (alpha is {100*a2d/y_dav[0]:4.1f}% of the tiny frame)")
+            print(f"     alpha_ours - alpha_dav1d = {(a2o-a2d)*1000:+.2f} us/frame")
+
+            k = min(3, len(xs_l))
+            ao, bo, r2o = ols(xs_l[:k], y_ours[:k])
+            ad, bd, r2d = ols(xs_l[:k], y_dav[:k])
+            print(f"  -- small-end fit ({k} smallest sizes only) --")
+            print(f"     ours : alpha = {ao*1000:8.1f} us/frame   beta = {bo*1e6:7.3f} ms/MP  R2={r2o:.5f}")
+            print(f"     dav1d: alpha = {ad*1000:8.1f} us/frame   beta = {bd*1e6:7.3f} ms/MP  R2={r2d:.5f}")
+            print(f"     alpha_ours - alpha_dav1d = {(ao-ad)*1000:+.1f} us/frame   "
+                  f"alpha ratio = {(ao/ad) if ad else float('nan'):.3f}")
+
             for label, xs, unit in (("luma px", xs_l, "MP"), ("total samples", xs_s, "Msample")):
                 print(f"  -- fit vs {label} --")
                 for name, wts in (("OLS      ", None),
