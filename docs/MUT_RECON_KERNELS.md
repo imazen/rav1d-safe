@@ -656,6 +656,51 @@ Put the two together and the finding is sharper than "count is not cost":
   gap the next attempt has to close, and a band is the only instrument that
   can.**
 
+### 11f. The number that decides it: a filter-chain registration at t=8 is worth 3.61 ms/frame of WALL
+
+Neither §11c nor §11d prices the population **at t=8, contended**, which is the
+only cell where it matters. `RAV1D_LF_HULL` cannot, because it substitutes a
+worse extent. `RAV1D_LF_PERROW` cannot, because at t=1 there is no contention.
+
+`RAV1D_LF_DOUBLE=1` (same feature) takes **each** per-row read guard TWICE —
+same bytes, same extent, same output, nothing changed but the count. Sound by
+construction: the extra reservation is IMMUTABLE and covers exactly the bytes
+the next one covers, and two immutable reservations never conflict, so it
+cannot invent an overlap the single guard would not already have found.
+
+Census, `v4k_8tile` 8bpc t=8, band on: 11,401,399 -> 15,236,441, i.e.
+**+3,835,042 — exactly `LfBlock::fill`'s population**, added back on top of
+itself.
+
+**Control first.** At t=1 the hull path is taken and the doubling code is
+unreachable. It measures null: 1.0058 [0.8888..1.0594], 4/7 slower, p=1.000.
+The probe fires only where it is supposed to.
+
+| t=8, `v4k_8tile` 8bpc | single | double | double/single | n | p |
+|---|---|---|---|---|---|
+| user CPU, 20 frames | 9.740 s | 10.050 s | **1.0340** [0.9764..1.0539], 14/15 | 15 | **0.0010** |
+| **wall, two-point fit at 2 and 20 frames** | **66.28 ms/frame** | **69.89** | **1.0536** [1.0316..1.0976], 11/11 | 11 | **0.0010** |
+
+**3,835,042 registrations = 3.61 ms/frame of wall and 15.5 ms/frame of CPU at
+t=8, i.e. 4.04 ns of CPU each** — inside the 2.8-9.4 ns/registration range #481
+measured for recon's population, and 1.4x the 2.9 ns §11d measured for the same
+registrations uncontended at t=1. Contention is worth about 40% on top.
+
+**Read it as an UPPER bound on the prize, not the prize.** This is the MARGINAL
+cost of adding 3.84 M on top of 11.4 M. Tracker cost is demonstrably sublinear
+in population going the other way — #467/#482 show 22.7 M -> 11.4 M buying
+0.399 of dav1d ratio at t=8 while the remaining 11.4 M -> 0 is worth only 0.129
+— so removing the original 3.84 M will save LESS than adding a second copy
+costs.
+
+With that caveat, the sizing for a next attempt: **the distance from #482's
+1.474 to the whole-tracker ceiling's 1.345 is 8.8% of `head`'s wall, and this
+one site's READ population is worth up to ~5.4% of it.** An owned filter band
+that removes those registrations therefore has room for a copy costing under
+roughly 3.6 ms/frame at 4K t=8, and the copy is ~3.1 MB in and out per
+superblock row. That is the arithmetic to check FIRST — before writing any of
+the conversion.
+
 ### 11e. What a next attempt has to answer first
 
 Whatever that says, two things are now fixed points for anyone converting the

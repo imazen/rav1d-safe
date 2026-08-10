@@ -502,6 +502,34 @@ fn lf_force_per_row() -> bool {
     false
 }
 
+/// The third arm: take EACH per-row read guard TWICE, doubling `LfBlock::fill`'s
+/// population without changing any extent, any output, or any other cost.
+///
+/// This is the only sound way to price a filter-chain registration **at t=8, on
+/// the contended path**, and it is what decides whether an owned filter band is
+/// worth building. `RAV1D_LF_PERROW` prices one uncontended at t=1;
+/// `RAV1D_LF_HULL` cannot price anything because it substitutes a much worse
+/// extent (§11c). Doubling changes nothing but the count.
+///
+/// Sound by construction: the extra guard is IMMUTABLE and covers exactly the
+/// same bytes as the one that follows it, and two immutable reservations never
+/// conflict — so this cannot invent an overlap that the single guard would not
+/// already have found. It is a marginal-cost probe, and the marginal cost of
+/// the second 3.46 M is an upper bound on the first's only if the tracker is
+/// linear in population; it is reported as the marginal number it is.
+#[cfg(feature = "__probe_lf_hull")]
+fn lf_double_reads() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| matches!(std::env::var("RAV1D_LF_DOUBLE").as_deref(), Ok("1")))
+}
+
+#[cfg(not(feature = "__probe_lf_hull"))]
+#[inline(always)]
+fn lf_double_reads() -> bool {
+    false
+}
+
 struct LfBlock<'a, 'b, BD: BitDepth> {
     scratch: &'b mut LfScratch<BD>,
     /// Top-left of the rectangle in picture coordinates.
@@ -665,6 +693,16 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         }
         for row in 0..h {
             let off = origin.offset.wrapping_add_signed(row as isize * stride);
+            // The MARGINAL price of one filter-chain registration, measured on
+            // the real contended path. See [`lf_double_reads`].
+            if lf_double_reads() {
+                let extra = PicOffset {
+                    data: origin.data,
+                    offset: off,
+                }
+                .slice::<BD>(W);
+                core::hint::black_box(&extra[0]);
+            }
             let guard = PicOffset {
                 data: origin.data,
                 offset: off,

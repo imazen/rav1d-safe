@@ -58,3 +58,11 @@ filter_band_tax_n15_2026-08-10.tsv
   session. This file is therefore ALSO load-tagged -- 116 of its 120 rows
   carry foreign_max >= 1 (54 at 1, 54 at 2, 2 at 3, 4 at 4, 2 at 5; only 4
   rows are clean).
+
+filter_band_double_t8_usercpu_2026-08-10.txt   round  RAV1D_LF_DOUBLE  user_seconds
+filter_band_double_t1_control_2026-08-10.txt   same, t=1 -- the CONTROL: at t=1
+  `fill` takes the hull, the doubling code is unreachable, and it measures null.
+filter_band_double_t8_wall_2026-08-10.tsv      round  RAV1D_LF_DOUBLE  ms_at_2_frames
+  ms_at_20_frames  foreign_count. beta = (hi - lo)/18 is ms/frame; rotating arm
+  order; bench_hullprobe (--features __probe_lf_hull), RAV1D_OWNED_RECON=1.
+  Also load-tagged.
