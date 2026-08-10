@@ -1593,6 +1593,14 @@ pub fn fgy_32x32xn_dispatch<BD: BitDepth>(
 
     let stride = dst.stride();
     // The `pw × bh` band this row worker owns — see `band_len` (#479).
+    //
+    // ONE band length is used for both `dst` and `src` because `fgy_inner_*`
+    // takes a single `stride`, i.e. equal strides are already a precondition of
+    // the kernel, and `rav1d_prep_grain` asserts it
+    // (`src/fg_apply.rs`, `out.stride[0] == in.stride[0]`). Stated here because
+    // the previous whole-plane guards took each component's own length and so
+    // did not depend on it.
+    debug_assert_eq!(dst.stride(), src.stride(), "fgy: dst/src stride mismatch");
     let band = band_len::<BD>(dst, pw, bh);
 
     match BD::BPC {
@@ -1696,6 +1704,11 @@ pub fn fguv_32x32xn_dispatch<BD: BitDepth>(
     // `((pw - 1) << sx) + sx`. Exactly the extent, one pixel at a time; the
     // `asm`-path FFI wrapper above is deliberately a hair more generous
     // (`(bh << sy) * stride + (pw << sx) + sx`) because it builds a raw slice.
+    //
+    // One length for `dst` and `src` for the same reason as `fgy` above:
+    // `fguv_inner_*` takes a single chroma `stride`, and `rav1d_prep_grain`
+    // asserts `out.stride[1] == in.stride[1]` whenever it copies chroma.
+    debug_assert_eq!(dst.stride(), src.stride(), "fguv: dst/src stride mismatch");
     let band = band_len::<BD>(dst, pw, bh);
     let sx = is_sx as usize;
     let sy = is_sy as usize;
