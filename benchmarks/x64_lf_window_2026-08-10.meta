@@ -134,6 +134,11 @@ Unchanged on purpose:
 superblock geometry is in scope) that a V run's window stays inside its
 superblock row. Built `--release -C debug-assertions=on`:
 
+  aarch64, FULL corpus, t=1, fix in place:   766 PASS / 2 SKIP, 0 firings
+  aarch64, FULL corpus, t=8, fix in place:   766 PASS / 2 SKIP, 0 firings,
+                                             0 overlap panics
+      (the full corpus is what makes this cover 4:2:0 / 4:2:2 / 4:4:4 / 4:0:0
+       and 8/10/12-bit, not just the 8-bit 4:2:0 group)
   aarch64, `8-bit/data`, t=1, fix in place:      358/358 PASS, 0 firings
   aarch64, `8-bit/data`, t=1, old constant planted:
       abort on the SECOND vector —
@@ -143,6 +148,29 @@ superblock row. Built `--release -C debug-assertions=on`:
 
 A race that took a 10-minute t=8 corpus pass to show once is now a ~1.5 s t=1
 abort.
+
+### 6a-bis. How often the old window crossed — 0.632% of V runs
+
+A throwaway counter beside the assertion (uncommitted; sources restored
+byte-exact and `git diff --exit-code`-clean afterwards) counted, per V run, how
+often each window would leave the superblock row. aarch64, `8-bit/data`, t=1,
+sampled every 200,000 runs:
+
+      n runs   old (plane 7/3)   new (mask-derived)
+     200,000               919                    0
+     400,000             1,956                    0
+     600,000             3,350                    0
+     800,000             4,854                    0
+   1,000,000             6,438                    0
+   1,200,000             7,937                    0
+   1,400,000             9,140                    0
+   1,600,000            10,104                    0
+
+**0.632% of V runs, and zero after the fix.** That ratio is the answer to "was
+this a corner case?" — it is not rare in the filter, it is rare in COINCIDENCE:
+only the crossings that land on a row a peer is writing at that instant become a
+panic, which is why the observed rate at t=8 is ~1% per vector and the failing
+set is unstable.
 
 ### 6b. Unit, with teeth
 
