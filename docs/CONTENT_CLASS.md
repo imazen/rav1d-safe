@@ -358,6 +358,29 @@ inline, so what is saved is the call/return/dispatch, not the 1.22%. **A leaf
 share is an upper bound on what removing the leaf can buy, not an estimate of
 it.**
 
+The same two profiles settle two things about the *other* Q2 libc item, for
+free — `_platform_memset` callers on the same cell:
+
+| caller | base (= `main` 5606efe) | head |
+|---|---|---|
+| `<itx::itxfm::Fn>::call` | **248 (0.72%)** | 247 (0.71%) |
+| `recon::decode_coefs` | 49 | 65 |
+| `loopfilter::loopfilter_sb_direct` | 46 | 71 |
+| `cdef_arm::cdef_filter_block_16bpc_inner` | **37** | **38** |
+
+* **The itx scratch memset is still live on `main`** — 248 of 382 samples, which
+  reproduces `SIZE_SWEEP.md`'s 267 of 377 at the same size to within 8% on a
+  different arm. **PR #484 fixes it and is unmerged**, so anyone re-profiling
+  `main` will keep finding it. This change leaves it untouched (248 → 247), as
+  it should.
+* **CDEF's own memset is NOT what this change addressed and did not move**
+  (37 → 38). That is `let mut tmp = [CDEF_VERY_LARGE; TMP_LEN]` in
+  `cdef_filter_block_{8,16}bpc_inner`: 288 bytes of sentinel fill per CDEF
+  block, at **both** depths, i.e. 2.2 MB per 1024x576 frame at 7,616 blocks.
+  Only the columns a block actually reads need the sentinel, so a shape-aware
+  fill is a separate, unclaimed candidate — priced, before anyone builds it, at
+  ~0.11% of this cell.
+
 **Kept, not on the number.** It is byte-identical, it strictly removes libc
 calls, it costs no new machinery, and it makes `padding_16bpc` match the
 `padding_8bpc` pattern whose own justification is already in the source. A
