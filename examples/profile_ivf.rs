@@ -11,16 +11,43 @@
 #[path = "helpers/ivf_parser.rs"]
 mod ivf_parser;
 
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::src::managed::{Decoder, InloopFilters, Settings};
 use std::env;
 use std::fs::File;
 use std::hint::black_box;
 use std::io::BufReader;
 use std::time::Instant;
 
+/// `RAV1D_THREADS` (default 1) and `RAV1D_INLOOP` (default `all`).
+///
+/// Threads default to 1 so every number recorded by this example before the
+/// knob existed stays comparable. It is needed because the t=1 -> t=8 slowdown
+/// on real multi-frame content (1.14x-3.44x across the LR ladder, 2026-08-10)
+/// could not be PROFILED at all otherwise: `bench_ivf_limit` is thread-capable
+/// but exits after one pass, too short for `/usr/bin/sample` to attach to.
+///
+/// `RAV1D_INLOOP` mirrors `dav1d --inloopfilters` — see `bench_ivf_limit`. It
+/// changes output pixels; attribution only.
 fn decode_ivf_frames(frames: &[ivf_parser::IvfFrame]) -> usize {
     let mut settings = Settings::default();
-    settings.threads = 1;
+    settings.threads = std::env::var("RAV1D_THREADS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
+    // Tile threading only, matching `dav1d --framedelay 1` and the rest of the
+    // gap campaign. A no-op in the checked build, which pins n_fc = 1 anyway.
+    settings.max_frame_delay = 1;
+    settings.inloop_filters = match std::env::var("RAV1D_INLOOP").as_deref().unwrap_or("all") {
+        "all" => InloopFilters::all(),
+        "none" => InloopFilters::none(),
+        "nodeblock" => InloopFilters::CDEF.union(InloopFilters::RESTORATION),
+        "nocdef" => InloopFilters::DEBLOCK.union(InloopFilters::RESTORATION),
+        "norestoration" => InloopFilters::DEBLOCK.union(InloopFilters::CDEF),
+        other => panic!(
+            "RAV1D_INLOOP={other}: expected all|none|nodeblock|nocdef|norestoration \
+             (dav1d --inloopfilters spelling)"
+        ),
+    };
     let mut decoder = Decoder::with_settings(settings).expect("decoder creation failed");
     let mut decoded = 0;
 

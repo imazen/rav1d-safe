@@ -180,7 +180,15 @@ fn hash_frame(frame: &Frame, ctx: &mut md5::Context) {
     }
 }
 
-fn decode_md5(ivf_path: &Path, apply_grain: bool, threads: u32) -> Result<(String, usize), String> {
+/// Returns `(md5, frames, width, height)`. The dimensions are part of the
+/// record because "which vectors exercise family X" is only half the question a
+/// kernel-porting decision needs — the other half is AT WHAT SIZE, and a
+/// per-pixel cost cannot be separated from a per-call intercept without it.
+fn decode_md5(
+    ivf_path: &Path,
+    apply_grain: bool,
+    threads: u32,
+) -> Result<(String, usize, usize, usize), String> {
     let file = std::fs::File::open(ivf_path).map_err(|e| format!("open: {e}"))?;
     let mut reader = std::io::BufReader::new(file);
     let frames = ivf_parser::parse_all_frames(&mut reader).map_err(|e| format!("ivf: {e}"))?;
@@ -191,10 +199,22 @@ fn decode_md5(ivf_path: &Path, apply_grain: bool, threads: u32) -> Result<(Strin
     let mut decoder = Decoder::with_settings(settings).map_err(|e| format!("decoder: {e}"))?;
     let mut ctx = md5::Context::new();
     let mut n = 0usize;
+    let (mut w, mut h) = (0usize, 0usize);
+    let dims = |frame: &Frame, w: &mut usize, h: &mut usize| match frame.planes() {
+        Planes::Depth8(p) => {
+            *w = (*w).max(p.y().width());
+            *h = (*h).max(p.y().height());
+        }
+        Planes::Depth16(p) => {
+            *w = (*w).max(p.y().width());
+            *h = (*h).max(p.y().height());
+        }
+    };
 
     for f in &frames {
         match decoder.decode(&f.data) {
             Ok(Some(frame)) => {
+                dims(&frame, &mut w, &mut h);
                 hash_frame(&frame, &mut ctx);
                 n += 1;
             }
@@ -205,13 +225,14 @@ fn decode_md5(ivf_path: &Path, apply_grain: bool, threads: u32) -> Result<(Strin
     match decoder.flush() {
         Ok(rest) => {
             for frame in &rest {
+                dims(frame, &mut w, &mut h);
                 hash_frame(frame, &mut ctx);
                 n += 1;
             }
         }
         Err(e) => return Err(format!("flush: {e}")),
     }
-    Ok((format!("{:x}", ctx.finalize()), n))
+    Ok((format!("{:x}", ctx.finalize()), n, w, h))
 }
 
 fn main() {
@@ -306,9 +327,22 @@ fn main() {
          drop __simd_test."
     );
 
+    // ONLY these three families call `ablate::note()`, so only these three
+    // produce a nonzero count. The other six columns are UNINSTRUMENTED, not
+    // inactive — reading `loopfilter 0` as "the loop filter never ran" would be
+    // exactly the "permission is not execution" error inverted. Say so out
+    // loud, because the columns look uniform.
+    if activity {
+        eprintln!(
+            "ACTIVITY NOTE: instrumented families = itx, cdef, looprestoration \
+             (the `ablate::note()` call sites). The other six columns are \
+             uninstrumented and will read 0 regardless of what ran."
+        );
+    }
+
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-    let head = "group\tname\tstatus\texpected\tactual\tframes\twall_ms";
+    let head = "group\tname\tstatus\texpected\tactual\tframes\twall_ms\tw\th";
     if activity {
         let fams: Vec<&str> = rav1d_safe::src::ablate::Family::ALL
             .iter()
@@ -351,7 +385,7 @@ fn main() {
                 skip += 1;
                 writeln!(
                     out,
-                    "{group_key}\t{}\tSKIP\t{}\t-\t0\t0",
+                    "{group_key}\t{}\tSKIP\t{}\t-\t0\t0\t0\t0",
                     v.name, v.expected_md5
                 )
                 .unwrap();
@@ -375,7 +409,7 @@ fn main() {
                 String::new()
             };
             match res {
-                Ok((actual, n)) => {
+                Ok((actual, n, w, h)) => {
                     let status = if actual == v.expected_md5 {
                         pass += 1;
                         "PASS"
@@ -385,7 +419,7 @@ fn main() {
                     };
                     writeln!(
                         out,
-                        "{group_key}\t{}\t{status}\t{}\t{actual}\t{n}\t{ms}{act}",
+                        "{group_key}\t{}\t{status}\t{}\t{actual}\t{n}\t{ms}\t{w}\t{h}{act}",
                         v.name, v.expected_md5
                     )
                     .unwrap();
@@ -395,7 +429,7 @@ fn main() {
                     let e = e.replace('\t', " ").replace('\n', " ");
                     writeln!(
                         out,
-                        "{group_key}\t{}\tERROR\t{}\tERR:{e}\t0\t{ms}{act}",
+                        "{group_key}\t{}\tERROR\t{}\tERR:{e}\t0\t{ms}\t0\t0{act}",
                         v.name, v.expected_md5
                     )
                     .unwrap();

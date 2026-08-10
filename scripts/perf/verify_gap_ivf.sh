@@ -23,6 +23,16 @@
 #        (per-cell frame counts, because a 3-frame vector and a 140-frame one
 #        cannot share a pair).
 #
+# ARMS entries may carry an in-loop-filter suffix: `<arm>@<inloopfilters>`, e.g.
+#   ARMS="base base@norestoration dav1d_fd1 dav1d_fd1@norestoration"
+# which maps to `RAV1D_INLOOP=norestoration` on a rav1d arm and
+# `--inloopfilters norestoration` on a dav1d one. That makes a filter's COST
+# attributable on BOTH decoders through one instrument, instead of profiling
+# ours and arguing about theirs. Values are dav1d's spelling —
+# all|none|nodeblock|nocdef|norestoration — deliberately, so a cell is the same
+# string on both arms. It CHANGES OUTPUT PIXELS: attribution only, never a
+# correctness comparison.
+#
 # Output columns: round arm vec threads nlo ms_lo nhi ms_hi foreign_max
 set -u
 export LC_ALL=C
@@ -53,12 +63,14 @@ else
 fi
 
 time_one() {
-  local arm=$1 vec=$2 t=$3 n=$4 t0 t1
+  local spec=$1 vec=$2 t=$3 n=$4 t0 t1 arm il
+  arm=${spec%%@*}                      # arm name, `@inloop` stripped
+  il=${spec#*@}; [ "$il" = "$spec" ] && il=all
   t0=$(now_ms)
   case "$arm" in
-    dav1d_fd1) dav1d -i "$VECDIR/$vec.ivf" --muxer null --threads "$t" --framedelay 1 -q --limit "$n" >/dev/null 2>&1 ;;
-    dav1d_def) dav1d -i "$VECDIR/$vec.ivf" --muxer null --threads "$t"                 -q --limit "$n" >/dev/null 2>&1 ;;
-    *)         "$BIN/ivf_$arm" "$VECDIR/$vec.ivf" "$t" "$n" "$arm" >/dev/null 2>&1 ;;
+    dav1d_fd1) dav1d -i "$VECDIR/$vec.ivf" --muxer null --threads "$t" --framedelay 1 --inloopfilters "$il" -q --limit "$n" >/dev/null 2>&1 ;;
+    dav1d_def) dav1d -i "$VECDIR/$vec.ivf" --muxer null --threads "$t"                --inloopfilters "$il" -q --limit "$n" >/dev/null 2>&1 ;;
+    *)         RAV1D_INLOOP="$il" "$BIN/ivf_$arm" "$VECDIR/$vec.ivf" "$t" "$n" "$arm" >/dev/null 2>&1 ;;
   esac
   t1=$(now_ms); echo $((t1 - t0))
 }
