@@ -573,6 +573,24 @@ two checks now apply the same bound: a file with a tight entry is held to it
 separate `MAX_ROWS_TT == 1` assertion. A gate whose two halves disagree is a gate
 with a hole, and only a mutation shows you which half is wrong.
 
+### The DEBUG leg, proved rather than assumed
+
+The claim "plain `cargo test` carries the check" needed checking, because most of
+this repo's integration tests `compile_error!` in debug. `tests/mt_stress.rs`
+does not, and it decodes the 4K vector 25 times across threads 1..16 — so it is
+the debug-mode carrier:
+
+| | |
+|---|---|
+| `cargo test --test mt_stress` (DEBUG, **default features, no probe**) | ok, 98.75 s |
+| the same with the LF read widened `W` -> `W + 96` | **FAILED** — `thread 'rav1d-worker-0' panicked at src/loopfilter.rs:710:14: took a 110 B picture-plane reservation while tile threading is active; the measured ceiling for that file is 32 B` |
+| after restore | `git diff --exit-code` clean |
+
+So the invariant fires in an ordinary debug test run with no feature flags, which
+is the "the next person gets a test failure at the moment they do it" claim, now
+demonstrated instead of asserted. `tests/reproduce_overlap.rs` is NOT a carrier —
+all six of its tests are `#[ignore]`d by default.
+
 ## The ranked candidate list
 
 **Nothing here is implemented, on purpose.** The value of the map is that the
