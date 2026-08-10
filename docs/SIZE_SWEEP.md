@@ -1,7 +1,30 @@
 # Decode cost vs image size, and where 10bpc loses
 
 Measure-only round. No optimisation, no library source change — the diff is
-four measurement scripts and one example.
+measurement scripts, one example, docs and data. `git diff b0a00c3..HEAD --
+src/ lib.rs include/ crates/ Cargo.toml Cargo.lock build.rs` is empty.
+
+## Summary, worst news first
+
+1. **Every absolute below is `main` @ `b0a00c3` and `main` moved to `2fae4fe`
+   (#482) seven minutes into the sweep.** See the stale-baseline warning.
+2. **Our ratio to dav1d does not get worse as images get smaller — it gets
+   worse in the MIDDLE.** 1.14 at 256x144, 1.17 at 512x288, **1.48 at
+   1024x576, 1.56 at 2048x1152**, 1.31 at 4K (YUV420 8bpc, t=1). Fifteen rounds
+   of gap work were measured at 4K, which is our second-best cell; the worst is
+   the size a web image server actually serves.
+3. **Our per-frame fixed cost is 6-16 us larger than dav1d's** — real, but
+   worth 17-29% of a 64x36 frame and under 0.3% from 512x288 up. The
+   small-AVIF worry is retired above thumbnail size and quantified below it.
+   The one exception: **10bpc thumbnails**, 1.65 (4:2:0) and 1.73 (4:4:4), the
+   two worst cells in the matrix.
+4. **10bpc: we pay 11-34% to go from 8 to 10 bits; dav1d pays 1-5%.** The
+   ranked cause is inverse transforms (40% of it), then the tracker (17%), then
+   libc traffic from two named 16bpc kernels (12%). **The u16 cast path is
+   zero** — no leaf samples at either depth at any profiled size.
+5. **Loop restoration is off in all 24 ladder vectors AND all 7 of the
+   campaign's** — verified from the sequence header. This round documents the
+   blindness rather than curing it.
 
 ## Why
 
@@ -607,3 +630,52 @@ same load, and every row carries `foreign_max`.
 the lock and runs immediately, for exactly this case. Its current behaviour on
 a box with a long-running non-timed job is to burn 20 minutes and then run
 anyway, which is the worst of both.
+
+---
+
+# Does #482 close the hump? Measured. No.
+
+Three arms in ONE interleaved sweep — `rs` = `main` @ b0a00c3 (this round's
+baseline), `rs2` = `main` @ 2fae4fe (#482 merged), `dav1d_fd1` — n=5 rounds,
+rotating order. **LOAD-TAGGED: `foreign_max = 3` on every row** (the other
+agent was running miri plus a t=8 sweep at ~700% CPU). Absolutes are inflated —
+dav1d's 4K cell reads 169 ms here against 152 on the idle sweep, so about 11% —
+and the usable statistic is the paired within-round ratio, printed with its band.
+
+Byte identity first: `rs` and `rs2` produce **identical frame md5 on all 7
+vectors**, and those md5s match dav1d's (`benchmarks/size_sweep_mainarm_md5_2026-08-10.tsv`).
+
+| cell | rs/dav1d | rs2/dav1d | rs2/rs median | band | verdict |
+|---|---|---|---|---|---|
+| 512x288 8b | 1.167 | 1.163 | 0.9854 | [0.9823..1.0015] | straddles 1.0 |
+| 1024x576 8b | 1.482 | **1.439** | **0.9721** | [0.9486..0.9898] | **win, disjoint** |
+| 2048x1152 8b | 1.580 | **1.511** | **0.9566** | [0.8928..0.9916] | **win, disjoint** |
+| 3840x2160 8b | 1.247 | 1.364 | 1.0854 | [0.8821..1.1232] | **NOT resolved — see below** |
+| 1024x576 10b | 1.653 | 1.586 | 0.9629 | [0.9528..1.0589] | straddles 1.0 |
+| 3840x2160 10b | 1.450 | **1.402** | **0.9703** | [0.9612..0.9733] | **win, disjoint** |
+
+**#482 is a real 2.8-4.3% win at the hump — and the hump survives it.** With
+#482 the ladder still reads 1.16 / 1.44 / 1.51 / 1.36: 1024x576 and 2048x1152
+remain 8-15 ratio points worse than 512x288 and 4K. The finding stands against
+current `main`, not just against my base.
+
+## One flag I could not resolve, stated as a flag
+
+The 4K 8bpc cell's median is **1.0854 — a 9% regression** — and every one of the
+first four rounds read above 1.04. The fifth round dropped in a 0.8821 and the
+band now straddles 1.0, so **at n=5 under this load it is NOT a confirmed
+regression** and I will not report it as one. What makes it worth writing down
+rather than discarding:
+
+* It is the only cell of six whose sign is positive, and the 4K **10bpc** cell
+  on the same vector geometry, same load, same rounds went the other way
+  (0.9703, disjoint).
+* It contradicts #482's own reported 4K cell (1.296 -> 1.273 at 8bpc t=1) —
+  but on a **different vector class**. #482 measured `v4k_8tile`, which is
+  **4:4:4 and 8-tile**; this is 4:2:0 and single-tile. #482's own summary says
+  the conversion is partial (39 of 267 `PicOffset` parameters) and intra-only,
+  so a subsampling- or tiling-dependent difference is not implausible.
+
+**Action: re-measure 4K 4:2:0 single-tile 8bpc, `main` vs #482's parent, on an
+idle box at n>=9.** Do not treat this paragraph as a regression report; treat it
+as the one cell this round could not settle.
