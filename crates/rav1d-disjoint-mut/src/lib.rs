@@ -809,7 +809,8 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     /// 2026 and #472 re-opened: would ONE exact `rows x w` record ever reject a
     /// foreign record that `rows` per-row records permit — i.e. is there
     /// concurrent traffic in the inter-row gaps? See
-    /// [`bounds_probe::eval_rect`].
+    /// `bounds_probe::eval_rect` (not a doc link: that module is `__probe_bounds`-gated
+    /// and absent from a default doc build, which is what broke the Documentation leg).
     ///
     /// A no-op, and absent from codegen, without the feature.
     #[inline(always)]

@@ -1088,11 +1088,7 @@ const BPS: (usize, usize) = (1, 2);
 const BPS: (usize, usize) = (1, 1);
 #[cfg(all(
     feature = "__bps_4",
-    not(any(
-        feature = "__bps_quarter",
-        feature = "__bps_half",
-        feature = "__bps_1"
-    ))
+    not(any(feature = "__bps_quarter", feature = "__bps_half", feature = "__bps_1"))
 ))]
 const BPS: (usize, usize) = (4, 1);
 #[cfg(all(
@@ -2506,7 +2502,10 @@ mod tests {
         // Non-increasing, and it must actually MOVE — a flat sequence would make
         // the ladder pointless and the test vacuous.
         for w in n.windows(2) {
-            assert!(w[1] <= w[0], "shard count must not grow with the block: {n:?}");
+            assert!(
+                w[1] <= w[0],
+                "shard count must not grow with the block: {n:?}"
+            );
         }
         assert!(n[0] > n[n.len() - 1], "ladder is inert: {n:?}");
         // Pinned values, so a change to `shard_of` shows up here rather than as a
