@@ -178,6 +178,32 @@ immutable for the whole decode. Coarsening there cannot collide with a writer
 (it can still collide with the tracker's wide path — a cost question, priced
 elsewhere: #469's avalanche was 2.28x slower and #475's hull 2.65x).
 
+## The footprint half's biggest hole, named and sized
+
+`fp_kind = whole` means "the guard was dereferenced and declared no geometry,
+so the footprint is taken to be the whole reservation". At t=8 that is nearly
+exact for the hot sites because their reservations are 1-16 bytes. It is
+**badly wrong at the large-reservation sites**, where the report's
+`over_ratio = 1.000` is an artefact of the instrument, not a measurement:
+
+| site | n (corpus 8-bit/data t=8) | reserved mean | footprint |
+|---|---|---|---|
+| `safe_simd/mc_arm.rs:5971:41` | 3,536,733 | **2,466,546 B** | NOT MEASURED (reported as 2,466,546) |
+| `safe_simd/mc_arm.rs:6182:41` | 407,002 | **541,865 B** | NOT MEASURED |
+| `include/dav1d/picture.rs:589:26` | 1,660,347 | 4,096 B | NOT MEASURED |
+| `looprestoration.rs:408:25` / `:382:29` | 37,647 / 38,171 | ~2,050 B | NOT MEASURED |
+
+These are whole-plane / whole-row reference reads whose kernels touch a small
+window. To measure them the site has to declare its geometry the way
+`narrow_guard` and `LfBlock::fill_hull` now do; until it does, treat their
+`over_ratio` column as absent.
+
+Note what it does NOT change: those sites are immutable reads of reference
+frames that are immutable for the whole decode, and the concurrency half
+measured them exactly — `mc.rs:121:61` and `mc.rs:1342:44` have **zero**
+concurrent foreign writes at any distance. Their extent is a tracker-COST
+question (#469's avalanche 2.28x, #475's hull 2.65x), not a conflict question.
+
 ## Default build is unaffected
 
 * `--features probe-sites` census on this branch vs base 02dda0f: **identical**

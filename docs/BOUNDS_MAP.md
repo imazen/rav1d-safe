@@ -113,6 +113,15 @@ sides). Every co-live pair is therefore seen exactly once, at the later acquire.
   valid, and the perturbation also changes how much real overlap occurs.
 * **Concurrency is under-reported** by the seqlock race rate: 4.0% of foreign
   slot reads on `v4k_8tile` t=8, 5.4% on the corpus (`lost_scan`).
+* **The `whole` footprint is a real hole at the large-reservation sites.**
+  `safe_simd/mc_arm.rs:5971:41` takes 3,536,733 guards of mean **2,466,546
+  bytes** on the corpus cell and the report calls its `over_ratio` 1.000 —
+  which is the instrument declining to answer, not an answer. Same for
+  `mc_arm.rs:6182:41` (541,865 B), `picture.rs:589:26` (4,096 B) and
+  `looprestoration.rs:{382,408}` (~2,050 B). Those sites need a
+  `probe_declare_rows` call like `narrow_guard` and `fill_hull` have; until
+  then their over-reservation column is ABSENT, not zero. (Their concurrency
+  column is exact, and says they never meet a concurrent writer.)
 * **Sub-`Deref` write sets are not measured.** For the conflict question that is
   the safe direction — a mutable reservation is a superset of the bytes it
   writes, so testing a proposed extent against foreign *reservations* can
