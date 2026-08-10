@@ -802,7 +802,21 @@ impl<'a, 'b, 's, BD: BitDepth> LfBlock<'a, 'b, 's, BD> {
         // `w`/`h` are the PICTURE rectangle — what gets guarded and written
         // back. The scratch row stride is `sw` regardless, so `w` may be
         // narrower than a scratch row; see [`LF_SW_H`].
-        let sw = if is_v { LF_SW_V } else { LF_SW_H };
+        //
+        // **V's stride is the RUN's own, not a constant, and that is measured.**
+        // A fixed `LF_SW_V` = 128 makes a 1-group V rectangle span 14 rows x 128
+        // = 1,792 bytes of scratch where base spanned 224, and the first cut of
+        // this change did exactly that: 8bpc t=1 +3.0%, t=8 +7.9% against base
+        // (`benchmarks/lf_vbatch_2026-08-10_v1.tsv`). Rounding to a power of two
+        // >= 16 gives every run that base could also have opened — `groups <=
+        // LF_BATCH_H`, i.e. `w <= 16` — base's exact scratch geometry, and
+        // spreads only the runs that are new.
+        let sw = if is_v {
+            LF_SW_H.max((4 * groups).next_power_of_two())
+        } else {
+            LF_SW_H
+        };
+        debug_assert!(sw <= LF_SW_V && 2 * LF_TAP_REACH as usize * sw <= LF_BLOCK_LEN);
         let (w, h, origin_delta, stridea, strideb, base) = if is_v {
             // Taps run down the picture; each group's four columns run along x.
             (
@@ -840,11 +854,20 @@ impl<'a, 'b, 's, BD: BitDepth> LfBlock<'a, 'b, 's, BD> {
         // one registration for the whole rectangle, does not distort the split.
         #[cfg(feature = "__probe_lf_hist")]
         lf_hist::note(is_v, h);
-        if is_v {
+        if is_v && w > 4 * LF_BATCH_H {
             // V's `w` is `4 * groups` and runs to `4 * LF_BATCH_V` = 128, far
-            // too many values to monomorphize on. The copy is chunked instead;
-            // see [`Self::copy_row_v`].
-            Self::fill_v(scratch, origin, stride, h, w);
+            // too many values to monomorphize on. Runs WIDER than base could
+            // open take a chunked copy instead; see [`Self::copy_row_v`].
+            Self::fill_v(scratch, origin, stride, h, w, sw);
+        } else if is_v {
+            // `w` in {4, 8, 12, 16} at `sw == LF_SW_H`: byte-for-byte base's
+            // path, so the common short run gains nothing and loses nothing.
+            match w {
+                4 => Self::fill::<4>(scratch, origin, stride, h),
+                8 => Self::fill::<8>(scratch, origin, stride, h),
+                12 => Self::fill::<12>(scratch, origin, stride, h),
+                _ => Self::fill::<16>(scratch, origin, stride, h),
+            }
         } else {
             // H's `w` is one of six values, so the row copy is monomorphized on
             // it: `copy_from_slice` at a RUNTIME length is a `memmove` CALL per
@@ -1018,11 +1041,12 @@ impl<'a, 'b, 's, BD: BitDepth> LfBlock<'a, 'b, 's, BD> {
         stride: isize,
         h: usize,
         w: usize,
+        sw: usize,
     ) {
         if (!crate::include::dav1d::picture::tile_threading_active() || lf_hull_reads())
             && !lf_force_per_row()
         {
-            return Self::fill_v_hull(scratch, origin, stride, h, w);
+            return Self::fill_v_hull(scratch, origin, stride, h, w, sw);
         }
         for row in 0..h {
             let off = origin.offset.wrapping_add_signed(row as isize * stride);
@@ -1041,7 +1065,7 @@ impl<'a, 'b, 's, BD: BitDepth> LfBlock<'a, 'b, 's, BD> {
                 offset: off,
             }
             .slice::<BD>(w);
-            Self::copy_row_v(scratch, row, &guard);
+            Self::copy_row_v(scratch, row, sw, &guard);
         }
     }
 
@@ -1055,6 +1079,7 @@ impl<'a, 'b, 's, BD: BitDepth> LfBlock<'a, 'b, 's, BD> {
         stride: isize,
         h: usize,
         w: usize,
+        sw: usize,
     ) {
         debug_assert!(h > 0);
         let astride = stride.unsigned_abs();
@@ -1071,7 +1096,7 @@ impl<'a, 'b, 's, BD: BitDepth> LfBlock<'a, 'b, 's, BD> {
             } else {
                 (h - 1 - row) * astride
             };
-            Self::copy_row_v(scratch, row, &guard[idx..][..w]);
+            Self::copy_row_v(scratch, row, sw, &guard[idx..][..w]);
         }
     }
 
@@ -1083,11 +1108,11 @@ impl<'a, 'b, 's, BD: BitDepth> LfBlock<'a, 'b, 's, BD> {
     /// to avoid and which a `copy_from_slice` at a runtime length would
     /// reintroduce on every one of ~600 K rows a frame.
     #[inline(always)]
-    fn copy_row_v(scratch: &mut LfScratch<'_, BD>, row: usize, src: &[BD::Pixel]) {
+    fn copy_row_v(scratch: &mut LfScratch<'_, BD>, row: usize, sw: usize, src: &[BD::Pixel]) {
         let w = src.len();
-        debug_assert!(w % 4 == 0 && w <= LF_SW_V);
-        let dst = &mut scratch.buf[row * LF_SW_V..][..w];
-        let pri = &mut scratch.pristine[row * LF_SW_V..][..w];
+        debug_assert!(w % 4 == 0 && w <= sw && sw <= LF_SW_V);
+        let dst = &mut scratch.buf[row * sw..][..w];
+        let pri = &mut scratch.pristine[row * sw..][..w];
         let mut i = 0;
         while i + 16 <= w {
             let s: &[BD::Pixel; 16] = src[i..i + 16].try_into().expect("16 left");
@@ -1135,6 +1160,7 @@ impl<'a, 'b, 's, BD: BitDepth> LfBlock<'a, 'b, 's, BD> {
                 self.base,
                 self.is_v,
                 4 * params.len(),
+                self.sw,
                 params,
                 wd,
                 bd.bitdepth() - 8,
@@ -1199,28 +1225,48 @@ impl<'a, 'b, 's, BD: BitDepth> LfBlock<'a, 'b, 's, BD> {
     /// would have taken as several shorter runs.
     #[inline]
     fn close(self) {
+        // Every rectangle base could open is `w <= CHUNK`, and that case takes
+        // the single-span form base took — no chunk loop, no `min`, so its
+        // codegen does not move. Only a run WIDER than base could open pays the
+        // loop, and it pays it to take exactly the guards the several narrower
+        // runs it replaced would have taken.
+        if self.w <= Self::CHUNK {
+            for row in 0..self.h {
+                let Some((first, last)) = self.changed_span(row, 0, self.w) else {
+                    continue; // row untouched: no write, no mutable guard
+                };
+                self.write_span(row, 0, first, last);
+            }
+            return;
+        }
         for row in 0..self.h {
             let mut col = 0;
             while col < self.w {
                 let cw = (self.w - col).min(Self::CHUNK);
                 if let Some((first, last)) = self.changed_span(row, col, cw) {
-                    let work = &self.scratch.buf[row * self.sw + col..][..cw];
-                    let off = self
-                        .origin
-                        .offset
-                        .wrapping_add_signed(row as isize * self.stride)
-                        + col
-                        + first;
-                    let mut guard = PicOffset {
-                        data: self.origin.data,
-                        offset: off,
-                    }
-                    .slice_mut::<BD>(last + 1 - first);
-                    guard.copy_from_slice(&work[first..=last]);
+                    self.write_span(row, col, first, last);
                 }
                 col += Self::CHUNK;
             }
         }
+    }
+
+    /// One mutable guard over `[col + first, col + last]` of picture row `row`.
+    #[inline(always)]
+    fn write_span(&self, row: usize, col: usize, first: usize, last: usize) {
+        let work = &self.scratch.buf[row * self.sw + col..][..=last];
+        let off = self
+            .origin
+            .offset
+            .wrapping_add_signed(row as isize * self.stride)
+            + col
+            + first;
+        let mut guard = PicOffset {
+            data: self.origin.data,
+            offset: off,
+        }
+        .slice_mut::<BD>(last + 1 - first);
+        guard.copy_from_slice(&work[first..=last]);
     }
 }
 
@@ -1833,7 +1879,11 @@ mod neon_parity {
     ) {
         let bd_max: u16 = bd.bitdepth_max().into();
         let reach = lf_reach(wd) as usize;
-        let sw = if is_v { LF_SW_V } else { LF_SW_H };
+        let sw = if is_v {
+            LF_SW_H.max((4 * groups).next_power_of_two())
+        } else {
+            LF_SW_H
+        };
         let (w, h, stridea, strideb, base) = if is_v {
             (4 * groups, 2 * reach, 1isize, sw as isize, reach * sw)
         } else {
@@ -1891,6 +1941,7 @@ mod neon_parity {
                 base,
                 is_v,
                 4 * groups,
+                sw,
                 &params[..groups],
                 wd,
                 bd.bitdepth() - 8,

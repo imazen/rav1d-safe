@@ -34,7 +34,7 @@ use archmage::{Arm64, SimdToken as _, arcane, rite};
 use safe_unaligned_simd::aarch64 as safe_simd;
 
 #[cfg(target_arch = "aarch64")]
-use crate::src::loopfilter::{LF_BATCH_V, LF_BLOCK_LEN, LF_SW_H, LF_SW_V};
+use crate::src::loopfilter::{LF_BATCH_H, LF_BATCH_V, LF_BLOCK_LEN, LF_SW_H, LF_SW_V};
 
 use crate::include::common::bitdepth::BitDepth;
 use crate::include::dav1d::picture::PicOffset;
@@ -126,37 +126,55 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
 // modular, every partial sum is congruent to the true value mod 2^16, and the
 // true value is back under 65520 at each point the accumulator is read.
 
-/// The per-RUN constants of one fused run.
+/// Thresholds for one fused run.
 ///
-/// `e`/`i`/`h` are NOT here: they come from the LUT and change PER GROUP inside
-/// a fused run (the run only fuses on matching `wd`), and a run now holds up to
-/// [`LF_BATCH_V`] = 32 groups. Materialising them as `[u16; 32]` arrays — which
-/// is what this struct used to do at `[u16; 4]` — would zero and fill 192 bytes
-/// on every one of ~280 K runs a frame purely so the kernel could read two
-/// entries per 8-lane chunk. [`lane_thr`] reads the two it needs straight out
-/// of `params` instead, for the same three instructions per threshold.
+/// `e`/`i`/`h` come from the filter LUT and CHANGE PER GROUP inside a fused
+/// run — the run only fuses on matching `wd` — so they are PER GROUP, not
+/// splats. Held as `NG`-entry arrays (one per fused group) rather than
+/// sixteen-entry per-lane ones: a group is four adjacent lanes, so [`lane_thr`]
+/// expands two groups into an 8-lane vector in two instructions and the run
+/// never touches memory for them.
+///
+/// **`NG` is per DIRECTION, and that is a measured requirement, not tidiness.**
+/// A first cut of the V batch lift dropped these arrays and had `lane_thr` read
+/// `params.get(..)` directly, to avoid materialising 32 entries per run. That
+/// put a slice bounds check and an `Option` branch inside the 8-lane chunk loop
+/// of BOTH kernels, and the H pass — 69.3% of the work, which gains nothing
+/// from a wider batch — paid it for nothing. Measured at
+/// `benchmarks/lf_vbatch_2026-08-10_v1.tsv`: 8bpc t=1 +3.0%, t=8 +7.9% against
+/// base. `LF_GROUPS_H` = 4 keeps H's codegen identical to before the batch
+/// change.
 #[cfg(target_arch = "aarch64")]
-pub(crate) struct LfRunConst {
+pub(crate) struct LfLaneThresholds<const NG: usize> {
+    e: [u16; NG],
+    i: [u16; NG],
+    h: [u16; NG],
     /// `1 << bitdepth_min_8`, the flatness threshold.
     f: u16,
     bd_max: u16,
     /// `(128 << bitdepth_min_8) - 1`; the low clip is `-(hi + 1)`.
     clip_hi: i16,
-    /// `bitdepth_min_8`; `e`/`i`/`h` are scaled by it as they are read.
-    shift: u8,
 }
 
-/// The GUARD batch is [`LF_BATCH_V`]; the KERNEL batch is this, and they are
-/// deliberately different numbers.
-///
-/// They used to be asserted equal, which is what blocked the V pass's batch
-/// from rising at all. They answer different questions: this is how many
-/// groups the kernel's 8-lane chunk loop covers per pass over `lane_thr`, and
-/// the batch is how many groups one borrow registration covers. The kernel
-/// still walks 8 lanes at a time whatever the run length — `n_lanes` bounds the
-/// walk — so nothing here needs to grow when the batch does.
+/// Fused groups the H kernel can see — [`LF_BATCH_H`], because H's rectangle
+/// grows in the ROW direction and fusing further cannot reduce its guard count.
 #[cfg(target_arch = "aarch64")]
-const LF_GROUPS_PER_CHUNK: usize = 2;
+const LF_GROUPS_H: usize = LF_BATCH_H;
+
+/// Fused groups the V kernel can see — [`LF_BATCH_V`].
+///
+/// This used to be asserted equal to the batch constant, which is what blocked
+/// the V pass's batch from rising at all. The GUARD batch and the KERNEL batch
+/// are different concerns: this bounds the threshold table the 8-lane chunk
+/// loop indexes, the batch bounds how many groups one borrow registration
+/// covers. They are equal here only because a V run's lanes and its groups are
+/// the same population.
+#[cfg(target_arch = "aarch64")]
+const LF_GROUPS_V: usize = LF_BATCH_V;
+#[cfg(target_arch = "aarch64")]
+const _: () = assert!(4 * LF_GROUPS_V <= LF_SW_V);
+#[cfg(target_arch = "aarch64")]
+const _: () = assert!(4 * LF_GROUPS_H <= LF_SW_H);
 
 /// Tap reach of a filter width. MUST mirror `src::loopfilter::lf_reach`.
 #[cfg(target_arch = "aarch64")]
@@ -481,37 +499,49 @@ macro_rules! lf_runs {
         /// Tap `k` of lane `j` is `buf[base + k * LF_SW_V + j]`, so all lanes of
         /// one tap are contiguous.
         #[rite(neon)]
-        fn $vname<const WD: c_int>(
+        fn $vname<const WD: c_int, const SW: usize>(
             buf: &mut [$px; LF_BLOCK_LEN],
             base: usize,
             n_lanes: usize,
-            params: &[(u8, u8, u8, c_int)],
-            thr: &LfRunConst,
+            thr: &LfLaneThresholds<LF_GROUPS_V>,
         ) {
+            // `SW` is a CONST generic, not a parameter: a runtime stride turns
+            // every tap address in this loop into a multiply and showed up as a
+            // new `lf_dispatch` self-time leaf (`~/tmp` profile, 2026-08-10).
+            // Only four values exist, and `SW == LF_SW_H` reproduces base's
+            // addressing exactly.
+            const { assert!(SW.is_power_of_two() && SW >= 16) };
+            let sw = SW;
             let reach = reach_of(WD);
             let bd_max = vdupq_n_s16(thr.bd_max as i16);
             let clip_hi = vdupq_n_s16(thr.clip_hi);
             let f = vdupq_n_u16(thr.f);
             let (wlo, whi) = written_taps(WD);
 
-            debug_assert!(base >= reach * LF_SW_V);
-            debug_assert!(n_lanes <= LF_SW_V);
+            // `sw` is the run's OWN row stride, not a constant: a short V run
+            // keeps `LF_SW_H`'s 16 and therefore base's exact scratch
+            // footprint, and only a long one spreads out. A fixed 128 made a
+            // 1-group rectangle span 1,792 bytes instead of 224.
+            debug_assert!(base >= reach * sw && 2 * reach * sw <= LF_BLOCK_LEN);
+            debug_assert!(n_lanes <= sw);
             let mut lane = 0usize;
             while lane < n_lanes {
                 let c = lane / 8;
-                let (e, i, h) = lane_thr(params, c, thr.shift);
+                let e = lane_thr(&thr.e, c);
+                let i = lane_thr(&thr.i, c);
+                let h = lane_thr(&thr.h, c);
 
                 // Slot `n` (0..2*reach) is tap `n - reach`.
-                let slot0 = base - reach * LF_SW_V + lane;
+                let slot0 = base - reach * sw + lane;
                 let mut t = [vdupq_n_u16(0); 14];
                 for n in 0..2 * reach {
-                    t[n + 7 - reach] = $ld(buf, slot0 + n * LF_SW_V);
+                    t[n + 7 - reach] = $ld(buf, slot0 + n * sw);
                 }
 
                 lf_core::<WD>(&mut t, e, i, h, f, bd_max, clip_hi);
 
                 for n in wlo..whi {
-                    $st(buf, slot0 + (n + reach - 7) * LF_SW_V, t[n]);
+                    $st(buf, slot0 + (n + reach - 7) * sw, t[n]);
                 }
                 lane += 8;
             }
@@ -527,8 +557,7 @@ macro_rules! lf_runs {
             buf: &mut [$px; LF_BLOCK_LEN],
             base: usize,
             n_lanes: usize,
-            params: &[(u8, u8, u8, c_int)],
-            thr: &LfRunConst,
+            thr: &LfLaneThresholds<LF_GROUPS_H>,
         ) {
             let reach = reach_of(WD);
             let bd_max = vdupq_n_s16(thr.bd_max as i16);
@@ -544,7 +573,9 @@ macro_rules! lf_runs {
             let mut lane = 0usize;
             while lane < n_lanes {
                 let c = lane / 8;
-                let (e, i, h) = lane_thr(params, c, thr.shift);
+                let e = lane_thr(&thr.e, c);
+                let i = lane_thr(&thr.i, c);
+                let h = lane_thr(&thr.h, c);
 
                 let mut rows = [vdupq_n_u16(0); 8];
                 for (j, r) in rows.iter_mut().enumerate() {
@@ -611,42 +642,37 @@ const fn written_taps(wd: c_int) -> (usize, usize) {
     }
 }
 
-/// The three 8-lane threshold vectors for chunk `c`: groups `2c` and `2c + 1`,
-/// four lanes each.
-///
-/// A group past the end of `params` yields zero thresholds, exactly as the
-/// unfilled entries of the old fixed threshold arrays did. Those lanes are
-/// pad columns (V) or pad rows (H) that `close` never compares.
+/// The 8-lane threshold vector for chunk `c`: groups `2c` and `2c + 1`, four
+/// lanes each.
 #[cfg(target_arch = "aarch64")]
 #[rite(neon)]
-fn lane_thr(
-    params: &[(u8, u8, u8, c_int)],
-    c: usize,
-    shift: u8,
-) -> (uint16x8_t, uint16x8_t, uint16x8_t) {
-    let g = |k: usize| -> (u16, u16, u16) {
-        match params.get(LF_GROUPS_PER_CHUNK * c + k) {
-            Some(&(e, i, h, _)) => (
-                (e as u16) << shift,
-                (i as u16) << shift,
-                (h as u16) << shift,
-            ),
-            None => (0, 0, 0),
-        }
-    };
-    let (e0, i0, h0) = g(0);
-    let (e1, i1, h1) = g(1);
-    (
-        vcombine_u16(vdup_n_u16(e0), vdup_n_u16(e1)),
-        vcombine_u16(vdup_n_u16(i0), vdup_n_u16(i1)),
-        vcombine_u16(vdup_n_u16(h0), vdup_n_u16(h1)),
-    )
+fn lane_thr<const NG: usize>(v: &[u16; NG], c: usize) -> uint16x8_t {
+    vcombine_u16(vdup_n_u16(v[2 * c]), vdup_n_u16(v[2 * c + 1]))
 }
 
 #[cfg(target_arch = "aarch64")]
 lf_runs!(u8, lf_run_v_u8, lf_run_h_u8, ld8_u8, st8_u8);
 #[cfg(target_arch = "aarch64")]
 lf_runs!(u16, lf_run_v_u16, lf_run_h_u16, ld8_u16, st8_u16);
+
+/// `wd` dispatch for one V stride. Split out so the `sw` match above stays four
+/// arms rather than sixteen.
+#[cfg(target_arch = "aarch64")]
+#[rite(neon)]
+fn lf_v_u8<const SW: usize>(
+    buf: &mut [u8; LF_BLOCK_LEN],
+    base: usize,
+    n_lanes: usize,
+    thr: &LfLaneThresholds<LF_GROUPS_V>,
+    wd: c_int,
+) {
+    match wd {
+        4 => lf_run_v_u8::<4, SW>(buf, base, n_lanes, thr),
+        6 => lf_run_v_u8::<6, SW>(buf, base, n_lanes, thr),
+        8 => lf_run_v_u8::<8, SW>(buf, base, n_lanes, thr),
+        _ => lf_run_v_u8::<16, SW>(buf, base, n_lanes, thr),
+    }
+}
 
 #[cfg(target_arch = "aarch64")]
 #[arcane]
@@ -656,19 +682,41 @@ fn lf_dispatch_u8(
     base: usize,
     is_v: bool,
     n_lanes: usize,
-    params: &[(u8, u8, u8, c_int)],
-    thr: &LfRunConst,
+    sw: usize,
+    thr_v: &LfLaneThresholds<LF_GROUPS_V>,
+    thr_h: &LfLaneThresholds<LF_GROUPS_H>,
     wd: c_int,
 ) {
     match (is_v, wd) {
-        (true, 4) => lf_run_v_u8::<4>(buf, base, n_lanes, params, thr),
-        (true, 6) => lf_run_v_u8::<6>(buf, base, n_lanes, params, thr),
-        (true, 8) => lf_run_v_u8::<8>(buf, base, n_lanes, params, thr),
-        (true, _) => lf_run_v_u8::<16>(buf, base, n_lanes, params, thr),
-        (false, 4) => lf_run_h_u8::<4>(buf, base, n_lanes, params, thr),
-        (false, 6) => lf_run_h_u8::<6>(buf, base, n_lanes, params, thr),
-        (false, 8) => lf_run_h_u8::<8>(buf, base, n_lanes, params, thr),
-        (false, _) => lf_run_h_u8::<16>(buf, base, n_lanes, params, thr),
+        (true, wd) => match sw {
+            LF_SW_H => lf_v_u8::<LF_SW_H>(buf, base, n_lanes, thr_v, wd),
+            32 => lf_v_u8::<32>(buf, base, n_lanes, thr_v, wd),
+            64 => lf_v_u8::<64>(buf, base, n_lanes, thr_v, wd),
+            _ => lf_v_u8::<LF_SW_V>(buf, base, n_lanes, thr_v, wd),
+        },
+        (false, 4) => lf_run_h_u8::<4>(buf, base, n_lanes, thr_h),
+        (false, 6) => lf_run_h_u8::<6>(buf, base, n_lanes, thr_h),
+        (false, 8) => lf_run_h_u8::<8>(buf, base, n_lanes, thr_h),
+        (false, _) => lf_run_h_u8::<16>(buf, base, n_lanes, thr_h),
+    }
+}
+
+/// `wd` dispatch for one V stride. Split out so the `sw` match above stays four
+/// arms rather than sixteen.
+#[cfg(target_arch = "aarch64")]
+#[rite(neon)]
+fn lf_v_u16<const SW: usize>(
+    buf: &mut [u16; LF_BLOCK_LEN],
+    base: usize,
+    n_lanes: usize,
+    thr: &LfLaneThresholds<LF_GROUPS_V>,
+    wd: c_int,
+) {
+    match wd {
+        4 => lf_run_v_u16::<4, SW>(buf, base, n_lanes, thr),
+        6 => lf_run_v_u16::<6, SW>(buf, base, n_lanes, thr),
+        8 => lf_run_v_u16::<8, SW>(buf, base, n_lanes, thr),
+        _ => lf_run_v_u16::<16, SW>(buf, base, n_lanes, thr),
     }
 }
 
@@ -680,19 +728,22 @@ fn lf_dispatch_u16(
     base: usize,
     is_v: bool,
     n_lanes: usize,
-    params: &[(u8, u8, u8, c_int)],
-    thr: &LfRunConst,
+    sw: usize,
+    thr_v: &LfLaneThresholds<LF_GROUPS_V>,
+    thr_h: &LfLaneThresholds<LF_GROUPS_H>,
     wd: c_int,
 ) {
     match (is_v, wd) {
-        (true, 4) => lf_run_v_u16::<4>(buf, base, n_lanes, params, thr),
-        (true, 6) => lf_run_v_u16::<6>(buf, base, n_lanes, params, thr),
-        (true, 8) => lf_run_v_u16::<8>(buf, base, n_lanes, params, thr),
-        (true, _) => lf_run_v_u16::<16>(buf, base, n_lanes, params, thr),
-        (false, 4) => lf_run_h_u16::<4>(buf, base, n_lanes, params, thr),
-        (false, 6) => lf_run_h_u16::<6>(buf, base, n_lanes, params, thr),
-        (false, 8) => lf_run_h_u16::<8>(buf, base, n_lanes, params, thr),
-        (false, _) => lf_run_h_u16::<16>(buf, base, n_lanes, params, thr),
+        (true, wd) => match sw {
+            LF_SW_H => lf_v_u16::<LF_SW_H>(buf, base, n_lanes, thr_v, wd),
+            32 => lf_v_u16::<32>(buf, base, n_lanes, thr_v, wd),
+            64 => lf_v_u16::<64>(buf, base, n_lanes, thr_v, wd),
+            _ => lf_v_u16::<LF_SW_V>(buf, base, n_lanes, thr_v, wd),
+        },
+        (false, 4) => lf_run_h_u16::<4>(buf, base, n_lanes, thr_h),
+        (false, 6) => lf_run_h_u16::<6>(buf, base, n_lanes, thr_h),
+        (false, 8) => lf_run_h_u16::<8>(buf, base, n_lanes, thr_h),
+        (false, _) => lf_run_h_u16::<16>(buf, base, n_lanes, thr_h),
     }
 }
 
@@ -709,6 +760,7 @@ pub(crate) fn lf_compact_run_neon(
     base: usize,
     is_v: bool,
     n_lanes: usize,
+    sw: usize,
     params: &[(u8, u8, u8, c_int)],
     wd: c_int,
     bitdepth_min_8: u8,
@@ -723,36 +775,71 @@ pub(crate) fn lf_compact_run_neon(
 
     // The AV1 widths: 4/8/16 on luma, 4/6 on chroma. Anything else would be a
     // caller bug, but fall back rather than mis-filter.
-    let lane_cap = if is_v { LF_SW_V } else { LF_SW_H };
-    if !matches!(wd, 4 | 6 | 8 | 16) || n_lanes == 0 || n_lanes > lane_cap {
+    let groups_cap = if is_v { LF_GROUPS_V } else { LF_GROUPS_H };
+    if !matches!(wd, 4 | 6 | 8 | 16) || n_lanes == 0 || n_lanes > sw {
         return false;
     }
-    if params.len() > LF_BATCH_V {
+    if params.len() > groups_cap {
+        return false;
+    }
+    if is_v && !(sw.is_power_of_two() && (LF_SW_H..=LF_SW_V).contains(&sw)) {
+        return false;
+    }
+    if !is_v && sw != LF_SW_H {
         return false;
     }
     let Some(token) = Arm64::summon() else {
         return false;
     };
 
-    let thr = LfRunConst {
+    // Unfilled groups keep zero thresholds. Those lanes are pad columns (V) or
+    // pad rows (H) of the scratch that `close` never compares, so whatever the
+    // kernel does with them is inert.
+    let mut thr_v = LfLaneThresholds::<LF_GROUPS_V> {
+        e: [0; LF_GROUPS_V],
+        i: [0; LF_GROUPS_V],
+        h: [0; LF_GROUPS_V],
         f: 1 << bitdepth_min_8,
         bd_max,
         clip_hi: (128i16 << bitdepth_min_8) - 1,
-        shift: bitdepth_min_8,
     };
+    let mut thr_h = LfLaneThresholds::<LF_GROUPS_H> {
+        e: [0; LF_GROUPS_H],
+        i: [0; LF_GROUPS_H],
+        h: [0; LF_GROUPS_H],
+        f: thr_v.f,
+        bd_max,
+        clip_hi: thr_v.clip_hi,
+    };
+    for (g, &(e, i, h, _)) in params.iter().enumerate() {
+        let (e, i, h) = (
+            (e as u16) << bitdepth_min_8,
+            (i as u16) << bitdepth_min_8,
+            (h as u16) << bitdepth_min_8,
+        );
+        if is_v {
+            thr_v.e[g] = e;
+            thr_v.i[g] = i;
+            thr_v.h[g] = h;
+        } else {
+            thr_h.e[g] = e;
+            thr_h.i[g] = i;
+            thr_h.h[g] = h;
+        }
+    }
 
     match bpc {
         BPC::BPC8 => {
             let Ok(buf) = <&mut [u8; LF_BLOCK_LEN]>::try_from(scratch) else {
                 return false;
             };
-            lf_dispatch_u8(token, buf, base, is_v, n_lanes, params, &thr, wd);
+            lf_dispatch_u8(token, buf, base, is_v, n_lanes, sw, &thr_v, &thr_h, wd);
         }
         BPC::BPC16 => {
             let Ok(buf) = <[u16; LF_BLOCK_LEN]>::mut_from_bytes(scratch) else {
                 return false;
             };
-            lf_dispatch_u16(token, buf, base, is_v, n_lanes, params, &thr, wd);
+            lf_dispatch_u16(token, buf, base, is_v, n_lanes, sw, &thr_v, &thr_h, wd);
         }
     }
     true
