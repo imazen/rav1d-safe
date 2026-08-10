@@ -1,7 +1,6 @@
 #![forbid(unsafe_code)]
 use crate::include::common::bitdepth::AsPrimitive;
 use crate::include::common::bitdepth::BitDepth;
-use crate::include::dav1d::picture::PicOffset;
 use crate::src::align::AlignedVec64;
 use crate::src::const_fn::const_for;
 use crate::src::disjoint_mut::DisjointMut;
@@ -25,6 +24,7 @@ use crate::src::levels::VERT_PRED;
 use crate::src::levels::Z1_PRED;
 use crate::src::levels::Z2_PRED;
 use crate::src::levels::Z3_PRED;
+use crate::src::owned_recon::ReconSrc;
 use crate::src::strided::Strided as _;
 use bitflags::bitflags;
 use std::cmp;
@@ -170,7 +170,7 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
     w: c_int,
     h: c_int,
     edge_flags: EdgeFlags,
-    dst: PicOffset,
+    dst: &ReconSrc<'_>,
     // Buffer and offset pair. `isize` value is the base offset that should be used
     // when indexing into the buffer.
     prefilter_toplevel_sb_edge: Option<(&DisjointMut<AlignedVec64<u8>>, isize)>,
@@ -232,7 +232,7 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
             let offset = ((x * 4) as usize - have_left as usize).wrapping_add_signed(base);
             &*edge_buf.slice_as((offset.., ..n))
         } else {
-            &*(dst - stride - have_left as usize).slice::<BD>(n)
+            &*dst.at(-stride - have_left as isize).slice::<BD>(n)
         }
     } else {
         &[]
@@ -251,21 +251,16 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
             // MT mode (safe vs concurrent tile-thread mut guards on adjacent
             // blocks). See `with_pixel_guard_immut` docs and the
             // `feedback_mt_safe_batching` memory.
-            let col_pic = dst - 1usize;
+            let col_pic = dst.at(-1);
             let pixel_size = core::mem::size_of::<BD::Pixel>();
-            crate::include::dav1d::picture::with_pixel_guard_immut::<BD, _>(
-                &col_pic,
-                1,
-                px_have,
-                |bytes, offset, stride| {
-                    let pixels: &[BD::Pixel] = zerocopy::FromBytes::ref_from_bytes(bytes)
-                        .expect("bytes pixel reinterpretation");
-                    for i in 0..px_have {
-                        let row_off = (offset as isize + i as isize * stride) as usize / pixel_size;
-                        left[sz - 1 - i] = pixels[row_off];
-                    }
-                },
-            );
+            col_pic.with_block::<BD, _>(1, px_have, |bytes, offset, stride| {
+                let pixels: &[BD::Pixel] = zerocopy::FromBytes::ref_from_bytes(bytes)
+                    .expect("bytes pixel reinterpretation");
+                for i in 0..px_have {
+                    let row_off = (offset as isize + i as isize * stride) as usize / pixel_size;
+                    left[sz - 1 - i] = pixels[row_off];
+                }
+            });
             if px_have < sz {
                 BD::pixel_set(left, left[sz - px_have], sz - px_have);
             }
@@ -292,22 +287,16 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
             };
             if have_bottomleft {
                 let px_have = cmp::min(sz, (h - y - th << 2) as usize);
-                let col_pic = dst + (sz as isize * stride - 1);
+                let col_pic = dst.at(sz as isize * stride - 1);
                 let pixel_size = core::mem::size_of::<BD::Pixel>();
-                crate::include::dav1d::picture::with_pixel_guard_immut::<BD, _>(
-                    &col_pic,
-                    1,
-                    px_have,
-                    |bytes, offset, stride| {
-                        let pixels: &[BD::Pixel] = zerocopy::FromBytes::ref_from_bytes(bytes)
-                            .expect("bytes pixel reinterpretation");
-                        for i in 0..px_have {
-                            let row_off =
-                                (offset as isize + i as isize * stride) as usize / pixel_size;
-                            bottom_left[sz - 1 - i] = pixels[row_off];
-                        }
-                    },
-                );
+                col_pic.with_block::<BD, _>(1, px_have, |bytes, offset, stride| {
+                    let pixels: &[BD::Pixel] = zerocopy::FromBytes::ref_from_bytes(bytes)
+                        .expect("bytes pixel reinterpretation");
+                    for i in 0..px_have {
+                        let row_off = (offset as isize + i as isize * stride) as usize / pixel_size;
+                        bottom_left[sz - 1 - i] = pixels[row_off];
+                    }
+                });
                 if px_have < sz {
                     BD::pixel_set(bottom_left, bottom_left[sz - px_have], sz - px_have);
                 }
@@ -333,7 +322,7 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
             BD::pixel_set(
                 top,
                 if have_left {
-                    *(dst - 1usize).index::<BD>()
+                    dst.at(-1).get::<BD>()
                 } else {
                     ((1 << bitdepth >> 1) - 1).as_::<BD::Pixel>()
                 },
@@ -373,7 +362,7 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
         corner[1] = if have_top {
             dst_top[0]
         } else if have_left {
-            *(dst - 1usize).index::<BD>()
+            dst.at(-1).get::<BD>()
         } else {
             (1 << bitdepth >> 1).as_::<BD::Pixel>()
         };

@@ -46,6 +46,7 @@ use crate::src::levels::V_ADST;
 use crate::src::levels::V_DCT;
 use crate::src::levels::V_FLIPADST;
 use crate::src::levels::WHT_WHT;
+use crate::src::owned_recon::ReconDst;
 use crate::src::strided::Strided as _;
 use crate::src::wrap_fn_ptr::wrap_fn_ptr;
 use std::cmp;
@@ -66,7 +67,7 @@ pub type Itx1dFn = fn(c: &mut [i32], stride: NonZeroUsize, min: i32, max: i32);
 
 #[inline(never)]
 fn inv_txfm_add<BD: BitDepth>(
-    dst: PicOffset,
+    dst: &mut ReconDst<'_>,
     coeff: &mut [BD::Coef],
     eob: i32,
     w: usize,
@@ -86,6 +87,7 @@ fn inv_txfm_add<BD: BitDepth>(
 
     let is_rect2 = w * 2 == h || h * 2 == w;
     let rnd = 1 << shift >> 1;
+    let pxstride = dst.pixel_stride::<BD>();
 
     if eob < has_dc_only as i32 {
         let mut dc = coeff[0].as_::<i32>();
@@ -97,7 +99,7 @@ fn inv_txfm_add<BD: BitDepth>(
         dc = dc + rnd >> shift;
         dc = dc * 181 + 128 + 2048 >> 12;
         for y in 0..h {
-            let dst = dst + (y as isize * dst.pixel_stride::<BD>());
+            let mut dst = dst.at(y as isize * pxstride);
             let dst = &mut *dst.slice_mut::<BD>(w);
             for x in 0..w {
                 dst[x] = bd.iclip_pixel(dst[x].as_::<i32>() + dc);
@@ -157,7 +159,7 @@ fn inv_txfm_add<BD: BitDepth>(
     }
 
     for y in 0..h {
-        let dst = dst + (y as isize * dst.pixel_stride::<BD>());
+        let mut dst = dst.at(y as isize * pxstride);
         let dst = &mut *dst.slice_mut::<BD>(w);
         for x in 0..w {
             dst[x] = bd.iclip_pixel(dst[x].as_::<i32>() + (tmp[y * w + x] + 8 >> 4));
@@ -166,7 +168,7 @@ fn inv_txfm_add<BD: BitDepth>(
 }
 
 fn inv_txfm_add_rust<const W: usize, const H: usize, const TYPE: TxfmType, BD: BitDepth>(
-    dst: PicOffset,
+    dst: &mut ReconDst<'_>,
     coeff: &mut [BD::Coef],
     eob: i32,
     bd: BD,
@@ -304,7 +306,7 @@ unsafe extern "C" fn inv_txfm_add_c_erased<
 pub(crate) fn itxfm_add_scalar_fallback<BD: BitDepth>(
     tx_size: usize,
     tx_type: TxfmType,
-    dst: PicOffset,
+    dst: &mut ReconDst<'_>,
     coeff: &mut [BD::Coef],
     eob: i32,
     bd: BD,
@@ -421,7 +423,7 @@ impl itxfm::Fn {
         &self,
         tx_size: usize,
         tx_type: usize,
-        dst: PicOffset,
+        dst: &mut ReconDst<'_>,
         coeff: &mut [BD::Coef],
         eob: i32,
         bd: BD,
@@ -429,6 +431,7 @@ impl itxfm::Fn {
         cfg_if::cfg_if! {
             if #[cfg(feature = "asm")] {
                 let _ = (tx_size, tx_type);
+                let dst = dst.as_pic().expect("owned recon band is never armed under `c-ffi`/`asm`");
                 let dst_ptr = dst.as_mut_ptr::<BD>().cast();
                 let dst_stride = dst.stride();
                 let coeff_len = coeff.len() as u16;
@@ -540,7 +543,11 @@ pub struct Rav1dInvTxfmDSPContext {
     pub itxfm_add: [[itxfm::Fn; N_TX_TYPES_PLUS_LL]; TxfmSize::COUNT],
 }
 
-fn inv_txfm_add_wht_wht_4x4_rust<BD: BitDepth>(dst: PicOffset, coeff: &mut [BD::Coef], bd: BD) {
+fn inv_txfm_add_wht_wht_4x4_rust<BD: BitDepth>(
+    dst: &mut ReconDst<'_>,
+    coeff: &mut [BD::Coef],
+    bd: BD,
+) {
     const H: usize = 4;
     const W: usize = 4;
 
@@ -560,9 +567,10 @@ fn inv_txfm_add_wht_wht_4x4_rust<BD: BitDepth>(dst: PicOffset, coeff: &mut [BD::
     for x in 0..W {
         rav1d_inv_wht4_1d_c(&mut tmp[x..], H.try_into().unwrap());
     }
+    let pxstride = dst.pixel_stride::<BD>();
 
     for y in 0..H {
-        let dst = dst + (y as isize * dst.pixel_stride::<BD>());
+        let mut dst = dst.at(y as isize * pxstride);
         let dst = &mut *dst.slice_mut::<BD>(W);
         for x in 0..W {
             dst[x] = bd.iclip_pixel(dst[x].as_::<i32>() + tmp[y * W + x]);

@@ -1468,16 +1468,17 @@ fn read_coef_tree<BD: BitDepth>(
                         "dq",
                     );
                 }
+                let mut y_dst = crate::src::owned_recon::ReconDst::Pic(y_dst);
                 f.dsp.itx.itxfm_add[ytx as usize][txtp as usize].call::<BD>(
                     ytx as usize,
                     txtp as usize,
-                    y_dst,
+                    &mut y_dst,
                     cf,
                     eob,
                     bd,
                 );
                 if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
-                    hex_dump_pic::<BD>(y_dst, t_dim.w as usize * 4, t_dim.h as usize * 4, "recon");
+                    hex_dump_pic::<BD>(&y_dst, t_dim.w as usize * 4, t_dim.h as usize * 4, "recon");
                 }
             }
         }
@@ -2129,7 +2130,14 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
     intra: &Av1BlockIntra,
 ) {
     let bd = BD::from_c(f.bitdepth_max);
-    let cur_data = &f.cur.data.as_ref().unwrap().data;
+    // THE seam. `bind` picks this worker's owned band when it is armed for the
+    // current tile superblock row, and the shared picture otherwise; every
+    // destination below is asked for by PLANE PIXEL COORDINATES so the band can
+    // carry its own compact stride.
+    let mut planes = crate::src::owned_recon::ReconPlanes::bind(
+        &f.cur.data.as_ref().unwrap().data,
+        &mut t.recon_band,
+    );
     let ts = &f.ts[t.ts];
 
     let bx4 = t.b.x & 31;
@@ -2163,9 +2171,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
         let sub_ch4 = cmp::min(ch4, init_y + 16 >> ss_ver);
         for init_x in (0..w4).step_by(16) {
             if intra.pal_sz[0] != 0 {
-                let y_dst = &cur_data[0];
-                let y_dst = y_dst.with_offset::<BD>()
-                    + 4 * (t.b.y as isize * y_dst.pixel_stride::<BD>() + t.b.x as isize);
+                let mut y_dst = planes.dst::<BD>(0, 4 * t.b.y as usize, 4 * t.b.x as usize);
                 let scratch = t.scratch.inter_intra_mut();
                 let pal_idx = if t.frame_thread.pass != 0 {
                     let p = (t.frame_thread.pass & 1) as usize;
@@ -2190,9 +2196,9 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 f.dsp
                     .ipred
                     .pal_pred
-                    .call::<BD>(y_dst, &pal[0], pal_idx, bw4 * 4, bh4 * 4);
+                    .call::<BD>(&mut y_dst, &pal[0], pal_idx, bw4 * 4, bh4 * 4);
                 if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
-                    hex_dump_pic::<BD>(y_dst, bw4 as usize * 4, bh4 as usize * 4, "y-pal-pred");
+                    hex_dump_pic::<BD>(&y_dst, bw4 as usize * 4, bh4 as usize * 4, "y-pal-pred");
                 }
             }
 
@@ -2219,14 +2225,15 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
             y = init_y;
             t.b.y += init_y;
             while y < sub_h4 {
-                let y_dst = &cur_data[0];
-                let mut y_dst = y_dst.with_offset::<BD>()
-                    + 4 * (t.b.y as isize * y_dst.pixel_stride::<BD>()
-                        + t.b.x as isize
-                        + init_x as isize);
                 x = init_x;
                 t.b.x += init_x;
                 while x < sub_w4 {
+                    // `t.b.x`/`t.b.y` track the block being reconstructed, so
+                    // the destination is derived from them each iteration
+                    // rather than advanced by `+= 4 * t_dim.w`. Same pixel,
+                    // and it works for a band whose stride is not the
+                    // picture's.
+                    let mut y_dst = planes.dst::<BD>(0, 4 * t.b.y as usize, 4 * t.b.x as usize);
                     let mut angle;
                     let edge_flags;
                     let m;
@@ -2263,7 +2270,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                             ts.tiling.col_end,
                             ts.tiling.row_end,
                             edge_flags,
-                            y_dst,
+                            &y_dst.as_src(),
                             top_sb_edge_slice,
                             intra.y_mode as IntraPredMode,
                             &mut angle,
@@ -2276,7 +2283,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                         );
                         f.dsp.ipred.intra_pred[m as usize].call(
                             m as usize,
-                            y_dst,
+                            &mut y_dst,
                             edge_array,
                             edge_offset,
                             t_dim.w as c_int * 4,
@@ -2304,7 +2311,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                 "t",
                             );
                             hex_dump_pic::<BD>(
-                                y_dst,
+                                &y_dst,
                                 t_dim.w as usize * 4,
                                 t_dim.h as usize * 4,
                                 "y-intra-pred",
@@ -2387,14 +2394,14 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                             f.dsp.itx.itxfm_add[intra.tx as usize][txtp as usize].call::<BD>(
                                 intra.tx as usize,
                                 txtp as usize,
-                                y_dst,
+                                &mut y_dst,
                                 cf,
                                 eob,
                                 bd,
                             );
                             if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
                                 hex_dump_pic::<BD>(
-                                    y_dst,
+                                    &y_dst,
                                     t_dim.w as usize * 4,
                                     t_dim.h as usize * 4,
                                     "recon",
@@ -2411,7 +2418,6 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                             },
                         );
                     }
-                    y_dst += 4 * t_dim.w as usize;
                     x += t_dim.w as c_int;
                     t.b.x += t_dim.w as c_int;
                 }
@@ -2425,20 +2431,16 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 continue;
             }
 
-            let stride = f.cur.stride[1];
-
             if intra.uv_mode == CFL_PRED {
                 assert!(init_x == 0 && init_y == 0);
 
                 let scratch = t.scratch.inter_intra_mut();
                 let ac = scratch.ac_txtp_map.ac_mut();
-                let y_src = &cur_data[0];
-                let y_src = y_src.with_offset::<BD>()
-                    + 4 * (t.b.x & !ss_hor) as usize
-                    + 4 * (t.b.y & !ss_ver) as isize * y_src.pixel_stride::<BD>();
-                let uv_off = 4
-                    * ((t.b.x >> ss_hor) as isize
-                        + (t.b.y >> ss_ver) as isize * BD::pxstride(stride));
+                let y_src = planes.src::<BD>(
+                    0,
+                    4 * (t.b.y & !ss_ver) as usize,
+                    4 * (t.b.x & !ss_hor) as usize,
+                );
 
                 let furthest_r = (cw4 << ss_hor) + t_dim.w as c_int - 1 & !(t_dim.w as c_int - 1);
                 let furthest_b = (ch4 << ss_ver) + t_dim.h as c_int - 1 & !(t_dim.h as c_int - 1);
@@ -2446,7 +2448,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 f.dsp.ipred.cfl_ac[layout].call::<BD>(
                     layout,
                     ac,
-                    y_src,
+                    &y_src,
                     cbw4 - (furthest_r >> ss_hor),
                     cbh4 - (furthest_b >> ss_ver),
                     cbw4 * 4,
@@ -2471,10 +2473,11 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                     let ystart = ts.tiling.row_start >> ss_ver;
                     let edge_array = scratch.interintra_edge_pal.edge.buf_mut::<BD>();
                     let edge_offset = 128;
-                    let uv_dst = &cur_data[1 + pl];
-                    let uv_dst = uv_dst.with_offset::<BD>()
-                        + 4 * ((t.b.x >> ss_hor) as isize
-                            + (t.b.y >> ss_ver) as isize * uv_dst.pixel_stride::<BD>());
+                    let mut uv_dst = planes.dst::<BD>(
+                        1 + pl,
+                        4 * (t.b.y >> ss_ver) as usize,
+                        4 * (t.b.x >> ss_hor) as usize,
+                    );
                     let m: IntraPredMode = rav1d_prepare_intra_edges(
                         xpos,
                         xpos > xstart,
@@ -2483,7 +2486,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                         ts.tiling.col_end >> ss_hor,
                         ts.tiling.row_end >> ss_ver,
                         EdgeFlags::empty(),
-                        uv_dst,
+                        &uv_dst.as_src(),
                         top_sb_edge_slice,
                         DC_PRED,
                         &mut angle,
@@ -2496,7 +2499,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                     );
                     f.dsp.ipred.cfl_pred[m as usize].call(
                         m as usize,
-                        uv_dst,
+                        &mut uv_dst,
                         edge_array,
                         edge_offset,
                         uv_t_dim.w as c_int * 4,
@@ -2509,9 +2512,13 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
                     ac_dump(ac, 4 * cbw4 as usize, 4 * cbh4 as usize, "ac");
                     for pl in 1..3 {
-                        let uv_dst = cur_data[pl].with_offset::<BD>() + uv_off;
+                        let uv_dst = planes.dst::<BD>(
+                            pl,
+                            4 * (t.b.y >> ss_ver) as usize,
+                            4 * (t.b.x >> ss_hor) as usize,
+                        );
                         hex_dump_pic::<BD>(
-                            uv_dst,
+                            &uv_dst,
                             cbw4 as usize * 4,
                             cbh4 as usize * 4,
                             ["", "u-cfl-pred", "v-cfl-pred"][pl],
@@ -2519,9 +2526,10 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                     }
                 }
             } else if intra.pal_sz[1] != 0 {
-                let uv_dstoff = 4
-                    * ((t.b.x >> ss_hor) as isize
-                        + (t.b.y >> ss_ver) as isize * BD::pxstride(f.cur.stride[1]));
+                let (uv_row, uv_col) = (
+                    4 * (t.b.y >> ss_ver) as usize,
+                    4 * (t.b.x >> ss_hor) as usize,
+                );
                 let (pal, pal_idx) = if t.frame_thread.pass != 0 {
                     let p = (t.frame_thread.pass & 1) as usize;
                     let x = t.b.x as usize;
@@ -2545,14 +2553,14 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 };
 
                 for pl in 1..3 {
-                    let uv = cur_data[pl].with_offset::<BD>() + uv_dstoff;
+                    let mut uv = planes.dst::<BD>(pl, uv_row, uv_col);
                     f.dsp
                         .ipred
                         .pal_pred
-                        .call::<BD>(uv, &pal[pl], pal_idx, cbw4 * 4, cbh4 * 4);
+                        .call::<BD>(&mut uv, &pal[pl], pal_idx, cbw4 * 4, cbh4 * 4);
                     if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
                         hex_dump_pic::<BD>(
-                            uv,
+                            &uv,
                             cbw4 as usize * 4,
                             cbh4 as usize * 4,
                             ["", "u-pal-pred", "v-pal-pred"][pl],
@@ -2581,13 +2589,14 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 y = init_y >> ss_ver;
                 t.b.y += init_y;
                 while y < sub_ch4 {
-                    let uv_dst = &cur_data[1 + pl];
-                    let mut uv_dst = uv_dst.with_offset::<BD>()
-                        + 4 * ((t.b.y >> ss_ver) as isize * uv_dst.pixel_stride::<BD>()
-                            + (t.b.x + init_x >> ss_hor) as isize);
                     x = init_x >> ss_hor;
                     t.b.x += init_x;
                     while x < sub_cw4 {
+                        let mut uv_dst = planes.dst::<BD>(
+                            1 + pl,
+                            4 * (t.b.y >> ss_ver) as usize,
+                            4 * (t.b.x >> ss_hor) as usize,
+                        );
                         let mut angle;
                         let edge_flags;
                         let uv_mode;
@@ -2642,7 +2651,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                 ts.tiling.col_end >> ss_hor,
                                 ts.tiling.row_end >> ss_ver,
                                 edge_flags,
-                                uv_dst,
+                                &uv_dst.as_src(),
                                 top_sb_edge_slice,
                                 uv_mode,
                                 &mut angle,
@@ -2656,7 +2665,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                             angle |= intra_edge_filter_flag;
                             f.dsp.ipred.intra_pred[m as usize].call(
                                 m as usize,
-                                uv_dst,
+                                &mut uv_dst,
                                 edge_array,
                                 edge_offset,
                                 uv_t_dim.w as c_int * 4,
@@ -2683,7 +2692,7 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                     "t",
                                 );
                                 hex_dump_pic::<BD>(
-                                    uv_dst,
+                                    &uv_dst,
                                     uv_t_dim.w as usize * 4,
                                     uv_t_dim.h as usize * 4,
                                     ["u-intra-pred", "v-intra-pred"][pl],
@@ -2772,14 +2781,14 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                 f.dsp.itx.itxfm_add[b.uvtx as usize][txtp as usize].call::<BD>(
                                     b.uvtx as usize,
                                     txtp as usize,
-                                    uv_dst,
+                                    &mut uv_dst,
                                     cf,
                                     eob,
                                     bd,
                                 );
                                 if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
                                     hex_dump_pic::<BD>(
-                                        uv_dst,
+                                        &uv_dst,
                                         uv_t_dim.w as usize * 4,
                                         uv_t_dim.h as usize * 4,
                                         "recon",
@@ -2796,7 +2805,6 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                 },
                             );
                         }
-                        uv_dst += uv_t_dim.w as usize * 4;
                         x += uv_t_dim.w as c_int;
                         t.b.x += (uv_t_dim.w as c_int) << ss_hor;
                     }
@@ -3150,7 +3158,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                 ts.tiling.col_end,
                 ts.tiling.row_end,
                 EdgeFlags::empty(),
-                y_dst,
+                &crate::src::owned_recon::ReconDst::Pic(y_dst).as_src(),
                 top_sb_edge_slice,
                 m,
                 &mut angle,
@@ -3165,10 +3173,10 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
             let tmp_component = Rav1dPictureDataComponent::wrap_buf::<BD>(tmp, 4 * bw4 as usize);
             f.dsp.ipred.intra_pred[m as usize].call(
                 m as usize,
-                PicOffset {
+                &mut crate::src::owned_recon::ReconDst::Pic(PicOffset {
                     data: &tmp_component,
                     offset: 0,
-                },
+                }),
                 tl_edge_array,
                 tl_edge_offset,
                 bw4 * 4,
@@ -3438,7 +3446,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             ts.tiling.col_end >> ss_hor,
                             ts.tiling.row_end >> ss_ver,
                             EdgeFlags::empty(),
-                            uv_dst,
+                            &crate::src::owned_recon::ReconDst::Pic(uv_dst).as_src(),
                             top_sb_edge_slice,
                             m,
                             &mut angle,
@@ -3454,10 +3462,10 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             Rav1dPictureDataComponent::wrap_buf::<BD>(tmp, 4 * cbw4 as usize);
                         f.dsp.ipred.intra_pred[m as usize].call(
                             m as usize,
-                            PicOffset {
+                            &mut crate::src::owned_recon::ReconDst::Pic(PicOffset {
                                 data: &tmp_component,
                                 offset: 0,
-                            },
+                            }),
                             tl_edge_array,
                             tl_edge_offset,
                             cbw4 * 4,
@@ -3482,7 +3490,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
 
     if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
         hex_dump_pic::<BD>(
-            y_dst,
+            &crate::src::owned_recon::ReconDst::Pic(y_dst),
             b_dim[0] as usize * 4,
             b_dim[1] as usize * 4,
             "y-pred",
@@ -3491,7 +3499,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
             for pl in 1..3 {
                 let uv_dst = cur_data[pl].with_offset::<BD>() + uvdstoff;
                 hex_dump_pic::<BD>(
-                    uv_dst,
+                    &crate::src::owned_recon::ReconDst::Pic(uv_dst),
                     cbw4 as usize * 4,
                     cbh4 as usize * 4,
                     ["", "u-pred", "v-pred"][pl],
@@ -3663,18 +3671,19 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                                         "dq",
                                     );
                                 }
+                                let mut uv_dst_tx =
+                                    crate::src::owned_recon::ReconDst::Pic(uv_dst + 4 * x as usize);
                                 f.dsp.itx.itxfm_add[b.uvtx as usize][txtp as usize].call::<BD>(
                                     b.uvtx as usize,
                                     txtp as usize,
-                                    uv_dst + 4 * x as usize,
+                                    &mut uv_dst_tx,
                                     cf,
                                     eob,
                                     bd,
                                 );
                                 if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
-                                    let uv_dst = uv_dst + (4 * x as usize);
                                     hex_dump_pic::<BD>(
-                                        uv_dst,
+                                        &uv_dst_tx,
                                         uvtx.w as usize * 4,
                                         uvtx.h as usize * 4,
                                         "recon",
@@ -3857,19 +3866,23 @@ pub(crate) fn rav1d_filter_sbrow<BD: BitDepth>(
 }
 
 pub(crate) fn rav1d_backup_ipred_edge<BD: BitDepth>(f: &Rav1dFrameData, t: &mut Rav1dTaskContext) {
-    let cur_data = &f.cur.data.as_ref().unwrap().data;
-
     let ts = &f.ts[t.ts];
     let sby = t.b.y >> f.sb_shift;
     let sby_off = f.sb128w * 128 * sby;
     let x_off = ts.tiling.col_start;
+    let by = t.b.y;
+    // Reads the LAST row of the superblock row just reconstructed, which is
+    // where the next superblock row's top edge comes from. On the owned band
+    // that row is in the band, so this has to be read through the same seam —
+    // if it read the picture it would read pre-stitch (stale) pixels.
+    let planes = crate::src::owned_recon::ReconPlanes::bind(
+        &f.cur.data.as_ref().unwrap().data,
+        &mut t.recon_band,
+    );
 
-    let y = &cur_data[0];
-    let y = y.with_offset::<BD>()
-        + x_off as usize * 4
-        + ((t.b.y + f.sb_step) * 4 - 1) as isize * y.pixel_stride::<BD>();
     let ipred_edge_off = (f.ipred_edge_off * 0) + (sby_off + x_off * 4) as usize;
     let n = 4 * (ts.tiling.col_end - x_off) as usize;
+    let y = planes.src::<BD>(0, ((by + f.sb_step) * 4 - 1) as usize, x_off as usize * 4);
     BD::pixel_copy(
         &mut f.ipred_edge.mut_slice_as((ipred_edge_off.., ..n)),
         &y.slice::<BD>(n),
@@ -3880,14 +3893,13 @@ pub(crate) fn rav1d_backup_ipred_edge<BD: BitDepth>(f: &Rav1dFrameData, t: &mut 
         let ss_ver = (f.cur.p.layout == Rav1dPixelLayout::I420) as c_int;
         let ss_hor = (f.cur.p.layout != Rav1dPixelLayout::I444) as c_int;
 
-        let uv_off = (x_off * 4 >> ss_hor) as isize
-            + (((t.b.y + f.sb_step) * 4 >> ss_ver) - 1) as isize * BD::pxstride(f.cur.stride[1]);
+        let uv_row = (((by + f.sb_step) * 4 >> ss_ver) - 1) as usize;
+        let uv_col = (x_off * 4 >> ss_hor) as usize;
         for pl in 1..3 {
             let ipred_edge_off =
                 (f.ipred_edge_off * pl) + (sby_off + (x_off * 4 >> ss_hor)) as usize;
             let n = 4 * (ts.tiling.col_end - x_off) as usize >> ss_hor;
-            let uv = &cur_data[pl];
-            let uv = uv.with_offset::<BD>() + uv_off;
+            let uv = planes.src::<BD>(pl, uv_row, uv_col);
             BD::pixel_copy(
                 &mut f.ipred_edge.mut_slice_as((ipred_edge_off.., ..n)),
                 &uv.slice::<BD>(n),

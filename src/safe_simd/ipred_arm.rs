@@ -1471,7 +1471,7 @@ fn cfl_row_16bpc(
 /// live path.
 #[cfg(target_arch = "aarch64")]
 pub fn cfl_pred_dispatch<BD: crate::include::common::bitdepth::BitDepth>(
-    dst: PicOffset,
+    dst: &mut crate::src::owned_recon::ReconDst<'_>,
     width: c_int,
     height: c_int,
     dc: c_int,
@@ -1605,12 +1605,26 @@ mod cfl_parity {
             let comp = Rav1dPictureDataComponent::wrap_buf::<BD>(&mut px, stride);
             let dst = comp.with_offset::<BD>();
             let handled = if simd {
-                super::cfl_pred_dispatch::<BD>(dst, w as i32, h as i32, dc, ac, alpha, bd)
+                super::cfl_pred_dispatch::<BD>(
+                    &mut crate::src::owned_recon::ReconDst::Pic(dst),
+                    w as i32,
+                    h as i32,
+                    dc,
+                    ac,
+                    alpha,
+                    bd,
+                )
             } else {
                 let mut fixed = [0i16; crate::src::internal::SCRATCH_AC_TXTP_LEN];
                 fixed[..ac.len()].copy_from_slice(ac);
                 crate::src::ipred::cfl_pred_scalar_for_test::<BD>(
-                    dst, w as i32, h as i32, dc, &fixed, alpha, bd,
+                    &mut crate::src::owned_recon::ReconDst::Pic(dst),
+                    w as i32,
+                    h as i32,
+                    dc,
+                    &fixed,
+                    alpha,
+                    bd,
                 );
                 true
             };
@@ -1947,7 +1961,7 @@ fn ac_remove_dc(_token: Arm64, ac: &mut [i16], base: i32, log2sz: u32) {
 #[allow(clippy::too_many_arguments)]
 pub fn cfl_ac_dispatch<BD: crate::include::common::bitdepth::BitDepth>(
     ac: &mut [i16],
-    y_src: PicOffset,
+    y_src: &crate::src::owned_recon::ReconSrc<'_>,
     w_pad: c_int,
     h_pad: c_int,
     width: usize,
@@ -1991,11 +2005,11 @@ pub fn cfl_ac_dispatch<BD: crate::include::common::bitdepth::BitDepth>(
 
     for y in 0..active_h {
         let aci = y * width;
-        let row_pic = y_src + (y as isize * row_stride);
+        let row_pic = y_src.at(y as isize * row_stride);
         let row_guard = row_pic.slice::<BD>(src_cols);
         let row_below_guard;
         let below: Option<&[BD::Pixel]> = if is_ss_ver {
-            row_below_guard = (row_pic + y_pxstride).slice::<BD>(src_cols);
+            row_below_guard = row_pic.at(y_pxstride).slice::<BD>(src_cols);
             Some(&*row_below_guard)
         } else {
             None
@@ -2113,10 +2127,26 @@ mod cfl_ac_parity {
             // write a lane is caught rather than matching a shared zero.
             let mut ac = [0x5A5Ai16; SCRATCH_AC_TXTP_LEN];
             let handled = if simd {
-                super::cfl_ac_dispatch::<BD>(&mut ac, dst, w_pad, h_pad, cw, ch, ss_hor, ss_ver)
+                super::cfl_ac_dispatch::<BD>(
+                    &mut ac,
+                    &crate::src::owned_recon::ReconSrc::Pic(dst),
+                    w_pad,
+                    h_pad,
+                    cw,
+                    ch,
+                    ss_hor,
+                    ss_ver,
+                )
             } else {
                 crate::src::ipred::cfl_ac_scalar_for_test::<BD>(
-                    &mut ac, dst, w_pad, h_pad, cw, ch, ss_hor, ss_ver,
+                    &mut ac,
+                    &crate::src::owned_recon::ReconSrc::Pic(dst),
+                    w_pad,
+                    h_pad,
+                    cw,
+                    ch,
+                    ss_hor,
+                    ss_ver,
                 );
                 true
             };

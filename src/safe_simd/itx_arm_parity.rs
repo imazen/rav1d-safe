@@ -105,12 +105,12 @@ fn run_cell(
         let mut out = vec![0u8; px.len()];
         let handled = {
             let comp = Rav1dPictureDataComponent::wrap_buf::<BitDepth8>(&mut px, stride);
-            let dst = comp.with_offset::<BitDepth8>();
+            let mut dst = crate::src::owned_recon::ReconDst::Pic(comp.with_offset::<BitDepth8>());
             let handled = if simd {
                 crate::src::safe_simd::itx_arm::itxfm_add_dispatch::<BitDepth8>(
                     tx as usize,
                     tx_type as usize,
-                    dst,
+                    &mut dst,
                     &mut cf,
                     eob,
                     bd,
@@ -119,7 +119,7 @@ fn run_cell(
                 crate::src::itx::itxfm_add_scalar_fallback::<BitDepth8>(
                     tx as usize,
                     tx_type,
-                    dst,
+                    &mut dst,
                     &mut cf,
                     eob,
                     bd,
@@ -381,12 +381,12 @@ fn run_cell_16(
         let mut out = vec![0u16; px.len()];
         let handled = {
             let comp = Rav1dPictureDataComponent::wrap_buf::<BitDepth16>(&mut px, stride);
-            let dst = comp.with_offset::<BitDepth16>();
+            let mut dst = crate::src::owned_recon::ReconDst::Pic(comp.with_offset::<BitDepth16>());
             let handled = if simd {
                 crate::src::safe_simd::itx_arm::itxfm_add_dispatch::<BitDepth16>(
                     tx as usize,
                     tx_type as usize,
-                    dst,
+                    &mut dst,
                     &mut cf,
                     eob,
                     bd,
@@ -395,7 +395,7 @@ fn run_cell_16(
                 crate::src::itx::itxfm_add_scalar_fallback::<BitDepth16>(
                     tx as usize,
                     tx_type,
-                    dst,
+                    &mut dst,
                     &mut cf,
                     eob,
                     bd,

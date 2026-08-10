@@ -1,7 +1,6 @@
 #![forbid(unsafe_code)]
 
 use crate::include::common::bitdepth::BitDepth;
-use crate::include::dav1d::picture::PicOffset;
 use crate::src::strided::Strided as _;
 use std::fmt::Display;
 use std::io;
@@ -35,16 +34,18 @@ pub fn hex_dump<BD: BitDepth>(buf: &[BD::Pixel], stride: usize, w: usize, h: usi
 #[inline]
 pub fn hex_fdump_pic<BD: BitDepth>(
     out: &mut impl io::Write,
-    buf: PicOffset,
+    buf: &crate::src::owned_recon::ReconDst<'_>,
     w: usize,
     h: usize,
     what: &str,
 ) -> io::Result<()> {
     write!(out, "{}", what)?;
+    let pxstride = buf.pixel_stride::<BD>();
+    let buf = buf.as_src();
     for y in 0..h {
-        let buf = buf + (y as isize * buf.pixel_stride::<BD>());
-        let buf = &*buf.slice::<BD>(w);
-        for &x in buf {
+        let row = buf.at(y as isize * pxstride);
+        let row = &*row.slice::<BD>(w);
+        for &x in row {
             write!(out, " {}", BD::display(x))?;
         }
         writeln!(out)?;
@@ -53,7 +54,12 @@ pub fn hex_fdump_pic<BD: BitDepth>(
 }
 
 #[inline]
-pub fn hex_dump_pic<BD: BitDepth>(buf: PicOffset, w: usize, h: usize, what: &str) {
+pub fn hex_dump_pic<BD: BitDepth>(
+    buf: &crate::src::owned_recon::ReconDst<'_>,
+    w: usize,
+    h: usize,
+    what: &str,
+) {
     hex_fdump_pic::<BD>(&mut stdout(), buf, w, h, what).unwrap();
 }
 
