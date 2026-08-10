@@ -93,6 +93,11 @@ campaigns. Every rule below cost real time to learn.
   multi-hour `miri`): the quiet gate can never be satisfied and the default behaviour is the worst
   of both — wait 20 minutes, then run anyway. With `--load-ok` you MUST record `foreign_max` per
   row and report paired ratios, never absolutes.
+- **`grep -c` exits 1 when the count is zero, so `n=$(grep -c X f || echo 0)` yields `"0\n0"` and
+  every `[ "$n" != "0" ]` test fires.** A watchdog written that way reports a panic on a clean log —
+  the mirror of "silence is not success", and it cost one false alarm mid-#494. Use
+  `n=$(grep -c X f); n=${n:-0}; [ "$n" -gt 0 ]`, and sanity-check a new watchdog against a log you
+  KNOW is clean before trusting it against one you don't.
 - **A "disjoint bands" tick has to compare the arms the CLAIM compares.** Printing
   ours-vs-dav1d disjointness for a claim about base-vs-head is trivially true for two different
   decoders: a green tick that can never fail. Same family as a vacuous `wide_exclusion`.
