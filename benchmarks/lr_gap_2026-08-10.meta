@@ -65,10 +65,28 @@ own wall clock is 9.3% at the worst cell (4K t=1) and 1.3-2.4% at the small
 ones. Porting more of it cannot move the ratio: zeroing LR entirely at 4K t=1
 takes 160.50 -> 145.50, i.e. 3.96x -> 3.59x.
 
-**Do not port an LR kernel on this evidence.** (Ranges: ours 4K t=1
-[159.50..164.50] vs noLR [144.50..148.00] — disjoint, so the 9.3% is real; the
-smaller cells' LR deltas are at the edge of resolution and are quoted as
-"<= 2.4%", not as exact values.)
+**Do not port an LR kernel on this evidence.**
+
+**Noise band on the LR RATIO — only the 4K cell resolves.** The ratio is a
+quotient of two small differences, so it must be banded, not quoted as a point.
+Differencing PER ROUND (both arms of both decoders from the same round, then
+taking the median and range of the nine per-round quotients):
+
+  cell            t | our LR ms/frame          d1d LR ms/frame        PAIRED LR ratio        n
+  3840x2160  8b   1 | 15.50 [13.00..19.00]     7.50 [7.00..8.50]      **1.94x [1.75..2.57]** 9
+  1920x1080 10b   1 |  0.60 [ 0.43.. 0.77]     0.27 [0.17..0.30]        2.50x [1.63..4.20]   9
+  640x360    8b   1 |  0.12 [ 0.05.. 0.18]     0.02 [0.00..0.05]        3.00x [2.00..6.00]   7
+  352x288 I444    1 |  0.10 [ 0.03.. 0.18]     0.05 [0.03..0.05]        2.33x [0.50..7.00]   9
+
+**Only 4K 8bpc is resolvable: 1.75-2.57x.** Below it, LR's own cost is at the
+1 ms timer floor (the 352x288 band crosses 1.0 and means nothing). Quote the 4K
+band; treat the smaller cells' ratios as "same order, not resolved".
+
+The load-bearing claim does NOT depend on that band. What decides "do not port"
+is the SHARE, and that is measured directly: ours 4K t=1 [159.50..164.50] vs
+noLR [144.50..148.00] are **disjoint**, so 9.3% is real, and the smaller cells'
+shares are bounded above by 2.4%. A kernel worth 9.3% of the worst cell cannot
+move a 4.0x ratio to 1.4x even if it became infinitely fast.
 
 ## 2. What IS pathological: real-content ratio 3.7x-46x, and thread scaling INVERTS
 
