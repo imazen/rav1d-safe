@@ -110,6 +110,44 @@ sides). Every co-live pair is therefore seen exactly once, at the later acquire.
   at any distance — they read reference frames, immutable for the whole decode.
   Extent is not their constraint; the tracker's wide path still is.
 
+## The strided-rectangle counterfactual (added 2026-08-10)
+
+`bounds_probe::eval_rect` / `DisjointMut::probe_eval_rect` answer the question
+`884b4b5` settled by ARGUMENT in March 2026 and #472 re-opened: **would ONE
+exact `h x w` record ever reject a foreign record that the shipped `h` per-row
+records permit?** It runs at each of the 17 helpers that take per-row guards
+under tile threading, immediately BEFORE they take them, registers nothing, and
+counts foreign records that intersect the rectangle's HULL but not the rectangle.
+
+Its rectangle predicate is differential-tested against a brute-force byte-set
+oracle (`mod rect_oracle`), which caught two real defects in it before any decode
+ran — `w >= stride` and `lo % stride + w > stride` both make a row span more than
+one column range. Two planted mutations are caught. **Verdict, both depths at
+t=8** (`benchmarks/strided_2d_2026-08-10.meta`):
+
+* **YES, the gap traffic is real: 34,547 hull-only collisions on `8-bit/data`,
+  17,704 of them against a concurrently-live foreign WRITE** (3,923 / 2,119 at
+  10-bit). The largest pair is `picture.rs:2061:22` against ITSELF,
+  write-vs-write — two tile workers on the same rows at different columns.
+* **`rect_ovl = 0` at every site.** Every hull collision is a gap collision; the
+  exact rectangle never collided once. So a hull extent is refuted (fourth time)
+  and an exact 2-D record is NOT refuted on soundness.
+* **It is refuted on COST instead, and the quantity is `pct_row_wide`.** The
+  tracker is address-block sharded, so a 2-D record must lock every shard its
+  rows map to, and >4 promotes to the all-shards wide path. Measured saving
+  1.4-3.7x (not `h`), at 17-52% wide on 8-bit and 28-91% on 10-bit — 50.8% at
+  the biggest site. That is the mechanism behind the 1.98x/2.65x hull arms.
+* **Both directions were falsified against a real decode**, not argued:
+  `RAV1D_LF_HULL=1` at the site measured `hull_ovl = 0` gives 358/358 PASS;
+  `RAV1D_RECT_HULL=1` (`--features __probe_rect_hull`) at the sites measured
+  nonzero gives **162/358 ERROR**, and the panic's `existing` extent is byte for
+  byte the hull the probe recorded.
+
+Price a rectangle scheme with the instance's REAL geometry
+(`BorrowTracker::probe_geometry`), never a mirrored `BLOCK_SHIFT`: the shipped
+shift is `block_shift_for(len)` and runs 6..14 across this corpus. An earlier
+draft of this probe mirrored 12 and reported "100% wide" for cells that are not.
+
 ## What it is NOT
 
 * **An empirical map, not a proof.** A site that never appears is UNKNOWN. A gap

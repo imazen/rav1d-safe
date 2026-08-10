@@ -148,6 +148,32 @@ by holding `NonNull<V>` and materialising the reference in `Deref`/`DerefMut` �
 and Tree Borrows, with each test in isolation. It is the only tool here that checks the aliasing
 model instead of the bookkeeping, and it has now caught two defects that every other gate missed.
 
+### 6a. The March-2026 strided tracker: the objection was right, and it was still over-generalised
+
+`884b4b5` added strided 2-D overlap checking; `424cbbb` removed it the next day as "unsound", and
+`cd9fdf5` concluded **"row slices are the only path"**. That conclusion stood unmeasured for the
+whole campaign. Re-examined 2026-08-10 (`benchmarks/strided_2d_2026-08-10.meta`), it splits in two:
+
+* **Right about `884b4b5`.** `index_mut_strided` recorded the rectangle and handed out a `&mut` over
+  the **hull** — verbatim §6's defect. Its predicate also had a genuine **false negative** (a row
+  wrapping past the stride reads as disjoint from a byte inside it) behind a **safe** API with that
+  as an unchecked precondition. Both are now unit tests, not opinions.
+* **Wrong to generalise to the record shape.** Measured over both corpora at t=8: an exact 2-D
+  record would have permitted **all 34,547** of the inter-row-gap collisions the hull produces
+  (**17,704** of them against a concurrently-live foreign WRITE), colliding **zero** times itself.
+  Soundness is not what stops it.
+* **What stops it is the sharded tracker's cost.** A record must lock every shard its bytes map to,
+  and >`MAX_SHARDS_PER_BORROW` promotes to the all-shards wide path. Measured saving 1.4-3.7x
+  registrations — not `h` — at a 17-91% wide-promotion rate. Plus machinery: a shard is exactly one
+  128-byte line at `SLOTS = 7`, and `tracker_blockshift_2026-08-08.meta` §2 measured that the cost
+  is a core waiting for that line, not the atomics on it.
+
+**Rule: "someone asserted it was unsound" is not "it is unsound", and a correct objection to one
+implementation is not an objection to the shape.** Both halves were settled here by instruments that
+can fail — a byte-set oracle for the predicate, and a two-sided decode arm (a site measured at zero
+gap traffic gives 358/358 PASS; the sites measured nonzero give 162/358 ERROR, with the panic's byte
+extents matching the recorded hull exactly).
+
 ## 7. The four cases, in detail
 
 The models above are not equally applicable. What decides it is **who writes a pixel, and whether

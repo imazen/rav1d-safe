@@ -971,6 +971,31 @@ pub(super) struct BorrowTracker {
 
 const POISON_BIT: u32 = 1 << 31;
 
+/// THROWAWAY (`__probe_bounds`): the shard geometry a counterfactual extent
+/// must be priced against — this instance's REAL block shift and shard mask,
+/// plus the two promotion limits.
+///
+/// Mirroring these as constants in the probe is wrong and was caught being
+/// wrong: the shipped shift is `block_shift_for(len)`, which is 12 for a serial
+/// or single-tile decode and 14-15 for a multi-tile 4K plane, so a hull that
+/// spans 15 blocks in one configuration spans 3 in another.
+#[cfg(feature = "__probe_bounds")]
+impl BorrowTracker {
+    pub(super) fn probe_geometry(&self) -> crate::bounds_probe::ShardGeom {
+        crate::bounds_probe::ShardGeom {
+            shift: self.shift,
+            mask: self.mask,
+            max_shards: MAX_SHARDS_PER_BORROW,
+            max_blocks: MAX_BLOCKS_SCAN,
+        }
+    }
+
+    /// [`shard_of`], for the probe. Same function the tracker registers with.
+    pub(super) fn probe_shard_of(block: usize, mask: usize) -> usize {
+        shard_of(block, mask)
+    }
+}
+
 // SAFETY: `wide` and every `Shard::recs` are only accessed under the relevant
 // `TinyLock`(s), per the module-level rules.
 unsafe impl Send for BorrowTracker {}

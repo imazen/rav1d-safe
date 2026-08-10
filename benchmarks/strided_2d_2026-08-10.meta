@@ -1,0 +1,227 @@
+# The strided-2D record: the soundness objection, measured at last
+
+Host: Apple M4 Pro (8P+4E), macOS 26.5.2. Base: `main` @ b700489.
+Default features plus the named `__probe_*` gates. Counting/correctness runs
+only — **no wall-clock number is quoted from any build here** (`__probe_bounds`
+publishes, fences and scans on every registration).
+
+Records: `strided_2d_rect_2026-08-10.tsv` (per-site counterfactual, both
+depths), `strided_2d_gaps_2026-08-10.tsv.zst` (1,024 named gap pairs with their
+byte extents). Instrument: `bounds_probe::eval_rect` + `DisjointMut::
+probe_eval_rect`, `--features __probe_bounds`. Falsification arms:
+`--features __probe_rect_hull` (`RAV1D_RECT_HULL=1`) and the pre-existing
+`--features __probe_lf_hull` (`RAV1D_LF_HULL=1`).
+
+
+## The question
+
+`884b4b5` (2026-03-24) added strided 2-D overlap checking to
+`rav1d-disjoint-mut`. `424cbbb` removed it the next day as "unsound strided
+tracking code", stating the objection as *safe code can write to stride gaps
+that the tracker declared unaccessed*. `cd9fdf5` then wrote "NEVER CREATE
+UNSOUND ABSTRACTIONS — row slices are the only path", and #445 shipped the
+narrowing-plus-per-row-guard scheme in force today.
+
+**The objection was an argument. It was never measured.** #472 re-opened the
+question by solving the reference side independently (one registration, per-row
+references), which would let ONE record cover an `h x w` rectangle exactly —
+neither reserving inter-row gaps nor paying the per-row split.
+
+So: **does any WRITE ever land in the inter-row gap of a concurrently-live
+strided access?**
+
+
+## 1. What `884b4b5` actually was — and it is unsound by inspection, not by taste
+
+Two independent defects, both now executed facts rather than claims
+(`crates/rav1d-disjoint-mut/src/bounds_probe.rs`, `mod rect_oracle`):
+
+* **It recorded the rectangle and handed out the HULL.** `index_mut_strided`
+  registers `(stride, width)` and then does
+  `let slice = unsafe { &mut *index.get_mut(...) }` over the FULL `[start..end)`.
+  That is verbatim #469's defect — the record and the reference are different
+  objects and both must be exact (§6 of `docs/OWNERSHIP_MODELS.md`) — which Miri
+  flags under both memory models. Two guards permitted by the 2-D test then hold
+  two `&mut` over the same gap bytes, which is UB before anyone writes anything.
+  **The 2026-03 objection was right about this.**
+
+* **Its predicate had a false negative.** `ranges_overlap`'s column test is not
+  modular, so a row that wraps past the stride
+  (`start % stride + width > stride`) is declared disjoint from a byte inside
+  it. `index_mut_strided(index, stride, width)` is a **safe** public API with
+  that as an unchecked precondition, so a caller bug becomes UB. Pinned by
+  `the_2026_03_predicate_has_a_false_negative_on_a_wrapping_row`.
+
+* Its own message admits a third: different-stride pairs fall back to the 1-D
+  hull answer, i.e. a potential false positive (= decode failure). Pinned by
+  `the_2026_03_predicate_falls_back_to_1d_on_mixed_strides`.
+
+Scope note for the archaeology: `884b4b5` alone changed no behaviour (0 call
+sites). The call sites arrived in `8bbf7b2` (`mt` feature, same timestamp) in
+`safe_simd/loopfilter.rs` x3 and `safe_simd/mc.rs` x1, and by `af36f57` — the
+commit before the removal — **only one remained**, an immutable
+`slice_as_strided` in MC. So the "1.4-1.55x at t=2" era rested on `8bbf7b2`'s
+NARROWING as much as on strided tracking; the two landed in the same minute.
+
+
+## 2. The measurement — an exact 2-D record vs `h` per-row records
+
+`bounds_probe::eval_rect` runs at each of the 17 helper sites that take per-row
+guards under tile threading, **immediately before** they take them, registering
+nothing. It builds the rectangle those `h` guards describe, then scans every
+other worker's live set for records that intersect the rectangle's HULL but not
+the rectangle itself. Its rectangle predicate is differential-tested against a
+brute-force byte-set oracle over 378,000 interval cases and 176,400 rect-vs-rect
+cases (`mod rect_oracle`); two planted mutations were caught, and the oracle
+caught two real defects in the predicate before any decode was run.
+
+`--group 8-bit/data`, t=8, 358 vectors, 2,270 frames. Selected rows
+(full table in the TSV; `gap` = hull-overlap-but-not-rect-overlap):
+
+    site                                 evals   peers    hull_ovl  rect_ovl   gap  gap_mut
+    ----------------------------------------------------------------------------------------
+    include/dav1d/picture.rs:2061:22   8065450   830875     15568        0    15568    8136
+    src/safe_simd/mc_arm.rs:5655:25    4385488   409125      7848        0     7848    4012
+    src/owned_recon.rs:570:45          1436699   152196      3595        0     3595    1882
+    src/safe_simd/mc_arm.rs:5240:25    1166719   141938      2098        0     2098    1049
+    include/dav1d/picture.rs:168:38    1226687   126691      1886        0     1886     877
+    src/owned_recon.rs:505:31          1291359    45452      1352        0     1352     692
+    src/loopfilter.rs:809:17           7348041  2572561         0        0        0       0
+    src/safe_simd/cdef_arm.rs:622:9   13725636  4447570         0        0        0       0
+    src/cdef_apply.rs:104:32           5086198  2431485         0        0        0       0
+    ----------------------------------------------------------------------------------------
+    8-bit/data TOTAL                                        34547        0    34547   17704
+    10-bit/data TOTAL (71 vec, 490 f)                        3923        0     3923    2119
+
+### THE ANSWER: yes, and 17,704 of them are writes
+
+* **`gap_mut = 17,704`** at 8-bit and **2,119** at 10-bit. A concurrently-live
+  foreign MUTABLE reservation lands in the inter-row gap that often, per corpus
+  pass, at t=8. The largest single pair is `picture.rs:2061:22` against ITSELF,
+  write-vs-write: two tile workers writing the same picture rows at different
+  columns, which is exactly what AV1's column tiling produces.
+* **`rect_ovl = 0` at every site.** Every one of the 34,547 hull collisions is a
+  gap collision. The exact rectangle never collided with anything, once.
+* **`gap_xstride = 0`.** The different-stride case — the one `884b4b5` answered
+  conservatively — never arose at these sites on this corpus.
+
+So the two halves separate cleanly:
+
+* **A HULL-extent record is refuted, by measurement.** This is the fourth
+  refutation of "widen the reservation to cut the count" (#469, #475, #485), and
+  the first with a count attached before the change was written.
+* **An EXACT 2-D record is NOT refuted on soundness.** It would permit all
+  34,547, and the one genuinely-inexact case in `884b4b5`'s predicate is not
+  exercised. `cd9fdf5`'s "row slices are the only path" over-generalises from
+  `884b4b5`'s hull reference to the record shape.
+
+### The instrument's own gates
+
+* **Reconciles registration for registration** against the independent
+  `probe-sites` census: `RECT n x rows_mean` at `loopfilter.rs:809:17` is
+  74,435,655 against `BSITE`'s 74,427,238 at `loopfilter.rs:833:14` — 0.011%.
+  (0.03% on the 4K cell.)
+* **`mutable_overlaps = 0`** over 640,107 co-live reservation overlaps (8-bit)
+  and 17,792 (10-bit). A co-live overlap involving a mutable record is
+  impossible — the tracker panics on it — so this counter reading nonzero would
+  mean the concurrency detection is fabricating pairs.
+* `lost_slot = lost_th = lost_site = lost_inst = lost_pair = lost_tid = 0`,
+  `rows_capped = 0` on both cells.
+
+
+## 3. The falsification arm — the prediction is two-sided and both sides hold
+
+The `gap_mut` column claims the hull collides. A reservation overlap involving a
+mutable record is a panic, so forcing the hull MUST fail to decode — and forcing
+it at the site measured at `hull_ovl = 0` must NOT.
+
+`examples/md5_inventory --group 8-bit/data --threads 8`, one binary per arm:
+
+    arm                                       probe says          measured
+    -------------------------------------------------------------------------
+    control (arm off)                         --                  358/358 PASS
+    RAV1D_LF_HULL=1     (loopfilter.rs:809)   hull_ovl = 0        358/358 PASS
+    RAV1D_RECT_HULL=1   (block_mut +          hull_ovl >= 17,454  196 PASS,
+                         with_pixel_guard)    gap_mut  >=  9,013  162 ERROR
+
+`>=` because the arm flips a family: `picture.rs:2061:22` (15,568 / 8,136) and
+`picture.rs:168:38` (1,886 / 877) are unambiguously its two sites, and the
+`mc_arm.rs:*` / `owned_recon.rs:570:45` rows are `block_mut` callers whose read
+side it also flips. The prediction under test is only "nonzero implies it must
+fail to decode", and the discriminating half — a site measured at exactly zero
+must NOT fail — is what makes the pair informative rather than a tick that
+cannot fail.
+
+The panic names the extents, and they are the probe's:
+
+    current: &mut _[295296..319136] on ThreadId(3) at include/dav1d/picture.rs:770:19
+    existing: &mut _[294912..318752]              at include/dav1d/picture.rs:770:19
+
+against the recorded gap row
+
+    mine rect: lo=294912 w=32 rows=32 stride=768  hull=[294912..318752)
+    peer:      [306816..306848)   peer_mut=1 mine_mut=1
+
+Byte for byte the same hull. The two hulls differ by 384 bytes = half of the
+768-byte stride: adjacent tile columns of the same rows, rectangles disjoint,
+hulls almost entirely coincident.
+
+
+## 4. Why it is still not worth building — and this half is the ANSWER, not the argument
+
+The tracker is **address-block sharded**: a record registers in every shard its
+bytes map to, and a borrow touching more than `MAX_SHARDS_PER_BORROW = 4`
+distinct shards promotes to the **wide path, which holds EVERY active shard**
+(128 by default). So the cost of one 2-D record is not one lock — it is
+`|shards(rows)|` locks, or all of them.
+
+Measured with each instance's REAL geometry (`BorrowTracker::probe_geometry` —
+the shipped shift is `block_shift_for(len)`, 6..14 across this corpus, NOT the
+constant 12; an earlier draft of this probe mirrored 12 and was wrong):
+
+    site                                rows_mean  row_shards_mean  saving  pct_row_wide
+    --------------------------------------------------------------------------------------
+    src/cdef_apply.rs:121:33                 4.03            2.967   1.36x         0.54%
+    src/owned_recon.rs:505:31                7.46            2.021   3.69x        10.65%
+    src/safe_simd/cdef_arm.rs:622:9          5.31            3.313   1.60x        17.03%
+    include/dav1d/picture.rs:2061:22         8.42            3.672   2.29x        27.88%
+    src/safe_simd/cdef_arm.rs:1217:9         8.00            3.995   2.00x        48.03%
+    src/loopfilter.rs:809:17                10.13            5.297   1.91x        50.82%
+    src/safe_simd/mc_arm.rs:4741:25         15.62            6.500   2.40x        70.59%
+    (10-bit/data is worse: 28-91% wide at the same sites)
+
+`saving` is the best case — registrations replaced per registration made — and
+it is **1.4x to 3.7x, not `h`**. The rows of a picture rectangle are one stride
+apart and the adaptive rule targets ~4.3 rows per block, so 8-20 rows land in
+2-7 blocks and those hash to distinct shards. **`pct_row_wide` is the killer:**
+at the largest site 50.8% of 2-D registrations would take every one of the 128
+active shards. `pct_hull_wide` is the same quantity plus the `MAX_BLOCKS_SCAN`
+term, so it is a lower bound for the hull variant.
+
+`row_shards_mean` saturates at 9 (the probe's set is 8 wide), so it is an
+UNDER-estimate where it is large; `pct_row_wide` is exact.
+
+And the machinery is not free either — the third clause of the campaign's
+count-vs-cost lesson. A 2-D record needs `(stride, w, rows)` beside
+`(start, end, mut)`, and a shard is currently sized to **exactly one 128-byte
+cache line at `SLOTS = 7`**. The shard design's measured win was fewer LINES,
+not fewer atomics: making `remove` a single `fetch_and` measured **-0.9%**
+("essentially nothing"), because the cost is a core waiting for a line
+(`tracker_blockshift_2026-08-08.meta` §2). Every pair comparison would also gain
+an integer `%` and `/` by a runtime stride in place of
+`a_start < b_end && b_start < a_end` over parallel arrays.
+
+That trade — a wider shard line and a costlier per-pair test, to buy 1.4-3.7x
+fewer lock acquisitions while sending 17-91% of them to the all-shards path — is
+the same trade that measured **1.98x** (`docs/MUT_RECON_KERNELS.md` §10) and
+**2.65x** (`__probe_lf_hull`) slower in two prior arms. Those numbers now have a
+mechanism instead of a hypothesis.
+
+**Verdict: NOT BUILT. The soundness objection is confirmed for the hull and
+refuted for the exact record; the cost structure refutes the exact record
+independently, and the refuting quantity is `pct_row_wide`.**
+
+The two cells where the arithmetic is favourable are
+`cdef_apply.rs:121:33` (0.54% wide, 1.36x) and `owned_recon.rs:505:31` (10.65%
+wide, 3.69x) — the only places a future attempt should look, and the second is
+a `Band` helper that may not need a record at all (§4d).

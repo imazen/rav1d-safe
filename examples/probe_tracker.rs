@@ -88,6 +88,7 @@ fn main() {
     #[cfg(feature = "__probe_bounds")]
     {
         print!("{}", rav1d_disjoint_mut::bounds_probe::report(iters));
+        print!("{}", rav1d_disjoint_mut::bounds_probe::report_rect());
     }
     #[cfg(not(any(feature = "probe-count", feature = "probe-wide")))]
     eprintln!("(built without --features probe-count / probe-wide; no counters)");

@@ -92,6 +92,14 @@ __probe_bounds = ["probe-sites", "rav1d-disjoint-mut/__probe_bounds"]
 # Absent from `default` and from every published feature. See
 # `src/loopfilter.rs::lf_hull_reads` and docs/MUT_RECON_KERNELS.md section 10.
 __probe_lf_hull = []
+# Measurement-only: arms `RAV1D_RECT_HULL=1`, which makes the RECON/MC block
+# helpers (`block_mut`, `with_pixel_guard_immut`) take ONE strided-hull guard
+# under tile threading instead of `h` per-row ones. It exists to FALSIFY the
+# bounds map's strided-rectangle prediction: the map says the hull collides with
+# a concurrently-live foreign WRITE at these sites, so this arm must produce
+# decode errors. A silent pass would mean the instrument is lying.
+# Absent from `default` and from every published feature.
+__probe_rect_hull = []
 probe-tinynop = ["rav1d-disjoint-mut/__probe_tinynop"]
 probe-addnop = ["rav1d-disjoint-mut/__probe_addnop"]
 probe-noscan = ["rav1d-disjoint-mut/__probe_noscan"]
