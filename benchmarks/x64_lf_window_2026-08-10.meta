@@ -103,6 +103,15 @@ for reconstruction tasks, i.e. recon of superblock row S waited for
 and `DeblockCols(N+1)` (which needs recon of N+1), were both ordered after
 `DeblockRows(N)`. So the barrier is what had been masking this.
 
+**And it was tested, not just argued.** A throwaway arm — the PRE-FIX loop filter
+with `054e2ed`'s predicate re-inserted verbatim (`deblock_progress >= t.sby` for
+recon tasks; the extra param threaded through both `check_tile` call sites,
+never committed, sources restored byte-exact) — runs `8-bit/data` at t=8 with
+**358 PASS, 0 ERROR, 0 overlap panics**, where the same binary without the
+barrier gives 4 aborts. So the barrier removal really is the enabling change,
+and the falsification test had a way to fail: if a pairing existed that the
+barrier does not order, this arm would still have aborted.
+
 It is still the wrong fix — 2.19x at t=8 (`benchmarks/p1_barrier_2026-08-07.meta`)
 to paper over a 3-row over-read — and `054e2ed`'s own argument is the fix's
 specification: "the filter length is bounded by the transform heights on both
