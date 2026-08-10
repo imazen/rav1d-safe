@@ -237,6 +237,19 @@ reserves the gaps BETWEEN EDGES. The hull version was merely slow (its extent hi
 the band version is a **false positive, i.e. a decode failure**. Third refutation of "cut the guard
 count by widening the reservation", and the first where the widening was contiguous.
 
+**Since 2026-08-10 the widening question is MEASURABLE before it is built.**
+`--features __probe_bounds` (`docs/BOUNDS_MAP.md`) records, per guard, the
+reserved extent, the footprint actually touched, and the distance to every
+concurrently-live foreign reservation — separating "does a foreign RESERVATION
+intersect" from "does a foreign FOOTPRINT intersect", which is the whole
+decision. For this site it says: `LfBlock::fill`'s per-row read guard comes
+within **232 bytes** of `cdef_arm.rs:622:9`'s concurrent write (2,217,283
+co-live pairs), and a widening of <=256 bytes collides **16** times across 1406
+frames of `8-bit/data`. #485's band widened by ~124 bytes and measured 1, 2 and
+0 errors on three passes of that group — retrodicted without writing it. The
+same table shows the 4K gap vectors under-report the risk by ~1000x, which is
+why the band's first full sample passed.
+
 **Two structural facts that fall out, and both are load-bearing for any future attempt:**
 
 - **`tile_threading_active()` cannot gate a filter-side scheme.** That latch is about concurrent
@@ -270,6 +283,14 @@ stops 13 of 768 vectors decoding above one thread. Unaudited.
 
 ## 8. Picking a model
 
+0. Before proposing ANY extent change, run the bounds map
+   (`--features __probe_bounds`, `docs/BOUNDS_MAP.md`) and read the site's
+   widening budget. It costs one build and one decode, and it is the only thing
+   in the campaign that has priced a coarsening before it was written. Two
+   further facts it has already established: at t=8 the shipped decoder's hot
+   sites reserve exactly what they touch (`over_ratio = 1.000`, 1-16 bytes), so
+   there is no slack to reclaim there; at t=1 the hull paths over-reserve
+   153x-1680x and **all** of it is inter-row gap.
 1. Can a single consumer own the region for its whole lifetime? -> **owned buffer** (§4). No
    tracker, no `unsafe`, borrowck proves it. Give it its own stride, size it per worker, bound the
    extent by what is actually read, and enforce that bound with a panic.

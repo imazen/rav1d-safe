@@ -528,17 +528,23 @@ impl Rav1dPictureDataComponent {
     /// For non-c-ffi, stride is stored separately.
     #[cfg(feature = "c-ffi")]
     fn from_parts(inner: Rav1dPictureDataComponentInner, _stride: isize) -> Self {
-        Self {
+        let this = Self {
             data: crate::src::disjoint_mut::dm_new(inner),
-        }
+        };
+        this.data.probe_declare_stride(_stride);
+        this
     }
 
     #[cfg(not(feature = "c-ffi"))]
     fn from_parts(inner: Rav1dPictureDataComponentInner, stride: isize) -> Self {
-        Self {
+        let this = Self {
             data: crate::src::disjoint_mut::dm_new(inner),
             stride,
-        }
+        };
+        // THROWAWAY (`__probe_bounds`): a no-op without the feature. Lets the
+        // report price "widen this guard to the full picture rows it spans".
+        this.data.probe_declare_stride(stride);
+        this
     }
 
     /// Extract the owned `Vec<u8>` from this component's inner buffer, if any.
@@ -964,12 +970,15 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         } else {
             (h - 1) * abs_stride + w
         };
+        let ps = mem::size_of::<BD::Pixel>();
         if pxstride >= 0 {
             let guard = self.data.slice::<BD, _>((self.offset.., ..total));
+            guard.probe_declare_rows(self.offset * ps, w * ps, h, pxstride * ps as isize);
             (guard, 0)
         } else {
             let start = self.offset + 1 - total;
             let guard = self.data.slice::<BD, _>((start.., ..total));
+            guard.probe_declare_rows(start * ps, w * ps, h, pxstride * ps as isize);
             (guard, total - 1)
         }
     }
@@ -1034,6 +1043,10 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             self.offset - (h - 1) * abs_stride
         };
         let guard = self.data.slice::<BD, _>((lo.., ..total));
+        {
+            let ps = mem::size_of::<BD::Pixel>();
+            guard.probe_declare_rows(lo * ps, w * ps, h, pxstride * ps as isize);
+        }
         for row in 0..h {
             let idx = if pxstride >= 0 {
                 row * abs_stride
@@ -1074,6 +1087,10 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             self.offset - (h - 1) * abs_stride
         };
         let mut guard = self.data.slice_mut::<BD, _>((lo.., ..total));
+        {
+            let ps = mem::size_of::<BD::Pixel>();
+            guard.probe_declare_rows(lo * ps, w * ps, h, pxstride * ps as isize);
+        }
         for row in 0..h {
             let idx = if pxstride >= 0 {
                 row * abs_stride
@@ -1120,6 +1137,12 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             self.offset + 1 - total
         };
         let guard = self.data.slice::<BD, _>((start.., ..total));
+        guard.probe_declare_rows(
+            start * pixel_size,
+            w * pixel_size,
+            h,
+            pxstride * pixel_size as isize,
+        );
         let byte_stride = abs_stride * pixel_size;
         (guard.as_bytes().to_vec(), byte_stride)
     }
@@ -1187,6 +1210,10 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             self.offset + 1 - total
         };
         let mut guard = self.data.slice_mut::<BD, _>((start.., ..total));
+        {
+            let ps = mem::size_of::<BD::Pixel>();
+            guard.probe_declare_rows(start * ps, w * ps, h, pxstride * ps as isize);
+        }
         let dst = guard.as_mut_bytes();
         let len = buf.len().min(dst.len());
         dst[..len].copy_from_slice(&buf[..len]);
@@ -1319,14 +1346,17 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         } else {
             (h - 1) * abs_stride + w
         };
+        let ps = mem::size_of::<BD::Pixel>();
         if pxstride >= 0 {
             let guard = self.data.slice_mut::<BD, _>((self.offset.., ..total));
+            guard.probe_declare_rows(self.offset * ps, w * ps, h, pxstride * ps as isize);
             (guard, 0)
         } else {
             // Negative stride: rows go upward, so the first pixel row
             // is at the highest address and the last row is at the lowest.
             let start = self.offset + 1 - total;
             let guard = self.data.slice_mut::<BD, _>((start.., ..total));
+            guard.probe_declare_rows(start * ps, w * ps, h, pxstride * ps as isize);
             (guard, total - 1)
         }
     }
