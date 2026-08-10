@@ -101,9 +101,15 @@ campaigns. Every rule below cost real time to learn.
 | Allocator traffic past the first fix (zenav1-svt) | null despite malloc+memset at 15.5% self time — `sample` attributes page-fault/zone work there |
 | Lazy deblock/CDEF application (zenav1-svt) | REFUTED — changes bytes; loop restoration reads post-CDEF recon |
 | 2D-dot hoist in `compute_stats` (zenav1-svt) | 0.944-0.977x regression |
+| Loop-filter reads as one strided HULL instead of `h` per-row guards (rav1d-safe) | **2.65x SLOWER at t=8** despite removing 3.46 M registrations/frame — the hull is 50-60 KB and lands on the tracker's wide path. `--features __probe_lf_hull` reproduces it |
+| Restoring `rav1d_recon_b_intra`'s incremental destination addressing (rav1d-safe) | 1.021 vs 1.0060 — the hoist keeps a live 40-byte `ReconDst` across `decode_coefs` |
 
 **The meta-lesson from the top two rows: a large self-time share is not automatically a large
-opportunity, and reducing the COUNT of an operation is not the same as reducing its COST.**
+opportunity, and reducing the COUNT of an operation is not the same as reducing its COST.** The
+loop-filter hull row sharpens it in the other direction: a count reduction bought with a WIDER
+extent can be actively harmful. Price the extent, not just the count — and price the count on its
+own by ADDING a duplicate rather than removing the original, which is sound for immutable
+reservations and is the only arm that changes nothing else (rav1d-safe `RAV1D_LF_DOUBLE`).
 
 ## 7. Repo-specific
 

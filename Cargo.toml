@@ -82,6 +82,11 @@ unchecked = []
 probe-count = ["rav1d-disjoint-mut/__probe_count"]
 probe-wide = ["rav1d-disjoint-mut/__probe_wide"]
 probe-sites = ["rav1d-disjoint-mut/__probe_sites"]
+# Measurement-only: arms `RAV1D_LF_HULL=1`, which makes the loop filter take one
+# strided-hull read guard instead of `h` per-row ones under tile threading.
+# Absent from `default` and from every published feature. See
+# `src/loopfilter.rs::lf_hull_reads` and docs/MUT_RECON_KERNELS.md section 10.
+__probe_lf_hull = []
 probe-tinynop = ["rav1d-disjoint-mut/__probe_tinynop"]
 probe-addnop = ["rav1d-disjoint-mut/__probe_addnop"]
 probe-noscan = ["rav1d-disjoint-mut/__probe_noscan"]

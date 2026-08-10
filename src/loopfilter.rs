@@ -402,6 +402,134 @@ impl<BD: BitDepth> LfScratch<BD> {
 /// The write-back goes further and only touches pixels that actually changed,
 /// so it never takes a mutable guard on a tap the filter merely read — the
 /// rule `compact_write_back_per_row_diff` exists for (zenavif#30).
+/// Runtime switch: take the strided HULL for [`LfBlock::fill`]'s reads even
+/// when tile threading is active. **Default off. Measurement arm, not a
+/// shipping policy** — both A/B arms are therefore the same binary, the
+/// `RAV1D_OWNED_RECON` convention.
+///
+/// # What this is for
+///
+/// `LfBlock::fill` is the largest single borrow-registration site left in the
+/// decoder: measured on this branch, `v4k_8tile` 8bpc, `--features
+/// probe-sites`, registrations per frame —
+///
+/// | | t=1 | t=8 |
+/// |---|---|---|
+/// | whole decoder | 6,005,602 | 11,401,399 |
+/// | whole filter chain | 995,665 (16.6%) | 6,391,462 (56.1%) |
+/// | `fill` alone | (hull path) | 3,835,042 (33.6%) |
+///
+/// The filter chain's population is **6.4x larger at t=8 than at t=1**, and
+/// essentially all of the growth is this one policy branch: at t=1 `fill`
+/// takes the hull and costs ~0.47M, at t=8 it takes `h` guards per open. So
+/// the filter chain's cost is not intrinsic to what it reads — it is the
+/// per-row split, the same shape #482 removed from reconstruction.
+///
+/// # What is established, and what is NOT
+///
+/// ESTABLISHED — widening an **immutable** reservation cannot weaken
+/// detection. The hull is a superset of the `h` narrow rows, so any overlap
+/// the narrow set would have caught, the hull catches too. The only failure
+/// mode it can introduce is a FALSE POSITIVE — a loud `overlapping
+/// DisjointMut` panic — never a silent wrong pixel. That is what makes this
+/// arm safe to run and measure at all, unlike a `tracker: None` probe.
+///
+/// ESTABLISHED — `LfBlock::close`, the WRITE side, is untouched and still
+/// takes one narrow mutable guard per changed row span (17,852 per frame at
+/// t=8, `src/loopfilter.rs:739`). Nothing here widens a mutable reservation.
+///
+/// NOT ESTABLISHED — that no concurrent writer ever touches the gap columns.
+/// The pipeline argument is *suggestive*: `rav1d_filter_sbrow_cdef`
+/// (`src/recon.rs:3776-3789`) deliberately lags, filtering
+/// `[sby*sbsz - 2, sby*sbsz)` and stopping 2 block rows short of the end of
+/// its own superblock row, so CDEF(N-1)'s last written luma row is
+/// `N*sbsz*4 - 9` while the deepest row `rav1d_loopfilter_sbrow_rows(N)`
+/// reaches is `N*sbsz*4 - 7` (`lf_reach` maxes at 7) — disjoint, but by ONE
+/// row. And the tile-recon gate (`recon_progress = sby + 2`,
+/// `src/thread_task.rs:1030-1036`) is checked over one tile row's tiles, which
+/// this round did not chase to the tile-ROW boundary case.
+///
+/// Until that argument is closed, this stays default-off: a rarely-firing
+/// false positive is a decode failure, and "766 vectors passed" is evidence,
+/// not a proof.
+///
+/// # And it does not matter, because it MEASURED 1.98x SLOWER
+///
+/// See `docs/MUT_RECON_KERNELS.md` §10. Removing 3,463,025 registrations per
+/// frame made `v4k_8tile` 8bpc t=8 take 1.98x the user CPU (3.12x with the
+/// recon band also disarmed). The hull's extent is 14-16 picture rows, tens of
+/// KB, which is far past the sharded tracker's block size and lands on the wide
+/// path; fourteen 8-byte registrations are much cheaper than one 50 KB one.
+/// The switch is kept, behind a feature so the default build folds it away, as
+/// the reproduction for that negative.
+#[cfg(feature = "__probe_lf_hull")]
+fn lf_hull_reads() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| matches!(std::env::var("RAV1D_LF_HULL").as_deref(), Ok("1")))
+}
+
+/// The default build: no env read, no atomic, no branch — the constant folds
+/// the hull arm out of `fill` entirely.
+#[cfg(not(feature = "__probe_lf_hull"))]
+#[inline(always)]
+fn lf_hull_reads() -> bool {
+    false
+}
+
+/// The OTHER half of the same ablation: force the PER-ROW read path even
+/// without tile threading, i.e. at `t=1`, where it is unconditionally sound
+/// (no second thread exists) and uncontended.
+///
+/// This is what separates the two candidate explanations for the filter
+/// chain's t=8 registration population. `RAV1D_LF_HULL=1` says what one wide
+/// registration costs against `h` narrow ones WITH contention;
+/// `RAV1D_LF_PERROW=1` says what `h` narrow registrations cost against one
+/// wide one WITHOUT it. Together they price count against extent, which is the
+/// question a next attempt at converting the filter chain has to answer before
+/// it starts: a band removes the COUNT, and only pays off if the count is what
+/// costs.
+#[cfg(feature = "__probe_lf_hull")]
+fn lf_force_per_row() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| matches!(std::env::var("RAV1D_LF_PERROW").as_deref(), Ok("1")))
+}
+
+#[cfg(not(feature = "__probe_lf_hull"))]
+#[inline(always)]
+fn lf_force_per_row() -> bool {
+    false
+}
+
+/// The third arm: take EACH per-row read guard TWICE, doubling `LfBlock::fill`'s
+/// population without changing any extent, any output, or any other cost.
+///
+/// This is the only sound way to price a filter-chain registration **at t=8, on
+/// the contended path**, and it is what decides whether an owned filter band is
+/// worth building. `RAV1D_LF_PERROW` prices one uncontended at t=1;
+/// `RAV1D_LF_HULL` cannot price anything because it substitutes a much worse
+/// extent (§11c). Doubling changes nothing but the count.
+///
+/// Sound by construction: the extra guard is IMMUTABLE and covers exactly the
+/// same bytes as the one that follows it, and two immutable reservations never
+/// conflict — so this cannot invent an overlap that the single guard would not
+/// already have found. It is a marginal-cost probe, and the marginal cost of
+/// the second 3.46 M is an upper bound on the first's only if the tracker is
+/// linear in population; it is reported as the marginal number it is.
+#[cfg(feature = "__probe_lf_hull")]
+fn lf_double_reads() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| matches!(std::env::var("RAV1D_LF_DOUBLE").as_deref(), Ok("1")))
+}
+
+#[cfg(not(feature = "__probe_lf_hull"))]
+#[inline(always)]
+fn lf_double_reads() -> bool {
+    false
+}
+
 struct LfBlock<'a, 'b, BD: BitDepth> {
     scratch: &'b mut LfScratch<BD>,
     /// Top-left of the rectangle in picture coordinates.
@@ -547,6 +675,10 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
     /// before — the constant `W` changes only the copy's codegen, never the
     /// guard's extent. Without tile threading: ONE guard over the strided hull
     /// for the whole rectangle; see [`Self::fill_hull`].
+    ///
+    /// [`lf_hull_reads`] takes the hull under tile threading too. It is
+    /// default-OFF and measurement-only; see that function for what is and is
+    /// not established about it.
     #[inline(always)]
     fn fill<const W: usize>(
         scratch: &mut LfScratch<BD>,
@@ -554,11 +686,23 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         stride: isize,
         h: usize,
     ) {
-        if !crate::include::dav1d::picture::tile_threading_active() {
+        if (!crate::include::dav1d::picture::tile_threading_active() || lf_hull_reads())
+            && !lf_force_per_row()
+        {
             return Self::fill_hull::<W>(scratch, origin, stride, h);
         }
         for row in 0..h {
             let off = origin.offset.wrapping_add_signed(row as isize * stride);
+            // The MARGINAL price of one filter-chain registration, measured on
+            // the real contended path. See [`lf_double_reads`].
+            if lf_double_reads() {
+                let extra = PicOffset {
+                    data: origin.data,
+                    offset: off,
+                }
+                .slice::<BD>(W);
+                core::hint::black_box(&extra[0]);
+            }
             let guard = PicOffset {
                 data: origin.data,
                 offset: off,
