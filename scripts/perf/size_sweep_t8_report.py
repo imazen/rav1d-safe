@@ -230,6 +230,30 @@ def main():
             print(f"{vec:<26} {arm:<10} {t_star:>6} {best:9.3f} {s_star:6.2f} "
                   f"{stops_help:>14} {stops_free:>11} {c:10.2f} {(s/c if c else float('nan')):7.2f}")
 
+    # ---- the compact matrix: one row per cell, one block per thread count ----
+    for arm in arms:
+        print()
+        print("=" * 118)
+        print(f"COMPACT MATRIX -- {arm}:  ms/frame | cores busy | "
+              f"{'ratio vs ' + ref if ref else 'n/a'} (wall)")
+        print("=" * 118)
+        head = f"{'vector':<26}"
+        for t in threads:
+            head += f" | {'t=' + str(t):>22}"
+        print(head)
+        for vec in ladder + multi:
+            line = f"{vec:<26}"
+            for t in threads:
+                w = series(wall, arm, vec, t)
+                if not w:
+                    line += f" | {'-':>22}"
+                    continue
+                cores = median(paired(cpu, wall, arm, vec, t, arm, vec, t))
+                rw = paired(wall, wall, arm, vec, t, ref, vec, t) if ref else []
+                rr = f"{median(rw):.2f}x" if rw else "  -  "
+                line += f" | {median(w):9.3f} {cores:5.2f}c {rr:>6}"
+            print(line)
+
     if out_tsv:
         with open(out_tsv, "w") as fh:
             fh.write("\n".join(out_lines) + "\n")
