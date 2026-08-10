@@ -1,0 +1,24 @@
+RUN	L1024x576_420_8b__t8.avif	1024x576	8bpc	threads=8	iters=30	ms_total=103.87	ms_per_frame=3.462
+WIDEHDR	const_shift	slow	multi	w_shards	w_blocks	w_full	wide_total
+WIDE	12	73236	72302	965	0	0	965
+cell	msb5	probe-wide	L1024x576_420_8b__t8	8	30
+RUN	L3840x2160_420_8b__t8.avif	3840x2160	8bpc	threads=8	iters=6	ms_total=188.50	ms_per_frame=31.417
+WIDEHDR	const_shift	slow	multi	w_shards	w_blocks	w_full	wide_total
+WIDE	12	40312	40312	0	0	0	0
+cell	msb5	probe-wide	L3840x2160_420_8b__t8	8	6
+RUN	L1024x576_420_8b__t8.avif	1024x576	8bpc	threads=8	iters=30	ms_total=99.74	ms_per_frame=3.325
+WIDEHDR	const_shift	slow	multi	w_shards	w_blocks	w_full	wide_total
+WIDE	12	23898	23898	0	0	0	0
+cell	msb5half	probe-wide	L1024x576_420_8b__t8	8	30
+RUN	L3840x2160_420_8b__t8.avif	3840x2160	8bpc	threads=8	iters=6	ms_total=218.15	ms_per_frame=36.359
+WIDEHDR	const_shift	slow	multi	w_shards	w_blocks	w_full	wide_total
+WIDE	12	10803	10803	0	0	0	0
+cell	msb5half	probe-wide	L3840x2160_420_8b__t8	8	6
+RUN	L1024x576_420_8b__t8.avif	1024x576	8bpc	threads=8	iters=30	ms_total=105.17	ms_per_frame=3.506
+WIDEHDR	const_shift	slow	multi	w_shards	w_blocks	w_full	wide_total
+WIDE	12	79740	72338	4590	0	0	4590
+cell	plain	probe-wide	L1024x576_420_8b__t8	8	30
+RUN	L3840x2160_420_8b__t8.avif	3840x2160	8bpc	threads=8	iters=6	ms_total=188.21	ms_per_frame=31.369
+WIDEHDR	const_shift	slow	multi	w_shards	w_blocks	w_full	wide_total
+WIDE	12	40281	40281	0	0	0	0
+cell	plain	probe-wide	L3840x2160_420_8b__t8	8	6

@@ -114,3 +114,36 @@ COMMANDS
   scripts/perf/shardgran_timed.sh   ~/tmp/shardgran/timed 5 5
   scripts/perf/shardgran_tail_report.py ~/tmp/shardgran/timed/probe
   scripts/perf/tiled_wallcpu_report.py  ~/tmp/shardgran/timed/wallcpu.tsv
+
+ADDENDA (same day)
+  shard_granularity_msb5_2026-08-10.txt   probe-wide counts for the `msb-5` cap
+                                          arm and `msb-5 + bps-half`, 1024x576 and
+                                          4K 8-tile at t=8. Timer-free.
+  shard_granularity_confirm_2026-08-10.tsv  the 10-bit + 2048x1152 grid, run under
+                                          `measlock --load-ok` against this
+                                          branch's own niced gates. LOAD-TAGGED:
+                                          foreign reaches 9 on many rows, so it
+                                          reports paired ratios only. Its t=1 cell
+                                          is the noise calibration (the rungs are
+                                          provably the same code path at one
+                                          thread, so its true ratio is 1.000 and it
+                                          reads 1.014-1.032 -> floor ~3.2%).
+  shard_granularity_msb5_void_2026-08-10.tsv  VOID, kept so the mistake is on the
+                                          record: the msb-5 timing grid was
+                                          launched before the `msb5half` binary
+                                          finished building, so four of seven
+                                          rounds timed a missing executable and
+                                          that arm's median is 0.000. Its t=1
+                                          calibration also reads 0.970-0.988 where
+                                          the arms are the same code path, so its
+                                          floor was ~3.0% and no sub-3% claim could
+                                          have come out of it anyway. Superseded by
+                                          shard_granularity_msb5_clean_* if that
+                                          run is present; if it is absent, the cap
+                                          arm has NO timed result.
+
+  Re-run command for the outstanding cell:
+    BIN=~/tmp/shardgran/bin AVIF=~/tmp/t8gap/vec IVF=~/tmp/t8gap/ivf \
+    ARMS="plain msb5 bpshalf msb5half" \
+    CELLS="L1024x576_420_8b__t8:8:20:200 L1024x576_420_8b__t8:1:20:200" \
+    measlock shardgran-msb5c -- scripts/perf/tiled_wallcpu.sh <out.tsv> 7

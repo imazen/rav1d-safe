@@ -174,6 +174,27 @@ this build supports, and reaching six by narrowing the slot field would mean
 **This is a live change in the DEFAULT build** (`PAIR_BITS` 12 -> 10), not only
 behind the feature, so it carries the full corpus gate in §5.
 
+### What the cap raise buys on the SHIPPED path, measured
+
+Not the counterfactual — the real `probe-wide` counters, 1024x576/8-tile/t=8,
+per 30-frame run:
+
+| arm | multi | **w_shards** |
+|---|---|---|
+| plain | 72,338 | **4,590** |
+| **msb-5** | 72,302 | **965** |
+| bps-half | 23,910 | **0** |
+
+**The cap raise alone removes 79% of the all-shards promotions** and leaves
+`multi` untouched, which is the expected shape: it converts wide registrations
+into narrow multi-shard ones without changing how many borrows span several
+blocks. The granularity knob removes the rest, because it changes how many blocks
+a borrow spans in the first place.
+
+So the two shapes are complementary rather than alternatives, and the cap is the
+one that does NOT need a size-dependent constant — which matters for §7.
+`msb-5` is timed in §5e.
+
 ## 5. Timing
 
 n = 5 rounds, rotating arm order, idle box (`foreign_max = 1`), two-point fit
@@ -289,6 +310,25 @@ Read against that floor:
 * `bps1`'s 1.243x and 1.493x on those two cells have bands spanning 2x
   (`[10.578..30.289]`, `[35.357..65.000]`) and are load artefacts, not results.
 
+### 5e. `msb-5` timing — NOT ESTABLISHED, and the first attempt was my harness bug
+
+The cap raise's counting result (§4: 4,590 -> 965 all-shards promotions) is solid.
+Its WALL effect is not, and this section says so rather than quoting the number.
+
+**The first attempt is void.** It was launched under `measlock --load-ok` against
+this branch's own gates, and I started it before the `msb5half` binary had finished
+building, so four of its seven rounds timed a missing executable and that arm's
+median came out `0.000`. That is the same family as the brief's "never let a build
+rewrite a binary a run has already exec'd" — the adjacent error, launching before
+the build lands. The grid's own t=1 calibration also reads 0.970-0.988 where the
+arms are provably the same code path, so its floor was ~3.0% and `msb5`'s 0.967x
+sat inside it either way.
+
+**Status: a clean idle-box re-run of `plain / msb-5 / bps-half / msb-5+bps-half`
+on the 1024x576/8-tile cell at t=8 and t=1 is the one measurement this round
+leaves outstanding.** Command in the `.meta`. Until it lands, the cap raise is a
+counting result only, and `bps-half` is the rung with a timed result.
+
 ## 6. Recommendation, and what it is NOT backed by
 
 **Recommended: `bps-half` as the new default** — `BPS = (1, 2)`, two shifts
@@ -326,3 +366,77 @@ use (measured `rows_mean` 7.16-9.02, `rows_max` up to 16 at
 the stride plumbed to it — `DisjointMut` is generic over buffers that have no
 stride at all, so it would be an optional hint set by the picture-plane
 constructor, defaulting to the present rule. Not built, not priced.
+
+## 8. Gates
+
+Everything below ran on this branch at `58c518e`. Logs: `~/tmp/shardgran/gates`,
+driver `scripts/perf/shardgran_gates.sh`.
+
+| gate | result |
+|---|---|
+| `cargo test --lib` release **and** debug | pass, both |
+| tracker crate unit tests, every rung + `msb-5` + `msb-5,bps-half` | 8 configurations, all pass |
+| **corpus, default arm, t=1** | **766 PASS + 2 SKIP**, no `--skip-group` |
+| **corpus, default arm, t=8** | **766 PASS + 2 SKIP**, no `--skip-group` |
+| corpus, `bps-half`, t=8 | 766 PASS + 2 SKIP |
+| corpus, `msb-5`, t=8 | 766 PASS + 2 SKIP |
+| set-diff BY NAME (key `(group, name)`, value `(status, ACTUAL md5)`) vs `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst` | **0 only-in-baseline, 0 only-in-head, 0 differing** on all four |
+| set-diff t=1 vs t=8, default arm | 0 differing |
+| loop-filter window `debug_assert`, `-C debug-assertions=on`, `8-bit/data` at t=8 | 358 vectors, green |
+| `mt_stress` (threads 1/2/4/8/16 x 5 trials) | pass |
+| `tile_threading_overlap`, `reproduce_overlap`, `thread_cleanup_test` | pass |
+| `multi_decoder_pressure` — 12 concurrent decoders x 5 vectors, mixed thread counts | **PASS**, every md5 equals the serial reference |
+
+`forbid(unsafe_code)` is proven ACTIVE rather than read. An
+`unsafe { core::mem::transmute(x) }` planted in `src/loopfilter.rs` makes
+`cargo build --release --lib` fail with
+
+```
+error: usage of an `unsafe` block
+  --> src/loopfilter.rs:4
+   = note: the lint level is defined here
+  --> src/lib.rs:1
+   |  #![cfg_attr(not(asm_loopfilter), forbid(unsafe_code))]
+```
+
+(the attribute is at `lib.rs:1`, not `:13` as the campaign brief says). The file
+was restored from a `~/tmp` backup copy — never `git checkout --`, which would
+also revert real edits — and verified byte-exact: sha256
+`42ce9b719b1595ae5b49db8427137abe76b7f6bbc99b2ab44de3ca612a32675f` before and
+after, plus `git diff --exit-code -- src lib.rs include crates` clean, plus the
+lib rebuilt.
+
+### Miri — both models, each target in isolation
+
+`cargo +nightly miri test -p rav1d-disjoint-mut --no-fail-fast --test <target>`,
+`MIRIFLAGS=""` (Stacked Borrows) and `-Zmiri-tree-borrows` (Tree Borrows), run one
+target at a time because Miri aborts the process on first UB and cargo stops at the
+first failing TARGET — running them together once let five targets never run at all
+and their silence read as health.
+
+| target | Stacked Borrows | Tree Borrows |
+|---|---|---|
+| `narrow_release` | 1 passed (92.8 s) | 1 passed (93.0 s) |
+| `soundness` | 25 passed | 25 passed |
+| `wide_exclusion` | 1 passed (91.9 s) | 1 passed (91.5 s) |
+| `pic_buf_overflow` | **0 tests ran** | **0 tests ran** |
+| `aligned_miri` | **0 tests ran** | **0 tests ran** |
+| `guard_move_release` | see log | see log |
+| `--lib` (27 tests incl. the new one) | see log | see log |
+| `shard_liveness` | see log | see log |
+
+**"0 tests ran" is reported as 0, not as green** — those two targets are
+feature-gated and select nothing under default features, so they prove nothing
+here; CI's Linux legs run the whole package with `--all-features`.
+
+### Clippy — pre-existing failures, reproduced on `main`
+
+`cargo clippy --release --all-targets -- -D warnings` fails on BOTH `main` and this
+branch, on aarch64 (**85 errors each**) and on `x86_64-apple-darwin`. The error
+texts were set-diffed: the differences are only in which target clippy aborted at
+first (`examples/profile_ivf.rs`, `examples/md5_ablate.rs`,
+`tests/thread_cleanup_test.rs`), all of them files this branch does not touch.
+**Zero clippy findings are in `tracker_shard.rs` or `bounds_probe.rs`**, checked by
+grepping the head logs for those paths. The pre-existing set is dead code in
+`src/safe_simd/itx_arm*.rs`, `assertions_on_constants` in the two `__ablate`
+examples, and an unused import in `thread_cleanup_test`.
