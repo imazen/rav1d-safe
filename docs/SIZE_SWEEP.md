@@ -563,3 +563,29 @@ construction.
   profiled size. It is finished.
 * **Do not treat 16bpc CDEF as a target.** It is already faster than the 8bpc
   kernel; only its memmove is worth touching.
+
+---
+
+# STALE-BASELINE WARNING — read this before quoting any absolute above
+
+**Every number in this document is `main` @ `b0a00c3`. `main` moved to
+`2fae4fe` — the #482 `&mut [u8]` recon-kernel refactor — at 22:54 local, seven
+minutes into my sweep.** My base is one merge (12 commits) behind by the time
+the round ended.
+
+That is not a footnote here, it is the most important caveat in the round, for
+a specific reason: **#482 is intra-only-scoped** (every vector on this ladder is
+an intra still, so it applies in full) and **it removes tracker registrations
+from the RECON family** — one of the exact families this round measured as
+humped at 0.6-2.4 MP. Its own reported cells are 8bpc t=1 1.296 -> 1.273 and
+t=8 1.873 -> 1.474, both at 4K, which is the only size it was measured at.
+
+So the correct reading of this document is:
+
+* The **shape** (a U in image size, the hump at 0.6-2.4 MP, entropy flat while
+  every per-block family triples) is a property of the decoder as of b0a00c3
+  and is corroborated by a pre-campaign sweep from a different build.
+* The **absolute ratios** are pre-#482 and are superseded.
+* **The single highest-value next measurement is this ladder re-run on
+  `2fae4fe`** — it is the first change with a plausible mechanism against the
+  hump, and nobody has measured it at any size but 4K.
