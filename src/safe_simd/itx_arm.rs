@@ -8520,7 +8520,7 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                 // `tmp` is sized to THIS shape, not to the largest shape the
                 // module handles. It used to be a flat `[0i32; 16 * 16]`, so
                 // every call zeroed 1 KiB — and on `L3840x2160_420_10b`,
-                // 181,768 of the 272,929 16bpc transform calls in the frame are
+                // 181,768 of the 272,949 16bpc transform calls in the frame are
                 // 4x4, which needs 64 B (shape census, `__ablate` probe,
                 // 2026-08-10). That is 279 MB of `memset` per frame against
                 // 49.6 MB for the exact sizes, and it showed up as 0.76% of the

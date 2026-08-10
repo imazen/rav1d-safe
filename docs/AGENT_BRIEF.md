@@ -58,6 +58,34 @@ campaigns. Every rule below cost real time to learn.
 - **Profile before optimizing, and profile self-time leaves**, not inclusive stacks. `samply` is
   installed and gives real call-tree attribution; macOS `sample` works too. Two sessions were
   saved by a profile contradicting the "obvious" target, and one was wasted by not taking one.
+- **A self-time leaf can be the WRONG NAME for the cost — count the calls before you port
+  anything.** Inlining collapses a dispatcher, a driver and a fallback onto one symbol, and a code
+  path that is never taken costs nothing and appears nowhere. `<itx::itxfm::Fn>::call` carried the
+  largest itx share at 4K 10bpc and read as "the scalar fallback for shapes above 16x16" — the
+  named open item. A census at that seam (`examples/itx_shape_census.rs`, `--features __ablate`)
+  put the fallback at **20 calls out of 272,949**, 0.15% of coefficient area, and **0** on the
+  campaign's own gap vector; the symbol was holding the inlined SIMD dispatch instead. Days of
+  kernel porting avoided by one counter. Same lesson as the LR blindness above, one level down:
+  prove the code runs, and prove it runs *often*, before optimising the symbol it hides behind.
+- **Never edit a shell script while it is running.** Bash reads a script incrementally and keeps a
+  file offset; an in-place edit that changes byte lengths makes it resume parsing at the wrong
+  place. If you must change a tool that may be running (`measlock`), write a temp file and
+  **`mv`** it into place — an atomic rename leaves the running process on the old inode.
+- **`measlock --load-ok`** (or `MEASLOCK_LOAD_OK=1`) keeps the mutual exclusion and skips the
+  wait-for-quiet. Use it when another agent holds the box with a long-running NON-timed job (a
+  multi-hour `miri`): the quiet gate can never be satisfied and the default behaviour is the worst
+  of both — wait 20 minutes, then run anyway. With `--load-ok` you MUST record `foreign_max` per
+  row and report paired ratios, never absolutes.
+- **A "disjoint bands" tick has to compare the arms the CLAIM compares.** Printing
+  ours-vs-dav1d disjointness for a claim about base-vs-head is trivially true for two different
+  decoders: a green tick that can never fail. Same family as a vacuous `wide_exclusion`.
+- **Diff against your recorded base SHA, never against the `main` ref.** All worktrees share one
+  `.git`, so another agent's merge silently turns up in `git diff main..HEAD` as reverse-deletions
+  in your branch. `main` moved twice under one 2026-08-10 sweep.
+- **Frame counts must be per cell.** A 64x36 frame decodes in 45 us, so the standard 2-vs-20 fit
+  measures timer noise there. Scale them: 5,000/50,000 at the tiny end down to 2/16 at 4K.
+- **Permission is not execution.** `enable_cdef = 1` in the sequence header at every size, yet CDEF
+  executes **zero blocks** at 512x288. Read the profile, not the flag.
 
 ## 3. Never fabricate
 
@@ -95,6 +123,7 @@ campaigns. Every rule below cost real time to learn.
 
 | Idea | Result |
 |---|---|
+| **16bpc itx above 16x16** (32/64-point, `WHT_WHT`) — rav1d-safe #455 open item 5 | **not a target**: 20 of 272,949 16bpc transform calls on `L3840x2160_420_10b`, 0 on `v4k_8tile_10b`. Census, not a guess — `examples/itx_shape_census.rs` |
 | `TinyLock` backoff/yield (rav1d-safe) | null, measured twice |
 | `block_mut` held row guards (rav1d-safe) | null — halving guard COUNT bought nothing; shard GRANULARITY was the whole win |
 | `CompInterType` guard drop glue | not a real target (ICF-folded shared glue) |

@@ -1,0 +1,58 @@
+# base = main @ 2fae4fe; ABC = perf/itx-hbd-wide @ 6d4a937
+# sample self-time leaves, L3840x2160_420_10b, t=1, 55 s, no nice, load-tagged (see .meta)
+
+== base (42,119 leaves) ==
+# total leaf samples: 42119   (file: /Users/lilith/tmp/itxwork/prof0/4k10b.sample.txt)
+23100	54.84%	rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bitdepth::BitDepth16>
+1751	4.16%	rav1d_safe::src::recon::rav1d_recon_b_intra::<rav1d_safe::include::common::bitdepth::BitDepth16>
+1416	3.36%	<rav1d_safe::src::itx::itxfm::Fn>::call::<rav1d_safe::include::common::bitdepth::BitDepth16>
+1320	3.13%	<rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<true>
+1312	3.11%	rav1d_safe::src::safe_simd::itx_arm_hbd::apply1d
+1264	3.00%	<rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<false>
+869	2.06%	rav1d_safe::src::recon::read_golomb
+808	1.92%	rav1d_safe::src::safe_simd::itx_arm::itxfm_add_dispatch::<rav1d_safe::include::common::bitdepth::BitDepth16>::{closure#0}
+773	1.84%	rav1d_safe::src::loopfilter::loopfilter_sb_direct::<rav1d_safe::include::common::bitdepth::BitDepth16>
+731	1.74%	rav1d_safe::src::msac::rav1d_msac_decode_symbol_adapt_rust
+645	1.53%	core::ptr::drop_glue::<rav1d_disjoint_mut::DisjointMutGuard<aligned::Aligned<aligned::A8, [core::option::Option<rav1d_safe::src::levels::CompInterType>; 32]>, [core::option::Option<rav1d_safe::src::levels::CompInterType>]>>
+592	1.41%	rav1d_safe::src::safe_simd::loopfilter_arm::lf_compact_run_neon
+582	1.38%	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth16>>::open
+572	1.36%	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth16>>::close
+557	1.32%	rav1d_safe::src::ipred_prepare::rav1d_prepare_intra_edges::<rav1d_safe::include::common::bitdepth::BitDepth16>
+547	1.30%	rav1d_safe::src::decode::decode_b
+534	1.27%	<rav1d_safe::src::owned_recon::ReconDst>::slice_mut::<rav1d_safe::include::common::bitdepth::BitDepth16>
+466	1.11%	_platform_memmove
+426	1.01%	_platform_memset
+320	0.76%	rav1d_safe::src::ipred::intra_pred_direct::<rav1d_safe::include::common::bitdepth::BitDepth16>
+269	0.64%	rav1d_safe::src::ipred::splat_dc::<rav1d_safe::include::common::bitdepth::BitDepth16>
+267	0.63%	rav1d_safe::src::lf_mask::rav1d_create_lf_mask_intra
+261	0.62%	rav1d_safe::src::ipred::ipred_z1_rust::<rav1d_safe::include::common::bitdepth::BitDepth16>::{closure#0}
+242	0.57%	rav1d_safe::src::safe_simd::cdef_arm::cdef_filter_block_16bpc_inner
+224	0.53%	rav1d_safe::src::msac::ctx_refill
+
+== ABC (42,170 leaves) ==
+# total leaf samples: 42170   (file: /Users/lilith/tmp/itxwork/prof1/4k10b.sample.txt)
+24987	59.25%	rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bitdepth::BitDepth16>
+1784	4.23%	rav1d_safe::src::recon::rav1d_recon_b_intra::<rav1d_safe::include::common::bitdepth::BitDepth16>
+1658	3.93%	<rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<true>
+1153	2.73%	<rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<false>
+981	2.33%	rav1d_safe::src::recon::read_golomb
+848	2.01%	rav1d_safe::src::loopfilter::loopfilter_sb_direct::<rav1d_safe::include::common::bitdepth::BitDepth16>
+726	1.72%	core::ptr::drop_glue::<rav1d_disjoint_mut::DisjointMutGuard<aligned::Aligned<aligned::A8, [core::option::Option<rav1d_safe::src::levels::CompInterType>; 32]>, [core::option::Option<rav1d_safe::src::levels::CompInterType>]>>
+709	1.68%	rav1d_safe::src::msac::rav1d_msac_decode_symbol_adapt_rust
+634	1.50%	rav1d_safe::src::safe_simd::loopfilter_arm::lf_compact_run_neon
+605	1.43%	rav1d_safe::src::ipred_prepare::rav1d_prepare_intra_edges::<rav1d_safe::include::common::bitdepth::BitDepth16>
+598	1.42%	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth16>>::close
+567	1.34%	rav1d_safe::src::decode::decode_b
+565	1.34%	<rav1d_safe::src::itx::itxfm::Fn>::call::<rav1d_safe::include::common::bitdepth::BitDepth16>
+562	1.33%	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth16>>::open
+540	1.28%	rav1d_safe::src::safe_simd::itx_arm_hbd::__arcane_inv_txfm_hbd_neon
+489	1.16%	rav1d_safe::src::safe_simd::itx_arm_hbd::apply1d::<16>
+462	1.10%	_platform_memmove
+333	0.79%	rav1d_safe::src::safe_simd::itx_arm_hbd::apply1d::<8>
+285	0.68%	rav1d_safe::src::ipred::splat_dc::<rav1d_safe::include::common::bitdepth::BitDepth16>
+285	0.68%	rav1d_safe::src::ipred::intra_pred_direct::<rav1d_safe::include::common::bitdepth::BitDepth16>
+269	0.64%	rav1d_safe::src::lf_mask::rav1d_create_lf_mask_intra
+261	0.62%	rav1d_safe::src::ctx::small_memset::<u8, 32, false>
+253	0.60%	rav1d_safe::src::safe_simd::cdef_arm::cdef_filter_block_16bpc_inner
+238	0.56%	rav1d_safe::src::msac::ctx_refill
+221	0.52%	rav1d_safe::src::ipred::ipred_z1_rust::<rav1d_safe::include::common::bitdepth::BitDepth16>::{closure#0}

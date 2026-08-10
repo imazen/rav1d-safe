@@ -196,7 +196,7 @@ pub fn activity_reset() {
 // 5 ("16bpc itx above 16x16 is still scalar") looked like the top 10bpc target:
 // `<itx::itxfm::Fn>::call` carries the largest itx self-time share at 4K 10bpc,
 // and the scalar reference is inlined into it. The census says the fallback is
-// **20 calls out of 272,929** on that vector — 0.15% of coefficient area — and
+// **20 calls out of 272,949** on that vector — 0.15% of coefficient area — and
 // 0 on `v4k_8tile_10b`. What `Fn::call` actually holds is the *hbd dispatch and
 // driver*, also inlined into it. Porting 32/64-point 16bpc kernels would have
 // been days of work for nothing measurable on any vector this campaign has.

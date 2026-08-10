@@ -644,7 +644,7 @@ pub(crate) fn inv_txfm_hbd_neon(
 /// indexed by a runtime bound and handed to `apply1d` as a slice, so LLVM had
 /// to materialise them on the stack, zero all 16 lanes on entry to every group,
 /// and reload each element across the 1-D call. On this ladder the dominant
-/// shape is the *smallest*: 181,768 of the 272,929 16bpc transform calls in
+/// shape is the *smallest*: 181,768 of the 272,949 16bpc transform calls in
 /// L3840x2160_420_10b are 4x4 (`__ablate` shape census, 2026-08-10), where 4 of
 /// those 16 vectors carry data. With the shape const, every index and trip
 /// count is a constant, the arrays are exactly `W`/`H` long, and SROA can keep

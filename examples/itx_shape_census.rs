@@ -7,7 +7,7 @@
 //!
 //! This is the tool that refuted issue #455's open item 5 (16bpc itx above
 //! 16x16). On `L3840x2160_420_10b` the >16x16 fallback is 20 calls out of
-//! 272,929 — 0.15% of coefficient area — and 0 on `v4k_8tile_10b`.
+//! 272,949 — 0.15% of coefficient area — and 0 on `v4k_8tile_10b`.
 //!
 //! Usage:
 //!   cargo build --release --features __ablate --example itx_shape_census
