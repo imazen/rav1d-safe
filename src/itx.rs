@@ -468,7 +468,11 @@ impl itxfm::Fn {
                     #[cfg(feature = "__simd_test")]
                     {
                         let (orig_pixels, orig_coeff, w, h) = pre_state;
-                        let pxstride = dst.pixel_stride::<BD>().unsigned_abs();
+                        // `copy_out` returns a COMPACT w*h rectangle with the
+                        // stride gaps removed, so the comparison below indexes
+                        // by `w`, not by the plane's pixel stride. (The old
+                        // `strided_slice` handed back a strided view, which is
+                        // why this used to be `pxstride`.)
 
                         // Save SIMD output
                         let simd_pixels = dst.copy_out::<BD>(w, h);
@@ -493,7 +497,7 @@ impl itxfm::Fn {
                         let mut max_diff = 0i32;
                         for y in 0..h {
                             for x in 0..w {
-                                let idx = y * pxstride + x;
+                                let idx = y * w + x;
                                 let d = (simd_pixels[idx].as_::<i32>()
                                     - scalar_pixels[idx].as_::<i32>())
                                 .abs();
