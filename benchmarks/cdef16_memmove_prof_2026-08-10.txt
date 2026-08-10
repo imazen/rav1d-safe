@@ -1,0 +1,33 @@
+[measlock] sizehump-mm --load-ok: skipping politeness wait (foreign busy=1)
+[measlock] sizehump-mm RUNNING (quiet after 0s)
+wrote /Users/lilith/tmp/sizehump/mm_base.txt
+ARM base total_leaves=34579 memmove=0 (0.000%) memset=0 (0.000%)
+wrote /Users/lilith/tmp/sizehump/mm_head.txt
+ARM head total_leaves=34513 memmove=0 (0.000%) memset=0 (0.000%)
+=== memmove callers, base ===
+# subsystem _platform_memmove   inclusive 636 (1.84% of 34634)
+    421	  1.22%	safe_simd::cdef_arm::cdef_filter_block_16bpc_inner
+     83	  0.24%	ipred_prepare::rav1d_prepare_intra_edges
+     77	  0.22%	owned_recon::stitch_sbrow
+     13	  0.04%	lf_apply::backup_lpf
+     11	  0.03%	<loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth16>>::close
+      9	  0.03%	ipred::intra_pred_direct
+      8	  0.02%	cdef_apply::rav1d_cdef_brow
+      6	  0.02%	<managed::Decoder>::decode
+      3	  0.01%	<rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponent>::from_parts
+      2	  0.01%	recon::rav1d_backup_ipred_edge
+      1	  0.00%	cdf::rav1d_cdf_thread_copy
+=== memmove callers, head ===
+# subsystem _platform_memmove   inclusive 201 (0.58% of 34571)
+     75	  0.22%	ipred_prepare::rav1d_prepare_intra_edges
+     65	  0.19%	owned_recon::stitch_sbrow
+     18	  0.05%	cdef_apply::rav1d_cdef_brow
+     14	  0.04%	ipred::intra_pred_direct
+      8	  0.02%	lf_apply::backup_lpf
+      7	  0.02%	<loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth16>>::close
+      5	  0.01%	<managed::Decoder>::decode
+      4	  0.01%	recon::rav1d_backup_ipred_edge
+      2	  0.01%	decode::rav1d_decode_frame_init_cdf
+      2	  0.01%	<rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponent>::from_parts
+      1	  0.00%	decode::rav1d_decode_tile_sbrow
+[measlock] sizehump-mm DONE rc=0
