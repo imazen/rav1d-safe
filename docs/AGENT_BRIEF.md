@@ -30,6 +30,12 @@ campaigns. Every rule below cost real time to learn.
   E-cores: ~40x wall-clock distortion. Builds and tests may be niced (it keeps P-cores free for
   another agent's measurements). Timed runs never.
 - **No `-C target-cpu=native`.** Runtime dispatch is what ships.
+- **Wrap every timed run in `measlock`** — `measlock <label> -- <your command>`. It takes an
+  exclusive lock across ALL agents on this box, then waits for the box to actually go quiet before
+  running. Without it, two agents measuring at once either corrupt each other's cells or both poll
+  for "idle" forever: three rounds of the rav1d-safe campaign were degraded exactly that way (one
+  capped at n=4 instead of n>=7; another had 354/360 rows load-tagged). Builds and tests do NOT
+  need the lock — nice them instead, so they run on the E-cores while someone else measures.
 - **Interleave arms back-to-back with rotating order, median >= 5.** Discard and re-run any cell
   where a foreign process exceeded 25% CPU. State whether the box was idle.
 - **A busy box invalidates absolutes but not paired ratios.** One campaign had 354/360 rows under
