@@ -221,6 +221,35 @@ That is exactly why a frame-global deblock barrier existed in the first place, a
 was only sound after the CDEF padding guards were narrowed to the exact window read. **A halo works
 only where one side is read-only. Here it is not.**
 
+**And there is a deeper reason, established by building the band and having it refuted (#485).**
+The filter's read set is **2-D SPARSE**: the union of the +-reach tap windows around the edges that
+actually filter, with rows where nothing filters not read at all. Every per-row band is
+**contiguous**, so it necessarily reserves columns and rows nothing reads — and under concurrent
+filtering that over-reservation collides with a legitimate narrow write:
+
+```
+current:  &    _[163840..163968]   <- the band's 128-px row copy-in
+existing: &mut _[163944..163952]   <- a concurrent 8-px write inside it
+```
+
+This is §11c's strided-hull defect **transposed**: the hull reserved the gaps BETWEEN ROWS, the band
+reserves the gaps BETWEEN EDGES. The hull version was merely slow (its extent hit the wide path);
+the band version is a **false positive, i.e. a decode failure**. Third refutation of "cut the guard
+count by widening the reservation", and the first where the widening was contiguous.
+
+**Two structural facts that fall out, and both are load-bearing for any future attempt:**
+
+- **`tile_threading_active()` cannot gate a filter-side scheme.** That latch is about concurrent
+  TILE workers. The filter's concurrency is between **superblock-row filter tasks**
+  (`src/thread_task.rs:1030-1043` — the task for `sby+1` is inserted before the selected one runs),
+  which exist whenever `n_tc > 1` **however many tiles the frame has**. Measured: gated that way the
+  band provably never armed (census byte-identical to main) and 8-bit/data *still* produced 8 errors
+  in one run of two. A correct gate would have to mean "no other thread can be filtering this
+  picture", which the decoder does not expose.
+- **A sparse read set cannot be owned by a contiguous region.** If you want ownership here, the unit
+  has to match the sparsity — per edge, or per tap window — not per row or per band. At which point
+  you are back to a fine-grained record, which is what we already have.
+
 The options that remain, in the order the evidence supports:
 
 1. **Cut the guard cost rather than the guard.** `LfBlock::fill` (`src/loopfilter.rs:566`) is
