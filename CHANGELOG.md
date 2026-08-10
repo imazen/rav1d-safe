@@ -5,6 +5,35 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- **Film grain could not be decoded above one thread at all** (#479,
+  `src/safe_simd/filmgrain_arm.rs`). `rav1d_apply_grain_row` is claimed by N
+  workers that each `fetch_add` a *different* `FG_BLOCK_SIZE` row band off
+  `TaskThreadData::delayed_fg_progress[0]`, while all four film-grain guards
+  reserved the WHOLE picture component per band (`full_guard_mut` /
+  `full_guard`). The workers collided on their first band each
+  (`overlapping DisjointMut: &mut _[0..147456]` x6 at 8 threads) and the dead
+  worker then wedged the main thread on `thread_task.rs`'s `unwrap()` of a
+  `None`. **13 of 768 corpus vectors could not be decoded at any thread count
+  above 1**, and every corpus run of the 2026-08 campaign passed
+  `--skip-group film_grain` to work around it. Each guard is now narrowed to
+  the band the call actually touches — `(bh-1)*stride + pw` for dst/src, and
+  for `fguv`'s luma read rows `y << sy` for `y in 0..bh` (last row
+  `(bh-1) << sy`, *not* `bh << sy`) by columns up to `((pw-1) << sx) + sx`.
+  Bands are provably disjoint: consecutive bands start `FG_BLOCK_SIZE * stride`
+  apart, a band spans at most `(FG_BLOCK_SIZE-1)*stride + pw`, and
+  `pw <= stride`. A narrowing, which is the direction
+  `docs/OWNERSHIP_MODELS.md` §3/§6/§7d says is always available — the three
+  refuted schemes all *widened* a reservation. Corpus 766/766 at `--threads 8`
+  with **no** `--skip-group`, set-diffed by name with the MD5 as the value
+  against `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst`; also clean
+  at t=1. Gate: `tests/filmgrain_threads.rs` (every film-grain vector x
+  {1,2,4,8} threads, 3 reps above t=1, plus two liveness tests), proven to have
+  teeth by planting the old guard and watching it abort.
+  Also on this path: negative strides now fall through to the `PicOffset`-based
+  scalar kernel, because `fgy_inner_*`'s `row_off(y) = (y*stride) as usize`
+  wraps for `stride < 0` and indexes out of bounds — a panic before this change
+  too, at any thread count. No corpus vector has a negative stride; only a
+  caller-supplied `Rav1dPicAllocator` under `c-ffi` can produce one.
 - **`wide_exclusion` had gone vacuous, and with it the only gate for the
   wide-path TOCTOU** (`crates/rav1d-disjoint-mut/tests/wide_exclusion.rs`).
   Since `SHARDS_SERIAL = 1` (#458) an instance built by a process that has

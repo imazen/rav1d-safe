@@ -58,6 +58,12 @@ campaigns. Every rule below cost real time to learn.
 - **Verify your instrument sees the code.** Loop restoration is switched OFF in both 4K gap
   vectors, so an entire campaign's numbers contained no LR at all while it was active in 696/768
   corpus vectors. A null from a vector that never runs the code is not a result — prove execution.
+  **And then check the opposite error.** When LR was finally measured (2026-08-10) it turned out to
+  be the *least* of our problems — 1.9-2.3x of dav1d and <=9.3% of our wall — while the same sweep
+  found the real-content gap is **3.7x-46x** and that **every LR-active cell is SLOWER at t=8 than
+  at t=1**, 93% of it the borrow tracker. "This subsystem was never measured" predicts nothing
+  about whether it is expensive; measure the SHARE before budgeting a port, and always take an
+  ablation arm for the thing you suspect AND for the whole rest of the decoder.
 - **Profile before optimizing, and profile self-time leaves**, not inclusive stacks. `samply` is
   installed and gives real call-tree attribution; macOS `sample` works too. Two sessions were
   saved by a profile contradicting the "obvious" target, and one was wasted by not taking one.
@@ -127,7 +133,9 @@ campaigns. Every rule below cost real time to learn.
 | Idea | Result |
 |---|---|
 | **16bpc itx above 16x16** (32/64-point, `WHT_WHT`) — rav1d-safe #455 open item 5 | **not a target**: 20 of 272,949 16bpc transform calls on `L3840x2160_420_10b`, 0 on `v4k_8tile_10b`. Census, not a guess — `examples/itx_shape_census.rs` |
-| `TinyLock` backoff/yield (rav1d-safe) | null, measured twice |
+| **Porting more of the loop-restoration NEON tier** (rav1d-safe #455) | **not a target, measured 2026-08-10**: differenced on BOTH decoders via `RAV1D_INLOOP` / `dav1d --inloopfilters norestoration` (and our md5 is byte-identical to dav1d's at `all`/`norestoration`/`none`), LR is **1.88x** of dav1d's LR at 4K 8bpc and **2.25x** at 1080p 10bpc, while the rest of the decoder is 3.9-6.8x. LR is **9.3% of our wall at the worst cell** and 1.3-2.4% at the small ones; zeroing it entirely moves 4K t=1 from 3.96x to 3.59x. It is our BEST subsystem, not our worst. `benchmarks/lr_gap_2026-08-10.meta` |
+| **"`looprestoration_arm.rs` has zero aarch64 intrinsics"** | **false since edb55a1**: 1,812 lines, 61 distinct NEON intrinsics over 249 call sites — more sites than `ipred_arm` (88), `cdef_arm` (44) or `filmgrain_arm` (30). Count before repeating the claim. |
+| `TinyLock` backoff/yield (rav1d-safe) | null, measured twice — **but both were taken on the 4K multi-tile grid, where `lock_slow` is not the top symbol.** On real multi-frame content it is **39.5% of self time** at t=8 and the tracker as a whole is 22-93% of wall. That is a contradicting profile: the *target* is live again even if the *cheaper-lock* shape stayed refuted. `benchmarks/lr_gap_2026-08-10.meta` §3 |
 | `block_mut` held row guards (rav1d-safe) | null — halving guard COUNT bought nothing; shard GRANULARITY was the whole win |
 | `CompInterType` guard drop glue | not a real target (ICF-folded shared glue) |
 | Allocator traffic past the first fix (zenav1-svt) | null despite malloc+memset at 15.5% self time — `sample` attributes page-fault/zone work there |
@@ -154,8 +162,20 @@ reduction.
 - **rav1d-safe:** corpus gate is `cargo test --release --test decode_md5_verify` (14 tests, ~40 s)
   or `examples/md5_inventory` for per-vector TSV. Baseline to diff against:
   `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst`. Must stay 766/766.
+  **`--skip-group film_grain` is no longer needed** — #479 is fixed, so
+  `--threads 8` reaches 766/766 with no filter. If you find yourself skipping a group to make a
+  run pass, that is a bug report, not a flag.
   `CpuLevel::Scalar` does NOT disable safe SIMD — use the `__ablate` feature.
-  Perf harness: `scripts/perf/verify_gap.sh`. See `docs/X64_APPLICABILITY.md` and issue #455.
+  `md5_inventory --activity` only counts **itx, cdef, looprestoration** (the three `ablate::note()`
+  sites); the other six columns are UNINSTRUMENTED and read 0 whatever ran.
+  Perf harness: `scripts/perf/verify_gap.sh` for the 4K AVIF grid,
+  `scripts/perf/verify_gap_ivf.sh` for real multi-frame streams — the 4K grid is **structurally
+  blind** to loop restoration (both its vectors switch LR off), to thread-scaling inversion, and to
+  every non-420 layout. Its `ARMS` take an `@<inloopfilters>` suffix so a filter's cost is
+  differenced on both decoders at once. `probe-untracked` is the tracker-removed ceiling arm and is
+  bit-identical. `examples/profile_ivf` takes `RAV1D_THREADS` (default 1) — needed because
+  `bench_ivf_limit` exits before `sample` can attach.
+  See `docs/X64_APPLICABILITY.md`, `benchmarks/lr_gap_2026-08-10.meta` and issue #455.
 - **zenav1-svt:** C reference in-tree at `reference/svt-av1`, prebuilt at `cbuild-static/`.
   Bit-identity grid: `rust/tools/byteid_fingerprint.sh` (120 cells). Decoder gate:
   `rust/tools/decode_gate_grid.sh` (aomdec + dav1d).
