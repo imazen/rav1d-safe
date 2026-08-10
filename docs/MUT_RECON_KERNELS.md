@@ -1181,9 +1181,9 @@ byte-identical to base.
 | `cargo test --lib`, release AND **debug** | 75 passed each (#482 hit a profile-dependent panic; this checks both) |
 | `mt_stress` 1/2/4/8/16 | 25/25 cells |
 | `multi_decoder_pressure.sh` 12 procs x 3 iters | PASS, every md5 matches the serial reference |
-| x86 clippy, `--all-targets --keep-going -D warnings` | 11 failing sites, **set-diff against base empty both ways** — `main` is already red there |
+| x86 clippy, `--target x86_64-apple-darwin --all-targets --keep-going -D warnings` | 11 failing sites, **set-diff against base empty in both directions**. Note this is STRICTER than CI, whose clippy job is `cargo clippy --no-default-features --features ... -- -D warnings` with **no `--all-targets`**, so it never lints `examples/`; all 11 sites are in `_dev` examples plus one test-only `fn`, and CI's Clippy job is green on both base and head. |
 | Miri, Stacked Borrows, each target in isolation | **61 passed / 0 failed, rc=0, no UB** |
-| Miri, Tree Borrows | **INCOMPLETE at hand-off** — 29 passed / 0 failed of the same 61, no UB, still running `shard_liveness`. Stated, not assumed. |
+| Miri, Tree Borrows, each target in isolation | **61 passed / 0 failed, rc=0, no UB** |
 
 **`#![forbid(unsafe_code)]`, proved ACTIVELY and non-vacuously.** Planted in
 `src/ablate.rs` — an always-compiled file with NO module-local `cfg_attr`, so
