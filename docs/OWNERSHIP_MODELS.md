@@ -281,6 +281,47 @@ The options that remain, in the order the evidence supports:
 Also live here: `src/loopfilter.rs:140,182` uses the same whole-plane-guard shape as #479, which
 stops 13 of 768 vectors decoding above one thread. Unaudited.
 
+### 7e. Context arrays — the same model, and the case where it is nearly free (#492)
+
+Not every coordinated buffer is a picture. `t.l`, the LEFT neighbour context, is
+a `BlockContext` field of `Rav1dTaskContext` — 20 small `DisjointMut<Align8<[T;
+32]>>` arrays — and it satisfies §4d exactly: one worker owns it for the task's
+whole lifetime, and every decode/recon signature already carries `&mut
+Rav1dTaskContext`. Its sibling `f.a[t.a]`, the ABOVE context, does NOT: it hangs
+off `Rav1dFrameData`, which tile tasks reach through `fc.data.try_read()`, a
+SHARED reference. Same struct type, opposite verdicts — which is why they had to
+be separated before either could be decided.
+
+**The blocker was never soundness. It was the SHAPE of the call.**
+`CaseSet::many` takes a homogeneous `[T; N]`, so the two directions arrived as
+one reference type and the local one was dragged through the tracker with the
+shared one. Splitting them (`CaseSetter::set_exclusive` + the `case_set_al!`
+macro, PR #492) removed **20.7–25.3% of ALL registrations** on screen content and
+23.6% on a 4K photo, with **no new runtime machinery at all** — `DisjointMut::
+get_mut` is a field access, so this is the rare count reduction whose machinery
+is free. Measured: 12 of 12 wall cells faster with disjoint bands, screen text
+0.882 at t=8.
+
+**Three transferable facts:**
+
+1. **Look for `&mut`-reachable coordinated buffers before designing anything.**
+   The four refuted models in §1–§3 and §6 were all attempts to *manufacture*
+   exclusivity for a genuinely shared plane. `t.l` already had it and had been
+   paying for coordination anyway for as long as the tracker existed. Grep for
+   `DisjointMut` fields on `Rav1dTaskContext` before reaching for a design.
+2. **A homogeneous container can hide a heterogeneous ownership question.** The
+   two directions of a neighbour-context update look symmetric in the source and
+   are not symmetric in ownership. Any `[a, b]` / `zip` / shared-closure API over
+   "the two sides" of something is worth re-reading with that question in mind.
+3. **The value of removing a registration depends on the CONTENT class, not the
+   size class.** Registrations cost 4.5–6.4 ns each (three independent
+   populations now agree). What varies is DENSITY: screen text carries 58,424
+   registrations per ms of frame, a 4K photo 5,577. The same change is −11.8% on
+   one and null on the other. Before building a count reduction, divide the
+   population you intend to remove by the frame time of the cell you intend to
+   prove it on — below ~10,000 regs/ms a 20% cut cannot make 1% of wall. Full
+   record: `docs/CTX_TL_SPLIT.md`.
+
 ## 8. Picking a model
 
 0. Before proposing ANY extent change, run the bounds map

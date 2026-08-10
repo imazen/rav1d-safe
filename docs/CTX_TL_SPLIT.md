@@ -16,10 +16,10 @@ is.
   of what `head` still pays** (§6 sizes it per site). It is a bigger refactor
   than this one because it needs the 14 `(a: &BlockContext, l: &BlockContext)`
   helpers in `src/env.rs` to stop taking `l` behind a shared reference.
-* **`decode::read_pal_indices` was NOT profiled.** The brief named it as the
-  secondary item (20.93% of self time on screen text, 0% on photo). This round
-  spent its budget on the primary item and its gates. Nothing here says
-  anything about it.
+* **`decode::read_pal_indices` was profiled but NOT changed.** §5b has the
+  census, and it moves the target: only ~45% of that symbol is addressable
+  (`order_palette`, inlined), the other ~39% is the msac symbol decode every
+  other part of the decoder pays for too.
 * **One source image per content class.** `text` and `ui` are Quick Look
   renders, not screenshots (this box has no screen-recording permission), and
   each class has exactly one source. Every per-class number below is a claim
@@ -216,6 +216,64 @@ cell you intend to prove it on. Below ~10,000 registrations/ms, a 20% count cut
 cannot produce 1% of wall no matter how sound it is.
 
 ---
+
+## 5a. The profile confirms the TRACKER bucket is what shrank
+
+Wall clock alone cannot distinguish "6% faster because the tracker shrank" from
+"6% faster because something else did". `/usr/bin/sample`, 25 s window at 1 ms,
+t=1, self-time bucketed by `scripts/perf/bucket_selftime.py`
+(`benchmarks/ctx_tl_split_selftime_*_2026-08-10.tsv.zst`):
+
+| class | tracker base | tracker head | `set_disjoint` as a named leaf |
+|---|---|---|---|
+| screen text | **17.91%** | **13.41%** | 1.16% → 0.61% |
+| screen UI | **24.24%** | **19.50%** | 1.52% → 0.69% |
+| photo 1024 | 11.48% | 10.12% | below 0.5% both |
+
+Read these as SHARES inside a fixed wall window, so they understate the absolute
+drop (the head arm decoded more frames in the same 25 s). The direction is the
+point: the bucket that shrank is the bucket the change aimed at, and no other
+bucket shrank (`kernels` and `entropy` shares rise, which is what a smaller
+denominator does).
+
+## 5b. `read_pal_indices`: profiled, and the target is HALF of it
+
+The brief's secondary item, measured before touching it — and the census moves
+the target, which is the same lesson `examples/itx_shape_census.rs` taught one
+level down.
+
+On screen UI q20 t=1, `decode::read_pal_indices` is **18.63% of self time** on
+`base` (20.55% on `head`, a bigger share of a smaller total). It is the single
+largest self-time leaf on that class — larger than any one tracker component.
+
+**`order_palette` does not appear in the profile at all: 0 occurrences.** It is
+fully inlined into `read_pal_indices`, so the symbol's self time is a blend. The
+sample records a source line per node, so the blend can be split
+(`read_pal_indices` calls only `pal_idx_finish_rust`, 2 samples, so its
+inclusive-by-line histogram is a self-time proxy):
+
+| line | share of the symbol | what it is |
+|---|---|---|
+| `decode.rs:766` | **44.7%** | the inlined `order_palette` wave-front |
+| `decode.rs:768` | **39.3%** | `rav1d_msac_decode_symbol_adapt8`, inlined |
+| `decode.rs:767` | 3.9% | the `(last..=first).rev().enumerate()` loop head |
+| `decode.rs:788` | 3.7% | `pal_idx_finish` dispatch |
+| `decode.rs:762` | 2.4% | the wave-front `for i` head |
+
+So of the 18.63%, roughly **8.3% of the whole frame is `order_palette`** and
+**7.3% is entropy decode** that happens to be attributed to this symbol because
+it inlined. The entropy half is not a palette opportunity — it is the same msac
+work the rest of the decoder pays. **Anyone porting or rewriting "the 18.6%
+symbol" would be aiming at 45% of it.**
+
+Second finding, and it is a corpus caveat: **`read_pal_indices` is 0 samples on
+this corpus's `text` vector.** The brief reported 20.93% on ITS screen-text
+image; on the text image here (a Quick Look render of source code) the encoder
+chose no palette blocks at all, while the `ui` image is palette-heavy. Palette
+share is a property of the individual image, not of "screen content" — so a
+palette claim needs the specific vector named, and a palette *optimisation* needs
+a corpus with several palette-heavy images before its win can be called
+representative.
 
 ## 6. Where the gap to dav1d now sits, and what is left
 
