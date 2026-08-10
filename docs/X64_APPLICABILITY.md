@@ -450,12 +450,24 @@ Named first, because none of it is closeable on this hardware:
    re-run passed the same group. Most likely a colima/virtiofs/TCG artifact; recorded rather than
    attributed, because it is the one observation here I cannot pin down.
 
-**What would close 1-4: an x86_64 CI job or a remote x86 box.** Concretely — a GitHub Actions
-`ubuntu-latest` (x86_64) leg running `cargo test --release --test decode_md5_verify` plus
-`examples/md5_inventory --threads 8` would have caught F2's four aborts, and it is the cheapest
-possible fix; the perf rows need a dedicated bare-metal x86 host (the same discipline as the
-aarch64 side: `measlock`, interleaved arms, median >= 5, dav1d in the same sweep). Until one
-exists, "verified on x64" can honestly mean **correctness on the AVX2 tier** and nothing more.
+**What would close 1-4.** Be precise about what CI already has, because "add an x86 job" is the
+wrong ask: `.github/workflows/ci.yml` ALREADY runs `--test decode_md5_verify` on
+`ubuntu-latest` (x86_64) as well as `ubuntu-24.04-arm`, and also has `SIMD Permutation Tests
+(x86_64)`, `Conformance (decode permutations, x86_64)`, `Tile Threading` and `Threading race
+gates` on x86 runners. Two properties are why F2 slipped through anyway:
+
+* **`decode_md5_verify` decodes at `threads = 1`** (`Settings::default().threads == 1`,
+  `src/managed.rs:196`) — and x86 is 766/766 clean at t=1, so a single-threaded corpus leg
+  structurally cannot see this.
+* **that step is `continue-on-error: true`** (ci.yml:137,142), so even a failure would not gate.
+
+So the cheap fix is one extra step on the existing x86 leg — the corpus at `--threads 8`, e.g.
+`examples/md5_inventory --threads 8` with a non-zero exit on any ERROR row — plus dropping
+`continue-on-error` once it is green. That would have caught F2's four aborts. The perf rows (1-3)
+need a dedicated bare-metal x86 host — the i265 rig of F9, or equivalent — run with the same
+discipline as the aarch64 side (`measlock`, interleaved arms, median >= 5, dav1d in the same
+sweep). Until then, "verified on x64" can honestly mean **single-thread correctness on the AVX2
+tier** and nothing more.
 
 ### F8. Also settled on the way past
 
