@@ -680,6 +680,22 @@ impl ShardRecs {
 /// 128 bytes is the M-series line size (`hw.cachelinesize`). Two shards sharing
 /// a line would halve the effective shard count, so the alignment is
 /// load-bearing, not decorative.
+///
+/// **On x86 the line is 64 bytes (`clflush size: 64`), so read this as two
+/// separate claims.** No false sharing BETWEEN shards: a 128-byte-aligned
+/// 128-byte object occupies whole lines on either machine, which is what the
+/// alignment is for. But the steady-state fast path spans BOTH x86 lines —
+/// offsets are `lock` 0, `live` 1..8, `allocated`/`mutable` 8..10,
+/// `starts[0..7]` 16..72, `ends[0..7]` 72..128, and measured occupancy is 0-1,
+/// so the hot path reads `starts[0]` in line 0 and `ends[0]` at offset **72**
+/// in line 1. Two pure-layout refits would fix that — records as
+/// `[(usize, usize); SLOTS]` pairs (slot 0 at 16..32), or `SLOTS` 7 -> 3
+/// (`1 + 3 + 8 + 48 = 60`, a one-line shard). NEITHER IS DONE AND NO SPEEDUP IS
+/// CLAIMED: the only x86 host available to this campaign is QEMU-TCG, which has
+/// no cache model. `SLOTS = 3` also raises the shard-full rate and pushes
+/// borrows onto the wide path, which IS measurable without a timer
+/// (`--features __probe_wide`) and should be checked first.
+/// See `docs/X64_APPLICABILITY.md` H1.
 #[repr(align(128))]
 struct Shard {
     lock: TinyLock,

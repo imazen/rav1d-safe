@@ -328,6 +328,15 @@ pub enum CpuLevel {
 
     /// x86-64-v2: SSE2 + SSSE3 + SSE4.1.
     /// Baseline for most x86-64 CPUs since ~2008.
+    ///
+    /// **In a default build this behaves exactly like [`Self::Scalar`].**
+    /// Nothing under `src/safe_simd/` reads the SSE2/SSSE3/SSE4.1 flags: every
+    /// x86 dispatcher gates on `summon_avx2()` or higher, so the safe-SIMD tier
+    /// ladder starts at AVX2 and a pre-Haswell x86 gets no vector kernels.
+    /// The level is not inert in every build — `--features asm` links dav1d's
+    /// SSSE3/SSE4.1 assembly, and `unchecked` uses SSE2 intrinsics in msac —
+    /// but for the default (safe-SIMD, checked) build, treat it as a synonym
+    /// for `Scalar`. See `docs/X64_APPLICABILITY.md` H2.
     X86V2,
 
     /// x86-64-v3: V2 + AVX2 + FMA.

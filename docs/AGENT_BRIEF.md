@@ -76,6 +76,14 @@ campaigns. Every rule below cost real time to learn.
   campaign's own gap vector; the symbol was holding the inlined SIMD dispatch instead. Days of
   kernel porting avoided by one counter. Same lesson as the LR blindness above, one level down:
   prove the code runs, and prove it runs *often*, before optimising the symbol it hides behind.
+- **Never let a build rewrite a binary that a bind-mounted container has already exec'd.** A
+  `docker run -v $REPO:$REPO .../target/.../my_binary` holds that path open through the VM's shared
+  filesystem, and a `cargo build` landing a new file there mid-run makes the arm untrustworthy —
+  page faults may resolve against the new inode. Copy the artifact to a name cargo never writes
+  (`mi_head_pinned`) and run THAT. One #494 arm had to be discarded for exactly this.
+- **Rust's stdout is BLOCK-buffered when redirected to a file, so a row count lags reality.** A
+  harness writing TSV rows to stdout and progress lines to stderr will look stalled if you poll the
+  TSV; poll the stderr side. Two #494 progress readings were wrong by 5x before this was noticed.
 - **Never edit a shell script while it is running.** Bash reads a script incrementally and keeps a
   file offset; an in-place edit that changes byte lengths makes it resume parsing at the wrong
   place. If you must change a tool that may be running (`measlock`), write a temp file and
@@ -85,6 +93,11 @@ campaigns. Every rule below cost real time to learn.
   multi-hour `miri`): the quiet gate can never be satisfied and the default behaviour is the worst
   of both — wait 20 minutes, then run anyway. With `--load-ok` you MUST record `foreign_max` per
   row and report paired ratios, never absolutes.
+- **`grep -c` exits 1 when the count is zero, so `n=$(grep -c X f || echo 0)` yields `"0\n0"` and
+  every `[ "$n" != "0" ]` test fires.** A watchdog written that way reports a panic on a clean log —
+  the mirror of "silence is not success", and it cost one false alarm mid-#494. Use
+  `n=$(grep -c X f); n=${n:-0}; [ "$n" -gt 0 ]`, and sanity-check a new watchdog against a log you
+  KNOW is clean before trusting it against one you don't.
 - **A "disjoint bands" tick has to compare the arms the CLAIM compares.** Printing
   ours-vs-dav1d disjointness for a claim about base-vs-head is trivially true for two different
   decoders: a green tick that can never fail. Same family as a vacuous `wide_exclusion`.
@@ -169,6 +182,15 @@ reduction.
   `CpuLevel::Scalar` does NOT disable safe SIMD — use the `__ablate` feature.
   `md5_inventory --activity` only counts **itx, cdef, looprestoration** (the three `ablate::note()`
   sites); the other six columns are UNINSTRUMENTED and read 0 whatever ran.
+  **To name the counterparty of an `overlapping DisjointMut` panic, build
+  `--release -C debug-assertions=on` — NOT `--features probe-sites`.** Per-record `Loc`s
+  (`ShardRecs::locs`) and the `track_caller` propagation through `picture.rs`'s `slice`/`slice_mut`
+  helpers are gated on `any(debug_assertions, feature = "probe-sites")`, so the debug-assertions
+  build names both sides for one non-atomic store per registration and no hash table. `probe-sites`
+  adds a hash plus three atomic RMWs per registration and PERTURBED THE #494 RACE AWAY (358/358
+  clean); the debug-assertions build reproduced it at a HIGHER rate (its two aborts were the 20th and
+  27th vectors attempted) and named the writer on the first try. It also arms every `debug_assert!` in the decoder, which is how #494's invariant became
+  a t=1 abort instead of a t=8 race.
   Perf harness: `scripts/perf/verify_gap.sh` for the 4K AVIF grid,
   `scripts/perf/verify_gap_ivf.sh` for real multi-frame streams — the 4K grid is **structurally
   blind** to loop restoration (both its vectors switch LR off), to thread-scaling inversion, and to

@@ -250,6 +250,32 @@ frames of `8-bit/data`. #485's band widened by ~124 bytes and measured 1, 2 and
 same table shows the 4K gap vectors under-report the risk by ~1000x, which is
 why the band's first full sample passed.
 
+**A third refutation arrived from the other side (#494), and it is the one to internalise.** Every
+attempt above widened a RESERVATION and was caught by the tracker. The x86_64 loop-filter window did
+something the bounds map cannot see: its reservation exactly equalled its footprint — the panic
+showed `& _[73728..73736]` against `&mut _[73728..73736]`, byte for byte — and it was still wrong,
+because the FOOTPRINT itself was wider than what the filter needs. It memcpy'd 7 tap rows either
+side of every horizontal edge because that is the widest the plane allows, where the reference reads
+`lf_reach(wd)` for the width the mask actually selected: 2 rows at a level-0 edge. At the last 4-row
+band of a superblock row that difference is 3 rows PAST the bottom of the row, which is precisely
+the boundary `check_tile` stopped defending in `054e2ed`.
+
+So the question this file has been asking — *does the proposed extent intersect anything another
+worker is concurrently writing?* — has a prior question underneath it: **does this code read more
+than the filter needs?** A guard is not exonerated by matching its own memcpy. The fix
+(`lf_run_reach`, beside `lf_reach`) derives the window from the mask, and the invariant it restores
+is now a `debug_assert!` in `loopfilter_sb_direct` rather than a comment in `check_tile`: a V run's
+window must stay inside its superblock row. With the old constant planted that assertion aborts at
+`--threads 1` on the second vector of `8-bit/data`, so this whole class is now detectable
+deterministically and single-threaded instead of once per 10-minute t=8 corpus pass.
+
+**And the guard policy must live in ONE place per filter.** aarch64 is clean here for a structural
+reason, not luck: `loopfilter_arm::loopfilter_sb_dispatch` returns `false` and lets `LfBlock::open`
+size every rectangle from the group's own `wd`. The x86 dispatcher re-derives that geometry for the
+whole superblock edge — the duplication its own module doc warns about ("would duplicate the guard
+policy in two places for no gain") — and the duplicate is where the constant lived. Any future
+per-arch fast path that re-derives a guard extent inherits this bug class.
+
 **Two structural facts that fall out, and both are load-bearing for any future attempt:**
 
 - **`tile_threading_active()` cannot gate a filter-side scheme.** That latch is about concurrent

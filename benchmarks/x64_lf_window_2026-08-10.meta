@@ -1,0 +1,354 @@
+# x86_64 t=8 deblock race (#494): root cause, writer, fix, and the gate
+
+date: 2026-08-10
+commit: base `main` @ 14e5cf4 ("Merge pull request #491"), head = this branch
+hosts:
+  aarch64 — Apple M4 Pro (8P+4E), macOS 26.5.2, native.
+  x86_64  — colima QEMU-TCG VM (4 vCPU, 6 GiB, AuthenticAMD, sse..sse4_2 / avx /
+            avx2 / fma / bmi1 / bmi2, NO AVX-512, `clflush size: 64`), Alpine
+            3.20 container, binary cross-built on the host per
+            `scripts/x64/build_and_run_x86.sh` (from PR #493).
+harness: `examples/md5_inventory --threads N [--group G]`, no `--skip-group`.
+
+**NO WALL-CLOCK NUMBER IN THIS FILE, AND NONE IS DERIVABLE FROM IT.** TCG has no
+cache model, no store buffer and no PMU. Everything below is correctness. The
+`wall_ms` column in the attached TSVs is emitted by the harness and must be
+ignored for the x86 arms.
+
+---
+
+## 1. What was wrong (root cause)
+
+`src/loopfilter.rs::loopfilter_sb_direct` dispatches per architecture, and the
+two arms sit at different levels:
+
+* aarch64 — `loopfilter_arm::loopfilter_sb_dispatch` returns **false**;
+  `LfBlock::open` sizes each rectangle from the fused group's own `wd`.
+* x86_64 — `safe_simd::loopfilter::loopfilter_sb_dispatch` handles the whole
+  superblock edge and sizes the rectangle itself, from a **constant**:
+  `tap_before = tap_after = 7` (luma) for a V run.
+
+The filter's real reach is `lf_reach(wd)` for the width the MASK selected. The
+mask level at a horizontal edge is `min(log2(tx_h) above, log2(tx_h) below)`
+capped at 2 (`src/lf_mask.rs`, `masks[1][by4 + y][cmp::min(ttx, btx)]`), and a
+transform never crosses a superblock boundary:
+
+  level 2 -> wd 16 -> reach 7 rows, with >= 16 rows below the edge in the SB row
+  level 1 -> wd  8 -> reach 4 rows, with >=  8
+  level 0 -> wd  4 -> reach 2 rows, with >=  4
+
+So a mask-derived window always fits. The constant does not: at a level-0 edge
+in the last 4-row band of a superblock row it reads 7 rows where 4 remain —
+**3 rows past the bottom of its own superblock row.**
+
+## 2. Reproduction, pre-fix (release, x86_64, t=8)
+
+    8-bit/data, 358 vectors, 1 pass:  4 ERROR, 0 MISMATCH
+      00000635 00000641 00000660 00000704
+
+PR #493's two passes on the same group named `00000325 00000625 issue_48
+…_019_vq_aom_ctest_4.2` and `00000557 00000580 00000624`. Seven-plus distinct
+vectors across three passes, no stable set: a timing window, not content.
+
+Panic extents from this pass (release keeps no per-record `Loc`):
+
+     current:    & _[49152..49160] at include/dav1d/picture.rs:729:19   (slice)
+    existing: &mut _[49152..49160]                       <- IDENTICAL extents
+     current: &mut _[49976..49984] at include/dav1d/picture.rs:742:19   (slice_mut)
+    existing:    & _[49920..50040]                       (120 B = a V-run row)
+     current:    & _[16512..16544] at include/dav1d/picture.rs:729:19
+    existing: &mut _[16528..16544]
+     current: &mut _[16448..16512] at include/dav1d/picture.rs:742:19
+    existing:    & _[16384..16512]                       (128 B = a V-run row)
+
+Byte-identical extents rule out over-RESERVATION: reservation == footprint here.
+What was too wide was the FOOTPRINT — see `docs/BOUNDS_MAP.md`, "prices
+reservations against footprints, not footprints against NEED".
+
+## 3. Naming the writer: `-C debug-assertions=on`, not `probe-sites`
+
+`--features probe-sites` does not reproduce (#493: 358/358 PASS, 0 overlaps) —
+its per-registration hash plus three atomic RMWs perturb the window away. But
+`ShardRecs::locs` and the `track_caller` propagation through `picture.rs`'s
+helpers are gated on `any(debug_assertions, feature = "probe-sites")`, so a
+plain **release build with `-C debug-assertions=on -C overflow-checks=off`**
+keeps per-record `Loc`s at the cost of one non-atomic store per registration and
+no hash. It reproduced at a HIGHER rate than release — its two aborts
+(`00000037`, `00000051`) were the **20th and 27th vectors attempted** of
+`8-bit/data` at t=8, against release's 4 in a full 358 — and named both sides:
+
+     current:    & _[98304..98432] at src/safe_simd/loopfilter.rs:5134:44
+    existing: &mut _[98304..98688] at src/owned_recon.rs:937:42
+
+     current: &mut _[98439..98441] at src/safe_simd/loopfilter.rs:5203:25
+    existing:    & _[98432..98448] at src/safe_simd/loopfilter.rs:5134:44
+
+* `loopfilter.rs:5134` = the V-run `compact_read_per_row`; `:5203` = its
+  `compact_write_back_per_row_diff`.
+* `owned_recon.rs:937` = `stitch_sbrow`, one row guard per row of the tile's own
+  columns, copying the NEXT superblock row out of the owned band (384 B row).
+* Both records start at 98304. With a 384-px stride that is row 256 — the first
+  row of a superblock row (256 = 4 x 64), i.e. exactly the 3 rows a V run at the
+  last edge of the previous superblock row over-reads.
+
+**Two writers, which is why #482 was correctly ruled out.** `RAV1D_OWNED_RECON=0`
+removes the `stitch_sbrow` pairing and leaves the DeblockCols one, and #493
+measured a HIGHER failure rate with it off (3 in its first 207).
+
+## 4. Attribution to the deblock barrier: yes, and it is still the wrong remedy
+
+`054e2ed` removed a `check_tile` predicate requiring `deblock_progress >= sby`
+for reconstruction tasks, i.e. recon of superblock row S waited for
+`DeblockRows(S-1)`. Every pairing above is downstream of it: recon of row N+1,
+and `DeblockCols(N+1)` (which needs recon of N+1), were both ordered after
+`DeblockRows(N)`. So the barrier is what had been masking this.
+
+**And it was tested, not just argued.** A throwaway arm — the PRE-FIX loop filter
+with `054e2ed`'s predicate re-inserted verbatim (`deblock_progress >= t.sby` for
+recon tasks; the extra param threaded through both `check_tile` call sites,
+never committed, sources restored byte-exact) — runs `8-bit/data` at t=8 with
+**358 PASS, 0 ERROR, 0 overlap panics**, where the same binary without the
+barrier gives 4 aborts. So the barrier removal really is the enabling change,
+and the falsification test had a way to fail: if a pairing existed that the
+barrier does not order, this arm would still have aborted.
+
+It is still the wrong fix — 2.19x at t=8 (`benchmarks/p1_barrier_2026-08-07.meta`)
+to paper over a 3-row over-read — and `054e2ed`'s own argument is the fix's
+specification: "the filter length is bounded by the transform heights on both
+sides, which cannot cross a superblock boundary". True of the reference and of
+the aarch64 path; false of this window. The barrier was NOT put back.
+
+## 5. The fix
+
+`src::loopfilter::lf_run_reach(is_y, mask)` returns the reach of the widest
+width the run's mask can select; both BPC arms of the x86 dispatcher use it for
+the V window. `lf_group_wd` is extracted from `loop_filter_sb128_rust` so the
+new function and its test share the driver's ladder instead of copying it.
+
+Unchanged on purpose:
+* the scalar-fallback bounds predicate still tests the plane worst case, so the
+  SIMD-vs-scalar decision — and every output byte — is what it was, and the
+  narrowed window is always a subset of an extent that test already proved in
+  bounds;
+* the H direction keeps the constant: its perpendicular extent is COLUMNS of
+  rows already inside this superblock row, and its `tap_after` (9 luma / 5
+  chroma at 8bpc) is the 4-byte chunked transpose load's rounding, not a tap
+  bound.
+
+## 6. Gates
+
+### 6a. Deterministic, single-threaded, t=1 — the reusable part
+
+`loopfilter_sb_direct` carries a `debug_assert!` (arch-independent, where the
+superblock geometry is in scope) that a V run's window stays inside its
+superblock row. Built `--release -C debug-assertions=on`:
+
+  aarch64, FULL corpus, t=1, fix in place:   766 PASS / 2 SKIP, 0 firings
+  aarch64, FULL corpus, t=8, fix in place:   766 PASS / 2 SKIP, 0 firings,
+                                             0 overlap panics
+      (the full corpus is what makes this cover 4:2:0 / 4:2:2 / 4:4:4 / 4:0:0
+       and 8/10/12-bit, not just the 8-bit 4:2:0 group)
+  aarch64, `8-bit/data`, t=1, fix in place:      358/358 PASS, 0 firings
+  aarch64, `8-bit/data`, t=1, old constant planted:
+      abort on the SECOND vector —
+      "V-run window leaves the superblock row: row 380 (+7) in a 128-row
+       superblock row, is_y=true, mask=[f0000000, 00000000, 00000000]"
+      (380 % 128 = 124 -> the last 4-row band; only level 0 present)
+
+A race that took a 10-minute t=8 corpus pass to show once is now a ~1.5 s t=1
+abort.
+
+### 6a-bis. How often the old window crossed — 0.632% of V runs
+
+A throwaway counter beside the assertion (uncommitted; sources restored
+byte-exact and `git diff --exit-code`-clean afterwards) counted, per V run, how
+often each window would leave the superblock row. aarch64, `8-bit/data`, t=1,
+sampled every 200,000 runs:
+
+      n runs   old (plane 7/3)   new (mask-derived)
+     200,000               919                    0
+     400,000             1,956                    0
+     600,000             3,350                    0
+     800,000             4,854                    0
+   1,000,000             6,438                    0
+   1,200,000             7,937                    0
+   1,400,000             9,140                    0
+   1,600,000            10,104                    0
+
+**0.632% of V runs, and zero after the fix.** That ratio is the answer to "was
+this a corner case?" — it is not rare in the filter, it is rare in COINCIDENCE:
+only the crossings that land on a row a peer is writing at that instant become a
+panic, which is why the observed rate at t=8 is ~1% per vector and the failing
+set is unstable.
+
+### 6b. Unit, with teeth
+
+`src::loopfilter::run_reach::run_reach_equals_the_widest_group_it_can_meet` —
+every combination of 8 mask patterns x 3 levels x {luma, chroma} against the
+driver's own `lf_group_wd` walked per group, plus a liveness assert that all
+four reaches (2/3/4/7) occur. Planting the old constant fails it
+(`left: 7, right: 4`). `run_reach_fits_the_transform_that_selected_it` pins the
+headroom table.
+
+### 6c. Corpus, by name, MD5 as the value
+
+  aarch64 (native, full corpus, no --skip-group)
+    base t=1  766 PASS / 0 MISMATCH / 0 ERROR / 2 SKIP
+    base t=8  766 / 0 / 0 / 2
+    head t=1  766 / 0 / 0 / 2
+    head t=8  766 / 0 / 0 / 2
+    set-diff (name, status, actual_md5) base vs head: IDENTICAL, 768 rows, at
+    BOTH thread counts; head t=1 vs head t=8 also IDENTICAL.
+
+  x86_64 (TCG) — see section 7 for the per-pass table.
+
+## 7. x86_64 arms
+
+All at `--threads 8` unless stated. `8-bit/data` = 358 vectors, full = 768.
+
+  arm                       scope         PASS  ERROR  MISMATCH  overlap panics
+  base (pre-fix)            8-bit/data     354      4         0               4
+  base (pre-fix) full       all            764      2         0               2
+      (`00000245` at frame 2, `00000625` at frame 17 — a DIFFERENT pair again)
+  head pass 1               8-bit/data     358      0         0               0
+  head pass 2               8-bit/data     358      0         0               0
+  head full corpus          all            766      0         0               0
+                                           (+2 SKIP: features/annexb, section5)
+  head full corpus, t=1     all            766      0         0               0
+
+**Cross-arm MD5 identity, by name, over all 768 rows:** x86 head t=1 ==
+x86 head t=8 == aarch64 head t=1 == aarch64 head t=8 == aarch64 BASE t=1/t=8.
+Every one of those five `diff`s is empty on `(name, status, actual_md5)`. The
+t=1 arm matters on its own account: at t=1 `tile_threading_active()` is false, so
+x86 takes the NON-compact single-guard path, which this change also narrows —
+766/766 there says the narrowed guard is in bounds and the pixels did not move.
+
+**The by-name set-diff at t=8** (`(name, status, actual_md5)`, base vs head,
+`8-bit/data`) has exactly four differing rows, all repairs onto the expected
+MD5, and 354 identical rows:
+
+  00000635  ERROR(frame 24) -> PASS cb6aa637c62808b6409e8d6f1bb0b3db
+  00000641  ERROR(frame 43) -> PASS 9a9f8b9faecb563dc5f4fafc5dc0724e
+  00000660  ERROR(frame  7) -> PASS 5dae1f16721633566af1f0693a27d6ed
+  00000704  ERROR(frame  0) -> PASS 1a146612fff0c1e250d3d991493c4e42
+
+The FULL-CORPUS t=8 set-diff is the same shape: exactly two differing rows out
+of 768, both repairs onto the expected MD5 —
+
+  00000245  ERROR(frame  2) -> PASS e6122012caf67df41bcff9111f4b7def
+  00000625  ERROR(frame 17) -> PASS a6b0902bd590da52e3e12854800db9d2
+
+Zero repaired-and-broken. The two head `8-bit/data` arms and the full-corpus arm
+agree exactly on all 358 shared names, so the two independent post-fix runs
+produce identical pixels.
+
+**Fourteen distinct vectors have failed pre-fix across six passes**, and every
+one of them is PASS by name in the head full-corpus t=8 arm: #493's
+`00000325 00000625 issue_48 …_019_vq_aom_ctest_4.2`, its `RAV1D_OWNED_RECON=0`
+`00000557 00000580 00000624`, my release group pass's
+`00000635 00000641 00000660 00000704`, my debug-assertions pass's
+`00000037 00000051`, and my base full-corpus pass's `00000245`. Six passes, six
+different failing sets, no overlap beyond `00000625` — the definition of a
+timing window. All 18 `vq_aom_ctest_4.2` variants pass.
+
+One discarded arm, recorded so the count is honest: a second head `8-bit/data`
+pass was thrown away because a `cargo build` rewrote the musl binary the running
+container had exec'd. A bind-mounted mmap of a replaced file is not a trustworthy
+arm. Every arm after that runs a pinned copy cargo never writes.
+
+## 7d. Liveness of the narrowing, on x86, as a COUNT
+
+A window that shrank must register fewer ROW guards, because the compact read
+takes one per row. `--features probe-sites`, x86_64, t=8, the first 8 vectors of
+`8-bit/data` (identical deterministic workload both arms — the write-back site's
+count is byte-for-byte equal, which is the check that they are comparable):
+
+  site                                  regs      mean extent
+  base  safe_simd/loopfilter.rs:5134  994,964        20.8 B    <- compact READ
+  head  safe_simd/loopfilter.rs:5177  970,370        19.3 B
+                                      -24,594        -7.2%
+                                       (-2.47%)
+
+  base  safe_simd/loopfilter.rs:5203  316,531         8.3 B    <- diff WRITE-BACK
+  head  safe_simd/loopfilter.rs:5246  316,531         8.3 B    <- UNCHANGED
+
+(The line numbers move because the patch inserts lines above the call; it is the
+same two call sites.)
+
+So the narrowing is **live on the arch that had the bug**: 24,594 fewer row
+guards and a 7.2% smaller mean extent at the read site, with the WRITE site
+identical to the registration — which is the design, since the write set is the
+diff against `pristine` and this change never touched what the filter modifies.
+It also bounds the perf direction without claiming a number: strictly fewer
+registrations and strictly fewer bytes copied. **No wall-clock claim: TCG.**
+
+## 7b. Two LOCAL gate recipes that fail for reasons that predate this change
+
+Both verified to be in files this branch does not touch, and CI's own legs pass:
+
+* **`just clippy`** (`--no-default-features --features bitdepth_8,bitdepth_16
+  --all-targets -- -D warnings`, no `--release`) fails on this box because
+  `integration_decode`, `decode_cpu_levels` and `cancellation` carry intentional
+  `compile_error!("... require release mode")`, plus an unused import in
+  `tests/thread_cleanup_test.rs`, an unused `vectors_filmgrain` in
+  `tests/decode_md5_committed.rs` and a const-value assertion in
+  `examples/md5_inventory.rs`. None of those five files is touched here, and
+  CI's **Clippy** leg passes on this branch (50 s).
+* **`just api-doc-check`** fails with `rustdoc JSON build failed` because it
+  builds the surface over ALL manifest features including `asm`, whose build
+  script cannot run on this host. Same shape as the documented `just fmt`
+  problem in zenavif. Nothing in this change is public API — `lf_run_reach` and
+  `lf_group_wd` are `pub(crate)`/private and the only public-facing edit is a
+  doc comment on `CpuLevel::X86V2`.
+
+`cargo fmt --check` is clean, `cargo clippy --release --all-targets` emits 95
+warning/error lines — **the same count as the base source files, measured both
+ways on this box** — and `cargo test --lib` passes in DEBUG and release.
+
+## 7c. Miri, both memory models
+
+**CI is the authority and it PASSES**: `Miri (Stacked Borrows)` green in 47 min
+on this branch (both the pre- and post-rebase runs), `Miri (Tree Borrows)` on
+the same job matrix. CI runs `cargo +nightly miri test -p rav1d-disjoint-mut
+--no-fail-fast`, so every target reports independently. Nothing in this change
+touches that crate's code — the only edit there is a doc comment — so a
+different result would have been surprising.
+
+Local corroboration, EACH TARGET IN ISOLATION, with a 900 s per-target watchdog
+(macOS 26.5.2, aarch64, nightly `da86f4d072`):
+
+  target               Stacked Borrows        Tree Borrows
+  lib                  26 passed              26 passed
+  soundness            25 passed              25 passed
+  wide_exclusion        1 passed               1 passed
+  narrow_release        1 passed               1 passed
+  guard_move_release    2 passed               2 passed
+  aligned_miri          0 tests (feature)      0 tests (feature)
+  pic_buf_overflow      0 tests (feature)      0 tests (feature)
+  shard_liveness       **TIMEOUT 900 s**      **TIMEOUT 900 s**
+
+`shard_liveness` is **NOT reported as a pass under either model here.** It hangs
+in `concurrent_disjoint_is_never_refused`, which spins on `TinyLock` — under
+Miri's scheduler a spin loop burns unbounded steps. The same target completes in
+CI's Linux legs, which is why CI is the authority for it. `aligned_miri` and
+`pic_buf_overflow` contain no tests without their `aligned` / `pic-buf`
+features, matching CI's own invocation; running them WITH those features is not
+done here.
+
+## 8. Coverage this does NOT have
+
+* **AVX-512 is unexecuted.** The guest has no AVX-512, so the `x16` V-kernel
+  fast path in `lpf_v_sb_y_8bpc_inner` never ran here. It reads the same window
+  (`buf`, `base`, `strideb`) as the x8/x4 paths and the window shrank for all of
+  them, so a mis-sized rectangle would panic rather than corrupt — but it is
+  not exercised.
+* **12-bit is corpus-only** (the `12-bit/*` groups run; no separate arm).
+* **wasm32 has the same defect shape and is NOT fixed.** Its dispatcher
+  (`loopfilter.rs`, `#[cfg(target_arch = "wasm32")]`) takes ONE wide MUTABLE
+  guard sized `reach_before = 7 * stride`, `reach_after = ... + 16 * stride` —
+  16 rows below a V edge, i.e. wider than the pre-fix x86 window, and mutable.
+  Untouched because nothing here can execute wasm32 threads; recorded so the
+  next session does not have to re-derive it.
+* **No timing.** Whether narrowing the copy changes decode cost on real x86
+  hardware is unmeasured. The copy shrinks (14 rows -> 4 at level-0 edges), so
+  the expected sign is favourable, and that is a hypothesis, not a result.

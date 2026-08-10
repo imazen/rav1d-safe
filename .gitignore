@@ -28,3 +28,4 @@ Cargo.toml.original.txt
 # Generated build/profiling artifacts (tracked by mistake, now untracked)
 rust_out
 wasmtime-guest-profile.json
+target-*/
