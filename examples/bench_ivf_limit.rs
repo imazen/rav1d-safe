@@ -34,10 +34,35 @@
 #[path = "helpers/ivf_parser.rs"]
 mod ivf_parser;
 
-use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
+use rav1d_safe::src::managed::{Decoder, Frame, InloopFilters, Planes, Settings};
 use std::fs::File;
 use std::hint::black_box;
 use std::io::BufReader;
+
+/// `RAV1D_INLOOP` — the same axis as `dav1d --inloopfilters <str>`, so a
+/// filter's cost can be attributed on BOTH decoders with one instrument
+/// instead of profiling ours and arguing about theirs.
+///
+/// Accepts `all` (default), `none`, `nodeblock`, `nocdef`, `norestoration`.
+/// The names are dav1d's on purpose: a cell is then literally the same string
+/// on both arms, which is one less place for the two sides to drift apart.
+///
+/// It CHANGES OUTPUT PIXELS — this is an attribution arm, never a correctness
+/// one. Do not compare an md5 across two values of it.
+fn inloop_from_env() -> InloopFilters {
+    let all = InloopFilters::all();
+    match std::env::var("RAV1D_INLOOP").as_deref().unwrap_or("all") {
+        "all" => all,
+        "none" => InloopFilters::none(),
+        "nodeblock" => InloopFilters::CDEF.union(InloopFilters::RESTORATION),
+        "nocdef" => InloopFilters::DEBLOCK.union(InloopFilters::RESTORATION),
+        "norestoration" => InloopFilters::DEBLOCK.union(InloopFilters::CDEF),
+        other => panic!(
+            "RAV1D_INLOOP={other}: expected all|none|nodeblock|nocdef|norestoration \
+             (dav1d --inloopfilters spelling)"
+        ),
+    }
+}
 
 fn hash_frame(ctx: &mut md5::Context, frame: &Frame) {
     match frame.planes() {
@@ -95,6 +120,7 @@ fn main() {
     // gap campaign. The checked build already forces n_fc = 1, so this only
     // matters if someone points an `unchecked` build at the same script.
     settings.max_frame_delay = 1;
+    settings.inloop_filters = inloop_from_env();
     let mut dec = Decoder::with_settings(settings).expect("decoder");
 
     // Off by default — see the module docs. `dav1d --muxer null` hashes

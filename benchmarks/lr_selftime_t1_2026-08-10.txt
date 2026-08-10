@@ -1,0 +1,30 @@
+# total leaf samples: 19061   (file: /Users/lilith/tmp/lrgap/prof/t1.sample)
+4233	22.21%	rav1d_safe::src::recon::mc::<rav1d_safe::include::common::bitdepth::BitDepth16>
+2161	11.34%	_platform_memmove
+1695	8.89%	_platform_memset
+1166	6.12%	<rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<true>
+1154	6.05%	<rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add::<false>
+734	3.85%	rav1d_safe::src::recon::decode_coefs::<rav1d_safe::include::common::bitdepth::BitDepth16>
+630	3.31%	<rav1d_safe::src::refmvs::load_tmvs::Fn>::call
+433	2.27%	rav1d_safe::src::lr_apply::lr_stripe::<rav1d_safe::include::common::bitdepth::BitDepth16>
+396	2.08%	rav1d_safe::src::safe_simd::mc_arm::__arcane_v_filter_8tap_16bpc_to_i16_neon
+361	1.89%	core::ptr::drop_glue::<rav1d_disjoint_mut::DisjointMutGuard<aligned::Aligned<aligned::A8, [core::option::Option<rav1d_safe::src::levels::CompInterType>; 32]>, [core::option::Option<rav1d_safe::src::levels::CompInterType>]>>
+287	1.51%	rav1d_safe::src::loopfilter::loopfilter_sb_direct::<rav1d_safe::include::common::bitdepth::BitDepth16>
+281	1.47%	rav1d_safe::src::recon::rav1d_recon_b_inter::<rav1d_safe::include::common::bitdepth::BitDepth16>
+271	1.42%	rav1d_safe::src::lf_mask::rav1d_create_lf_mask_inter
+270	1.42%	rav1d_safe::src::safe_simd::looprestoration_arm::__arcane_sgr_out_16bpc
+254	1.33%	rav1d_safe::src::safe_simd::looprestoration_arm::__arcane_boxsum_16bpc
+245	1.29%	<rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponent>::from_parts
+244	1.28%	rav1d_safe::src::decode::decode_b
+230	1.21%	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth16>>::close
+226	1.19%	<rav1d_safe::src::refmvs::splat_mv::Fn>::call
+208	1.09%	rav1d_safe::src::safe_simd::loopfilter_arm::lf_compact_run_neon
+194	1.02%	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth16>>::open
+189	0.99%	<rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add_wide::<true>
+180	0.94%	rav1d_safe::src::safe_simd::loopfilter_arm::lf_core::<16>
+148	0.78%	rav1d_safe::src::refmvs::rav1d_refmvs_find
+148	0.78%	rav1d_safe::src::safe_simd::looprestoration_arm::__arcane_sgr_ab_16bpc
+127	0.67%	rav1d_safe::src::recon::read_golomb
+111	0.58%	<rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add_slow::<true>
+107	0.56%	rav1d_safe::src::cdef_apply::rav1d_cdef_brow::<rav1d_safe::include::common::bitdepth::BitDepth16>
+100	0.52%	rav1d_safe::src::recon::warp_affine::<rav1d_safe::include::common::bitdepth::BitDepth16>
