@@ -717,3 +717,9 @@ the ratio and the scaling shape are the usable parts.
 So the honest product statement: **on this box, rav1d-safe serves ~500
 1024x576 AVIFs/second against dav1d's ~800, and the way to get there is many
 one-thread decoders, not one many-thread decoder.**
+
+The 10bpc column of the same measurement (N = 1, 8, 12, n=5, load-tagged):
+ours 53.3 / 369.2 / 441.5 dec/s against dav1d's 87.2 / 627.7 / 761.6, ratios
+1.641 / 1.683 / 1.744, scaling **8.29x against dav1d's 8.73x** at N=12. Same
+conclusion, one ratio-point-and-a-half worse across the board — which is the
+10bpc single-thread penalty from Q2 showing through, not a concurrency effect.
