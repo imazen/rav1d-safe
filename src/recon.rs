@@ -20,6 +20,7 @@ use crate::include::dav1d::picture::Rav1dPictureDataComponent;
 
 use crate::src::cdef_apply::rav1d_cdef_brow;
 use crate::src::ctx::CaseSet;
+use crate::src::ctx::case_set_al;
 use crate::src::ctx::small_memset;
 use crate::src::env::get_uv_inter_txtp;
 use crate::src::in_range::InRange;
@@ -1401,7 +1402,9 @@ fn read_coef_tree<BD: BitDepth>(
             // (the memset ranges are subsets of bx4..bx4+txw / by4..by4+txh).
             // Halves the BorrowTracker traffic at this hot site.
             let mut a_guard = f.a[t.a].lcoef.index_mut(bx4..bx4 + txw as usize);
-            let mut l_guard = t.l.lcoef.index_mut(by4..by4 + txh as usize);
+            // LEFT is `t.l`, this worker's own context: `&mut` obviates the
+            // tracker (see `case_set_al!`), so no guard, no registration.
+            let l_guard = &mut t.l.lcoef.get_mut()[by4..by4 + txh as usize];
             eob = decode_coefs::<BD>(
                 f,
                 t.ts,
@@ -1430,7 +1433,6 @@ fn read_coef_tree<BD: BitDepth>(
             small_memset::<u8, 16, true>(&mut a_guard[..a_memset_len], cf_ctx);
             small_memset::<u8, 16, true>(&mut l_guard[..l_memset_len], cf_ctx);
             drop(a_guard);
-            drop(l_guard);
             let txtp_map =
                 &mut t.scratch.inter_intra_mut().ac_txtp_map.txtp_map_mut()[by4 * 32 + bx4..];
             CaseSet::<16, false>::one((), txw as usize, 0, |case, ()| {
@@ -1508,25 +1510,20 @@ pub(crate) fn rav1d_read_coef_blocks<BD: BitDepth>(
         && (bh4 > ss_ver || t.b.y & 1 != 0);
 
     if b.skip != 0 {
-        CaseSet::<32, false>::many(
-            [&t.l, &f.a[t.a]],
-            [bh4 as usize, bw4 as usize],
-            [by4, bx4],
-            |case, dir| {
-                case.set_disjoint(&dir.lcoef, 0x40);
-            },
-        );
+        case_set_al! {
+            <32, false>
+            l: (&mut t.l, bh4 as usize, by4),
+            a: (&f.a[t.a], bw4 as usize, bx4),
+            lcoef = (0x40, 0x40),
+        }
         if has_chroma {
-            CaseSet::<32, false>::many(
-                [&t.l, &f.a[t.a]],
-                [cbh4 as usize, cbw4 as usize],
-                [cby4, cbx4],
-                |case, dir| {
-                    for ccoef in &dir.ccoef {
-                        case.set_disjoint(ccoef, 0x40)
-                    }
-                },
-            );
+            case_set_al! {
+                <32, false>
+                l: (&mut t.l, cbh4 as usize, cby4),
+                a: (&f.a[t.a], cbw4 as usize, cbx4),
+                ccoef[0] = (0x40, 0x40),
+                ccoef[1] = (0x40, 0x40),
+            }
         }
         return;
     }
@@ -1614,17 +1611,20 @@ pub(crate) fn rav1d_read_coef_blocks<BD: BitDepth>(
                             let cbi_idx = ts.frame_thread[1].cbi_idx.get_update(|i| i + 1);
                             f.frame_thread.cbi[cbi_idx as usize]
                                 .set(CodedBlockInfo::new(eob as i16, txtp));
-                            CaseSet::<16, true>::many(
-                                [&t.l.lcoef, &f.a[t.a].lcoef],
-                                [
+                            case_set_al! {
+                                <16, true>
+                                l: (
+                                    &mut t.l,
                                     cmp::min(t_dim.h as i32, f.bh - t.b.y) as usize,
+                                    by4 + y as usize
+                                ),
+                                a: (
+                                    &f.a[t.a],
                                     cmp::min(t_dim.w as i32, f.bw - t.b.x) as usize,
-                                ],
-                                [by4 + y as usize, bx4 + x as usize],
-                                |case, dir| {
-                                    case.set_disjoint(dir, cf_ctx);
-                                },
-                            );
+                                    bx4 + x as usize
+                                ),
+                                lcoef = (cf_ctx, cf_ctx),
+                            }
                         }
                     }
                     x += t_dim.w;
@@ -1698,23 +1698,26 @@ pub(crate) fn rav1d_read_coef_blocks<BD: BitDepth>(
                         ts.frame_thread[1]
                             .cf
                             .set(cf_idx + uv_t_dim.w as u32 * uv_t_dim.h as u32 * 16);
-                        CaseSet::<16, true>::many(
-                            [l_ccoef, a_ccoef],
-                            [
+                        case_set_al! {
+                            <16, true>
+                            l: (
+                                &mut t.l,
                                 cmp::min(
                                     uv_t_dim.h as i32,
                                     f.bh - t.b.y + ss_ver as c_int >> ss_ver,
                                 ) as usize,
+                                cby4 + y as usize
+                            ),
+                            a: (
+                                &f.a[t.a],
                                 cmp::min(
                                     uv_t_dim.w as i32,
                                     f.bw - t.b.x + ss_hor as c_int >> ss_hor,
                                 ) as usize,
-                            ],
-                            [cby4 + y as usize, cbx4 as usize + x as usize],
-                            |case, dir| {
-                                case.set_disjoint(dir, cf_ctx);
-                            },
-                        );
+                                cbx4 as usize + x as usize
+                            ),
+                            ccoef[pl] = (cf_ctx, cf_ctx),
+                        }
                         x += uv_t_dim.w;
                         t.b.x += (uv_t_dim.w as c_int) << ss_hor;
                     }
@@ -2369,17 +2372,20 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                     ts_c.as_deref().unwrap().msac.rng,
                                 );
                             }
-                            CaseSet::<16, true>::many(
-                                [&t.l, &f.a[t.a]],
-                                [
+                            case_set_al! {
+                                <16, true>
+                                l: (
+                                    &mut t.l,
                                     cmp::min(t_dim.h as i32, f.bh - t.b.y) as usize,
+                                    (by4 + y) as usize
+                                ),
+                                a: (
+                                    &f.a[t.a],
                                     cmp::min(t_dim.w as i32, f.bw - t.b.x) as usize,
-                                ],
-                                [(by4 + y) as usize, (bx4 + x) as usize],
-                                |case, dir| {
-                                    case.set_disjoint(&dir.lcoef, cf_ctx);
-                                },
-                            );
+                                    (bx4 + x) as usize
+                                ),
+                                lcoef = (cf_ctx, cf_ctx),
+                            }
                         }
                         if eob >= 0 {
                             if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
@@ -2409,14 +2415,12 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                             }
                         }
                     } else if t.frame_thread.pass == 0 {
-                        CaseSet::<16, false>::many(
-                            [&t.l, &f.a[t.a]],
-                            [t_dim.h as usize, t_dim.w as usize],
-                            [(by4 + y) as usize, (bx4 + x) as usize],
-                            |case, dir| {
-                                case.set_disjoint(&dir.lcoef, 0x40);
-                            },
-                        );
+                        case_set_al! {
+                            <16, false>
+                            l: (&mut t.l, t_dim.h as usize, (by4 + y) as usize),
+                            a: (&f.a[t.a], t_dim.w as usize, (bx4 + x) as usize),
+                            lcoef = (0x40, 0x40),
+                        }
                     }
                     x += t_dim.w as c_int;
                     t.b.x += t_dim.w as c_int;
@@ -2754,19 +2758,22 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                         cbx4,
                                     );
                                 }
-                                CaseSet::<16, true>::many(
-                                    [l_ccoef, a_ccoef],
-                                    [
+                                case_set_al! {
+                                    <16, true>
+                                    l: (
+                                        &mut t.l,
                                         cmp::min(uv_t_dim.h as i32, f.bh - t.b.y + ss_ver >> ss_ver)
                                             as usize,
+                                        (cby4 + y) as usize
+                                    ),
+                                    a: (
+                                        &f.a[t.a],
                                         cmp::min(uv_t_dim.w as i32, f.bw - t.b.x + ss_hor >> ss_hor)
                                             as usize,
-                                    ],
-                                    [(cby4 + y) as usize, (cbx4 + x) as usize],
-                                    |case, dir| {
-                                        case.set_disjoint(dir, cf_ctx);
-                                    },
-                                );
+                                        (cbx4 + x) as usize
+                                    ),
+                                    ccoef[pl] = (cf_ctx, cf_ctx),
+                                }
                             }
                             if eob >= 0 {
                                 if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {
@@ -2796,14 +2803,12 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                                 }
                             }
                         } else if t.frame_thread.pass == 0 {
-                            CaseSet::<16, false>::many(
-                                [&t.l, &f.a[t.a]],
-                                [uv_t_dim.h as usize, uv_t_dim.w as usize],
-                                [(cby4 + y) as usize, (cbx4 + x) as usize],
-                                |case, dir| {
-                                    case.set_disjoint(&dir.ccoef[pl], 0x40);
-                                },
-                            );
+                            case_set_al! {
+                                <16, false>
+                                l: (&mut t.l, uv_t_dim.h as usize, (cby4 + y) as usize),
+                                a: (&f.a[t.a], uv_t_dim.w as usize, (cbx4 + x) as usize),
+                                ccoef[pl] = (0x40, 0x40),
+                            }
                         }
                         x += uv_t_dim.w as c_int;
                         t.b.x += (uv_t_dim.w as c_int) << ss_hor;
@@ -3513,25 +3518,20 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
 
     if b.skip != 0 {
         // reset coef contexts
-        CaseSet::<32, false>::many(
-            [&t.l, &f.a[t.a]],
-            [bh4 as usize, bw4 as usize],
-            [by4 as usize, bx4 as usize],
-            |case, dir| {
-                case.set_disjoint(&dir.lcoef, 0x40);
-            },
-        );
+        case_set_al! {
+            <32, false>
+            l: (&mut t.l, bh4 as usize, by4 as usize),
+            a: (&f.a[t.a], bw4 as usize, bx4 as usize),
+            lcoef = (0x40, 0x40),
+        }
         if has_chroma {
-            CaseSet::<32, false>::many(
-                [&t.l, &f.a[t.a]],
-                [cbh4 as usize, cbw4 as usize],
-                [cby4 as usize, cbx4 as usize],
-                |case, dir| {
-                    for ccoef in &dir.ccoef {
-                        case.set_disjoint(ccoef, 0x40);
-                    }
-                },
-            );
+            case_set_al! {
+                <32, false>
+                l: (&mut t.l, cbh4 as usize, cby4 as usize),
+                a: (&f.a[t.a], cbw4 as usize, cbx4 as usize),
+                ccoef[0] = (0x40, 0x40),
+                ccoef[1] = (0x40, 0x40),
+            }
         }
         return Ok(());
     }
@@ -3647,19 +3647,22 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                                         ts_c.as_deref().unwrap().msac.rng,
                                     );
                                 }
-                                CaseSet::<16, true>::many(
-                                    [l_ccoef, a_ccoef],
-                                    [
+                                case_set_al! {
+                                    <16, true>
+                                    l: (
+                                        &mut t.l,
                                         cmp::min(uvtx.h as i32, f.bh - t.b.y + ss_ver >> ss_ver)
                                             as usize,
+                                        (cby4 + y) as usize
+                                    ),
+                                    a: (
+                                        &f.a[t.a],
                                         cmp::min(uvtx.w as i32, f.bw - t.b.x + ss_hor >> ss_hor)
                                             as usize,
-                                    ],
-                                    [(cby4 + y) as usize, (cbx4 + x) as usize],
-                                    |case, dir| {
-                                        case.set_disjoint(dir, cf_ctx);
-                                    },
-                                );
+                                        (cbx4 + x) as usize
+                                    ),
+                                    ccoef[pl] = (cf_ctx, cf_ctx),
+                                }
                             }
                             if eob >= 0 {
                                 if debug_block_info!(f, t.b) && DEBUG_B_PIXELS {

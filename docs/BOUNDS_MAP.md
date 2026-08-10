@@ -99,6 +99,12 @@ sides). Every co-live pair is therefore seen exactly once, at the later acquire.
   pairs. Against other readers it has unlimited room.
 * **Some sites have zero headroom.** `ctx.rs:99:27` had a concurrent write at
   gap **0** (butt-adjacent) 36 times; widening it by one byte collides.
+  **That site was since cut by 21-25% WITHOUT touching any extent** (PR #492,
+  `docs/CTX_TL_SPLIT.md`): half its registrations were the worker-local LEFT
+  neighbour context, which is `&mut`-reachable and needed no record at all. The
+  map's value here was negative-space — it closed the coarsening family for this
+  site early, which is what left "fewer registrations at the same extent" as the
+  direction to look in.
 * **Some sites are free of writers entirely.** `mc.rs:121:61` (181 M
   registrations) and `mc.rs:1342:44` (67 M) never had a concurrent foreign write
   at any distance — they read reference frames, immutable for the whole decode.
