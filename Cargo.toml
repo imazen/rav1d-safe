@@ -87,6 +87,12 @@ probe-sites = ["rav1d-disjoint-mut/__probe_sites"]
 # Absent from `default` and from every published feature. See
 # `src/loopfilter.rs::lf_hull_reads` and docs/MUT_RECON_KERNELS.md section 10.
 __probe_lf_hull = []
+# Counts-only attribution of `LfBlock::fill` by PASS (H vs V), with the natural
+# (uncapped) run-length histogram and what each candidate `LF_BATCH_MAX` would
+# cost. Ported from PR #485's probe of the same name and extended with the
+# per-cap pricing, because the scratch a cap needs grows with it and the ratio
+# has to be priced against that. See `src/loopfilter.rs::lf_hist`.
+__probe_lf_hist = []
 probe-tinynop = ["rav1d-disjoint-mut/__probe_tinynop"]
 probe-addnop = ["rav1d-disjoint-mut/__probe_addnop"]
 probe-noscan = ["rav1d-disjoint-mut/__probe_noscan"]

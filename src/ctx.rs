@@ -90,6 +90,15 @@ impl<const UP_TO: usize, const WITH_DEFAULT: bool> CaseSetter<UP_TO, WITH_DEFAUL
     ///
     /// Caller must ensure that no elements of the written range are concurrently
     /// borrowed (immutably or mutably) at all during the call to `set_disjoint`.
+    ///
+    /// `#[track_caller]` under `probe-sites` ONLY. Without it every borrow this
+    /// function takes is attributed to the one `index_mut` line below, which is
+    /// how `ctx.rs:99` became the decoder's second-largest registration site
+    /// with nobody able to say which of its ~60 callers it is. With it the
+    /// count splits across the real `decode.rs` / `recon.rs` lines. It is
+    /// cfg-gated rather than unconditional because a `#[track_caller]` shim
+    /// changes codegen at every call site, and a probe must not.
+    #[cfg_attr(feature = "probe-sites", track_caller)]
     #[inline]
     pub fn set_disjoint<T, V>(&self, buf: &DisjointMut<T>, val: V)
     where

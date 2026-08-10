@@ -133,6 +133,9 @@ pub mod src {
     mod ipred;
     mod itx;
     mod lf_mask;
+    #[cfg(feature = "__probe_lf_hist")]
+    pub mod loopfilter;
+    #[cfg(not(feature = "__probe_lf_hist"))]
     mod loopfilter;
     mod looprestoration;
     mod mc;

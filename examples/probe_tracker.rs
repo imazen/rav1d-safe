@@ -83,6 +83,13 @@ fn main() {
     {
         print!("{}", rav1d_disjoint_mut::site_probe::report(iters));
     }
+    #[cfg(feature = "__probe_lf_hist")]
+    {
+        print!(
+            "{}",
+            rav1d_safe::src::loopfilter::lf_hist::report(iters as usize)
+        );
+    }
     #[cfg(not(any(feature = "probe-count", feature = "probe-wide")))]
     eprintln!("(built without --features probe-count / probe-wide; no counters)");
 
