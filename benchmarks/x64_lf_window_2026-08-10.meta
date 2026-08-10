@@ -199,6 +199,8 @@ All at `--threads 8` unless stated. `8-bit/data` = 358 vectors, full = 768.
 
   arm                       scope         PASS  ERROR  MISMATCH  overlap panics
   base (pre-fix)            8-bit/data     354      4         0               4
+  base (pre-fix) full       all            764      2         0               2
+      (`00000245` at frame 2, `00000625` at frame 17 — a DIFFERENT pair again)
   head pass 1               8-bit/data     358      0         0               0
   head pass 2               8-bit/data     358      0         0               0
   head full corpus          all            766      0         0               0
@@ -221,15 +223,24 @@ MD5, and 354 identical rows:
   00000660  ERROR(frame  7) -> PASS 5dae1f16721633566af1f0693a27d6ed
   00000704  ERROR(frame  0) -> PASS 1a146612fff0c1e250d3d991493c4e42
 
+The FULL-CORPUS t=8 set-diff is the same shape: exactly two differing rows out
+of 768, both repairs onto the expected MD5 —
+
+  00000245  ERROR(frame  2) -> PASS e6122012caf67df41bcff9111f4b7def
+  00000625  ERROR(frame 17) -> PASS a6b0902bd590da52e3e12854800db9d2
+
 Zero repaired-and-broken. The two head `8-bit/data` arms and the full-corpus arm
 agree exactly on all 358 shared names, so the two independent post-fix runs
 produce identical pixels.
 
-**Every vector that failed at any point in this campaign is PASS by name in the
-full-corpus t=8 arm**: #493's `00000325 00000625 issue_48
-…_019_vq_aom_ctest_4.2`, its `RAV1D_OWNED_RECON=0` `00000557 00000580 00000624`,
-my release pass's four above, and my debug-assertions pass's `00000037 00000051`.
-All 18 `vq_aom_ctest_4.2` variants pass.
+**Fourteen distinct vectors have failed pre-fix across six passes**, and every
+one of them is PASS by name in the head full-corpus t=8 arm: #493's
+`00000325 00000625 issue_48 …_019_vq_aom_ctest_4.2`, its `RAV1D_OWNED_RECON=0`
+`00000557 00000580 00000624`, my release group pass's
+`00000635 00000641 00000660 00000704`, my debug-assertions pass's
+`00000037 00000051`, and my base full-corpus pass's `00000245`. Six passes, six
+different failing sets, no overlap beyond `00000625` — the definition of a
+timing window. All 18 `vq_aom_ctest_4.2` variants pass.
 
 One discarded arm, recorded so the count is honest: a second head `8-bit/data`
 pass was thrown away because a `cargo build` rewrote the musl binary the running
