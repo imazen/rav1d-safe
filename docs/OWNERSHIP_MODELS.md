@@ -265,8 +265,56 @@ The options that remain, in the order the evidence supports:
    sequential result — for deblocking, whose output depends on filter *order* across the edge, that
    is a strong claim and would need bit-exactness proof, not argument.
 
-Also live here: `src/loopfilter.rs:140,182` uses the same whole-plane-guard shape as #479, which
-stops 13 of 768 vectors decoding above one thread. Unaudited.
+## 7e. The whole-plane-guard audit (#479), and why only one of the three sites was a bug
+
+Three places took a guard over the **entire** picture component. The shape is identical; the verdict
+is not, and what separates them is only *whether a concurrent writer exists*.
+
+| site | guards | verdict |
+|---|---|---|
+| `src/safe_simd/filmgrain_arm.rs:1550,1572,1644,1675` (+ the 3 `full_guard` reads) | `full_guard_mut` / `full_guard` | **REAL BUG, FIXED (#479).** Film grain row bands are handed out to N workers by `fetch_add` on `delayed_fg_progress[0]`, so every band collided with every other. 13 of 768 vectors could not decode above `t=1`; narrowed to the `(bh-1)*stride + pw` band. |
+| `src/loopfilter.rs:140,182` and `src/looprestoration.rs:212,258` | `full_guard_mut` (+ `full_guard`) | **UNSOUND UNDER CONCURRENCY, NOT A SHIPPING DEFECT.** All four are inside `#[cfg(feature = "__simd_test")]` — the SIMD-vs-scalar differential harness, a dev feature. |
+| `src/safe_simd/mc.rs:12153,12196,12271,12299,12839,12901` and `mc_arm.rs:5689,5971,6098,6182` | `full_guard` (**immutable**) on `src` | **SAFE**, for three independent reasons below. |
+
+**Why the `__simd_test` sites are not a bug to fix.** Measured, not argued: built with
+`--features bitdepth_8,bitdepth_16,__simd_test` and run at `--threads 8 --group 8-bit/data`, they
+produce **313 errors in 358 vectors** —
+
+```
+ current: &mut _[163840..163968]   <- a concurrent 128-px row write
+existing:    & _[0..983040]        <- the harness's whole-plane save
+```
+
+— the same shape as §7d's refuted band, one axis wider. **Narrowing them cannot fix it**: the
+harness *semantically* needs the whole plane (it saves it, restores it, runs the scalar reference
+over it, then writes the SIMD output back), so under concurrency it would clobber other workers'
+pixels even with tracking off. The correct answer is the one already in the tree — keep it
+single-threaded: `tests/decode_md5_committed.rs`'s only threaded test is
+`#[cfg(not(feature = "__simd_test"))]`, and CI's `__simd_test` step runs only that file (verified
+passing). `examples/md5_inventory` now **fails loud** on `--threads > 1` under `__simd_test` rather
+than emitting a TSV of errors that reads as a decoder regression.
+
+**Why the `mc` sites are safe.** They are immutable, so they cannot conflict with each other; the
+question is only whether a *mutable* borrow of the same allocation can be live. It cannot:
+
+- **`src` is a reference frame, complete before the current frame starts.** Frame threading is the
+  only way a reference could still be under construction, and `n_fc` is hard-pinned to 1 without
+  `unchecked` (`src/lib.rs:127`) — while `unchecked` builds create picture buffers with
+  `dangerously_unchecked`, i.e. no tracking at all.
+- **Intra block copy (`src` == the current picture) is refused before the guard is taken.**
+  `mc_put_dispatch` bails on `dst.data.ref_eq(src.data)` (`mc_arm.rs:5648`, `mc.rs:12110`, `:12832`)
+  and the scalar `PicOffset` path handles it.
+- **`mct_prep_dispatch` has no `ref_eq` bail and does not need one.** It writes a scratch `&mut [i16]`,
+  not a picture, and its `src` is only ever `&f.refp[..]`: `MaybeTempPixels::Temp` — the variant that
+  reaches `mct` — is used exclusively by compound inter and warp (`src/recon.rs:2927`, `:2941`,
+  `:3025`, `:3039`), while intrabc uses `NonTemp` (`:2876`, `:2893`) and OBMC writes into `lap`
+  (`:1945`, `:1997`).
+
+**The generalisable rule:** a whole-plane guard is not automatically a defect and not automatically
+safe. Ask one question — *can any thread hold a mutable borrow of this allocation while I hold
+this?* Film grain: yes, N of them. `__simd_test`: yes, and the harness needs it that way, so it is
+quarantined instead of narrowed. `mc`'s reference reads: no, and three separate mechanisms enforce
+it.
 
 ## 8. Picking a model
 

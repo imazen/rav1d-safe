@@ -286,6 +286,26 @@ fn main() {
          and the output would read as 'no family does any work'"
     );
 
+    // The `__simd_test` differential harness saves, restores and re-writes the
+    // WHOLE picture component around each loopfilter / looprestoration call
+    // (`src/loopfilter.rs:140,182`, `src/looprestoration.rs:212,258`). That is
+    // sound only single-threaded: measured at `--threads 8 --group 8-bit/data`
+    // it produced 313 errors in 358 vectors, e.g.
+    //
+    //      current: &mut _[163840..163968]   <- a concurrent 128-px row write
+    //     existing:    & _[0..983040]        <- the harness's whole-plane save
+    //
+    // and the restore would clobber other workers' output even with tracking
+    // off. Narrowing the guards cannot fix it — the harness *semantically*
+    // needs the whole plane. Fail loud rather than emit a TSV of mystery
+    // errors that reads as a decoder regression (#479 audit).
+    assert!(
+        !(cfg!(feature = "__simd_test") && threads > 1),
+        "--threads {threads} with --features __simd_test: the differential \
+         harness is single-thread-only by construction. Use --threads 1, or \
+         drop __simd_test."
+    );
+
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     let head = "group\tname\tstatus\texpected\tactual\tframes\twall_ms";
