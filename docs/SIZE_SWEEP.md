@@ -66,3 +66,18 @@ dav1d's `alpha`. It is bounded by a few hundred nanoseconds against a 34.6 us
 tiny-cell frame — under 1% — and it biases in the direction that makes OUR
 small-image ratio look BETTER, so it cannot manufacture a small-image
 regression, only mask one.
+
+## Q2 scope note — already known, NOT re-reported here as new
+
+* The zerocopy cast frame (#459) — `#[cold] #[inline(never)]` on the
+  `CastError` construction site plus `#[inline(always)]` on
+  `slice_as`/`mut_slice_as` — took 10bpc t=1 to 0.9380 and is on `main`.
+* The 16bpc CDEF port and the 16bpc itx port each moved 10bpc materially and
+  are on `main`.
+* 16bpc itx above 16x16 (32- and 64-point, and `WHT_WHT`) is still scalar.
+  Confirmed in source, not assumed: `src/safe_simd/itx_arm_hbd.rs` sets
+  `MAXDIM = 16` and `hbd_supported(w, h) = w <= 16 && h <= 16`, and
+  `src/safe_simd/itx_arm.rs:8455` is the only 16bpc arm in the dispatch.
+
+What this round adds on top of those is the SHAPE of the depth penalty across
+image size, and a ranked ms/frame attribution of what is left.
