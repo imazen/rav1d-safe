@@ -22,7 +22,8 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   at t=8 (the failing set is a timing window, not content — three passes named
   seven different vectors), with both sides identified by a
   `-C debug-assertions=on` release build (which reproduces it at a HIGHER rate
-  than release — its two aborts were the 20th and 27th vectors attempted): the V-run compact read
+  than release — its two aborts were the 20th and 27th vectors attempted): the
+  V-run compact read
   (`loopfilter.rs:5134`) against `owned_recon.rs:937`'s `stitch_sbrow` copy-out
   of the next superblock row, and against that row's own DeblockCols
   write-back. In an `unchecked` build there is no panic — the read returns
@@ -31,7 +32,10 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   function and its test share the driver's ladder. The scalar-fallback
   predicate still tests the plane worst case, so the SIMD-vs-scalar decision
   and every output byte are unchanged (aarch64 base-vs-head set-diffed by name
-  with the MD5 as the value: identical, 768 rows, at t=1 and t=8). The H
+  with the MD5 as the value: identical, 768 rows, at t=1 and t=8; x86_64 head
+  t=1 == head t=8 == aarch64, also 768 rows). The over-read fired on **0.632%
+  of V runs** before the fix and 0 after (counted, aarch64 `8-bit/data` t=1),
+  so it was rare in coincidence rather than rare in the filter. The H
   direction keeps the constant deliberately — its extent is columns of rows
   already inside this superblock row, and its `tap_after` is the chunked
   transpose load's rounding rather than a tap bound. Gates:
