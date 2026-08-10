@@ -14,6 +14,12 @@
 //! `--lr-only` runs every selected vector once as a PROBE (counting only), keeps
 //! the ones whose census contains a `looprestoration`/`lr_apply` site, resets,
 //! and then runs the map over just those.
+//!
+//! Half of this file's bindings only exist for the `__probe_bounds` build; the
+//! example still has to COMPILE in the default one (it is an `--all-targets`
+//! clippy target), and adding a warning to the default build is not acceptable
+//! for a throwaway.
+#![cfg_attr(not(feature = "__probe_bounds"), allow(unused))]
 
 use rav1d_safe::src::managed::{Decoder, Settings};
 use std::path::{Path, PathBuf};
