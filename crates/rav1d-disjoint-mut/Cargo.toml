@@ -40,6 +40,11 @@ __probe_untracked = []
 __probe_wide = ["std"]
 # THROWAWAY per-call-site borrow COUNTS (keeps the sharded tracker).
 __probe_sites = ["std"]
+# THROWAWAY guard-extent / footprint / concurrency map. Implies __probe_sites so
+# both instruments run in ONE binary and reconcile registration for
+# registration. Never publish; absent from `default` and from every published
+# feature. See src/bounds_probe.rs.
+__probe_bounds = ["std", "__probe_sites"]
 # THROWAWAY: skip tracking on sub-SHARD_MIN_LEN instances. UNSOUND, measurement only.
 __probe_tinynop = []
 # THROWAWAY: keep the add/remove CALL, delete the work. Isolates the call

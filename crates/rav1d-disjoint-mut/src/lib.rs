@@ -54,6 +54,11 @@ pub mod probe;
 #[cfg(feature = "__probe_sites")]
 pub mod site_probe;
 
+/// THROWAWAY guard-extent / footprint / concurrency map (feature
+/// `__probe_bounds`). Not public API.
+#[cfg(feature = "__probe_bounds")]
+pub mod bounds_probe;
+
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -290,6 +295,9 @@ pub struct DisjointMutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
     parent: Option<&'a DisjointMut<T>>,
     /// Unique ID for this borrow registration.
     borrow_id: checked::BorrowId,
+    /// THROWAWAY (`__probe_bounds`): handle to this acquisition's live record.
+    #[cfg(feature = "__probe_bounds")]
+    pub(crate) probe: bounds_probe::Ticket,
 }
 
 /// The zerocopy slice cast's failure path, out of line.
@@ -347,6 +355,8 @@ impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
             phantom: PhantomData,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
+            #[cfg(feature = "__probe_bounds")]
+            probe: old_guard.probe,
         }
     }
 
@@ -361,6 +371,8 @@ impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
             phantom: PhantomData,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
+            #[cfg(feature = "__probe_bounds")]
+            probe: old_guard.probe,
         }
     }
 }
@@ -387,11 +399,41 @@ unsafe impl<T: ?Sized + AsMutPtr + Sync, V: ?Sized + Sync> Sync for DisjointMutG
 unsafe impl<T: ?Sized + AsMutPtr + Sync, V: ?Sized + Sync> Send for DisjointImmutGuard<'_, T, V> {}
 unsafe impl<T: ?Sized + AsMutPtr + Sync, V: ?Sized + Sync> Sync for DisjointImmutGuard<'_, T, V> {}
 
+/// THROWAWAY (`__probe_bounds`) footprint declaration on the guards.
+///
+/// A no-op — and byte-for-byte absent — without the feature. The callers are
+/// the strided helpers that ALREADY compute `(w, rows, stride)` for their own
+/// bounds arithmetic, so declaring costs them nothing but the call.
+impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointMutGuard<'a, T, V> {
+    /// The guard's true footprint is `rows` spans of `w` elements, the first at
+    /// absolute element offset `lo`, successive ones `stride` elements apart.
+    #[inline(always)]
+    pub fn probe_declare_rows(&self, lo: usize, w: usize, rows: usize, stride: isize) {
+        #[cfg(feature = "__probe_bounds")]
+        self.probe.declare_rows(lo, w, rows, stride);
+        #[cfg(not(feature = "__probe_bounds"))]
+        let _ = (lo, w, rows, stride);
+    }
+}
+
+impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointImmutGuard<'a, T, V> {
+    /// See [`DisjointMutGuard::probe_declare_rows`].
+    #[inline(always)]
+    pub fn probe_declare_rows(&self, lo: usize, w: usize, rows: usize, stride: isize) {
+        #[cfg(feature = "__probe_bounds")]
+        self.probe.declare_rows(lo, w, rows, stride);
+        #[cfg(not(feature = "__probe_bounds"))]
+        let _ = (lo, w, rows, stride);
+    }
+}
+
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Deref for DisjointMutGuard<'a, T, V> {
     type Target = V;
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
+        #[cfg(feature = "__probe_bounds")]
+        self.probe.mark_read();
         // SAFETY: the registration that makes this region exclusively ours is
         // live for as long as the guard is, and it is retired only in `Drop`.
         // Borrowck ties the result to `&self`, so the guard cannot be dropped
@@ -403,6 +445,8 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Deref for DisjointMutGuard<'a, T, V> {
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DerefMut for DisjointMutGuard<'a, T, V> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
+        #[cfg(feature = "__probe_bounds")]
+        self.probe.mark_write();
         // SAFETY: as in `deref`, and the borrow is a mutable registration, so
         // no other live borrow overlaps this region.
         unsafe { self.slice.as_mut() }
@@ -427,6 +471,9 @@ pub struct DisjointImmutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
 
     parent: Option<&'a DisjointMut<T>>,
     borrow_id: checked::BorrowId,
+    /// THROWAWAY (`__probe_bounds`): handle to this acquisition's live record.
+    #[cfg(feature = "__probe_bounds")]
+    pub(crate) probe: bounds_probe::Ticket,
 }
 
 #[cfg(feature = "zerocopy")]
@@ -449,6 +496,8 @@ impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
             phantom: PhantomData,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
+            #[cfg(feature = "__probe_bounds")]
+            probe: old_guard.probe,
         }
     }
 
@@ -463,6 +512,8 @@ impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
             phantom: PhantomData,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
+            #[cfg(feature = "__probe_bounds")]
+            probe: old_guard.probe,
         }
     }
 }
@@ -472,6 +523,8 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Deref for DisjointImmutGuard<'a, T, V>
 
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
+        #[cfg(feature = "__probe_bounds")]
+        self.probe.mark_read();
         // SAFETY: the shared registration is live for as long as the guard is
         // and is retired only in `Drop`, so no mutable borrow overlaps this
         // region while the returned reference exists.
@@ -731,6 +784,23 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         self.inner.get_mut()
     }
 
+    /// THROWAWAY (`__probe_bounds`): declare this buffer's picture row stride in
+    /// BYTES, so the report can evaluate the "widen a guard to the full picture
+    /// rows it spans" counterfactual — the shape #485's loop-filter band took.
+    ///
+    /// A no-op, and absent from codegen, without the feature.
+    #[inline(always)]
+    pub fn probe_declare_stride(&self, stride_bytes: isize) {
+        #[cfg(feature = "__probe_bounds")]
+        bounds_probe::declare_stride(
+            self.as_mut_ptr() as usize,
+            self.as_mut_slice().len(),
+            stride_bytes,
+        );
+        #[cfg(not(feature = "__probe_bounds"))]
+        let _ = stride_bytes;
+    }
+
     /// Mutably borrow a slice or element.
     ///
     /// Validates that the requested range doesn't overlap with any outstanding
@@ -772,11 +842,28 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         let slice = unsafe { NonNull::new_unchecked(index.get_mut(self.as_mut_slice())) };
         // Success — disarm the cleanup guard.
         mem::forget(cleanup);
+        // THROWAWAY (`__probe_bounds`). Registered AFTER the index succeeded so
+        // a panicking `get_mut` cannot leave a live record behind, and with the
+        // SAME clamped bounds the tracker saw, so the two instruments reconcile
+        // registration for registration.
+        #[cfg(feature = "__probe_bounds")]
+        let probe = match parent {
+            Some(_) => bounds_probe::acquire(
+                core::panic::Location::caller(),
+                self.as_mut_ptr() as usize,
+                true,
+                bounds.range.start,
+                bounds.range.end,
+            ),
+            None => bounds_probe::Ticket::NONE,
+        };
         DisjointMutGuard {
             slice,
             parent,
             borrow_id,
             phantom: PhantomData,
+            #[cfg(feature = "__probe_bounds")]
+            probe,
         }
     }
 
@@ -806,11 +893,24 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         // SAFETY (NonNull): as in `index_mut`.
         let slice = unsafe { NonNull::new_unchecked(index.get_mut(self.as_mut_slice())) };
         mem::forget(cleanup);
+        #[cfg(feature = "__probe_bounds")]
+        let probe = match parent {
+            Some(_) => bounds_probe::acquire(
+                core::panic::Location::caller(),
+                self.as_mut_ptr() as usize,
+                false,
+                bounds.range.start,
+                bounds.range.end,
+            ),
+            None => bounds_probe::Ticket::NONE,
+        };
         DisjointImmutGuard {
             slice,
             parent,
             borrow_id,
             phantom: PhantomData,
+            #[cfg(feature = "__probe_bounds")]
+            probe,
         }
     }
 }
@@ -1290,6 +1390,11 @@ pub fn set_tile_concurrency(n: usize) {
 
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointMutGuard<'a, T, V> {
     fn drop(&mut self) {
+        // Retire the probe record BEFORE the tracker's, so the probe's live
+        // interval is a strict subset of the tracker's and a probe-observed
+        // concurrency always implies a tracker-observed one.
+        #[cfg(feature = "__probe_bounds")]
+        bounds_probe::release(self.probe);
         if let Some(parent) = self.parent {
             let tracker = parent.tracker.as_ref().unwrap();
             // If the thread is panicking while we hold a mutable guard,
@@ -1306,6 +1411,8 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointMutGuard<'a, T, V> {
 
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointImmutGuard<'a, T, V> {
     fn drop(&mut self) {
+        #[cfg(feature = "__probe_bounds")]
+        bounds_probe::release(self.probe);
         if let Some(parent) = self.parent {
             parent.tracker.as_ref().unwrap().remove(self.borrow_id);
         }

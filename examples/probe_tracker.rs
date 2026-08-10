@@ -55,6 +55,8 @@ fn main() {
     rav1d_disjoint_mut::probe::shard_reset();
     #[cfg(feature = "probe-sites")]
     rav1d_disjoint_mut::site_probe::reset();
+    #[cfg(feature = "__probe_bounds")]
+    rav1d_disjoint_mut::bounds_probe::reset();
 
     let t0 = Instant::now();
     for _ in 0..iters {
@@ -82,6 +84,10 @@ fn main() {
     #[cfg(feature = "probe-sites")]
     {
         print!("{}", rav1d_disjoint_mut::site_probe::report(iters));
+    }
+    #[cfg(feature = "__probe_bounds")]
+    {
+        print!("{}", rav1d_disjoint_mut::bounds_probe::report(iters));
     }
     #[cfg(not(any(feature = "probe-count", feature = "probe-wide")))]
     eprintln!("(built without --features probe-count / probe-wide; no counters)");

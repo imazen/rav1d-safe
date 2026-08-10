@@ -767,6 +767,10 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         };
         let total = (h - 1) * astride + W;
         let guard = origin.data.slice::<BD, _>((lo.., ..total));
+        {
+            let ps = core::mem::size_of::<BD::Pixel>();
+            guard.probe_declare_rows(lo * ps, W * ps, h, stride * ps as isize);
+        }
         for row in 0..h {
             let idx = if stride >= 0 {
                 row * astride
