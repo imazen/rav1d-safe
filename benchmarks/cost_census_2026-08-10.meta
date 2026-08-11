@@ -1,0 +1,146 @@
+cost census on main @ 414515c (PR #501 merged) — 2026-08-10/11
+==============================================================
+Box     Apple M4 Pro, 8P+4E, macOS 26.5.2, aarch64. Idle: foreign_max = 0 on
+        331/336 wall rows and 165/165 CPU rows; 1 on 5 wall rows.
+Build   cargo --release, default features. No target-cpu=native.
+        Ceiling arm = --features probe-untracked, BIT-IDENTICAL to plain
+        (CHECKSUM equal on text_q20/c256x2048/ui_q20 at t=8).
+        Census arm = --features probe-sites (counts only; its ms/frame is
+        perturbed ~3.5x and is NOT used anywhere below).
+Locks   every timed run under `measlock`. Builds niced, timed runs never.
+Fit     wall and CPU both from a two-point fit total = alpha + beta*frames,
+        n_lo/n_hi PER CELL and never past the stream length (4K IVF = 40 or 16
+        frames). ROUNDS=8 wall / 5 CPU, rotating arm order, ROUND 1 DISCARDED
+        (first touch of each (arm,cell) is cold: ms_lo 283 vs 59-63 on
+        ui_q20/plain). Medians; min/max in the wall table.
+        CPU = bash `time` keyword user+sys (NOT /usr/bin/time, which shares fd 2
+        with the payload on macOS and read 0).
+Cross-checks that passed before anything was believed
+        * c1024x576 t=8 plain/dav1d = 1.848 vs 1.86 in shard_size_sweep — 0.6%.
+        * c1024x576 t=8 tracker CPU / registrations = 6.49 ns vs 6.50 ns in
+          SHARD_SIZE_SWEEP.md §5c — 3 digits.
+        * loopfilter.rs:833:14 on v4k_8tile t=8 = 3,835,042/frame, the exact
+          count OWNERSHIP_MODELS.md §7d option 1 records.
+        * ui_q20 t=1 total 189,450/frame = CTX_TL_SPLIT.md §6b's read-side arm.
+        * two-point wall fit vs in-process Instant on ui_q20 t=8: 2.544 vs
+          2.53-2.57 ms/frame.
+        * text_q20 t=8 tracker bucket from the profile = 0.691 CPU ms/frame vs
+          plain-untracked = 0.692.
+Vectors ~/tmp/ctxtl/{vec,ivf} (content classes, mk_content_classes.sh),
+        ~/tmp/shardsize/{vec,ivf} (1:1 crops, mk_shardsize_vectors.sh),
+        ~/tmp/rav1d-perf + ~/tmp/recon-yard (v4k_8tile). Every IVF is N repeats
+        of the SAME key-frame OBU the AVIF carries, so our arm and dav1d decode
+        identical work. Tile geometry parsed per vector (av1_tile_info.py):
+        ui/text 1024x576 = 2x1 = 2 TILES; every shardsize crop and v4k_8tile
+        = 4x2 = 8 tiles.
+
+1. WALL, ms/frame, and the gap
+   cell        t   ours  [min..max]      untrk  dav1d  ours/dav1d  CEILING
+   ui_q20      8   2.600 [2.561..2.644]  1.778  1.122     2.317     1.584
+   ui_q20      1   3.244 [3.167..3.328]  2.606  1.694     1.915     1.538
+   text_q20    8   1.500 [1.489..1.561]  1.267  0.533     2.812     2.375
+   text_q20    1   2.656 [2.617..2.689]  2.294  0.761     3.489     3.015
+   c256x2048   8   3.717 [3.694..3.789]  2.089  1.589     2.339     1.315
+   c256x2048   1  12.728 [12.57..12.85] 11.806  9.450     1.347     1.249
+   c1024x384   8   2.439 [2.356..2.467]  1.461  1.067     2.286     1.370
+   c1024x192   8   1.444 [1.400..1.489]  0.939  0.700     2.063     1.341
+   c3840x256   8   5.843 [5.657..5.944]  3.602  2.611     2.238     1.379
+   c1024x576   8   3.244 [3.222..3.267]  2.317  1.756     1.848     1.320
+   v4k8tile    8  47.556 [47.25..48.86] 41.500 34.361     1.384     1.208
+   v4k8tile    4  82.528 [82.11..82.75] 75.306 65.639     1.257     1.147
+   v4k8tile    2 158.056 [157.6..158.5]144.250125.083     1.264     1.153
+   v4k8tile    1 297.444 [296.3..300.7]283.333246.472     1.207     1.150
+
+2. DECOMPOSITION  wall_ratio = cpu_ratio (extra WORK) x core_ratio (worse PACKING)
+   cell        t  wall x  work x  pack x  ourCores davCores  trkCPU ms/f  ns/reg
+   ui_q20      8   2.317   2.567   0.903      1.80     1.63        1.594    4.72
+   ui_q20      1   1.915   1.962   0.976      1.01     0.99        0.667    3.52
+   text_q20    8   2.812   3.380   0.832      2.17     1.81        0.692    3.25
+   text_q20    1   3.489   3.428   1.018      0.99     1.01        0.333    2.78
+   c256x2048   8   2.339   2.292   1.020      6.80     6.94       11.361   18.78
+   c1024x384   8   2.286   1.631   1.402      5.01     7.03        3.264    9.14
+   c1024x192   8   2.063   1.540   1.340      3.92     5.25        1.231    7.33
+   c3840x256   8   2.238   1.539   1.454      4.99     7.25        6.569    8.12
+   c1024x576   8   1.848   1.526   1.211      5.40     6.54        3.675    6.49
+   v4k8tile    8   1.384   1.310   1.056      7.13     7.53       33.111    3.51
+   v4k8tile    1   1.207   1.214   0.994      1.01     1.00       15.694    3.89
+   Structural packing residual with the tracker compiled out (davCores/coresU):
+   c1024x384 1.147, c3840x256 1.156, c1024x192 1.115, c1024x576 1.095,
+   c256x2048 1.042, v4k8tile 1.020.  20-26% of the small-height packing deficit
+   is TRACKER-INDUCED, not scheduling structure.
+
+3. NS PER REGISTRATION — the 4.5-6.4 model does NOT hold across cells
+   2.78 (text t=1) .. 18.78 (c256x2048 t=8). It reproduces exactly at the cell
+   it was fitted on (c1024x576 t=8: 6.49 vs 6.50) and is wrong by ~3x in both
+   directions elsewhere. Uncontended (t=1) it is 2.78-3.89 ns; the high values
+   are cells where TinyLock spin makes other buckets cheaper when the tracker
+   goes (c256x2048: named tracker+sync symbols are 7.04 CPU ms/f but the arm
+   difference is 11.36 — the profile UNDER-reports the tracker by 38% there).
+
+4. REGISTRATION CENSUS (probe-sites, per frame, lost=0 everywhere)
+   cell        t=1        t=8        inflation   >=89% of the t=8 delta is:
+   ui_q20      189,450    337,452    +78%        owned_recon.rs:505:31 +74,121,
+                                                 picture.rs:196:38 +72,508
+   text_q20    119,983    212,659    +77%        loopfilter.rs:833:14 +103,680
+   c256x2048   307,788    604,973    +97%        lf:833 +180,434, cdef trio +103k
+   c1024x384   179,319    357,208    +99%        lf:833 +125,018, cdef +50k
+   c1024x192    84,922    167,926    +98%        lf:833 +60,820, cdef +22k
+   c3840x256   428,077    809,370    +89%        lf:833 +315,140, cdef +76k
+   c1024x576   290,990    566,594    +95%        lf:833 +190,632, cdef +80k
+   v4k8tile  4,034,732  9,430,529   +134%        lf:833 +3,835,042, cdef +1.13M
+   photo4k   1,404,832  3,591,243   +156%        lf:833 +2,379,272
+   All of it is the tile_threading_active() latch swapping ONE hull guard for h
+   per-row guards at four seams: loopfilter.rs:892:33 -> :833:14,
+   picture.rs:201:33 (narrow_guard) -> :196:38 (compact_read_per_row),
+   owned_recon.rs:505:31, cdef_apply/cdef_arm for_rows.
+   loopfilter.rs:833:14 share of the t=8 population: photo4k 66.3%, v4k8tile
+   40.7%, c3840x256 38.9%, text_q20 48.8%, c1024x576 33.7%, c256x2048 29.8%,
+   ui_q20 and ui_q70 0.00% (that vector codes loop_filter_level 0 — ZERO
+   deblock registrations at either thread count; CDEF fires 252/frame).
+
+5. SELF TIME as CPU ms/frame (share of BUSY samples x measured CPU ms/frame;
+   parked threads excluded and reported as idle%)
+   arm        cell           idle% cores  CPU/f  entropy palette kernels    lf   cdef tracker  sync runtime other
+   plain      text_q20 t8     77.4  2.17  3.258    0.400   0.000   1.045 0.782  0.005   0.691 0.002   0.208 0.126
+   untracked  text_q20 t8     79.3  2.03  2.567    0.392   0.000   1.014 0.757  0.005   0.048 0.003   0.232 0.115
+   plain      text_q20 t1      0.0  0.99  2.628    0.347   0.000   0.928 0.667  0.002   0.376 0.000   0.205 0.102
+   plain      c256x2048 t8    24.8  6.80 25.281   11.305   0.000   2.801 1.300  0.563   5.901 1.136   0.870 1.405
+   untracked  c256x2048 t8    27.2  6.66 13.919    8.962   0.000   1.991 1.129  0.574   0.114 0.000   0.582 0.567
+   plain      ui_q20 t8       80.7  1.80  4.692    0.585   0.738   1.103 0.000  0.008   1.353 0.035   0.428 0.442
+   untracked  ui_q20 t8       81.5  1.74  3.097    0.597   0.718   0.924 0.000  0.004   0.120 0.000   0.425 0.309
+   LfBlock::open + ::close do NOT shrink with the tracker out (3,595 -> 3,754
+   samples on text_q20 t=8): that ~10% of busy is the compact copy-in/write-back
+   geometry, not the tracker.
+
+6. read_pal_indices BY LINE, re-measured on main (debug-info build, ui_q20)
+   t=1: symbol 18.75% of busy (record said 18.63%); decode.rs:766 order_palette
+        45.5% of the symbol = 8.53% of busy; decode.rs:768 inlined msac 40.7%
+        = 7.63% of busy; :767 3.9%.
+   t=8: symbol 13.87% of busy; :766 46.3% = 6.42% of busy; :768 41.1% = 5.70%.
+   The prior split is CONFIRMED unchanged. Addressable half = 0.28 CPU ms/f at
+   t=1, 0.30 at t=8.
+
+7. THE (a,l) BlockContext read-helper family, per frame
+   Only 2 of env.rs's 14 helpers fire on this corpus (get_tx_ctx,
+   get_partition_ctx); the rest are inter-frame. But sm_flag/sm_uv_flag in
+   ipred_prepare.rs (which the same signature change must generalise) are 3
+   more sites and are LARGER than both env.rs pairs together.
+   family / of all regs, and the LEFT (removable) half:
+   cell        t=1 family   %    LEFT    %      t=8 family   %    LEFT    %
+   ui_q20         39,587 20.9  19,794 10.4        39,587 11.7  19,794  5.9
+   text_q20       26,744 22.3  13,372 11.1        26,744 12.6  13,372  6.3
+   c1024x384      46,690 26.0  23,345 13.0        46,690 13.1  23,345  6.5
+   c3840x256     119,078 27.8  59,539 13.9       119,078 14.7  59,539  7.4
+   v4k8tile    1,002,160 24.8 501,080 12.4     1,002,160 10.6 501,080  5.3
+   The brief's "~8,200 regs/frame, ~4.3% of the read arm" counts only the two
+   env.rs left halves on one cell. The removable population is 1.6-2.4x that.
+
+NOT COVERED
+   x86_64, wasm32, 10-bit, 12-bit, 4:4:4, film grain, inter/video content,
+   `unchecked`, `asm`, t=16. One source image per content class (ui/text are
+   Quick Look renders, n=1 each). No loop restoration executes on ANY cell here
+   (same structural blindness as the 4K grid). bps-rows was NOT re-measured —
+   every number for it below/elsewhere is cited from
+   benchmarks/shard_size_sweep_2026-08-10.*, not taken here.
+   The debug-info binary used for §6 is a different build from the timed arms
+   (CARGO_PROFILE_RELEASE_DEBUG=1); only SHARES were taken from it.
