@@ -20,7 +20,11 @@ OUT=${1:?outdir}; TMO=${2:-900}
 mkdir -p "$OUT"
 cd "$(dirname "$0")/../.."
 
-TARGETS="--lib narrow_release soundness wide_exclusion guard_move_release shard_liveness pic_buf_overflow aligned_miri"
+# `shard_liveness` LAST, deliberately: it is the slow one (the AGENT_BRIEF warns
+# it may time out on aarch64), and with it first a single timeout stalls the
+# whole matrix behind one target. Ordered cheap-to-dear so a partial run still
+# covers the models and feature sets.
+TARGETS="${TARGETS:---lib narrow_release soundness wide_exclusion guard_move_release pic_buf_overflow aligned_miri shard_liveness}"
 
 for model in sb tb; do
   case $model in

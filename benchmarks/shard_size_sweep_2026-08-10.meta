@@ -132,6 +132,13 @@ FILES
   shard_size_sweep_md5_2026-08-10.tsv      dav1d vs ours at t=1 and t=8, per vector
   shard_size_sweep_activity_2026-08-10.tsv per-stage execution units per frame
   shard_size_sweep_tiles_2026-08-10.tsv    parsed tile geometry per vector
+  shard_size_sweep_miri_2026-08-10.tsv     miri, 8 targets x 2 aliasing models x
+                                           {default, __bps_rows} = 32 runs. 28
+                                           green (two of which select 0 tests and
+                                           are reported as 0, not as green);
+                                           `shard_liveness` TIMED OUT at 900 s in
+                                           all four of its configurations and is
+                                           reported AS a timeout.
 
 COMMANDS
   scripts/perf/mk_shardsize_vectors.sh  ~/tmp/shardsize

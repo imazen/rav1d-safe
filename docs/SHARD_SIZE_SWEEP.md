@@ -34,6 +34,17 @@ beside them.
   7% win that two fixed rungs get there, and the mechanism is not established.
 * The derived rule was **fitted on this grid** (`ROWS_PER_BLOCK_MIN = 4` beat 8
   on a replay of the grid's own arms) and has **no held-out size**.
+* **`msb-5` was not swept.** The brief's standing note applies unchanged: it is
+  ~1% and not separated from zero at n=7 in the prior record, and nothing here
+  re-measures it or builds on it.
+* **`SLOTS` was not touched.** The 7 -> 3 shape is a different axis and the trap
+  it carries (a 64-byte shard that raises the shard-full rate and pushes borrows
+  onto the wide path) is untested here — `w_full` reads 0 on every cell of this
+  grid, which says nothing about a build that changes `SLOTS`.
+* **No reservation was widened anywhere**, per the four standing refutations.
+* `__probe_bounds` was built for `plain`, `bps-half` and `bps-rows` only, so the
+  per-rung `row_shards_max` / `pct_row_wide` columns have no `bps1` or
+  `bps-quarter` entry.
 
 ## 2. The grid, and why it is new crops rather than the existing ladder
 
@@ -262,7 +273,32 @@ bands disjoint from `bps1`'s. That is not monotone in coarsening and I could not
 account for it; per-plane shift mixing is the only difference. It is the largest
 single miss in the arm and it is not noise.
 
-### 5c. Against dav1d, per size
+### 5c. Sanity check against the ns-per-registration model, and what it breaks
+
+The campaign's validated model is **4.5-6.4 ns per registration**. At
+1024x576/t=8 the tracker's CPU cost is `plain - untracked` = 17.544 - 13.861 =
+**3.683 ms/frame**, which over this vector's registrations is **6.50 ns** each
+(566,594/frame from `__probe_bounds`) or **5.40 ns** (682,489/frame from the
+prior record's `probe-sites` census at the same size). The cell brackets the
+band, so the arithmetic here is on the same footing as the rest of the campaign.
+
+**And then the model refutes the obvious attribution.** `bps-half` saves 1.444 ms
+of CPU per frame at that cell and removes 1,094 multi-shard registrations per
+frame. If the saving were *those* registrations it would be **1.32 microseconds
+each** — roughly ten cross-core coherence misses per borrow, which is not
+credible. Spread over every registration instead it is **2.55 ns each**, taking
+the mean registration from 6.50 ns to 3.95 — about one fewer cache line touched
+per registration on average, which is exactly what a coarser block does.
+
+So the win is **not** a count reduction on a few expensive borrows. It is a cost
+reduction on all of them, and that is the same conclusion 512x576 forces from the
+other side (§5a: a 7% win with `multi` at exactly zero). `SHARD_GRANULARITY.md`
+§5e reached "the money is the ordinary multi-shard registrations, not the rare
+catastrophic ones" — this sharpens it one notch further: the money is the shard-
+line FOOTPRINT, and multi-shard registrations are a proxy for it rather than the
+thing itself.
+
+### 5d. Against dav1d, per size
 
 The rung and the rule move the gap most exactly where the gap is worst:
 
@@ -368,7 +404,36 @@ first failing TARGET, so a batch run lets later targets never execute and their
 silence reads as health), both aliasing models, and **both feature sets** —
 default and `__bps_rows`, because the arm is what moves block boundaries.
 
-MIRI_TABLE
+| target | SB, default | SB, `__bps_rows` | TB, default | TB, `__bps_rows` |
+|---|---|---|---|---|
+| `--lib` | 27 passed | **28 passed** | 27 passed | **28 passed** |
+| `narrow_release` | 1 passed | 1 passed | 1 passed | 1 passed |
+| `soundness` | 25 passed | 25 passed | 25 passed | 25 passed |
+| `wide_exclusion` | 1 passed | 1 passed | 1 passed | 1 passed |
+| `guard_move_release` | 2 passed | 2 passed | 2 passed | 2 passed |
+| `pic_buf_overflow` | **0 tests ran** | **0 tests ran** | **0 tests ran** | **0 tests ran** |
+| `aligned_miri` | **0 tests ran** | **0 tests ran** | **0 tests ran** | **0 tests ran** |
+| `shard_liveness` | **TIMEOUT (900 s)** | **TIMEOUT (900 s)** | **TIMEOUT (900 s)** | **TIMEOUT (900 s)** |
+
+**27 vs 28 on `--lib` is the liveness proof, not a discrepancy**: the extra test
+under the feature is `rows_rule_targets_picture_rows_not_block_count`, so the new
+rule is exercised under both aliasing models rather than merely compiled.
+
+**"0 tests ran" is reported as 0, never as green** — those two targets are
+feature-gated and select nothing under the features used here, so they prove
+nothing in this run. CI's Linux legs run the whole package with `--all-features`.
+
+**`shard_liveness` timed out in all four configurations and is reported AS a
+timeout, never as green.** It is the target the campaign brief warns about on
+aarch64; the log stops inside
+`exhaustive_pairs_match_the_interval_predicate`, which is exhaustive over
+pairs and is simply too slow under Miri here. Each attempt was `rc=124` at
+900 s — an rc=1 with no `test result:` line would be an invocation error and is
+a different thing. CI's Linux legs cover this target. The three faster
+tracker-soundness targets (`soundness`, `narrow_release`, `wide_exclusion`) DID
+run under both models and both feature sets, so the arm is not unexamined by
+Miri — only this one target is.
+
 
 ### Clippy — pre-existing, and none of it is here
 
