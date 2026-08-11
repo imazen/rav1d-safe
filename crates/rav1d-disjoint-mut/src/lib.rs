@@ -1476,7 +1476,7 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointImmutGuard<'a, T, V> 
 ///   reservation turns a genuinely disjoint pair into a false positive. Measured
 ///   as decode failures (`__probe_rect_hull`) and, where it does pass, as 2.65x
 ///   SLOWER. This guard's record covers no gap byte
-///   ([`checked::BorrowTracker::add_rect_immut`]).
+///   (the tracker's `add_rect_immut`, which stores the rectangle exactly).
 /// * The March-2026 strided tracker had an exact record but handed out a
 ///   reference over the whole hull, so safe code held a `&[T]` covering bytes
 ///   another thread was mutating: Miri UB under both memory models. **This guard
@@ -1562,7 +1562,7 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     /// `None` means the geometry is not representable as a single record here
     /// and **the caller must take its own per-row path** — nothing is
     /// approximated to make a rectangle fit. The tracker's reasons are on
-    /// [`checked::BorrowTracker::add_rect_immut`]; this wrapper adds that the
+    /// the tracker's `add_rect_immut` (`tracker_shard.rs`); this wrapper adds that the
     /// rectangle must lie inside the buffer and its rows must not overlap each
     /// other.
     ///
