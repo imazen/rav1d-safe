@@ -848,16 +848,21 @@ impl ShardRecs {
     /// `occupied` is passed in because liveness now lives outside the lock, in
     /// [`Shard::live`]; the caller derives it once with [`Shard::live_mask`]
     /// and uses the same snapshot for the scan and for [`Self::alloc`].
-    /// `row_stride` is only read when a RECTANGLE record's hull overlapped, i.e.
-    /// essentially never: the caller passes the tracker's field and LLVM sinks
-    /// the load into that branch.
+    /// **A HIT FROM HERE IS A PREFILTER, NOT AN ANSWER, AND THE CALLER MUST
+    /// PASS IT THROUGH [`Self::refine`].** A rectangle record stores its HULL,
+    /// so this test can report an overlap with a byte the rectangle never
+    /// reserved. `refine` is free when the shard holds no rectangle record,
+    /// which is why the stride is not a parameter here: keeping it out is what
+    /// leaves this function's codegen bit-for-bit what it was before rectangle
+    /// records existed. The machinery COST of the rectangle scheme was measured
+    /// at +1.6% wall on `c256x2048` t=8 when the stride WAS a parameter and this
+    /// loop carried the rectangle test — see docs/RECT_RECORDS.md §5b.
     #[inline(always)]
     fn find<const IS_MUT: bool>(
         &self,
         occupied: u8,
         start: usize,
         end: usize,
-        row_stride: usize,
     ) -> Option<OverlapHit> {
         // TRIED AND REVERTED: `if occupied == 0 { return None }` to skip the
         // `mutable` load on an empty shard. +2.3% at 8bpc t=1 (335.1 -> 342.7,
@@ -865,6 +870,56 @@ impl ShardRecs {
         // parallel — and LLVM already folds the test into ONE `ands`+`b.eq`;
         // the early-out just adds a second branch with the same outcome.
         // `benchmarks/tracker_borrowcost_2026-08-08.tsv`, arm `findeo`.
+        let mut mask = if IS_MUT {
+            occupied
+        } else {
+            occupied & (self.flags as u8)
+        };
+        while mask != 0 {
+            let i = (mask.trailing_zeros() as usize).min(SLOTS - 1);
+            if self.starts[i] < end && start < self.ends[i] {
+                return Some(self.hit(i, self.starts[i], self.ends[i]));
+            }
+            mask &= mask - 1;
+        }
+        None
+    }
+
+    /// Turn a [`Self::find`] hit into a real one.
+    ///
+    /// With no rectangle record in this shard — always, unless a caller has
+    /// registered one — the hit stands and this is one load and one branch,
+    /// inside a branch that is itself essentially never taken. Otherwise the
+    /// whole scan is redone EXACTLY, which cannot be a continuation of `find`'s:
+    /// `find` returns the first HULL hit, and that may be a rectangle that does
+    /// not really overlap while a LATER record does.
+    #[inline(always)]
+    fn refine<const IS_MUT: bool>(
+        &self,
+        occupied: u8,
+        start: usize,
+        end: usize,
+        row_stride: usize,
+        hit: OverlapHit,
+    ) -> Option<OverlapHit> {
+        if self.flags >> RECT_SHIFT == 0 {
+            return Some(hit);
+        }
+        self.find_exact::<IS_MUT>(occupied, start, end, row_stride)
+    }
+
+    /// [`Self::find`] with the rectangle records tested EXACTLY rather than
+    /// against their hulls. Cold: only reached when this shard holds a rectangle
+    /// record AND the hull prefilter fired.
+    #[cold]
+    #[inline(never)]
+    fn find_exact<const IS_MUT: bool>(
+        &self,
+        occupied: u8,
+        start: usize,
+        end: usize,
+        row_stride: usize,
+    ) -> Option<OverlapHit> {
         let flags = self.flags;
         let mut mask = if IS_MUT {
             occupied
@@ -878,11 +933,9 @@ impl ShardRecs {
                 if rect & (1 << i) == 0 {
                     return Some(self.hit(i, self.starts[i], self.ends[i]));
                 }
-                // COLD, and only reachable once a rectangle record is live in
-                // this shard: the test above was against that record's HULL, so
-                // it is a prefilter and not the answer. The exact test walks the
-                // rows the probe range can reach and reports the row segment
-                // that actually collided.
+                // The exact test: walk the rows the probe range can reach and
+                // report the row segment that actually collided. The inter-row
+                // gaps are not part of the record and are not reported.
                 if let Some((rs, re)) =
                     rect_hit_range(self.starts[i], self.ends[i], row_stride, start, end)
                 {
@@ -924,10 +977,9 @@ impl ShardRecs {
                 if rect & (1 << i) == 0 {
                     // Stored record is a plain interval: ask whether OUR rows
                     // reach it.
-                    if let Some((rs, re)) = rect_hit_range(h0, h1, row_stride, es, ee) {
-                        // Report the stored record's extent, clipped to nothing
-                        // — it is the counterparty and its extent is exact.
-                        let _ = (rs, re);
+                    if rect_hit_range(h0, h1, row_stride, es, ee).is_some() {
+                        // The counterparty is a plain interval, so its stored
+                        // extent IS its footprint and is what the panic reports.
                         return Some(self.hit(i, es, ee));
                     }
                 } else {
@@ -2163,11 +2215,13 @@ impl BorrowTracker {
         // never a subset, and the only cost of a stale bit is one extra flag
         // load in a later scan. The success path narrows it on every borrow,
         // so it cannot saturate.
-        if let Some(existing) = recs.find::<IS_MUT>(occ, start, end, self.row_stride) {
-            drop(g);
-            Self::overlap_panic(
-                start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
-            );
+        if let Some(hit) = recs.find::<IS_MUT>(occ, start, end) {
+            if let Some(existing) = recs.refine::<IS_MUT>(occ, start, end, self.row_stride, hit) {
+                drop(g);
+                Self::overlap_panic(
+                    start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
+                );
+            }
         }
         match recs.alloc::<IS_MUT, false>(occ, start, end, here()) {
             Some(slot) => {
@@ -2212,11 +2266,13 @@ impl BorrowTracker {
         let recs = unsafe { &mut *shard.recs.get() };
         let occ = shard.live_mask(recs.allocated);
         recs.allocated = occ;
-        if let Some(existing) = recs.find::<IS_MUT>(occ, start, end, self.row_stride) {
-            drop(g);
-            Self::overlap_panic(
-                start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
-            );
+        if let Some(hit) = recs.find::<IS_MUT>(occ, start, end) {
+            if let Some(existing) = recs.refine::<IS_MUT>(occ, start, end, self.row_stride, hit) {
+                drop(g);
+                Self::overlap_panic(
+                    start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
+                );
+            }
         }
         match recs.alloc::<IS_MUT, false>(occ, start, end, here()) {
             Some(slot) => {
@@ -2275,7 +2331,9 @@ impl BorrowTracker {
             let recs = unsafe { &mut *shard.recs.get() };
             let occ = shard.live_mask(recs.allocated);
             recs.allocated = occ;
-            let mut hit = recs.find::<IS_MUT>(occ, start, end, self.row_stride);
+            let mut hit = recs
+                .find::<IS_MUT>(occ, start, end)
+                .and_then(|h| recs.refine::<IS_MUT>(occ, start, end, self.row_stride, h));
             if hit.is_none() {
                 // SAFETY: a shard lock is held, and wide records are only
                 // written while every shard lock is held.
@@ -2352,7 +2410,10 @@ impl BorrowTracker {
             let recs = unsafe { &mut *shard.recs.get() };
             let occ = shard.live_mask(recs.allocated);
             recs.allocated = occ;
-            if let Some(h) = recs.find::<IS_MUT>(occ, start, end, self.row_stride) {
+            if let Some(h) = recs
+                .find::<IS_MUT>(occ, start, end)
+                .and_then(|h| recs.refine::<IS_MUT>(occ, start, end, self.row_stride, h))
+            {
                 hit = Some(h);
                 break;
             }
@@ -2646,7 +2707,10 @@ impl BorrowTracker {
             let recs = unsafe { &mut *shard.recs.get() };
             let occ = shard.live_mask(recs.allocated);
             recs.allocated = occ;
-            if let Some(h) = recs.find::<IS_MUT>(occ, start, end, self.row_stride) {
+            if let Some(h) = recs
+                .find::<IS_MUT>(occ, start, end)
+                .and_then(|h| recs.refine::<IS_MUT>(occ, start, end, self.row_stride, h))
+            {
                 hit = Some(h);
                 break;
             }
@@ -3622,9 +3686,7 @@ mod tests {
         a: usize,
         b: usize,
     ) -> bool {
-        rect_set(lo, seg, rows, s)
-            .iter()
-            .any(|&x| x >= a && x < b)
+        rect_set(lo, seg, rows, s).iter().any(|&x| x >= a && x < b)
     }
 
     fn hull_of(lo: usize, seg: usize, rows: usize, s: usize) -> (usize, usize) {
@@ -3737,7 +3799,13 @@ mod tests {
 
     /// The registration a rectangle replaces, as a control: `rows` plain per-row
     /// records over the same bytes.
-    fn add_rows_immut(t: &BorrowTracker, lo: usize, seg: usize, rows: usize, s: usize) -> alloc::vec::Vec<BorrowId> {
+    fn add_rows_immut(
+        t: &BorrowTracker,
+        lo: usize,
+        seg: usize,
+        rows: usize,
+        s: usize,
+    ) -> alloc::vec::Vec<BorrowId> {
         (0..rows)
             .map(|r| t.add_immut(&b(lo + r * s..lo + r * s + seg)))
             .collect()
@@ -3820,7 +3888,10 @@ mod tests {
             let _c = t.add_rect_mut(lo + 64, seg, rows, s);
         }))
         .is_err();
-        assert!(caught, "the two column ranges do not share a hull — vacuous");
+        assert!(
+            caught,
+            "the two column ranges do not share a hull — vacuous"
+        );
     }
 
     /// Interleaved rows: rectangle A on even rows, B on odd rows, same columns.
@@ -3868,9 +3939,10 @@ mod tests {
                             let a = t
                                 .add_rect_mut(lo_a, seg_a, rows_a, s)
                                 .expect("representable");
-                            let got = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                t.add_rect_mut(lo_c, seg_c, rows_c, s)
-                            }));
+                            let got =
+                                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    t.add_rect_mut(lo_c, seg_c, rows_c, s)
+                                }));
                             match got {
                                 Ok(id) => {
                                     assert!(
