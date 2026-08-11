@@ -37,6 +37,13 @@ the only genuinely separate shape.
 
 ## 1. The shipped decoder DOES take the all-shards wide path — 153 times a frame
 
+> **REFINED 2026-08-11 (PR #503): those 153 promotions are NOT on a picture
+> plane.** The derived rows-per-block rule coarsens both picture planes by two
+> shifts at this cell and `w_shards` does not move (3,060 per 30 frames in both
+> arms), while `--features bps-1` — one shift on EVERY instance — takes it to 0.
+> Coarsening is monotone in the blocks a span covers, so the promoting buffer is
+> one with no row stride to declare. Still unidentified. `docs/BPS_ROWS_DEFAULT.md` §6a.
+
 `--features probe-wide`, `L1024x576_420_8b__t8` (1024x576, 4x2 = 8 tiles, 9
 superblock rows), t=8, counts per 30-frame run. Timer-free, so no measurement
 lock and no wall-clock claim.
