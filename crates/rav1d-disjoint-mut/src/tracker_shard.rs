@@ -3774,6 +3774,15 @@ mod tests {
         t
     }
 
+    /// Whether a rectangle can span more than one shard in THIS build.
+    ///
+    /// Two configurations say no, for different reasons, and the tests below
+    /// assert the corresponding behaviour in BOTH directions rather than
+    /// skipping: `__rect_1shard` declines a multi-shard rectangle by design (it
+    /// is the arm that isolates the record-count effect from the lock traffic),
+    /// and `__shards_1` has only one shard to land in.
+    const MULTI_SHARD_RECTS: bool = !cfg!(feature = "__rect_1shard") && N_SHARDS > 1;
+
     /// The multi-shard rectangle path is REACHED by the grid below, and a
     /// single-shard one is too. Without this, `add_rect`'s sort/lock/scan loop
     /// could be dead code in every test and nothing would say so.
@@ -3787,14 +3796,28 @@ mod tests {
         assert_eq!(one.pairs(), 1, "a rectangle inside one block is one shard");
         t.remove(one);
         // Straddling a block boundary: two blocks, and `shard_of` is a
-        // multiplicative hash, so two distinct shards.
+        // multiplicative hash, so two distinct shards — unless this build cannot
+        // have those, in which case the SAME rectangle must be handled the way
+        // that build promises, which is also an assertion.
         let lo = bs - s;
-        let many = t.add_rect_immut(lo, 16, 4, s).expect("representable");
-        assert!(
-            many.pairs() > 1,
-            "a rectangle straddling a block boundary must register in >1 shard"
-        );
-        t.remove(many);
+        let many = t.add_rect_immut(lo, 16, 4, s);
+        if MULTI_SHARD_RECTS {
+            let many = many.expect("representable");
+            assert!(
+                many.pairs() > 1,
+                "a rectangle straddling a block boundary must register in >1 shard"
+            );
+            t.remove(many);
+        } else if N_SHARDS == 1 {
+            let many = many.expect("one shard: every rectangle is single-shard");
+            assert_eq!(many.pairs(), 1);
+            t.remove(many);
+        } else {
+            assert!(
+                many.is_none(),
+                "__rect_1shard must DECLINE a multi-shard rectangle, not widen it"
+            );
+        }
     }
 
     /// The registration a rectangle replaces, as a control: `rows` plain per-row
@@ -3911,7 +3934,14 @@ mod tests {
     /// The rectangle-vs-rectangle predicate against the byte-set oracle, over a
     /// grid of offsets and row counts, run through the REAL tracker so that the
     /// shard selection is exercised too.
+    ///
+    /// Excluded under `__rect_1shard`: that arm declines part of the grid by
+    /// design, so the test would be measuring its coverage rather than the
+    /// predicate. The predicate itself is covered feature-free by
+    /// `rect_hit_range_matches_a_brute_force_byte_set_oracle`, and the arm's
+    /// declining behaviour by `rect_registrations_reach_both_...`.
     #[test]
+    #[cfg(not(feature = "__rect_1shard"))]
     fn rect_vs_rect_agrees_with_the_byte_set_oracle_through_the_tracker() {
         const LEN: usize = 1 << 20;
         let s = 64usize;
@@ -3962,8 +3992,8 @@ mod tests {
                                     );
                                     collisions += 1;
                                     // The tracker is left with A live and
-                                    // possibly poisoned; it is dropped here.
-                                    return_early(&t, a);
+                                    // possibly poisoned; retire A and drop it.
+                                    t.remove(a);
                                     checked += 1;
                                     continue;
                                 }
@@ -3979,16 +4009,16 @@ mod tests {
         assert!(collisions > 100, "collisions={collisions}");
     }
 
-    /// Helper so the panic arm above does not leave a borrow registered in a
-    /// tracker that is about to be reused (it is not — but being explicit keeps
-    /// the loop readable).
-    fn return_early(t: &BorrowTracker, id: BorrowId) {
-        t.remove(id);
-    }
-
     /// A rectangle whose hull straddles a block boundary registers in every
     /// shard the hull maps to, so an overlap in the LATER block is still caught.
+    ///
+    /// Excluded under `__rect_1shard`, which declines such a rectangle outright —
+    /// there is no multi-shard record for it to detect through, and
+    /// `rect_registrations_reach_both_...` asserts that decline. Excluded under
+    /// `__shards_1` for the opposite reason: with one shard there is no "later
+    /// shard" and `same_block_overlap_is_caught` already covers it.
     #[test]
+    #[cfg(all(not(feature = "__rect_1shard"), not(feature = "__shards_1")))]
     #[should_panic(expected = "overlapping DisjointMut")]
     fn rect_overlap_in_a_later_block_is_caught() {
         const LEN: usize = 1 << 20;
@@ -4030,26 +4060,51 @@ mod tests {
         // stride is chosen so the case is REACHABLE within `MAX_RECT_ROWS`
         // rather than silently skipped: at stride 256 and a 4 KiB block it would
         // take 65 rows, one past the cap.
+        //
+        // `mask == 0` instances skip the block arithmetic entirely — every block
+        // is shard 0, so no span can promote — which is why this half needs more
+        // than one shard. `__rect_1shard` declines every multi-block hull for its
+        // own reason, which `rect_registrations_reach_both_...` asserts.
         let wide_s = 1024usize;
         let tw = rect_tracker(LEN, wide_s);
         let bs = 1usize << tw.block_shift();
         let rows = (MAX_SHARDS_PER_BORROW * bs) / wide_s + 2;
-        assert!(
-            rows <= MAX_RECT_ROWS,
-            "the >{MAX_SHARDS_PER_BORROW}-block case must be reachable: \
-             rows={rows} bs={bs} stride={wide_s}"
-        );
-        assert!(
-            tw.add_rect_immut(0, 16, rows, wide_s).is_none(),
-            "a {rows}-row hull spans more than {MAX_SHARDS_PER_BORROW} blocks of {bs}"
-        );
-        // ...and one row fewer than the cap needs still registers, so the
-        // assertion above is not passing for an unrelated reason.
-        let ok_rows = (MAX_SHARDS_PER_BORROW - 1) * bs / wide_s;
-        let id = tw
-            .add_rect_immut(0, 16, ok_rows, wide_s)
-            .expect("just inside the cap");
-        tw.remove(id);
+        if MULTI_SHARD_RECTS {
+            assert!(
+                rows <= MAX_RECT_ROWS,
+                "the >{MAX_SHARDS_PER_BORROW}-block case must be reachable: \
+                 rows={rows} bs={bs} stride={wide_s}"
+            );
+            assert!(
+                tw.add_rect_immut(0, 16, rows, wide_s).is_none(),
+                "a {rows}-row hull spans more than {MAX_SHARDS_PER_BORROW} blocks of {bs}"
+            );
+            // ...and one row fewer than the cap needs still registers, so the
+            // assertion above is not passing for an unrelated reason.
+            let ok_rows = (MAX_SHARDS_PER_BORROW - 1) * bs / wide_s;
+            let id = tw
+                .add_rect_immut(0, 16, ok_rows, wide_s)
+                .expect("just inside the cap");
+            tw.remove(id);
+        } else if N_SHARDS == 1 {
+            // One shard: `add_rect`'s `mask == 0` fast path skips the block
+            // arithmetic entirely, because every block maps to shard 0 and no
+            // span can promote. So a multi-BLOCK hull is representable here, and
+            // asserting that is the point. (`bs` is the whole buffer at one
+            // shard, so the >cap-blocks case does not exist to be tested.)
+            let tall = MAX_RECT_ROWS.min(8);
+            let id = tw
+                .add_rect_immut(0, 16, tall, wide_s)
+                .expect("one shard: no span can promote");
+            assert_eq!(id.pairs(), 1);
+            tw.remove(id);
+        } else {
+            assert!(
+                tw.add_rect_immut(0, 16, rows.min(MAX_RECT_ROWS), wide_s)
+                    .is_none(),
+                "__rect_1shard must decline a multi-block hull"
+            );
+        }
         // And the representable one still works, so the assertions above are not
         // all failing for one shared reason.
         let id = t.add_rect_immut(0, 16, 4, s).expect("representable");
