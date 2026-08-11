@@ -395,3 +395,45 @@ silence reads as health), Stacked Borrows and Tree Borrows, default features and
 
 *(table filled from the run; `shard_liveness` is expected to time out on
 aarch64 and is reported AS a timeout, never as green.)*
+
+## 9. The predicted mechanism for the t=8 win is REFUTED by its own instrument
+
+The brief for this round proposed a prediction to test: the rectangle's win on
+the OTHER cells cannot be a shard-line-count effect (a rectangle's shard set is
+the hull's blocks, a *superset* of the per-row union), so it should be fewer
+`add`/`remove` pairs and fewer lock acquisitions **where lines are not being
+reused** — and if so, `rows_mean / row_shards_mean` at the `fill` site should
+predict which cells benefit.
+
+`--features __probe_bounds`, t=8, the `fill` site's `RECT` row, against grid R's
+measured result:
+
+| cell | `rows_mean` | `row_shards_mean` | **rows/shards** | `pct_row_wide` | `ship`/`plain2` wall (sign) |
+|---|---|---|---|---|---|
+| `c1024x192` | 9.01 | 2.322 | 3.88 | 0.00% | **0.9851 (12/13)** |
+| `c1024x384` | 9.01 | 2.332 | 3.86 | 0.00% | **0.9762 (12/12)** |
+| `c1024x576` | 8.92 | 2.318 | 3.85 | 0.00% | **0.9826 (11/11)** |
+| `text_q20` | 9.68 | 2.457 | 3.94 | 0.00% | 0.9962 (8/13), **CPU 0.9739 (13/13)** |
+| **`c256x2048`** | 8.98 | 2.090 | **4.30 — the highest** | 0.00% | **1.0015 (5/11) — the only null** |
+| `c3840x256` | 9.04 | 3.666 | 2.47 | **23.07%** | 0.9981 (7/13) |
+| `v4k8tile` | 10.31 | 3.174 | 3.25 | **20.21%** | 0.9973 (8/12) |
+
+**The prediction does not hold.** The cell with the MOST distinct shard-line
+touches removed per `fill` — `c256x2048`, at 4.30 against the winners' 3.85–3.88
+— is the one cell that measures null on wall, which is the same inversion #505
+found from the count side and `docs/C256_CONTENTION.md` §7 found from the
+thread-scaling side. What the table does separate cleanly is the **refusals**:
+both weak cells are the two with ~20–23% of rows too wide to be one record, and
+all four cells with 0.00% refusals are the ones where the mechanism does
+something. So `pct_row_wide == 0` looks necessary and is demonstrably not
+sufficient, and `c256x2048` remains the exception every lever has hit.
+
+`ui_q20` records no `RECT` row at all at this site (the counterfactual never
+fires there) while still reading 0.9930 (7/12) — unexplained, and small enough
+that it is reported rather than chased.
+
+**So the ordering of the t=8 win across cells is still unexplained**, and the
+honest statement is that the mechanism works where the geometry is
+representable, does not work on `c256x2048` for reasons that are that cell's own
+(four previous levers agree), and its size is not predicted by any per-site
+quantity the bounds probe measures.

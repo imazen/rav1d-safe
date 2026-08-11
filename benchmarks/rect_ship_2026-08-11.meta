@@ -144,3 +144,18 @@ DEFAULT build vs base commit: __text identical, 0 resized, 0 added.
 GATES
 -----
 scripts/perf/rectship_gates.sh — see docs/RECT_SHIP.md section 7 for the table.
+
+THE PREDICTION THE BRIEF ASKED FOR — REFUTED (docs/RECT_SHIP.md section 9)
+--------------------------------------------------------------------------
+--features __probe_bounds, t=8, the `fill` site's RECT row vs grid R:
+  cell        rows_mean  row_shards_mean  rows/shards  pct_row_wide  ship/plain2
+  c1024x192       9.01        2.322          3.88         0.00%       0.9851 12/13
+  c1024x384       9.01        2.332          3.86         0.00%       0.9762 12/12
+  c1024x576       8.92        2.318          3.85         0.00%       0.9826 11/11
+  text_q20        9.68        2.457          3.94         0.00%       0.9962  8/13
+  c256x2048       8.98        2.090          4.30 (max)   0.00%       1.0015  5/11 NULL
+  c3840x256       9.04        3.666          2.47        23.07%       0.9981  7/13
+  v4k8tile       10.31        3.174          3.25        20.21%       0.9973  8/12
+The cell with the MOST distinct shard-line touches removed per fill is the one
+cell that measures null. pct_row_wide == 0 is necessary and not sufficient. The
+ordering of the win across cells remains unexplained.
