@@ -30,11 +30,7 @@ use std::cmp;
 use std::ffi::c_int;
 
 #[inline]
-pub fn sm_flag(b: &BlockContext, idx: usize) -> c_int {
-    if *b.intra.index(idx) == 0 {
-        return 0;
-    }
-    let m = *b.mode.index(idx);
+fn smooth(m: u8) -> c_int {
     if m == SMOOTH_PRED || m == SMOOTH_H_PRED || m == SMOOTH_V_PRED {
         512
     } else {
@@ -42,14 +38,38 @@ pub fn sm_flag(b: &BlockContext, idx: usize) -> c_int {
     }
 }
 
+/// The ABOVE neighbour's smooth flag — `f.a[t.a]`, reached through a shared
+/// `&Rav1dFrameData`, so its reads stay tracked.
+#[inline]
+pub fn sm_flag(b: &BlockContext, idx: usize) -> c_int {
+    if *b.intra.index(idx) == 0 {
+        return 0;
+    }
+    smooth(*b.mode.index(idx))
+}
+
+/// The LEFT neighbour's smooth flag — `t.l`, a field of the worker's own
+/// `Rav1dTaskContext`, so `&mut` proves exclusion by borrowck and the reads
+/// need no tracker record. Same extent, one fewer registration per read; see
+/// [`crate::src::env::BlockContext`] and `docs/OWNERSHIP_MODELS.md` §7e.
+#[inline]
+pub fn sm_flag_left(b: &mut BlockContext, idx: usize) -> c_int {
+    if b.intra.get_mut()[idx] == 0 {
+        return 0;
+    }
+    smooth(b.mode.get_mut()[idx])
+}
+
+/// See [`sm_flag`].
 #[inline]
 pub fn sm_uv_flag(b: &BlockContext, idx: usize) -> c_int {
-    let m = *b.uvmode.index(idx);
-    if m == SMOOTH_PRED || m == SMOOTH_H_PRED || m == SMOOTH_V_PRED {
-        512
-    } else {
-        0
-    }
+    smooth(*b.uvmode.index(idx))
+}
+
+/// See [`sm_flag_left`].
+#[inline]
+pub fn sm_uv_flag_left(b: &mut BlockContext, idx: usize) -> c_int {
+    smooth(b.uvmode.get_mut()[idx])
 }
 
 static av1_mode_conv: [[[IntraPredMode; 2 /* have_top */]; 2 /* have_left */]; N_INTRA_PRED_MODES] = {
