@@ -596,6 +596,80 @@ Three things fall out, and all three are for pricing the NEXT count cut:
    still not pay, and the only way to find that out is to remove the
    registrations and time it.
 
+### 6c-8. Gates for this round
+
+Driver `scripts/perf/ctxread_gates.sh` (niced, no lock — it may share the box
+with another agent's timed run). Logs `~/tmp/lfg/gates` and `~/tmp/lfg/gates2`;
+the corpus table below is the `gates2` run, taken AFTER the last code-touching
+commit (`33147db`).
+
+| gate | result |
+|---|---|
+| corpus, **no `--skip-group`**, t=1 | **766 PASS + 2 SKIP** |
+| corpus, **no `--skip-group`**, t=8 | **766 PASS + 2 SKIP** |
+| set-diff BY NAME (key `(group, name)`, value `(status, ACTUAL md5)`) vs `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst` | **CLEAN** at t=1 and t=8: 0 only-in-baseline, 0 only-in-head, 0 differing |
+| set-diff t=1 vs t=8 | CLEAN |
+| base-vs-head frame md5 on all 11 TIMED vectors x {t=1, t=8} | 16/16 identical, taken before any timing |
+| `cargo test --lib`, release AND debug | 80 passed / 8 ignored, both |
+| tracker crate unit tests | pass |
+| loop-filter window `debug_assert`, `-C debug-assertions=on`, `8-bit/data` t=8 | **358/358 PASS** |
+| `mt_stress` (threads 1/2/4/8/16 x trials, internal sweep) | pass |
+| `multi_decoder_pressure` — 12 concurrent decoders, thread counts 1/2/4/8/16 | **PASS**, every md5 equals the serial reference |
+| `tile_threading_overlap` / `reproduce_overlap` / `thread_cleanup_test` | pass — but 9 of the 11 are `#[ignore]` on `main` too, so they RAN 2. Reported as 2, not as 11. |
+| clippy, aarch64 and `x86_64-apple-darwin` | **fails on both — and measured pre-existing, not assumed.** The same two runs on the base tree (`rav1d-safe--census`, src-identical to `main`) fail identically with the same files: `src/safe_simd/itx_arm.rs`, `itx_arm_neon_16x16.rs`, `src/safe_simd/mod.rs`, `benches/tier_isolation.rs`, and four examples. **Zero findings in `env.rs`, `decode.rs`, `recon.rs` or `ipred_prepare.rs`.** The one file in head's list absent from base's (`examples/profile_ivf.rs`) fires on base too when clippy is pointed at it directly — the sets differ only in which target clippy aborted at first. |
+
+#### `#![forbid(unsafe_code)]`, proved ACTIVE
+
+Planting `fn _plant(x: u32) -> f32 { unsafe { core::mem::transmute(x) } }` in
+`src/picture.rs` (which has no module-level forbid of its own) fails the build
+against **`lib.rs:13`** — the crate-level `forbid` inside
+`cfg_attr(not(any(feature = "asm", "c-ffi", "unchecked")))`. Restored from a
+backup copy in `~/tmp`, never `git checkout --`; sha256
+`fa02c12b7730dbeba3f2304e366d245dc9eb30e35153a5e7ea7fc6856969d5e3` before and
+after (the same digest `SHARD_SIZE_SWEEP.md` §7 recorded), `git diff` clean.
+
+#### Standing hazards, replanted
+
+`--features __probe_wide`, `crates/rav1d-disjoint-mut`'s `tests/wide_exclusion.rs`:
+
+| plant | result |
+|---|---|
+| baseline | ok (0.05 s) |
+| `4af62ae`'s in-lock `state` re-read deleted from `add_contended` | **FAILED** |
+| `active()` cut to one shard | **FAILED** |
+| after both restores | ok (0.05 s) |
+
+Restored byte-exact from a backup copy:
+`crates/rav1d-disjoint-mut/src/tracker_shard.rs` sha256
+`4a59a6cf942337df13e5f7c3c8fef9ab3d467162bf018095cb4667e6a80c0c3b`, plus
+`git diff --exit-code` clean, `touch`ed after each restore. **Note the digest is
+NOT §7's `d4e03d4a…`** — that file changed when the shard-size round merged, so
+a future replant should re-derive the baseline digest rather than compare to
+either of these.
+
+#### The differential test, and its teeth
+
+`src/env.rs::left_split_parity` — see the commit message for the full argument.
+All fifteen helpers against their pre-split bodies transcribed verbatim from
+`414515c`, 20,000 randomised contexts (200 under Miri, with
+`trial_floor_is_not_vacuous` pinning that 200 still binds every liveness
+assertion in a normal build), plus the two smooth-flag helpers.
+
+| planted mutation | result |
+|---|---|
+| `get_comp_dir_ctx`'s left arm reads the ABOVE edge | **FAILS** |
+| `get_tx_ctx`'s left index transposed `yb4` -> `xb4` | **FAILS** |
+| `get_filter_ctx`'s left arm on `xb4` | **FAILS** |
+| `get_mask_comp_ctx`'s left result masked with `& 1` | **FAILS** |
+| after all four restores | ok |
+
+`src/env.rs` restored from a backup copy each time, sha256
+`4a5e38527eca497ddc265f61838543841dcf5b462e97fe46b7e1567fb63f1715` verified
+after the last one. The oracle also caught a defect in the test HARNESS before
+any decode ran: the pre-split `cnt[(ref0 - 4)]` ladders index past their arrays
+unless `intra == 0` implies `ref[0] >= 0`, so `random_ctx` now encodes that
+coupling instead of clamping it away.
+
 ---
 
 ## 7. Correctness gates
