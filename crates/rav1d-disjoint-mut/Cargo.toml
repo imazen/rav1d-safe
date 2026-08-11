@@ -78,17 +78,25 @@ __blockshift_adaptive = []
 # `__bps_half` is one shift coarser than the default 2/1, `__bps_4` one finer.
 # Re-swept 2026-08-10 scored on TAIL concurrency, not only whole-frame wall --
 # see the doc comment on `BPS` in src/tracker_shard.rs.
+#
+# SELECTING ANY RUNG TURNS THE DERIVED ROWS-PER-BLOCK RULE OFF (see
+# `ROWS_RULE_ACTIVE`), so a rung measures the constant it names and nothing else.
 __bps_quarter = []
 __bps_half = []
 __bps_1 = []
 __bps_4 = []
 __bps_8 = []
-# DERIVED shift: choose the block so it spans >= ROWS_PER_BLOCK_MIN picture rows,
-# from the buffer's declared row stride, instead of cutting every buffer into a
-# fixed BLOCK COUNT. Needs `DisjointMut::declare_row_stride`, which the picture
-# allocator calls unconditionally (a no-op for the shipped rule). A/B arm; see
-# `ROWS_PER_BLOCK_MIN` and benchmarks/shard_size_sweep_2026-08-10.meta.
-__bps_rows = []
+# The ladder's CENTRE rung, i.e. the block-count rule that shipped before
+# 2026-08-11: BPS stays (2,1) and the derived rows-per-block rule is off. This is
+# the BASE arm to difference the default against; the derived rule needs no
+# feature because it IS the default. See `ROWS_PER_BLOCK_MIN` in
+# src/tracker_shard.rs and benchmarks/bps_rows_default_2026-08-11.meta.
+__bps_blocks = []
+# THROWAWAY: pin a declared-stride buffer's block shift from RAV1D_PIN_SHIFT
+# ("<stride>:<shift>,..."), so a factorial over PER-PLANE shifts can be measured.
+# The rows rule and the ladder both move luma and chroma together, so the grid
+# they span cannot separate the planes. Measurement only; never publish.
+__probe_shiftpin = ["std"]
 # Raise MAX_SHARDS_PER_BORROW from 4 to 5, which needs BorrowId's (shard, slot)
 # pairs narrowed from 12 bits to `log2(N_SHARDS) + 3`. A/B arm; see the const.
 __msb_5 = []
