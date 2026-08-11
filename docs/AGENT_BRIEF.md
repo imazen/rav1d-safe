@@ -107,7 +107,9 @@ campaigns. Every rule below cost real time to learn.
   as a cross-cell constant (2.78 at screen text t=1 to 18.78 at `c256x2048` t=8); #502 then measured
   what an actual removal is worth and it came in ABOVE the cell's own rate on every cell that moved:
   10.02 vs 2.78 ns at `text_q20` t=1, 6.21 vs 2.78-3.89 at `ui_q20` t=1, 5.05 vs 4.72 at `ui_q20`
-  t=8 — 1.6-3.6x on the screen cells. Same mechanism as the row above: the removal also makes the
+  t=8. The multiplier runs **1.07x to 3.60x** and is NOT uniform — largest where the census rate is
+  smallest (3.60x at screen text t=1) and barely 1.07x at `ui_q20`/`c1024x576` t=8, so do not carry
+  one factor across cells. Same mechanism as the row above: the removal also makes the
   entropy/kernel buckets cheaper. **So price a count cut with the cell's own rate and expect to
   beat it; if you do NOT beat it, the cell is contention-bound and a count cut is the wrong lever**
   (`c3840x256`: 0.77 measured against 8.12 nominal, and it measured null). Two independent removals

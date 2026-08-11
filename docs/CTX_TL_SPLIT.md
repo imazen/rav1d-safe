@@ -563,7 +563,7 @@ regressions, and the wall rows that read above 1.000 are this box's ~1.2% floor
 (`SHARD_SIZE_SWEEP.md` §5) rather than signal. `c1024x192` gains a 7/7 sign in
 CPU that its 7/9 wall row did not have.
 
-### 6c-7. The marginal registration is worth 1.5-3x what the census's per-cell rate says
+### 6c-7. The marginal registration is worth 1.07-3.60x what the census's per-cell rate says
 
 Measured CPU saving divided by the measured registration cut, on the seven cells
 whose CPU row is sign-consistent at p <= 0.016:
@@ -584,8 +584,13 @@ Three things fall out, and all three are for pricing the NEXT count cut:
    the very same cell** from a different population. Two independent removals
    agreeing to 5% is the best calibration the campaign has for what one
    registration is worth on screen content.
-2. **On the screen cells the marginal rate is 1.6-3.6x the census's per-cell
-   `(plain − untracked)/registrations`.** That rate is an AVERAGE over the whole
+2. **The marginal rate is ABOVE the census's per-cell
+   `(plain − untracked)/registrations` on every cell that moved, by 1.07x to
+   3.60x** — and the multiplier is not uniform: 3.60x at `text_q20` t=1, 2.18x
+   at `text_q20` t=8, 1.60-2.25x at the two t=1 cells with a banded census
+   rate, and only **1.07x** at `ui_q20` t=8, `c1024x576` t=8 and 1.15x at
+   `c1024x192` t=8. It is largest at t=1 and on screen text, i.e. where the
+   census rate itself is smallest. That rate is an AVERAGE over the whole
    population, and the census predicted the direction of the discrepancy itself:
    removing tracker work also makes other buckets cheaper ("4.32 ms reappears in
    entropy, kernels and other"). Treat `(plain − untracked)/regs` as a **lower
