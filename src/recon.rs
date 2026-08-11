@@ -37,7 +37,9 @@ use crate::src::internal::TileStateRef;
 use crate::src::intra_edge::EdgeFlags;
 use crate::src::ipred_prepare::rav1d_prepare_intra_edges;
 use crate::src::ipred_prepare::sm_flag;
+use crate::src::ipred_prepare::sm_flag_left;
 use crate::src::ipred_prepare::sm_uv_flag;
+use crate::src::ipred_prepare::sm_uv_flag_left;
 use crate::src::levels::Av1Block;
 use crate::src::levels::Av1BlockInter;
 use crate::src::levels::Av1BlockIntra;
@@ -2211,9 +2213,11 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 }
             }
 
-            let intra_flags = sm_flag(&f.a[t.a], bx4 as usize)
-                | sm_flag(&t.l, by4 as usize)
-                | intra_edge_filter_flag;
+            // Bound separately because the ABOVE read borrows `t` (for `t.a`)
+            // while the LEFT read needs `&mut t.l`.
+            let above_sm = sm_flag(&f.a[t.a], bx4 as usize);
+            let intra_flags =
+                above_sm | sm_flag_left(&mut t.l, by4 as usize) | intra_edge_filter_flag;
             let sb_has_tr = if (init_x + 16) < w4 {
                 true
             } else if init_y != 0 {
@@ -2579,7 +2583,8 @@ pub(crate) fn rav1d_recon_b_intra<BD: BitDepth>(
                 }
             }
 
-            let sm_uv_fl = sm_uv_flag(&f.a[t.a], cbx4 as usize) | sm_uv_flag(&t.l, cby4 as usize);
+            let above_sm_uv = sm_uv_flag(&f.a[t.a], cbx4 as usize);
+            let sm_uv_fl = above_sm_uv | sm_uv_flag_left(&mut t.l, cby4 as usize);
             let uv_sb_has_tr = if init_x + 16 >> ss_hor < cw4 {
                 true
             } else if init_y != 0 {
