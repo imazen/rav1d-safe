@@ -1,0 +1,33 @@
+model	features	target	rc	result
+sb	default	--lib	0	test result: ok. 29 passed
+sb	default	narrow_release	0	test result: ok. 1 passed
+sb	default	soundness	0	test result: ok. 25 passed
+sb	default	wide_exclusion	0	test result: ok. 1 passed
+sb	default	guard_move_release	0	test result: ok. 2 passed
+sb	default	pic_buf_overflow	0	test result: ok. 0 passed
+sb	default	aligned_miri	0	test result: ok. 0 passed
+sb	default	shard_liveness	124	TIMEOUT(900s)
+sb	__probe_lock_park	--lib	0	test result: ok. 29 passed
+sb	__probe_lock_park	narrow_release	0	test result: ok. 1 passed
+sb	__probe_lock_park	soundness	0	test result: ok. 25 passed
+sb	__probe_lock_park	wide_exclusion	0	test result: ok. 1 passed
+sb	__probe_lock_park	guard_move_release	0	test result: ok. 2 passed
+sb	__probe_lock_park	pic_buf_overflow	0	test result: ok. 0 passed
+sb	__probe_lock_park	aligned_miri	0	test result: ok. 0 passed
+sb	__probe_lock_park	shard_liveness	124	TIMEOUT(900s)
+tb	default	--lib	0	test result: ok. 29 passed
+tb	default	narrow_release	0	test result: ok. 1 passed
+tb	default	soundness	0	test result: ok. 25 passed
+tb	default	wide_exclusion	0	test result: ok. 1 passed
+tb	default	guard_move_release	0	test result: ok. 2 passed
+tb	default	pic_buf_overflow	0	test result: ok. 0 passed
+tb	default	aligned_miri	0	test result: ok. 0 passed
+tb	default	shard_liveness	124	TIMEOUT(900s)
+tb	__probe_lock_park	--lib	124	TIMEOUT(900s)
+tb	__probe_lock_park	narrow_release	0	test result: ok. 1 passed
+tb	__probe_lock_park	soundness	0	test result: ok. 25 passed
+tb	__probe_lock_park	wide_exclusion	124	TIMEOUT(900s)
+tb	__probe_lock_park	guard_move_release	0	test result: ok. 2 passed
+tb	__probe_lock_park	pic_buf_overflow	0	test result: ok. 0 passed
+tb	__probe_lock_park	aligned_miri	0	test result: ok. 0 passed
+tb	__probe_lock_park	shard_liveness	124	TIMEOUT(900s)
