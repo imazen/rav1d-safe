@@ -317,8 +317,8 @@ was edited and 766/766 BY NAME is the evidence rather than the assertion.
 |---|---|
 | `cargo test --lib`, release **and** debug | pass, both |
 | tracker crate: default + `__probe_lock_{backoff,yield,relax,park}` + `__probe_wide` + `__probe_wide,__probe_lock_park` + `__probe_wide,__probe_lock_relax` + `__probe_shiftpin` + `__bps_blocks` + `__rpb_{2,8,16}` + `__msb_5` + `--no-default-features` | 16 configurations, all pass |
-| **corpus, DEFAULT arm, t=1**, no `--skip-group` | **766 PASS + 2 SKIP** |
-| **corpus, DEFAULT arm, t=8**, no `--skip-group` | **766 PASS + 2 SKIP** |
+| **corpus, DEFAULT arm, t=1**, no `--skip-group` | **766 PASS + 2 SKIP** — re-run at the final HEAD (`85af168`) after the last code-touching commit, still CLEAN |
+| **corpus, DEFAULT arm, t=8**, no `--skip-group` | **766 PASS + 2 SKIP** — re-run at the final HEAD, still CLEAN |
 | corpus, `probe-lock-park`, t=8 | 766 PASS + 2 SKIP |
 | corpus, `probe-lock-relax`, t=8 | 766 PASS + 2 SKIP |
 | set-diff BY NAME (key `(group, name)`, value `(status, ACTUAL md5)`) vs `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst` | **CLEAN on all four**: 0 only-in-baseline, 0 only-in-head, 0 differing |
