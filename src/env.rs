@@ -1389,10 +1389,18 @@ mod left_split_parity {
 
     #[test]
     fn all_fifteen_helpers_match_the_pre_split_implementation() {
+        // Under Miri the point is the ALIASING of `&mut BlockContext` +
+        // `get_mut()`, not coverage, and 20,000 trials do not finish inside a
+        // sane timeout. 200 is not a relaxation: the seed is fixed, so the
+        // trials are the same trials, and every liveness assertion at the
+        // bottom is checked to still hold at 200 in a normal build
+        // (`trial_floor_is_not_vacuous`). If one ever stops holding, BOTH
+        // configurations fail.
+        let trials = if cfg!(miri) { 200 } else { 20_000 };
         let mut rng = Rng(0x5eed_1eaf_c0ff_ee01);
         let mut seen: [Seen; 15] = Default::default();
         let mut tl_combos = 0u8;
-        for _ in 0..20_000 {
+        for _ in 0..trials {
             let a = random_ctx(&mut rng);
             let mut l = random_ctx(&mut rng);
             // A second copy of the LEFT state, because the oracle needs a
@@ -1515,7 +1523,7 @@ mod left_split_parity {
         for (i, s) in seen.iter().enumerate() {
             assert!(
                 s.distinct() >= 2,
-                "helper {i} returned one constant over 20,000 trials — its parity \
+                "helper {i} returned one constant over {trials} trials — its parity \
                  assertion proves nothing"
             );
         }
@@ -1525,6 +1533,39 @@ mod left_split_parity {
             seen[5].distinct() >= 5,
             "get_comp_dir_ctx reached only {} of its 5 outputs",
             seen[5].distinct()
+        );
+    }
+
+    /// The Miri trial floor is not vacuous.
+    ///
+    /// `all_fifteen_helpers_…` runs 200 trials under Miri instead of 20,000.
+    /// That is only sound if all of its liveness assertions still bind at 200,
+    /// so this runs the same fixed-seed prefix in a NORMAL build and asserts
+    /// exactly them. If a future edit makes 200 too few, this fails on every
+    /// build rather than silently weakening the Miri leg.
+    #[test]
+    fn trial_floor_is_not_vacuous() {
+        let mut rng = Rng(0x5eed_1eaf_c0ff_ee01);
+        let mut tl_combos = 0u8;
+        let mut seen5 = Seen::default();
+        for _ in 0..200 {
+            let a = random_ctx(&mut rng);
+            let mut l = random_ctx(&mut rng);
+            let yb4 = rng.below(32) as c_int;
+            let xb4 = rng.below(32) as c_int;
+            let have_top = rng.below(2) == 1;
+            let have_left = rng.below(2) == 1;
+            tl_combos |= 1 << (have_top as u8 * 2 + have_left as u8);
+            seen5.note(get_comp_dir_ctx(&a, &mut l, yb4, xb4, have_top, have_left));
+        }
+        assert_eq!(
+            tl_combos, 0b1111,
+            "200 trials miss a have_top/have_left combination"
+        );
+        assert!(
+            seen5.distinct() >= 5,
+            "200 trials reach only {} of get_comp_dir_ctx's 5 outputs",
+            seen5.distinct()
         );
     }
 
