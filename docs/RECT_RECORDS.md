@@ -493,7 +493,25 @@ under both models, 766 corpus vectors did not see it, and Miri did.
 pointer specifically so that no reference ever spans a gap — these legs are what
 says so instead of the doc asserting it.
 
-MIRI_TABLE_PLACEHOLDER
+**Stacked Borrows, default features — the shipping configuration — is CLEAN on
+every non-timeout target, `--lib` INCLUDING all 13 new rectangle tests:**
+
+| target | SB default | SB `__rect_1shard` | TB default | TB `__rect_1shard` |
+|---|---|---|---|---|
+| `--lib` | **42 passed** | MIRI_LIB_SB1 | MIRI_LIB_TB | MIRI_LIB_TB1 |
+| `narrow_release` | 1 | MIRI_NR_SB1 | MIRI_NR_TB | MIRI_NR_TB1 |
+| `soundness` | 25 | MIRI_SO_SB1 | MIRI_SO_TB | MIRI_SO_TB1 |
+| `wide_exclusion` | 1 | MIRI_WE_SB1 | MIRI_WE_TB | MIRI_WE_TB1 |
+| `guard_move_release` | 2 | MIRI_GM_SB1 | MIRI_GM_TB | MIRI_GM_TB1 |
+| `pic_buf_overflow` | **0 tests ran** | MIRI_PB_SB1 | MIRI_PB_TB | MIRI_PB_TB1 |
+| `aligned_miri` | **0 tests ran** | MIRI_AM_SB1 | MIRI_AM_TB | MIRI_AM_TB1 |
+| `shard_liveness` | **TIMEOUT** | MIRI_SL_SB1 | MIRI_SL_TB | MIRI_SL_TB1 |
+
+`shard_liveness` times out (rc=124) exactly as `docs/AGENT_BRIEF.md` warns and as
+`docs/C256_CONTENTION.md` §8c recorded; it is reported AS a timeout, never as
+green, and CI's Linux Miri legs (whole package, `--all-features`) are what cover
+it. `pic_buf_overflow` and `aligned_miri` select **0 tests** under these feature
+sets and are reported as 0, never as green.
 
 The exhaustive differential grids are scaled down under `cfg!(miri)` (point count
 only — every assertion, oracle and liveness floor is unchanged, and the native
