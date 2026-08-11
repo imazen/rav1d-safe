@@ -60,6 +60,9 @@ build.
 * One box (Apple M4 Pro, 8P+4E, macOS, aarch64), one content class (photo), one
   quality point. Loop restoration executes zero blocks on every cell here, the
   same structural blindness the 4K gap vectors have.
+* **Miri's `shard_liveness` target TIMES OUT locally in all four
+  (model x rule) configurations** and is reported as a timeout, never as green
+  (§8c). Under Tree Borrows it does not finish even its first test.
 
 ## 3. What changed, exactly
 
@@ -356,7 +359,8 @@ picture plane's block boundaries move on the shipped path.
 | `multi_decoder_pressure` — 12 concurrent decoders x 3 iters over 5 vectors, mixed thread counts | **PASS**, every md5 equals the serial reference |
 | `tile_threading_overlap` (3), `reproduce_overlap` (6), `thread_cleanup_test` (2) | 11/11 pass — **but 9 of the 11 need `-- --ignored`; see below** |
 | the 10 sweep vectors vs dav1d 1.5.4 at t=1 **and** t=8, before any timing | 10/10 identical, on the FINAL build |
-| the EXACT CI clippy/doc/fmt legs | all rc=0 (below) |
+| the EXACT CI clippy/doc/fmt legs | all rc=0 (§8b) |
+| Miri, both aliasing models x both rules, each target in isolation | 7 of 8 targets clean in all four configurations; `shard_liveness` **TIMES OUT** and is reported as a timeout (§8c) |
 
 **Two gate-hygiene corrections, because both were being reported as green
 while running nothing:**
@@ -413,6 +417,52 @@ before and after, `git diff` clean, lib rebuilt green.
 `3d7028e01a30466334ea3cacc2d5cff1e0941d89a841bba0046090d7d0b3a166` before and
 after. (That digest is this branch's, not #501's — the file changed; re-derive
 the baseline rather than comparing to a committed one.)
+
+### 8c. Miri — both models, both rules, each target in isolation
+
+`cargo +nightly miri test -p rav1d-disjoint-mut --no-fail-fast --test <target>`,
+one target at a time (Miri aborts the process on first UB and cargo stops at the
+first failing TARGET, so a batch run lets later targets never execute and their
+silence reads as health), Stacked Borrows and Tree Borrows, and **both rules** —
+the default derived one and `__bps_blocks` — because the rule decides where block
+boundaries fall and the tracker's whole soundness argument is that both
+registrants of a shared byte agree on them.
+`benchmarks/bps_rows_default_miri_2026-08-11.tsv`.
+
+| target | SB default | SB `__bps_blocks` | TB default | TB `__bps_blocks` |
+|---|---|---|---|---|
+| `--lib` | **29 passed** | 28 passed | **29 passed** | 28 passed |
+| `narrow_release` | 1 | 1 | 1 | 1 |
+| `soundness` | 25 | 25 | 25 | 25 |
+| `wide_exclusion` | 1 | 1 | 1 | 1 |
+| `guard_move_release` | 2 | 2 | 2 | 2 |
+| `pic_buf_overflow` | **0 tests ran** | 0 tests ran | 0 tests ran | 0 tests ran |
+| `aligned_miri` | **0 tests ran** | 0 tests ran | 0 tests ran | 0 tests ran |
+| `shard_liveness` | **TIMEOUT (900 s)** | **TIMEOUT** | **TIMEOUT** | **TIMEOUT** |
+
+**29 vs 28 on `--lib` is the liveness proof, not a discrepancy**: the extra test
+under the default is `rows_rule_targets_picture_rows_not_block_count`, which a
+compiled-in rung deliberately `cfg`s out (its complement,
+`declaring_a_stride_installs_the_derived_shift`, runs in all four and asserts
+the inverse there). So the shipped rule is *exercised* under both aliasing
+models rather than merely compiled.
+
+**"0 tests ran" is reported as 0, never as green** — those two targets are
+feature-gated and select nothing under the features used here. CI's Linux legs
+run the whole package with `--all-features`.
+
+**`shard_liveness` timed out in all four configurations and is reported AS a
+timeout.** Each attempt was `rc=124` at 900 s — an `rc=1` with no `test result:`
+line would be an invocation error and is a different thing. It is the target the
+campaign brief warns about on aarch64. What the logs do show is worth recording
+because it is not nothing and it is not everything: **under Stacked Borrows two
+of its five tests completed first** (`concurrent_disjoint_is_never_refused` and
+`concurrent_overlaps_are_caught`, both ok, under BOTH rules) and the run stopped
+inside `exhaustive_pairs_match_the_interval_predicate`; **under Tree Borrows the
+900 s did not finish even the first test**, so TB coverage of this target is
+zero, not partial. The three faster tracker-soundness targets did run under both
+models and both rules, so the rule is not unexamined by Miri — this one target
+is, and CI's Linux Miri legs are what cover it.
 
 ### 8b. Clippy — the CI legs pass; `--all-targets` fails on BASE too
 
