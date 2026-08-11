@@ -120,13 +120,20 @@ MEASUREMENT HYGIENE
   every rung, so plain/bps1/bpshalf/bpsq are the SAME code path and their true
   ratio is exactly 1.000. Over five cells x 7 rounds they read 0.999-1.012, so
   the floor is ~1.2% and every ratio inside [0.988, 1.012] is a null. A first
-  pass at n=2 read 1.136 on 512x288 and 0.755 on 1024x384; at n=7 the same cells
-  read 0.979 and 0.748. The 512x288 "regression" was noise and is recorded here
+  pass at n=2 read bps-half 1.136 on 512x288 and 0.755 on 1024x384; the same
+  cells at n=7 read 0.979 / 0.748 on the 15-cell first grid and 0.992 / 0.761 on
+  the final 17-cell one. The 512x288 "regression" was noise and is recorded here
   because it was nearly reported.
 
 FILES
   shard_size_sweep_2026-08-10.txt          the reduced tables (crossover, timed, counts)
-  shard_size_sweep_wallcpu_2026-08-10.tsv  raw wall/CPU rows, t=8, all arms, 17 cells
+  shard_size_sweep_wallcpu_2026-08-10.tsv.zst  raw wall/CPU rows, t=8, all arms,
+                                           17 cells, 7 arms, 7 rounds (833 rows)
+  shard_size_sweep_wallcpu_firstpass_2026-08-10.tsv.zst  the earlier 15-cell,
+                                           6-arm grid, kept because the final
+                                           grid supersedes rather than contradicts
+                                           it and two records agreeing is worth
+                                           more than one
   shard_size_sweep_t1_2026-08-10.tsv       raw wall/CPU rows, t=1 noise calibration
   shard_size_sweep_counts_2026-08-10.tsv   reduced probe-wide + __probe_bounds table
   shard_size_sweep_md5_2026-08-10.tsv      dav1d vs ours at t=1 and t=8, per vector
