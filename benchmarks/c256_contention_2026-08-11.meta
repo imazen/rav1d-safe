@@ -11,7 +11,7 @@ VERDICT  Both levers the round was opened for are REFUTED. Nothing ships.
          L2 (the shard lock's waiting policy, four arms): every arm inside a
             +-1.8% identity-control band. Priced first: the whole waiting
             population is 1.20 CPU ms/frame = 10.7% of the tracker's 11.23, so
-            a PERFECT lock was worth 2.39x -> 2.27x against a 1.4x bar.
+            a PERFECT lock was worth 2.378x -> 2.265x against a 1.4x bar.
 
 Box     Apple M4 Pro, 8P+4E, macOS 26.5.2, aarch64. Every timed run under
         `measlock`. Builds and gates NICED; timed runs never.
@@ -57,6 +57,17 @@ FILES
                                       below).
   c256_miri_2026-08-11.tsv            Miri, both models x default and
                                       __probe_lock_park, one target at a time.
+                                      DEFAULT lock clean on all 7 non-timeout
+                                      targets under both models. shard_liveness
+                                      TIMES OUT in all four configurations (the
+                                      target AGENT_BRIEF warns about on aarch64);
+                                      --lib and wide_exclusion ALSO time out in
+                                      the TB x park corner only, which is
+                                      parking_lot being expensive to interpret
+                                      under Tree Borrows, not a finding. All
+                                      reported as timeouts, never as green.
+                                      CI's Linux Miri legs are green (SB on both
+                                      workflow runs, TB likewise).
 
 TWO INSTRUMENT TRAPS, BOTH HIT AND BOTH RECORDED
   1. A NICED counted run measures a different machine. On Darwin `nice -n 19`
@@ -67,8 +78,10 @@ TWO INSTRUMENT TRAPS, BOTH HIT AND BOTH RECORDED
      reason even though it only reports counters.
   2. The counter and the profile disagreed by ~150x on `TinyLock::lock_slow`,
      and both are right. `core::hint::spin_loop()` was directly measured at
-     7.6 ns on an idle core (200M x 3 rounds minus an empty-loop control), which
-     over 1,007-1,373 counted iterations/frame predicts 0.008 CPU ms/frame
+     7.6 ns per iteration on an idle core, 6.7 ns of which is the hint (200M x 3
+     rounds minus an empty-loop control; examples/spin_cost.rs reproduces the
+     hint at 6.78 ns under load), which over 1,007-1,373 counted
+     iterations/frame predicts 0.008-0.010 CPU ms/frame
      against a profile reading 0.86-1.20. Reconciled by running BOTH instruments
      in ONE binary (probe-wide + sample, 9,000 frames): 5,984 leaf samples
      against that run's own 1,373 spins/frame over 6,949 windowed frames =

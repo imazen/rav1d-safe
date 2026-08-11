@@ -20,8 +20,9 @@ Prior art, not re-derived: `docs/BPS_ROWS_DEFAULT.md` (PR #503, the rule),
 
 ## 1. What is NOT covered, first
 
-* **The cell is not closed.** It sits at **2.39x** of dav1d at t=8 against a
-  tracker-removed ceiling of **1.32x**, and this round moved neither.
+* **The cell is not closed.** It sits at **2.378x** of dav1d at t=8 against a
+  tracker-removed ceiling of **1.325x** (n=15; an independent n=7 sweep reads
+  2.388x / 1.332x), and this round moved neither.
 * **One box** (Apple M4 Pro, 8P+4E, macOS 26.5.2, aarch64), **one vector**
   (`C256x2048_420_8b__t8`, 4x2 tiles, 8-bit 4:2:0, all-intra, one key-frame OBU
   re-decoded), **one content class**. No x86_64 — where every lock acquisition
@@ -52,8 +53,8 @@ Prior art, not re-derived: `docs/BPS_ROWS_DEFAULT.md` (PR #503, the rule),
 
 | quantity | value | source |
 |---|---|---|
-| ours / dav1d, t=8 | **2.39x** | this round, n=15, idle |
-| tracker-removed ceiling | **1.32x** | `probe-untracked`, bit-identical |
+| ours / dav1d, t=8 | **2.378x** (2.388x on the n=7 sweep) | this round, two independent sweeps |
+| tracker-removed ceiling | **1.325x** (1.332x, n=7) | `probe-untracked`, bit-identical |
 | tracker share of wall | **44.3%** | (3.783 − 2.108) / 3.783 |
 | registrations / frame, t=8 | **569,690** | `probe-sites`, `lost = 0` |
 | ns per registration, t=8 | **19.71** | (25.177 − 13.951) CPU ms/f ÷ regs |
@@ -133,9 +134,25 @@ frame. That is `BPS_ROWS_DEFAULT.md` §5c's conclusion ("the money is the
 shard-line footprint") measured from the refining side, and it is why the
 coarsening lever and the refining lever cannot both pay on one cell.
 
-**So lever 1 is dead, and it is dead for a reason that generalises**: on a
-256-px-wide plane the four tile columns of a row share a block at EVERY shift
-≥ 8, and every shift below 8 costs more than it separates.
+**And the separation the lever was reaching for IS achievable — it is just the
+worst rung on the ladder.** `scripts/perf/av1_tile_info.py` parses this vector
+as **4 tile columns x 2 tile rows, `sb_cols = 4`**, i.e. each tile column is
+exactly ONE 64-px superblock wide. The luma row is 256 bytes, so:
+
+| luma shift | block | tile columns per block |
+|---|---|---|
+| 11 (shipped) | 2048 B | 8 whole rows — all 4 |
+| 8 | 256 B | exactly one row — still all 4 |
+| 7 | 128 B | 2 |
+| **6** | **64 B** | **exactly 1 — fully separated** |
+
+Shift 6 is the rung at which the four tile columns finally stop sharing a block,
+and it measures **+21%**. So lever 1 is not dead because the separation is out
+of reach; it is dead because the separation is not worth what it costs.
+
+**And that reason generalises**: on a 256-px-wide plane the tile columns share a
+block at every shift ≥ 8, and every shift below 8 pays more in shard-line
+footprint (and, below 8, in straddles) than the separation is worth.
 
 ## 5. Lever 2 — the waiting policy, re-opened here and refuted here
 
@@ -189,8 +206,8 @@ not reproduce.
 
 At 4.75% of busy against a measured 25.18 CPU ms/frame, the whole waiting
 population is **1.20 CPU ms/frame — 10.7% of the tracker's 11.23**. Recovering
-ALL of it at 6.7 busy cores would move the cell 3.783 → 3.604 ms/frame, i.e.
-**2.39x → 2.27x of dav1d**. The bar is 1.4x. So even a perfect lock was worth
+ALL of it at the measured 6.66 busy cores would move the cell 3.783 → 3.603
+ms/frame, i.e. **2.378x → 2.265x of dav1d**. The bar is 1.4x. So even a perfect lock was worth
 about a ninth of what this cell needs, and the arms measure zero of it.
 
 **The park arm shows exactly where it goes**: `sync` 4.75% → 0.69% and idle
@@ -232,10 +249,12 @@ un-niced under the lock even though it only reports counters.
 
 **The counter and the profile disagreed by ~150x, and both are right.** The
 contention census says the spin loop runs 1,007-1,373 iterations/frame, and a
-`core::hint::spin_loop()` was directly measured at **7.6 ns** on an idle core
-(200 M iterations x 3 rounds, `measlock`, minus an empty-loop control) — which
-predicts 0.008 CPU ms/frame, against a profile that puts `lock_slow` at
-0.86-1.20. Reconciled by running BOTH instruments in ONE binary
+`core::hint::spin_loop()` was directly measured at **7.6 ns** per iteration on an
+idle core, of which **6.7 ns** is the hint itself (200 M iterations x 3 rounds
+under `measlock`, minus an empty-loop control; `examples/spin_cost.rs`
+reproduces the hint at 6.77-6.78 ns under load) — which predicts
+**0.008-0.010 CPU ms/frame** over the counted population, against a profile that
+puts `lock_slow` at 0.86-1.20. Reconciled by running BOTH instruments in ONE binary
 (`probe-wide` + `sample`, 9,000 frames): 5,984 leaf samples in `lock_slow`
 against that run's own counter of 1,373 spins/frame over 6,949 windowed frames
 = **~627 ns per iteration under real contention, 80x the idle-core price.**
@@ -370,10 +389,34 @@ The other three arms only change what a waiter does between attempts and cannot
 move that argument; they are covered by the unit-test legs.
 `benchmarks/c256_miri_2026-08-11.tsv`.
 
-See that TSV for the per-target grid. `shard_liveness` **TIMES OUT (rc=124 at
-900 s)** in every configuration and is reported AS a timeout — it is the target
-`docs/AGENT_BRIEF.md` warns about on aarch64, and CI's Linux legs are what cover
-it. `pic_buf_overflow` and `aligned_miri` select **0 tests** under these feature
+| target | SB default | SB `park` | TB default | TB `park` |
+|---|---|---|---|---|
+| `--lib` | 29 passed | 29 passed | 29 passed | **TIMEOUT** |
+| `narrow_release` | 1 | 1 | 1 | 1 |
+| `soundness` | 25 | 25 | 25 | 25 |
+| `wide_exclusion` | 1 | 1 | 1 | **TIMEOUT** |
+| `guard_move_release` | 2 | 2 | 2 | 2 |
+| `pic_buf_overflow` | **0 tests ran** | 0 | 0 | 0 |
+| `aligned_miri` | **0 tests ran** | 0 | 0 | 0 |
+| `shard_liveness` | **TIMEOUT** | **TIMEOUT** | **TIMEOUT** | **TIMEOUT** |
+
+**The DEFAULT lock is clean on all 7 non-timeout targets under both models.**
+
+**`shard_liveness` times out (rc=124 at 900 s) in all four configurations** and
+is reported AS a timeout, never as green — it is the target
+`docs/AGENT_BRIEF.md` warns about on aarch64. CI's Linux Miri legs, which run
+the whole package with `--all-features`, are green on this branch (Stacked
+Borrows on both workflow runs, Tree Borrows likewise) and are what cover it.
+
+**Two MORE timeouts appear only in the TB x park corner** — `--lib` and
+`wide_exclusion` — and they are reported as timeouts, not as findings and not as
+green. Both pass under Stacked Borrows with the same feature, and both pass
+under Tree Borrows with the default lock, so this is `parking_lot`'s parking
+machinery being expensive to interpret under TB rather than anything about the
+tracker. **TB coverage of the park arm is therefore 6 of 8 targets, and the park
+arm is a measurement arm that will never ship.**
+
+`pic_buf_overflow` and `aligned_miri` select **0 tests** under these feature
 sets and are reported as 0, never as green.
 
 ## 9. Where this leaves the campaign
