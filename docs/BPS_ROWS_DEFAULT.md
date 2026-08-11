@@ -45,16 +45,17 @@ build.
 * **`ROWS_PER_BLOCK_MIN = 4` is still fitted on #501's grid with no held-out
   size.** That weakness is unchanged by shipping it; the ladder is kept
   buildable precisely so the next person can re-fit it.
-* **Three of the eight cells are NULL** (§4): `c256x2048`, `v4k8tile` and — with
-  a caveat — `c512x576`. Two of those three are *provably* null (§4a) and are
-  used as the noise control.
+* **Three of the eight cells do not move** (§5a): `c256x2048`, `v4k8tile` and —
+  with a caveat — `c512x576`. Two of those three are *provably* inert (§4a),
+  which is what makes them the grid's noise control rather than a
+  disappointment.
 * **The residual wide path is NOT removed the way a global rung removes it**
-  (§6). At 1024x576 `w_shards` reads 153/frame in BOTH arms, because the derived
+  (§6a). At 1024x576 `w_shards` reads 153/frame in BOTH arms, because the derived
   rule only moves buffers that declare a stride and a global rung moves every
   buffer. Priced at about one point of wall by #500 §5e, and not attacked here.
 * **`msb-5` is not bundled.** It is ~1% and not separated from zero at n=7.
 * **`SLOTS` is not touched**, and the trap that goes with it (a 64-byte shard
-  raising the shard-full rate) is re-checked rather than assumed: §6.
+  raising the shard-full rate) is re-checked rather than assumed: §6.2.
 * **No reservation was widened anywhere**, per the four standing refutations.
 * One box (Apple M4 Pro, 8P+4E, macOS, aarch64), one content class (photo), one
   quality point. Loop restoration executes zero blocks on every cell here, the
@@ -162,8 +163,9 @@ All seven paired rounds are below 1.0 on the first six rows. The last two are
 the identity controls of §4a; their spread IS the noise floor, and it is
 **±1.0% on v4k8tile and ±3.1% (worst round ±4.5%) on c256x2048**.
 
-CPU per frame, same runs: 0.8748 / 0.8519 / 0.8736 / 0.9261 / 0.9318 on the five
-moving cells (7/7 rounds each), 0.9947 / 0.9957 / 0.9973 on the rest.
+CPU per frame, same runs, paired: 0.8748 / 0.8519 / 0.8736 / 0.9261 / 0.9318 on
+the five moving cells, all 7/7 rounds below 1.0; `c512x576` 0.9947 (6/7),
+`c256x2048` 0.9957 and `v4k8tile` 0.9973 (both controls, spanning 1.0).
 
 **No cell regresses.** The two above 1.000 in point estimate are the provable
 identity controls, and they read 0.9921 and 1.0000.

@@ -27,9 +27,9 @@ run "unit tests (release)"
 nice -n 19 cargo test --release --lib > "$OUT/units_release.log" 2>&1; echo "units_release rc=$?" >&2
 run "unit tests (debug)"
 nice -n 19 cargo test --lib > "$OUT/units_debug.log" 2>&1; echo "units_debug rc=$?" >&2
-run "tracker crate: default + every ladder rung + the base arm + msb-5 + shiftpin"
+run "tracker crate: default + BOTH ladders + the base arm + msb-5 + shiftpin"
 for f in "" __bps_blocks __bps_quarter __bps_half __bps_1 __bps_4 __bps_8 \
-         __msb_5 __msb_5,__bps_blocks __probe_shiftpin; do
+         __rpb_2 __rpb_8 __rpb_16 __msb_5 __msb_5,__bps_blocks __probe_shiftpin; do
   if [ -z "$f" ]; then
     (cd crates/rav1d-disjoint-mut && nice -n 19 cargo test --release)
   else
@@ -75,9 +75,15 @@ echo "dbgassert rc=$? lines=$(wc -l < "$OUT/dbgassert_8bitdata_t8.tsv")" >&2
 run "mt_stress + overlap/cleanup + multi_decoder_pressure"
 nice -n 19 cargo test --release --test mt_stress > "$OUT/mt_stress.log" 2>&1
 echo "mt_stress rc=$?" >&2
+# 9 of these 11 are `#[ignore]`d in the repo, so the plain invocation reports
+# `ok` having run TWO of them. Both invocations, or the line above the count is
+# a green tick that cannot fail.
 nice -n 19 cargo test --release --test tile_threading_overlap --test reproduce_overlap \
   --test thread_cleanup_test > "$OUT/overlap_tests.log" 2>&1
-echo "overlap/cleanup tests rc=$?" >&2
+echo "overlap/cleanup tests (default: runs 2 of 11) rc=$?" >&2
+nice -n 19 cargo test --release --test tile_threading_overlap --test reproduce_overlap \
+  --test thread_cleanup_test -- --ignored > "$OUT/overlap_tests_ignored.log" 2>&1
+echo "overlap/cleanup tests (--ignored: the other 9) rc=$?" >&2
 # Takes the bench binary and a vector dir as ARGUMENTS; with none it exits 1 on
 # its own usage check, which reads as a failure and is not one.
 AVIF=${MDP_AVIF:-$HOME/tmp/bpsrows/vec} \
