@@ -51,6 +51,21 @@ Vectors ~/tmp/ctxtl/{vec,ivf} (content classes, mk_content_classes.sh),
    v4k8tile    2 158.056 [157.6..158.5]144.250125.083     1.264     1.153
    v4k8tile    1 297.444 [296.3..300.7]283.333246.472     1.207     1.150
 
+1b. RATIO BANDS (worst case over both arms' [min..max], n=7 each) — which
+    verdicts are band-safe against the 1.4x bar and which are not
+   cell        t  ours/dav1d band      ceiling band        verdict
+   ui_q20      8  [2.238..2.380]       [1.539..1.605]      ceiling ABOVE 1.4, hard
+   text_q20    8  [2.505..3.022]       [2.112..2.516]      ceiling ABOVE 1.4, hard
+   c256x2048   8  [2.309..2.401]       [1.299..1.342]      ceiling BELOW 1.4, hard
+   c1024x192   8  [1.984..2.161]       [1.315..1.371]      ceiling BELOW 1.4, hard
+   c1024x576   8  [1.813..1.867]       [1.297..1.333]      ceiling BELOW 1.4, hard
+   c1024x384   8  [2.163..2.362]       [1.332..1.463]      ceiling STRADDLES 1.4
+   c3840x256   8  [2.151..2.277]       [1.345..1.411]      ceiling STRADDLES 1.4
+   v4k8tile    8  [1.356..1.428]       [1.195..1.229]      OURS straddles 1.4
+   v4k8tile    4  [1.250..1.262]       —                   below 1.3
+   v4k8tile    2  [1.259..1.267]       —                   below 1.3
+   v4k8tile    1  [1.201..1.224]       —                   below 1.3
+
 2. DECOMPOSITION  wall_ratio = cpu_ratio (extra WORK) x core_ratio (worse PACKING)
    cell        t  wall x  work x  pack x  ourCores davCores  trkCPU ms/f  ns/reg
    ui_q20      8   2.317   2.567   0.903      1.80     1.63        1.594    4.72
