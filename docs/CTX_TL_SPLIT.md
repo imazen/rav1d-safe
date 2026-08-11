@@ -656,9 +656,18 @@ either of these.
 
 `src/env.rs::left_split_parity` — see the commit message for the full argument.
 All fifteen helpers against their pre-split bodies transcribed verbatim from
-`414515c`, 20,000 randomised contexts (200 under Miri, with
-`trial_floor_is_not_vacuous` pinning that 200 still binds every liveness
-assertion in a normal build), plus the two smooth-flag helpers.
+`414515c`, 20,000 randomised contexts, plus the two smooth-flag helpers.
+
+Under Miri the loop is 200, and that is not a relaxation for a specific reason:
+**the liveness assertions are unconditional**, so a 200-trial run that lost
+coverage FAILS under Miri rather than passing with less of it — and the Miri leg
+passed 3/3, so 200 demonstrably reaches all four `have_top`/`have_left`
+combinations and all five `get_comp_dir_ctx` outputs.
+`trial_floor_is_not_vacuous` is the early warning for the same property in a
+NORMAL build (200 trials of the same generator, a different draw sequence since
+it does not consume the other helpers' arguments), so a future edit to
+`random_ctx` that made 200 too few fails on every build instead of only when
+someone runs Miri.
 
 | planted mutation | result |
 |---|---|

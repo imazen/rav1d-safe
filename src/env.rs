@@ -1391,11 +1391,14 @@ mod left_split_parity {
     fn all_fifteen_helpers_match_the_pre_split_implementation() {
         // Under Miri the point is the ALIASING of `&mut BlockContext` +
         // `get_mut()`, not coverage, and 20,000 trials do not finish inside a
-        // sane timeout. 200 is not a relaxation: the seed is fixed, so the
-        // trials are the same trials, and every liveness assertion at the
-        // bottom is checked to still hold at 200 in a normal build
-        // (`trial_floor_is_not_vacuous`). If one ever stops holding, BOTH
-        // configurations fail.
+        // sane timeout. 200 is not a relaxation, and the reason is that the
+        // liveness assertions at the bottom of this function are
+        // UNCONDITIONAL: if 200 trials failed to reach all four
+        // `have_top`/`have_left` combinations or all five `get_comp_dir_ctx`
+        // outputs, the Miri run itself would FAIL rather than pass with less
+        // coverage. `trial_floor_is_not_vacuous` is the early warning for the
+        // same thing in a normal build, so a regression does not need a Miri
+        // run to surface.
         let trials = if cfg!(miri) { 200 } else { 20_000 };
         let mut rng = Rng(0x5eed_1eaf_c0ff_ee01);
         let mut seen: [Seen; 15] = Default::default();
@@ -1539,10 +1542,16 @@ mod left_split_parity {
     /// The Miri trial floor is not vacuous.
     ///
     /// `all_fifteen_helpers_…` runs 200 trials under Miri instead of 20,000.
-    /// That is only sound if all of its liveness assertions still bind at 200,
-    /// so this runs the same fixed-seed prefix in a NORMAL build and asserts
-    /// exactly them. If a future edit makes 200 too few, this fails on every
-    /// build rather than silently weakening the Miri leg.
+    /// Its own liveness assertions are unconditional, so a 200-trial run that
+    /// lost coverage would FAIL under Miri rather than pass — that is the
+    /// actual guarantee, and the Miri leg passing 3/3 is the evidence.
+    ///
+    /// This is the early warning for the same thing in a normal build: 200
+    /// trials of the SAME generator (a different draw sequence, since it does
+    /// not consume the other helpers' arguments) still reach all four
+    /// `have_top`/`have_left` combinations and all five `get_comp_dir_ctx`
+    /// outputs. If a future edit to `random_ctx` makes 200 too few, this fails
+    /// on every build instead of only when someone runs Miri.
     #[test]
     fn trial_floor_is_not_vacuous() {
         let mut rng = Rng(0x5eed_1eaf_c0ff_ee01);
