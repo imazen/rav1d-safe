@@ -2,6 +2,10 @@ target/
 Cargo.lock
 *.orig
 *.rlib
+# Trailing slash matches a directory only, so a `test-vectors` SYMLINK into a
+# shared checkout (how a scratch worktree gets the corpus) showed up as
+# untracked. Match both.
+test-vectors
 test-vectors/
 fuzz/target/
 fuzz/artifacts/

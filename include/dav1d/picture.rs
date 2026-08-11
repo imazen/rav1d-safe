@@ -72,6 +72,49 @@ pub fn rect_hull_arm() -> bool {
     false
 }
 
+/// MARGINAL-PRICE ARM (`__probe_cdef_double` + `RAV1D_CDEF_DOUBLE=1`): take
+/// every CDEF per-row registration TWICE, in ONE binary, changing the borrow
+/// COUNT and nothing else.
+///
+/// # Why this and not a rectangle
+///
+/// `docs/RECT_RECORDS.md` §7b names five CDEF sites whose per-row registrations
+/// a strided-rectangle record could collapse 7-8x (`rows` 7.27-8.00 on **1.000**
+/// shards), a combined 118,624 registrations/frame — 20.8% of `c256x2048` t=8's
+/// population — and says the arm to build FIRST is this one, because it prices
+/// that whole population in one binary without implementing anything. If the
+/// population is worth under ~1% there is nothing for a rectangle to win, and
+/// #505 already measured that the largest site in the decoder (31.7% of the
+/// population) is only 3.9-4.4% of the tracker's CPU.
+///
+/// # Sound by construction, and it is the ONLY sound direction
+///
+/// The extra reservation covers **exactly** the bytes the real one is about to
+/// cover, and it is dropped before the real one is taken, so it cannot invent an
+/// overlap that the real one would not already have found. Immutable sites get
+/// an extra immutable guard; the one mutable site
+/// (`safe_simd::cdef_arm::cdef_filter_block_*_neon`) gets an extra MUTABLE one,
+/// because `find::<IS_MUT>` is a different scan and the mutable site must be
+/// priced with the record shape it actually files.
+///
+/// ADDING a duplicate, rather than removing the original, is what makes this a
+/// marginal price rather than a confounded one — removing a registration also
+/// removes its guard's copy and its drop. `docs/AGENT_BRIEF.md` §6's closing
+/// note is that this is the only arm that changes nothing else.
+#[cfg(feature = "__probe_cdef_double")]
+pub fn cdef_double_reads() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| matches!(std::env::var("RAV1D_CDEF_DOUBLE").as_deref(), Ok("1")))
+}
+
+/// The default build: a constant, so every `dup_rows*` call folds away.
+#[cfg(not(feature = "__probe_cdef_double"))]
+#[inline(always)]
+pub fn cdef_double_reads() -> bool {
+    false
+}
+
 thread_local! {
     /// Reusable scratch buffers backing [`WithOffset::compact_read_per_row`]
     /// (and the pristine copy kept by the loopfilter's diff write-back).
@@ -1098,6 +1141,47 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
                 (h - 1 - row) * abs_stride
             };
             f(row, &guard[idx..][..w]);
+        }
+    }
+
+    /// Take `h` EXTRA per-row IMMUTABLE registrations over exactly the bytes a
+    /// following [`Self::for_rows`] will cover, then drop them.
+    ///
+    /// Inert unless `__probe_cdef_double` is compiled in AND
+    /// `RAV1D_CDEF_DOUBLE=1`; see [`cdef_double_reads`] for what it prices and
+    /// why doubling is the sound direction. Only the tile-threading branch is
+    /// doubled, because that is the branch whose per-registration cost is in
+    /// question — without tile threading `for_rows` takes ONE hull guard.
+    #[inline(always)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
+    pub fn dup_rows<BD: BitDepth>(&self, w: usize, h: usize) {
+        if !cdef_double_reads() || w == 0 || h == 0 || !tile_threading_active() {
+            return;
+        }
+        use crate::src::strided::Strided as _;
+        let pxstride = self.data.pixel_stride::<BD>();
+        for row in 0..h {
+            let off = self.offset.wrapping_add_signed(row as isize * pxstride);
+            let guard = self.data.slice::<BD, _>((off.., ..w));
+            core::hint::black_box(&guard[0]);
+        }
+    }
+
+    /// [`Self::dup_rows`] for a following [`Self::for_rows_mut`]: the extra
+    /// reservations are MUTABLE, because that is the record shape the real site
+    /// files and `find::<true>` is a different scan from `find::<false>`.
+    #[inline(always)]
+    #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
+    pub fn dup_rows_mut<BD: BitDepth>(&self, w: usize, h: usize) {
+        if !cdef_double_reads() || w == 0 || h == 0 || !tile_threading_active() {
+            return;
+        }
+        use crate::src::strided::Strided as _;
+        let pxstride = self.data.pixel_stride::<BD>();
+        for row in 0..h {
+            let off = self.offset.wrapping_add_signed(row as isize * pxstride);
+            let mut guard = self.data.slice_mut::<BD, _>((off.., ..w));
+            core::hint::black_box(&mut guard[0]);
         }
     }
 

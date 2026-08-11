@@ -453,6 +453,18 @@ measured from the count side, and it is why an exact strided-rectangle record cu
 28.1% of this cell's population for a coin-flip wall result. §9's table gains a
 fifth refused lever accordingly.
 
+**CORRECTION 2, 2026-08-11 (#506, `docs/RECT_SHIP.md`):** the fifth row's
+"costs +1.26% at t=1 on 4K" is not a cost of the rectangle. It is CODE
+PLACEMENT: 4,828 bytes of provably-dead `#[used]` text — 0 symbols resized, every
+hot loop-filter symbol byte-identical, a planted `panic!` proving it never runs —
+costs +1.10% wall at t=1 on `v4k8tile`, 0 of 11, and nine binaries differing from
+`main`'s by +1,132 B to +19,420 B all land in +1.1%..+1.6% while a byte-identical
+copy reads 1.0006. Against a same-source control the rectangle reads 0.9967 (7/9)
+there. The same round priced the CDEF sites `docs/RECT_RECORDS.md` §7b named:
+3.27 ns/registration here (28.0% of this cell's population, 4.6% of its tracker)
+and **5.27 ns / +4.09% of WALL on `c1024x576`**, so a CDEF rectangle is the
+better-looking target than anything left on this cell.
+
 `docs/AGENT_BRIEF.md` §6's "TinyLock backoff: null, measured twice" now has a
 third row rather than a rewrite: **null a third time, measured where the
 mechanism is present, with the mechanism priced at 10.7% and its removal

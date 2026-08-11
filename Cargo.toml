@@ -111,6 +111,26 @@ __lf_rect = []
 # `__lf_rect` restricted to ONE-SHARD rectangles — the only ones strictly cheaper
 # than the per-row guards they replace.
 __lf_rect1 = ["__lf_rect", "rav1d-disjoint-mut/__rect_1shard"]
+# MARGINAL-PRICE ARM for the CDEF registration population (measurement only):
+# arms `RAV1D_CDEF_DOUBLE=1`, which takes every CDEF per-row registration TWICE
+# in ONE binary — the LF_DOUBLE shape, applied to the five sites
+# docs/RECT_RECORDS.md §7b named. See `picture::cdef_double_reads`.
+__probe_cdef_double = []
+# LAYOUT-NOISE CONTROL (measurement only): never-executed `__text` emitted from
+# src/loopfilter.rs, so every hot symbol keeps a byte-identical instruction
+# stream and only its ADDRESS moves. This is the control the rectangle round did
+# not have — see `loopfilter::text_pad` and docs/RECT_SHIP.md §3. Measured
+# `__text` growth: 4,828 B for `__pad_text`, then 9,692 / 14,556 / 19,420 B as
+# __pad2/3/4 add further rungs.
+__pad_text = []
+# ~1.2 KiB instead of ~4.8 KiB, for the low end of the ladder.
+__pad_small = ["__pad_text"]
+# The same dead text emitted FAR from the loop filter (src/text_pad.rs), to
+# separate "the binary grew" from "the hot loop-filter symbols moved".
+__pad_far = []
+__pad2 = ["__pad_text"]
+__pad3 = ["__pad2"]
+__pad4 = ["__pad3"]
 probe-tinynop = ["rav1d-disjoint-mut/__probe_tinynop"]
 probe-addnop = ["rav1d-disjoint-mut/__probe_addnop"]
 probe-noscan = ["rav1d-disjoint-mut/__probe_noscan"]

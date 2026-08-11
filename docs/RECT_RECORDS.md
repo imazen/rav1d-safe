@@ -622,6 +622,39 @@ spellings already on the board are `get_mut`-style untracked reads (#492's
 a count cut. And the prize is still bounded by a **1.33x** tracker-removed
 ceiling, so this cell asks for the tracker to be nearly free at t=8, not cheaper.
 
+### 7e-CORRECTION (2026-08-11, #506, `docs/RECT_SHIP.md`)
+
+**The t=1 attribution in §5d/§5e and in the header table is WRONG, and the fix
+§7e names does not exist.** The +1.0..+1.3% at t=1 on `v4k8tile` is CODE
+PLACEMENT, not this mechanism and not `fill`'s size:
+
+* **4,828 bytes of provably-dead `#[used]` text** — a build where
+  `scripts/perf/text_layout_diff.py` reports **0 symbols resized** and
+  `scripts/perf/text_symbol_diff.sh` shows every hot loop-filter symbol keeping
+  a **byte-identical instruction stream**, and where a planted `panic!` in the
+  pad leaves the md5 unchanged so it provably never runs — costs **+1.10% wall,
+  0 of 11 rounds**.
+* Nine binaries differing from `main`'s by **+1,132 B to +19,420 B**, including
+  a pure refactor that *shrinks* `LfBlock::open` by 17%, all land in
+  **+1.1%..+1.6%** with 9/9-0/11 signs and are mutually within ±0.4%; the
+  byte-identical control reads **1.0006 (4/11)**. There is no size trend inside
+  the band.
+* **Against a same-source control the rectangle costs nothing at t=1**: 0.9967
+  (7/9) on `v4k8tile`.
+* §5d's `plainC` — the same source built in a second worktree — is NOT a layout
+  control. It differs only in embedded path strings and moves no symbol, which
+  is why it read ±0.1% and made a 1% effect look specific.
+* The §7e fix (out-of-lining the twelve `fill_rect` monomorphisations so `open`
+  stops growing) WAS built (`fill_threaded`, `#[inline(never)]` in the rectangle
+  arm). It works as designed — `open` shrinks 11,560 → 9,584 bytes and becomes
+  byte-identical between the rectangle arm and its own base — and **the t=1 cost
+  is unchanged**, because the cost was never `open`.
+
+So `it is code size` (this doc's header) should read **it is code placement**,
+and `no attempt was made to shrink `fill` first` (§7a) is now answered: shrinking
+it does not help. See `docs/RECT_SHIP.md` for the grids, and its §7 for the
+`RAV1D_CDEF_DOUBLE` arm §7b asked for.
+
 ### 7e. The one thing here that is worth someone else's time
 
 **The t=8 breadth win is real and it is not this cell's.** −1.0% to −1.8% wall on

@@ -101,6 +101,9 @@ fn backup2x8<BD: BitDepth>(
     if flag.contains(Backup2x8Flags::Y) {
         // 8 rows x 2 pixels: `for_rows` decides whether that is 8 registrations
         // or one, on the same `tile_threading_active()` latch as `block_mut`.
+        // MARGINAL-PRICE ARM: doubles this site's registrations and nothing
+        // else. Inert unless `__probe_cdef_double` + `RAV1D_CDEF_DOUBLE=1`.
+        (src[0] + (x_off - 2)).dup_rows::<BD>(2, 8);
         (src[0] + (x_off - 2)).for_rows::<BD, _>(2, 8, |y, row| {
             let y_dst = &mut dst[0][y];
             let y_len = y_dst.len();
@@ -118,6 +121,7 @@ fn backup2x8<BD: BitDepth>(
     let x_off = x_off >> ss_hor;
     let uv_rows = 8usize >> ss_ver;
     for pl in 1..3 {
+        (src[pl] + (x_off - 2)).dup_rows::<BD>(2, uv_rows);
         (src[pl] + (x_off - 2)).for_rows::<BD, _>(2, uv_rows, |y, row| {
             let uv_dst = &mut dst[pl][y];
             let uv_len = uv_dst.len();

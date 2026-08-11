@@ -1,0 +1,146 @@
+rect_ship_2026-08-11 — the rectangle's t=1 cost, located; and the CDEF sites priced
+====================================================================================
+
+Branch      perf/rect-ship, base e351b1a (PR #505 merged)
+Host        Apple M4 Pro, 8P + 4E, macOS 26.5.2, aarch64
+Toolchain   stable-aarch64-apple-darwin, no -C target-cpu=native
+Harness     scripts/perf/tiled_wallcpu.sh under ~/bin/measlock, NEVER niced
+Report      scripts/perf/rect_report.py (paired per-round ratios, round 0
+            dropped as cold, whole rounds dropped when any arm saw a foreign
+            process above 25% CPU)
+Fit         total = a + b*frames at two frame counts per cell, so process
+            startup / mmap / decoder construction drop out of wall AND CPU
+Static      scripts/perf/text_layout_diff.py, scripts/perf/text_symbol_diff.sh,
+            cargo llvm-lines
+Full write-up  docs/RECT_SHIP.md
+
+VERDICT
+-------
+NOTHING SHIPS. The default is unchanged and verified byte-equivalent to the base
+commit's build (__text 1,839,536 -> 1,839,536, 0 symbols resized, 0 added).
+
+#505's blocking result — +1.0..+1.3% wall at t=1 on `v4k8tile`, 0/11 twice,
+where the rectangle path never executes — is CODE PLACEMENT, not the mechanism.
+4,828 bytes of provably-dead `#[used]` text, in a build where NO symbol changes
+size and every hot loop-filter symbol's disassembly is byte-identical, costs
++1.10% wall, 0 of 11. Nine binaries differing from main's by +1,132 B to
++19,420 B all land in +1.1%..+1.6% with 9/9-0/11 signs; a byte-identical copy
+reads 1.0006 (4/11). Against a SAME-SOURCE control the rectangle costs nothing
+at t=1: 0.9967, 7/9.
+
+The round's acceptance bar (t=1 inside +-0.5% of main, coin-flip sign, n>=11) is
+therefore not met by ANY arm, including arms that change no executed instruction
+anywhere, so per the brief the default was not flipped.
+
+THE OTHER NUMBER THE ROUND EXISTS FOR (task 2)
+----------------------------------------------
+RAV1D_CDEF_DOUBLE (--features __probe_cdef_double) prices the five CDEF
+registration sites docs/RECT_RECORDS.md 7b named, in ONE binary, by doubling
+them. Marginal price 3.27 ns/registration on c256x2048 t=8 (+159,424 regs/frame,
++1.34% wall, CPU sign 0/13) and 5.27 ns on c1024x576 t=8 (+121,856 regs/frame,
++4.09% wall, 0/12). Null control: text_q20 files ZERO CDEF registrations and the
+arm reads wall 1.0000 (5/12).
+=> On c256x2048 the sites are 28.0% of the population and 4.6% of that cell's
+   11.23 CPU ms/frame tracker (tracker CPU CITED from docs/C256_CONTENTION.md 7,
+   not re-measured). 7b guessed ~2.7%.
+=> On c1024x576 they are +4.09% of WALL, far above 7b's "under ~1% => nothing to
+   win". A rectangle collapses 8 rows to 1, so the arithmetic ceiling there is
+   ~3.6% wall, on the same cell family where the fill rectangle already delivers
+   -1.7%..-2.4%. NOT REFUTED; the better target than c256x2048 ever was.
+=> Standing caveat: fill's own doubling priced its population at +3.37% wall on
+   c256x2048 and the actual collapse delivered ~0 there. A doubling is an UPPER
+   BOUND on what a collapse buys.
+
+ARMS (all verified to emit ONE md5 per (cell, threads) before any timing)
+------------------------------------------------------------------------
+plain      base-commit default codegen (the binary main ships)
+plainB     byte-identical copy of plain
+pad1..4    plain + 4,828 / 9,692 / 14,556 / 19,420 bytes of never-called
+           #[used] text in src/loopfilter.rs (feature __pad_text/__pad2/3/4).
+           text_layout_diff.py: resized_in_both = 0 in every rung
+rect       #505's arm: --features __lf_rect at its final (inline(never)) shape
+plain2     the fill/fill_threaded split, DEFAULT features: +5,176 B of new
+           out-of-line functions, -4,044 B from the two LfBlock::open, net +1,132
+plain2B    byte-identical copy of plain2
+padsmall   plain2 + 2,348 B of dead text (feature __pad_small)
+padfar     plain2 + 5,996 B of dead text emitted from src/text_pad.rs
+           (feature __pad_far) — a second module, NOT a location control: the
+           linker still places it before the loop-filter block
+ship       plain2 + --features __lf_rect
+cdefoff/on ONE binary (--features __probe_cdef_double), RAV1D_CDEF_DOUBLE 0/1
+cdefoff2   a third alias of that binary with the same environment (A/A control)
+
+FILES
+-----
+rect_ship_P_2026-08-11.tsv          grid P: v4k8tile t=1, n=11, the pad ladder
+rect_ship_P2_2026-08-11.tsv         grid P2: 3 cells at t=1, restructure isolated
+rect_ship_R_2026-08-11.tsv          grid R: 8 cells at t=8 at the SHIPPED config
+rect_ship_cdefdouble_2026-08-11.tsv grid Q: the CDEF doubling arm, 3 cells t=8
+rect_ship_layout_2026-08-11.txt     text_layout_diff.py plain vs rect
+rect_ship_llvmlines_2026-08-11.txt  cargo llvm-lines diff, plain vs rect
+
+Column layout of the timed TSVs (tiled_wallcpu.sh):
+  round arm vec threads nlo wall_lo user_lo sys_lo nhi wall_hi user_hi sys_hi foreign
+
+HEADLINE ROWS
+-------------
+Grid P, v4k8tile t=1, n=11, ratios vs plain (added __text in brackets):
+  plainB   [    0]  1.0006 [0.9950..1.0042]   4/11   <- byte-identical control
+  pad1     [+4828]  1.0110 [1.0087..1.0139]   0/11   <- ZERO codegen change
+  pad2     [+9692]  1.0117 [1.0091..1.0149]   0/11
+  pad3     [+14556] 1.0109 [1.0073..1.0161]   0/11
+  pad4     [+19420] 1.0156 [1.0060..1.0215]   0/11
+  rect     [+13700] 1.0147 [1.0117..1.0172]   0/11
+
+Grid P2, t=1, ratios vs plain2 (same source) and vs plain (main's binary):
+  v4k8tile   plain 0.9861 (9/9)   plain2B 1.0006 (3/9)  ship 0.9967 (7/9)
+             ship vs plain 1.0110 | plain2 vs plain 1.0141 | padsmall 1.0112
+             padfar 1.0142 | plain2B 1.0132
+  c1024x576  plain 0.9929 (9/9)   plain2B 1.0008 (3/9)  ship 1.0016 (3/9)
+  c256x2048  plain 1.0004 (4/12)  plain2B 1.0004 (3/12) ship 0.9993 (8/12)
+  => the tax scales with working set: +1.4% at 4K, +0.7% at 1024x576, 0 at
+     256x2048.
+
+Grid R, t=8, ship vs plain2 (isolates the rectangle) | ship vs plain:
+  c1024x192  0.9851 wall 12/13 | cpu 0.9922  9/13 | vs plain 0.9900
+  c1024x384  0.9762 wall 12/12 | cpu 0.9845 12/12 | vs plain 0.9924
+  c1024x576  0.9826 wall 11/11 | cpu 0.9844 11/11 | vs plain 0.9925
+  text_q20   0.9962 wall  8/13 | cpu 0.9739 13/13 | vs plain 0.9923
+  ui_q20     0.9930 wall  7/12 | cpu 0.9929  9/12 | vs plain 0.9988
+  c3840x256  0.9981 wall  7/13 | cpu 0.9964  9/13 | vs plain 1.0063
+  c256x2048  1.0015 wall  5/11 | cpu 0.9962  8/11 | vs plain 1.0075
+  v4k8tile   0.9973 wall  8/12 | cpu 0.9951 11/12 | vs plain 1.0058
+  control plain2B 0.9962..1.0060 wall, signs 3/13..8/13, every cell
+  => 3 of 8 cells -1.5%..-2.4% wall at 11/11 and 12/12; text_q20 -2.6% CPU
+     13/13. NARROWER than #505's B3 grid: c3840x256 was 0.9867 (6/7) there and
+     is null here.
+
+Grid Q, t=8, cdefon/cdefoff in ONE binary, control cdefoff2 in-grid:
+  c1024x576  wall 1.0409 0/12 | cpu 1.0386 0/12 | cdefoff2 1.0010 (4/12)
+  c256x2048  wall 1.0134 1/13 | cpu 1.0223 0/13 | cdefoff2 1.0000 (5/13)
+  text_q20   wall 1.0000 5/12 | cpu 1.0009 5/12 | cdefoff2 0.9962 (6/12)
+             (0 extra registrations there — the null control)
+
+COUNTERS (niced; count-shaped, not contention-shaped), probe-sites, lost=0
+--------------------------------------------------------------------------
+                       CDEF_DOUBLE=0   =1        delta
+  c256x2048 t=8            569,690   729,114   +159,424  (28.0%)
+  c1024x576 t=8            529,092   650,948   +121,856  (23.0%)
+  text_q20  t=8            199,287   199,287         +0
+c256x2048's 569,690 is IDENTICAL to #505's count, which is the byte-continuity
+check between the two rounds' instrumented builds.
+
+STATIC (no clock)
+-----------------
+plain vs rect: __text 1,837,492 -> 1,851,192 (+13,700); 2 symbols resized
+  (LfBlock::open, +8 B at 8bpc and +212 B at 16bpc); every other hot 8bpc
+  loop-filter symbol is a BYTE-IDENTICAL instruction stream.
+llvm-lines: +2,546 IR lines (+0.51%), 18 functions changed; 2,061 of the new
+  lines are fill_rect's TWELVE monomorphisations, ~12,000 of the 13,700 bytes.
+plain2 vs ship: the ONLY 12 symbols that change size are the 12 cold
+  fill_threaded monomorphisations; both LfBlock::open are byte-identical.
+DEFAULT build vs base commit: __text identical, 0 resized, 0 added.
+
+GATES
+-----
+scripts/perf/rectship_gates.sh — see docs/RECT_SHIP.md section 7 for the table.

@@ -1,0 +1,22 @@
+total_lines_base	497012	total_lines_head	499558
+total_copies_base	4427	total_copies_head	4441
+changed_functions	18	net_lines	+2546	net_copies	+14
+dline	dcopies	lines	copies	name
++432	+1	0->432	0->1	<rav1d_disjoint_mut::tracker_shard::BorrowTracker>::add_rect::<false>
++270	+1	0->270	0->1	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth16>>::fill_rect::<4usize>
++261	+1	0->261	0->1	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>::fill_rect::<4usize>
++261	+1	0->261	0->1	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>::fill_rect::<8usize>
++145	+1	0->145	0->1	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth16>>::fill_rect::<6usize>
++145	+1	0->145	0->1	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth16>>::fill_rect::<16usize
++145	+1	0->145	0->1	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth16>>::fill_rect::<12usize
++145	+1	0->145	0->1	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth16>>::fill_rect::<8usize>
++145	+1	0->145	0->1	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth16>>::fill_rect::<14usize
++136	+1	0->136	0->1	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>::fill_rect::<16usize>
++136	+1	0->136	0->1	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>::fill_rect::<14usize>
++136	+1	0->136	0->1	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>::fill_rect::<6usize>
++136	+1	0->136	0->1	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>::fill_rect::<12usize>
++29	+1	0->29	0->1	<rav1d_disjoint_mut::tracker_shard::BorrowId>::from_pairs
++12	+0	1587->1599	1->1	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth16>>::open
++12	+0	1870->1882	1->1	<rav1d_safe::src::loopfilter::LfBlock<rav1d_safe::include::common::bitdepth::BitDepth8>>::open
+-8	-1	8->0	1->0	<core::fmt::Error as core::fmt::Debug>::fmt.81
++8	+1	0->8	0->1	<core::fmt::Error as core::fmt::Debug>::fmt.91

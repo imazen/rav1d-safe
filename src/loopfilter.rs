@@ -566,6 +566,81 @@ fn lf_double_reads() -> bool {
     false
 }
 
+/// LAYOUT-NOISE CONTROL, measurement only: N KiB of `__text` that is never
+/// executed, emitted from THIS module so the linker places it where
+/// [`LfBlock::fill_rect`]'s monomorphisations go.
+///
+/// # Why the campaign needed this and did not have it
+///
+/// `docs/RECT_RECORDS.md` §5d measured a **+1.0% to +1.3% wall at t=1 on
+/// `v4k8tile`, 0 of 11 rounds below 1.000 in two sessions**, in an arm whose new
+/// code CANNOT execute at t=1 (the hull path returns first). It attributed that
+/// to code size by elimination, and its layout control (`plainC`, the same
+/// source built in a second worktree) read within ±0.1% — so the band looked
+/// tight and the effect looked real and specific to the mechanism.
+///
+/// That control is too weak to support the conclusion. Two builds of the same
+/// source differ only in embedded path strings; they do not MOVE any hot symbol
+/// by kilobytes. This one does exactly that and nothing else: with the feature
+/// on, `scripts/perf/text_layout_diff.py` reports **zero** symbols resized and
+/// every hot loop-filter symbol keeps a byte-identical instruction stream
+/// (`scripts/perf/text_symbol_diff.sh`) — only its ADDRESS changes. Whatever
+/// this arm measures is the price of moving code, and it is the band any claim
+/// about a t=1 regression from added text has to clear. Measured: it clears
+/// nothing — see `docs/RECT_SHIP.md` §3.
+///
+/// The far counterpart is [`crate::src::text_pad`]. The functions are
+/// `#[used]`-anchored through a static table rather than called, so nothing can
+/// execute them and nothing can eliminate them.
+#[cfg(feature = "__pad_text")]
+pub(crate) mod text_pad {
+    /// One ~600-byte unit of dead text. `K` only forces a distinct
+    /// monomorphisation per slot.
+    #[inline(never)]
+    pub(crate) extern "C" fn unit<const K: usize>(x: &mut [u64; 32]) -> u64 {
+        let mut acc = K as u64;
+        for i in 0..32 {
+            acc = acc
+                .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                .wrapping_add(x[i] ^ (i as u64));
+            x[i] = acc;
+            acc ^= acc >> 29;
+        }
+        acc
+    }
+
+    #[cfg_attr(feature = "__pad_small", allow(unused_macros))]
+    macro_rules! rung {
+        ($name:ident, $base:expr) => {
+            #[used]
+            static $name: [extern "C" fn(&mut [u64; 32]) -> u64; 8] = [
+                unit::<{ $base }>,
+                unit::<{ $base + 1 }>,
+                unit::<{ $base + 2 }>,
+                unit::<{ $base + 3 }>,
+                unit::<{ $base + 4 }>,
+                unit::<{ $base + 5 }>,
+                unit::<{ $base + 6 }>,
+                unit::<{ $base + 7 }>,
+            ];
+        };
+    }
+
+    /// The SMALL rung: two units, ~1.2 KiB, for the low end of the ladder.
+    #[cfg(feature = "__pad_small")]
+    #[used]
+    static PAD_S: [extern "C" fn(&mut [u64; 32]) -> u64; 2] = [unit::<900>, unit::<901>];
+
+    #[cfg(not(feature = "__pad_small"))]
+    rung!(PAD1, 0);
+    #[cfg(feature = "__pad2")]
+    rung!(PAD2, 100);
+    #[cfg(feature = "__pad3")]
+    rung!(PAD3, 200);
+    #[cfg(feature = "__pad4")]
+    rung!(PAD4, 300);
+}
+
 struct LfBlock<'a, 'b, BD: BitDepth> {
     scratch: &'b mut LfScratch<BD>,
     /// Top-left of the rectangle in picture coordinates.
@@ -798,6 +873,66 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         {
             return Self::fill_hull::<W>(scratch, origin, stride, h);
         }
+        // Everything reachable only under tile threading lives in ONE
+        // out-of-line function, so `open` — which is what `fill` is inlined
+        // into, twelve times — carries only the hull path plus a call.
+        //
+        // This is not tidiness; it is the measured fix for
+        // `docs/RECT_RECORDS.md` §5d. The rectangle arm cost **+1.0..+1.3% wall
+        // at t=1 on `v4k8tile`, 0 of 11 rounds below 1.000 in two sessions**,
+        // where the hull path returns above and no rectangle is ever
+        // registered. `scripts/perf/text_layout_diff.py` +
+        // `text_symbol_diff.sh` located it: every hot loop-filter symbol kept a
+        // BYTE-IDENTICAL instruction stream, and the only executed function
+        // whose codegen changed at all was `LfBlock::open` — +2 instructions and
+        // a register-allocation churn from the twelve cold `fill_rect` calls it
+        // had inlined into it. Out-of-lining the whole tile-threading tail makes
+        // `open`'s t=1 body SMALLER than base's (base inlines the per-row loop
+        // there too) rather than larger.
+        //
+        // At t=8 it costs one call per `fill` — once per `h` rows, not once per
+        // row — on a path that already takes a borrow registration.
+        Self::fill_threaded::<W>(scratch, origin, stride, h)
+    }
+
+    /// The tile-threading half of [`Self::fill`], out of line: try the exact
+    /// strided-RECTANGLE record, and fall back to `h` per-row guards when the
+    /// geometry is not representable as one.
+    ///
+    /// # Why the extent may be one record here and must not be a hull
+    ///
+    /// The record covers **only** the `h` row segments — `rect_hit_range` walks
+    /// rows and knows nothing of the inter-row gaps — so a concurrent writer in a
+    /// gap (another tile column of the same picture rows, which is the routine
+    /// case under tile threading) is not reported. That is exactly the false
+    /// positive that confines [`Self::fill_hull`] to `!tile_threading_active()`,
+    /// and it cannot arise here. Nor is any reference wider than one row created:
+    /// `DisjointImmutRectGuard` has no `Deref` and derives each row from the
+    /// buffer's own pointer, which is what the March-2026 strided tracker got
+    /// wrong (exact record, hull-wide reference: UB under both aliasing models).
+    ///
+    /// `None` from `index_rect_as` is a REFUSAL, never an approximation — no
+    /// declared stride, a stride mismatch, `W > stride`, `h > MAX_RECT_ROWS`, a
+    /// hull spanning more than `MAX_SHARDS_PER_BORROW` blocks, or a full shard —
+    /// and then the per-row loop below runs exactly as it did before rectangles
+    /// existed.
+    /// `#[inline(never)]` ONLY in the rectangle arm. With the rectangle off this
+    /// function is the per-row loop and nothing else — exactly what `fill`
+    /// inlined before the split — so `inline(always)` there keeps the DEFAULT
+    /// build's codegen bit-for-bit what it was, which
+    /// `scripts/perf/text_layout_diff.py` checks (0 symbols resized, 0 symbols
+    /// added against the base commit's binary). That matters because
+    /// §3 of `docs/RECT_SHIP.md` measures this binary's t=1 layout sensitivity
+    /// at **+1.1% to +1.6% for ANY perturbation**, so a default build that is
+    /// not byte-identical to `main`'s pays that whether or not it does anything.
+    #[cfg_attr(feature = "__lf_rect", inline(never))]
+    #[cfg_attr(not(feature = "__lf_rect"), inline(always))]
+    fn fill_threaded<const W: usize>(
+        scratch: &mut LfScratch<BD>,
+        origin: PicOffset,
+        stride: isize,
+        h: usize,
+    ) {
         // THROWAWAY (`__probe_bounds`): price the strided-rectangle
         // counterfactual against the live set BEFORE taking the `h` per-row
         // guards, i.e. at the instant a single 2-D registration would have
@@ -826,16 +961,6 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         // column of the same picture rows, which is the routine case — is not
         // reported. `fill_hull` cannot be used here for exactly that reason; see
         // its doc comment.
-        //
-        // `#[inline(never)]`, and that is load-bearing rather than tidy. `fill`
-        // is `#[inline(always)]` and monomorphised over six `W` values x two bit
-        // depths, so an inlined attempt is twelve copies of it inside the hottest
-        // function in the filter chain — and at t=1 the attempt is UNREACHABLE
-        // (the hull path returned above) yet still paid for in code size.
-        // Measured inlined: **+1.26% wall at t=1 on `v4k8tile`, 0 of 11 rounds
-        // below 1.000**, with a byte-identical control at 1.0007. Out of line it
-        // costs one call per `fill` on the path that takes it, which is once per
-        // `h` rows, not once per row. docs/RECT_RECORDS.md §5d.
         #[cfg(feature = "__lf_rect")]
         if Self::fill_rect::<W>(scratch, origin, stride, h) {
             return;
@@ -869,9 +994,12 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         }
     }
 
-    /// The strided-RECTANGLE attempt, out of line. Returns `true` when it
-    /// registered and copied; `false` when the geometry is not representable as
-    /// one record, in which case [`Self::fill`]'s per-row loop runs unchanged.
+    /// The strided-RECTANGLE attempt. Returns `true` when it registered and
+    /// copied; `false` when the geometry is not representable as one record, in
+    /// which case [`Self::fill_threaded`]'s per-row loop runs unchanged.
+    ///
+    /// Inlined into its single caller, which is itself `#[inline(never)]`; the
+    /// soundness argument and the refusal list are on [`Self::fill_threaded`].
     ///
     /// # Why the extent may be one record here and must not be a hull
     ///
@@ -889,7 +1017,7 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
     /// declared stride, a stride mismatch, `W > stride`, `h > MAX_RECT_ROWS`, a
     /// hull spanning more than `MAX_SHARDS_PER_BORROW` blocks, or a full shard.
     #[cfg(feature = "__lf_rect")]
-    #[inline(never)]
+    #[inline(always)]
     fn fill_rect<const W: usize>(
         scratch: &mut LfScratch<BD>,
         origin: PicOffset,
