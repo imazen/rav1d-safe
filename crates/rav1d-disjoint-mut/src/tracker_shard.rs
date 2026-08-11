@@ -510,6 +510,12 @@ pub mod wide_probe {
     /// Every one of these fell back to the caller's per-row path, so
     /// `n_rect_declined` is the count of `fill`s the mechanism did not reach.
     pub static N_RECT_DECLINED: AtomicU64 = AtomicU64::new(0);
+    /// Accepted rectangles whose hull spanned MORE THAN ONE shard. Those pay a
+    /// multi-shard `add` (n locks) AND a `remove_multi` (n locks again) against a
+    /// per-row registration's ONE `try_lock` and ONE lock-free store, so this
+    /// column is what decides whether the record COUNT or the LOCK TRAFFIC is
+    /// what a rectangle actually changes.
+    pub static N_RECT_MULTI: AtomicU64 = AtomicU64::new(0);
 
     pub fn report() -> std::string::String {
         use core::fmt::Write as _;
@@ -520,11 +526,11 @@ pub mod wide_probe {
         // an `__blockshift_adaptive` build uses — that one is per instance.
         let _ = writeln!(
             out,
-            "WIDEHDR\tconst_shift\tslow\tmulti\tw_shards\tw_blocks\tw_full\twide_total\tcontended\tlockslow\tspins\tn_rect\tn_rect_declined"
+            "WIDEHDR\tconst_shift\tslow\tmulti\tw_shards\tw_blocks\tw_full\twide_total\tcontended\tlockslow\tspins\tn_rect\tn_rect_declined\tn_rect_multi"
         );
         let _ = writeln!(
             out,
-            "WIDE\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "WIDE\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             super::BLOCK_SHIFT,
             N_SLOW.load(Relaxed),
             N_MULTI.load(Relaxed),
@@ -537,6 +543,7 @@ pub mod wide_probe {
             N_SPINS.load(Relaxed),
             N_RECT.load(Relaxed),
             N_RECT_DECLINED.load(Relaxed),
+            N_RECT_MULTI.load(Relaxed),
         );
         out
     }
@@ -2526,6 +2533,20 @@ impl BorrowTracker {
             n = k;
             set[..n].sort_unstable();
         }
+        // THROWAWAY (`__rect_1shard`): accept ONLY rectangles that land in one
+        // shard. A one-shard rectangle is strictly cheaper than the per-row
+        // registrations it replaces — one `try_lock` on `add`, one lock-free
+        // store on `remove`, exactly what a single per-row guard costs — whereas
+        // a 2-shard one pays two locks on `add` and two more in `remove_multi`
+        // against the per-row scheme's lock-FREE release. This arm separates the
+        // record-count effect from the lock-traffic effect instead of measuring
+        // their sum.
+        #[cfg(feature = "__rect_1shard")]
+        if n != 1 {
+            #[cfg(feature = "__probe_wide")]
+            wide_probe::N_RECT_DECLINED.fetch_add(1, Ordering::Relaxed);
+            return None;
+        }
         #[cfg(feature = "__probe_sites")]
         crate::site_probe::record(Location::caller(), IS_MUT, span);
 
@@ -2595,7 +2616,12 @@ impl BorrowTracker {
         }
         Self::unlock_all(&self.shards, &set[..n]);
         #[cfg(feature = "__probe_wide")]
-        wide_probe::N_RECT.fetch_add(1, Ordering::Relaxed);
+        {
+            wide_probe::N_RECT.fetch_add(1, Ordering::Relaxed);
+            if n > 1 {
+                wide_probe::N_RECT_MULTI.fetch_add(1, Ordering::Relaxed);
+            }
+        }
         Some(if n == 1 {
             BorrowId::narrow1(set[0] as usize, slots[0])
         } else {

@@ -120,6 +120,11 @@ __probe_shiftpin = ["std"]
 # Raise MAX_SHARDS_PER_BORROW from 4 to 5, which needs BorrowId's (shard, slot)
 # pairs narrowed from 12 bits to `log2(N_SHARDS) + 3`. A/B arm; see the const.
 __msb_5 = []
+# THROWAWAY: accept a strided-rectangle record ONLY when its hull lands in ONE
+# shard, so the arm measures the record-count cut WITHOUT the multi-shard lock
+# traffic (`add` takes n locks and `remove_multi` n more, against a per-row
+# guard's one `try_lock` and one lock-free store). See `add_rect`.
+__rect_1shard = []
 # Aligned newtypes (Align4..64) and AlignedVec32/64 for SIMD-friendly layout.
 aligned = ["dep:aligned", "dep:aligned-vec"]
 # PicBuf: owned/borrowed byte buffer for DisjointMut (used by rav1d picture data).

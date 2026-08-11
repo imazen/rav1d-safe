@@ -108,6 +108,9 @@ __probe_rect_hull = []
 # the fact. Absent from `default`; deleted (and the path made unconditional) if
 # it wins. See src/loopfilter.rs `LfBlock::fill`.
 __lf_rect = []
+# `__lf_rect` restricted to ONE-SHARD rectangles — the only ones strictly cheaper
+# than the per-row guards they replace.
+__lf_rect1 = ["__lf_rect", "rav1d-disjoint-mut/__rect_1shard"]
 probe-tinynop = ["rav1d-disjoint-mut/__probe_tinynop"]
 probe-addnop = ["rav1d-disjoint-mut/__probe_addnop"]
 probe-noscan = ["rav1d-disjoint-mut/__probe_noscan"]
