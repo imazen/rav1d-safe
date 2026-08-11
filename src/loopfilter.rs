@@ -826,23 +826,18 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         // column of the same picture rows, which is the routine case — is not
         // reported. `fill_hull` cannot be used here for exactly that reason; see
         // its doc comment.
+        //
+        // `#[inline(never)]`, and that is load-bearing rather than tidy. `fill`
+        // is `#[inline(always)]` and monomorphised over six `W` values x two bit
+        // depths, so an inlined attempt is twelve copies of it inside the hottest
+        // function in the filter chain — and at t=1 the attempt is UNREACHABLE
+        // (the hull path returned above) yet still paid for in code size.
+        // Measured inlined: **+1.26% wall at t=1 on `v4k8tile`, 0 of 11 rounds
+        // below 1.000**, with a byte-identical control at 1.0007. Out of line it
+        // costs one call per `fill` on the path that takes it, which is once per
+        // `h` rows, not once per row. docs/RECT_RECORDS.md §5d.
         #[cfg(feature = "__lf_rect")]
-        if let Some(rect) = origin
-            .data
-            .dm()
-            .index_rect_as::<BD::Pixel>(origin.offset, W, h, stride)
-        {
-            for row in 0..h {
-                let src: &[BD::Pixel; W] = rect.row(row).try_into().expect("row is W long");
-                let dst: &mut [BD::Pixel; W] = (&mut scratch.buf[row * LF_BW..][..W])
-                    .try_into()
-                    .expect("scratch row is LF_BW >= W long");
-                *dst = *src;
-                let pri: &mut [BD::Pixel; W] = (&mut scratch.pristine[row * LF_BW..][..W])
-                    .try_into()
-                    .expect("scratch row is LF_BW >= W long");
-                *pri = *src;
-            }
+        if Self::fill_rect::<W>(scratch, origin, stride, h) {
             return;
         }
         for row in 0..h {
@@ -872,6 +867,54 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
                 .expect("scratch row is LF_BW >= W long");
             *pri = *src;
         }
+    }
+
+    /// The strided-RECTANGLE attempt, out of line. Returns `true` when it
+    /// registered and copied; `false` when the geometry is not representable as
+    /// one record, in which case [`Self::fill`]'s per-row loop runs unchanged.
+    ///
+    /// # Why the extent may be one record here and must not be a hull
+    ///
+    /// The record covers **only** the `h` row segments — `rect_hit_range` walks
+    /// rows and knows nothing of the inter-row gaps — so a concurrent writer in a
+    /// gap (another tile column of the same picture rows, which is the routine
+    /// case under tile threading) is not reported. That is exactly the false
+    /// positive that confines [`Self::fill_hull`] to `!tile_threading_active()`,
+    /// and it cannot arise here. Nor is any reference wider than one row created:
+    /// `DisjointImmutRectGuard` has no `Deref` and derives each row from the
+    /// buffer's own pointer, which is what the March-2026 strided tracker got
+    /// wrong (exact record, hull-wide reference: UB under both aliasing models).
+    ///
+    /// `None` from `index_rect_as` is a REFUSAL, never an approximation — no
+    /// declared stride, a stride mismatch, `W > stride`, `h > MAX_RECT_ROWS`, a
+    /// hull spanning more than `MAX_SHARDS_PER_BORROW` blocks, or a full shard.
+    #[cfg(feature = "__lf_rect")]
+    #[inline(never)]
+    fn fill_rect<const W: usize>(
+        scratch: &mut LfScratch<BD>,
+        origin: PicOffset,
+        stride: isize,
+        h: usize,
+    ) -> bool {
+        let Some(rect) = origin
+            .data
+            .dm()
+            .index_rect_as::<BD::Pixel>(origin.offset, W, h, stride)
+        else {
+            return false;
+        };
+        for row in 0..h {
+            let src: &[BD::Pixel; W] = rect.row(row).try_into().expect("row is W long");
+            let dst: &mut [BD::Pixel; W] = (&mut scratch.buf[row * LF_BW..][..W])
+                .try_into()
+                .expect("scratch row is LF_BW >= W long");
+            *dst = *src;
+            let pri: &mut [BD::Pixel; W] = (&mut scratch.pristine[row * LF_BW..][..W])
+                .try_into()
+                .expect("scratch row is LF_BW >= W long");
+            *pri = *src;
+        }
+        true
     }
 
     /// [`Self::fill`] with ONE registration instead of `h`.
