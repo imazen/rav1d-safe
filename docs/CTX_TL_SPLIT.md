@@ -415,6 +415,13 @@ at t=8 or on the photo class.
   contention, not count: 18.78 ns/registration in the census against 2.78-8.11
   everywhere else, most of it `TinyLock::lock_slow` spin. **A count cut is not
   the lever for that cell**, which is the single most useful negative here.
+  > **Corrected 2026-08-11 (`docs/C256_CONTENTION.md`): "most of it
+  > `TinyLock::lock_slow` spin" is wrong.** The waiting population is 10.7% of
+  > that cell's tracker cost, and four waiting-policy arms — including a real
+  > park — recover none of it. The count-cut null stands; the *reason* is
+  > coherence, not contention: the registration count is identical at t=2/4/8
+  > while the cost per registration doubles per doubling of workers
+  > (4.52 → 9.18 → 19.71 ns).
 * **Eleven of the sixteen converted helpers never fire on this corpus.** Every
   timed cell here is a still, so `get_comp_ctx`, `get_comp_dir_ctx`,
   `get_filter_ctx`, `get_jnt_comp_ctx`, `get_mask_comp_ctx` and the six

@@ -1,0 +1,120 @@
+c256x2048 t=8 contention round — 2026-08-11, branch perf/c256-contention @ 668f5ec
+base main @ dcc9395 (PR #503 merged: the derived rows-per-block rule is the default)
+=====================================================================================
+VERDICT  Both levers the round was opened for are REFUTED. Nothing ships.
+         Full write-up: docs/C256_CONTENTION.md.
+         L1 (a FINER shard block than the block-count rule can reach): null at
+            one shift finer, then monotone adverse — 0.9947 / 1.0221 / 1.1179 /
+            1.2026 / 1.2106 at -1/-2/-3/-4/-5 shifts against a pinned identity
+            control. Wide path never reached at ANY rung, so the lever was not
+            killed by its counter-force; it is killed by shard-line footprint.
+         L2 (the shard lock's waiting policy, four arms): every arm inside a
+            +-1.8% identity-control band. Priced first: the whole waiting
+            population is 1.20 CPU ms/frame = 10.7% of the tracker's 11.23, so
+            a PERFECT lock was worth 2.39x -> 2.27x against a 1.4x bar.
+
+Box     Apple M4 Pro, 8P+4E, macOS 26.5.2, aarch64. Every timed run under
+        `measlock`. Builds and gates NICED; timed runs never.
+        Idle: foreign_max = 0 on the shift ladder and the thread-count ladder,
+        1 on the n=15 lock settle, 1-2 on the cross-cell relax grid (LOAD-TAGGED
+        there: paired ratios hold, absolute ms/frame are inflated ~4%).
+Build   cargo --release, no target-cpu=native. Arms copied to names cargo never
+        writes (scripts/perf/c256_build.sh) so a later build cannot swap an
+        inode under a running measurement.
+Vector  ~/tmp/bpsrows/vec/C256x2048_420_8b__t8.avif + the matching IVF
+        (mk_shardsize_vectors.sh; a centred 1:1 crop, 4x2 = 8 tiles, 8-bit
+        4:2:0, all-intra). Companions: C1024x{192,384,576}, C3840x256,
+        v4k_8tile. Every IVF is N repeats of the SAME key-frame OBU the AVIF
+        carries, so our arm and dav1d decode identical work.
+Fit     two-point `total = a + b*frames`, n_lo/n_hi per cell and never past the
+        stream length (22/225 at c256x2048). ROUND 0 DISCARDED (first touch of
+        each (arm, cell) is cold). Ratios PAIRED per round, then median; bands
+        are min/max over rounds; `sign` = rounds on the same side of 1.000.
+Ident   Every timed arm's CHECKSUM equals dav1d 1.5.4's md5 at t=1 AND t=8
+        (248f00770bd2f196fad95684c47954f0), 15 arms, taken BEFORE any timing.
+
+FILES
+  c256_shift_ladder_2026-08-11.tsv    L1: 11 arms x 8 rounds, c256x2048 t=8.
+                                      Arms `pinL<luma>C<chroma>` are
+                                      RAV1D_PIN_SHIFT="256:<L>,128:<C>" over one
+                                      `probe-shiftpin` binary; pinL11C9 is the
+                                      IDENTITY CONTROL (the shifts the shipped
+                                      rule already computes on this cell).
+  c256_lockarms_2026-08-11.tsv        L2 settle: 8 arms x 16 rounds, c256x2048
+                                      t=8. `plainB` is a byte-identical COPY of
+                                      bench_plain = the in-grid identity control.
+  c256_lockarms_n7_2026-08-11.tsv     L2 first pass, n=8 rounds, 3 cells
+                                      (c256 t=8, c256 t=1, c1024x576 t=8).
+                                      Its lockbackoff 0.9739 did NOT reproduce.
+  c256_lockarms_grid_2026-08-11.tsv   relax/backoff across 6 cells, n=10 rounds.
+  c256_tscan_2026-08-11.tsv           plain/untracked/dav1d at t=1,2,4,8.
+  c256_contention_2026-08-11.tsv      contention census, UN-NICED under measlock,
+                                      5 reps x 4 arms x 3 cells.
+  c256_contention_tscan_2026-08-11.tsv  same counters at t=1,2,4,8.
+  c256_contention_arms_2026-08-11.tsv   same counters for all five lock arms.
+  c256_pin_counts_2026-08-11.tsv      multi/wide counts over the 16-rung pin
+                                      ladder (NICED — counts only; see the trap
+                                      below).
+  c256_miri_2026-08-11.tsv            Miri, both models x default and
+                                      __probe_lock_park, one target at a time.
+
+TWO INSTRUMENT TRAPS, BOTH HIT AND BOTH RECORDED
+  1. A NICED counted run measures a different machine. On Darwin `nice -n 19`
+     maps to background QoS and lands all eight workers on the four E-cores.
+     Registration COUNTS are indifferent; CONTENTION counts are not — the first
+     pass read lockslow = 1,072/frame where the un-niced build reads 96.
+     scripts/perf/c256_contention.sh runs UN-NICED under measlock for this
+     reason even though it only reports counters.
+  2. The counter and the profile disagreed by ~150x on `TinyLock::lock_slow`,
+     and both are right. `core::hint::spin_loop()` was directly measured at
+     7.6 ns on an idle core (200M x 3 rounds minus an empty-loop control), which
+     over 1,007-1,373 counted iterations/frame predicts 0.008 CPU ms/frame
+     against a profile reading 0.86-1.20. Reconciled by running BOTH instruments
+     in ONE binary (probe-wide + sample, 9,000 frames): 5,984 leaf samples
+     against that run's own 1,373 spins/frame over 6,949 windowed frames =
+     ~627 ns per iteration under real contention. `lock_slow` is 32 bytes of
+     text (nm: 0x1001b70fc..0x1001b711c) and `add_contended` is a separate
+     symbol with 499 samples, so it is not misattribution to a neighbour.
+
+1. THE RESIDUAL, MEASURED (c256x2048, n=7, idle; regs from probe-sites, lost=0)
+   t   ours   untrk  dav1d  ours/dav  ceil   trkCPU ms/f  regs/frame  ns/reg  cores
+   1  12.404  11.827  9.442    1.314  1.253       0.596     272,505    2.19   1.00
+   2   7.444   6.144  4.833    1.540  1.271       2.578     569,690    4.52   1.98
+   4   4.590   3.236  2.535    1.811  1.277       5.229     569,690    9.18   3.87
+   8   3.764   2.099  1.576    2.387  1.331      11.227     569,690   19.71   6.70
+   The registration count is IDENTICAL at t=2/4/8 (the tile_threading latch is
+   already thrown at t=2) and the cost per registration DOUBLES with every
+   doubling of workers. At most 10.7% of it is waiting. So >=89% of the
+   tracker's t=8 cost is the UNCONTENDED path getting slower as more cores touch
+   the same shard — roughly one cross-core transfer of the shard's own cache
+   line per registration.
+
+2. SELF TIME (sample, 30 s, busy-normalised; parked threads bucketed as idle)
+   arm         busy    idle%  entropy kernels    lf   cdef tracker   sync runtime other
+   plain t=2  45,301   34.23    56.11   12.37  7.40   3.56   13.38   0.26    2.97  3.95
+   plain t=8 136,724   25.33    44.92   11.11  5.14   2.22   22.91   4.75    3.39  5.57
+   relax t=8 137,723   24.70    44.74   11.02  5.26   2.27   23.26   4.77    3.32  5.36
+   park  t=8 129,474   28.97    47.41   11.67  5.23   2.32   25.16   0.69    3.28  4.24
+   The park arm converts the spin into idle (sync 4.75 -> 0.69, idle 25.3 ->
+   29.0) and moves neither wall (0.9922) nor CPU (1.0002): the waiting is real,
+   removable as CPU, and not on the critical path.
+
+3. THE CONTENTION CENSUS (per frame, un-niced, median of 5 reps)
+   arm      contended  lockslow  spins  spins/wait      (569,690 regs/frame)
+   plain        1,506        99  1,007       10.16      contended = 0.264% of regs
+   backoff      1,545        98    756        7.69
+   relax        1,457        90    216        2.40      4.7x fewer iterations, live
+   yield        1,492        74    108        1.47
+   park         1,801     1,644      0        0.00      (counts every contended lock)
+   w_shards / w_blocks / w_full are 0 at EVERY rung of the pin ladder, including
+   shift 6 on both planes — the wide path is never reached on this cell.
+
+NOT COVERED
+   x86_64 (where every lock acquisition is dearer — a waiting-policy arm could
+   behave differently and this round says nothing about it), wasm32, 10-bit,
+   12-bit, 4:4:4, film grain, inter/video content, `unchecked`, `asm`, t=16.
+   One vector, one content class, one box. Loop restoration executes zero blocks
+   here. The shift ladder was swept on a per-plane PIN, not on a candidate
+   shipping rule — this round only establishes there is nothing to win on this
+   cell, so no refining rule was designed. SLOTS untouched; no reservation
+   widened anywhere; no tile- or worker-keyed scheme built.

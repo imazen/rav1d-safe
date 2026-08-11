@@ -228,6 +228,13 @@ round's — its `bps1` / `bps-half` / `bps-quarter` rungs, which DO coarsen it,
 measured 0.987 / 0.987 / 0.995. Two different levers, same answer, one of them
 cited rather than re-run — that cell needs a third.
 
+> **Follow-up, 2026-08-11 (`docs/C256_CONTENTION.md`): it got a third and a
+> fourth, and both are refuted.** "Contention-bound" is the wrong name for that
+> 19.16 ns — waiting is 10.7% of the tracker's cost there and removing it
+> measures zero. The cell is COHERENCE-bound: the registration count is
+> identical at t=2/4/8 and the cost per registration doubles with every
+> doubling of workers.
+
 The `c1024x576` count here is 529,092/frame against the cost census's
 566,594. That is not a disagreement: the census ran on `main @ 414515c` and
 **#502 has landed since**, removing part of the LEFT-context read family. Use
@@ -511,12 +518,21 @@ genuinely null.
 
 Ranked follow-ups, with what each is worth where it has been measured:
 
-1. **`c256x2048` — 2.32x of dav1d, the worst cell in the grid, and now refused
-   by two levers.** #502 measured a 5.8% registration-count cut as null there;
-   this measures a granularity cut as null too (0.9921, and it is an identity
-   cell so that is not even an attempt). Its tracker cost is 19.16 ns per
-   registration against 3.2-3.9 on every cell the rule fixes — pure `TinyLock`
-   contention at 8 rows per block with 4 tile columns. It needs a third lever.
+1. ~~**`c256x2048` — 2.32x of dav1d, the worst cell in the grid, and now refused
+   by two levers.**~~ **DONE, and the answer is negative — see
+   `docs/C256_CONTENTION.md` (2026-08-11).** The third and fourth levers were
+   built and both are refuted: a shard block FINER than the block-count rule can
+   reach is monotone adverse (0.9947 / 1.0221 / 1.1179 / 1.2026 / 1.2106 at
+   1-5 shifts finer, against a pinned identity control), and the shard lock's
+   waiting policy is null across four arms inside a ±1.8% identity-control band.
+   **The "pure `TinyLock` contention" attribution above is CORRECTED there**:
+   waiting is 10.7% of the tracker's cost and removing it entirely measures
+   zero (the park arm converts it to idle and moves neither wall nor CPU). The
+   registration count is identical at t=2/4/8 while the cost per registration
+   doubles per doubling of workers (4.52 → 9.18 → 19.71 ns), so ≥89% of it is
+   the UNCONTENDED path paying one cross-core transfer of the shard's own cache
+   line. The next lever must remove the SHARING, not the count, the granularity
+   or the wait.
 2. **A per-plane rows target.** ~0.7% at the one cell where it is isolated;
    `probe-shiftpin` + `__rpb_*` price it.
 3. **Name the instance behind the residual 153 wide promotions/frame** (§6a).
