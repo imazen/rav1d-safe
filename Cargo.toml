@@ -157,6 +157,12 @@ bps-1 = ["rav1d-disjoint-mut/__bps_1"]
 bps-4 = ["rav1d-disjoint-mut/__bps_4"]
 bps-8 = ["rav1d-disjoint-mut/__bps_8"]
 bps-blocks = ["rav1d-disjoint-mut/__bps_blocks"]
+# The ladder for the SHIPPED constant (picture ROWS per block; default 4). The
+# bps-* rungs re-fit the block-COUNT rule this replaced and cannot answer
+# "is 4 right?" — these can. See `ROWS_PER_BLOCK_MIN` in src/tracker_shard.rs.
+rpb-2 = ["rav1d-disjoint-mut/__rpb_2"]
+rpb-8 = ["rav1d-disjoint-mut/__rpb_8"]
+rpb-16 = ["rav1d-disjoint-mut/__rpb_16"]
 # THROWAWAY per-plane shift pin (RAV1D_PIN_SHIFT="<stride>:<shift>,..."), the
 # only instrument that separates a luma shift from a chroma one.
 probe-shiftpin = ["rav1d-disjoint-mut/__probe_shiftpin"]

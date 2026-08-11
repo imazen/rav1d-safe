@@ -77,6 +77,22 @@ def ratio_band(c, a, b, vec, t, key="wall"):
     return alo / bhi, ahi / blo
 
 
+def paired(c, a, b, vec, t, key="wall"):
+    """Per-ROUND ratio a/b, which is what the interleave is for.
+
+    The arms rotate within a round, so a drift shared by every arm — and there
+    is one: v4k8tile reads 47.5 / 50.6 / 48.9 ms/frame across rounds for ALL
+    FIVE arms including dav1d — cancels in the paired ratio and does not cancel
+    in a ratio of medians. Returns (median, min, max, n_below_1, n).
+    """
+    ra = {r["round"]: r[key] for r in c.by[(a, vec, t)]}
+    rb = {r["round"]: r[key] for r in c.by[(b, vec, t)]}
+    rs = [ra[k] / rb[k] for k in sorted(set(ra) & set(rb)) if rb[k]]
+    if not rs:
+        return float("nan"), float("nan"), float("nan"), 0, 0
+    return statistics.median(rs), min(rs), max(rs), sum(1 for x in rs if x < 1.0), len(rs)
+
+
 def disjoint(c, a, b, vec, t, key="wall"):
     alo, ahi = c.band(a, vec, t, key)
     blo, bhi = c.band(b, vec, t, key)
@@ -126,24 +142,46 @@ def main_table(c, base, head, key):
               f"{b:>9.3f} {h:>9.3f} {h / b:>10.4f} {dj:>3} "
               f"{b / dv:>11.3f} {h / dv:>11.3f} {hf / b:>10.4f} {un / b:>11.4f}")
     print()
-    print("RATIO BANDS (worst case over both arms' [min..max])")
-    print(f"{'cell':<16}{'t':>2}  {'head/base':<22}{'HEAD/dav1d':<22}{'base/dav1d':<22}"
-          f"{'verdict (head/base)':<24}")
+    print("PAIRED per-round head/base — the statistic the interleave is for. "
+          "A drift shared by all arms cancels here and does not cancel in a "
+          "ratio of medians.")
+    print(f"{'cell':<16}{'t':>2} {'median':>8} {'[min..max]':>18} {'<1':>6}  "
+          f"{'unpaired band':<20}{'verdict':<26}")
     for vec, t in order:
         if not (c.has(base, vec, t) and c.has(head, vec, t)):
             continue
-        hb = ratio_band(c, head, base, vec, t, key)
-        hd = ratio_band(c, head, "dav1d_fd1", vec, t, key) if c.has("dav1d_fd1", vec, t) else (float("nan"),) * 2
-        bd = ratio_band(c, base, "dav1d_fd1", vec, t, key) if c.has("dav1d_fd1", vec, t) else (float("nan"),) * 2
-        if hb[1] < 1.0:
-            v = "WIN, band-safe"
-        elif hb[0] > 1.0:
-            v = "REGRESSION, band-safe"
+        m, lo, hi, nb, n = paired(c, head, base, vec, t, key)
+        ub = ratio_band(c, head, base, vec, t, key)
+        # Mechanical, deliberately: "all below 1.0" is a statement about the
+        # paired distribution, not a significance claim. Whether a 0.06% offset
+        # matters is a question about the NOISE FLOOR, and the floor is read off
+        # the identity controls (every cell at t=1; c256x2048 and v4k8tile at
+        # t=8, where the rule provably returns the same shift). The doc names it;
+        # a script that printed "REGRESSION" for +0.06% on provably identical
+        # code would be lying with a straight face.
+        if n < 3:
+            v = f"n={n}, no verdict"
+        elif hi < 1.0:
+            v = f"all {n} below 1.0"
+        elif lo > 1.0:
+            v = f"all {n} above 1.0"
         else:
-            v = "null (bands span 1.0)"
-        print(f"{SHORT.get(vec, vec):<16}{t:>2}  "
-              f"[{hb[0]:.4f}..{hb[1]:.4f}]{'':<6}[{hd[0]:.3f}..{hd[1]:.3f}]{'':<8}"
-              f"[{bd[0]:.3f}..{bd[1]:.3f}]{'':<8}{v:<24}")
+            v = f"spans 1.0 ({nb}/{n} below)"
+        if abs(m - 1.0) < 0.01:
+            v += "  |d|<1%"
+        print(f"{SHORT.get(vec, vec):<16}{t:>2} {m:>8.4f} {f'[{lo:.4f}..{hi:.4f}]':>18} "
+              f"{f'{nb}/{n}':>6}  [{ub[0]:.3f}..{ub[1]:.3f}]{'':<7}{v:<26}")
+    print()
+    print("PAIRED per-round ours/dav1d — the number the campaign table must quote")
+    print(f"{'cell':<16}{'t':>2} {'HEAD/dav1d':>11} {'[min..max]':>18} "
+          f"{'base/dav1d':>11} {'[min..max]':>18}")
+    for vec, t in order:
+        if not (c.has("dav1d_fd1", vec, t) and c.has(head, vec, t)):
+            continue
+        hm, hlo, hhi, _, _ = paired(c, head, "dav1d_fd1", vec, t, key)
+        bm, blo, bhi, _, _ = paired(c, base, "dav1d_fd1", vec, t, key)
+        print(f"{SHORT.get(vec, vec):<16}{t:>2} {hm:>11.3f} {f'[{hlo:.3f}..{hhi:.3f}]':>18} "
+              f"{bm:>11.3f} {f'[{blo:.3f}..{bhi:.3f}]':>18}")
 
 
 def factorial(c, key):
@@ -161,7 +199,8 @@ def factorial(c, key):
                   f"n={c.n(base, vec, t)}; base = {base} (= the block-count rule)")
             print("=" * 100)
             b = c.med(base, vec, t, key)
-            print(f"{'arm':<12}{'ms/f':>9}{'[min..max]':>20}{'/base':>9}{'dj':>4}   note")
+            print(f"{'arm':<12}{'ms/f':>9}{'[min..max]':>20}{'/base':>9}{'dj':>4}"
+                  f"{'paired':>9}{'[min..max]':>18}{'<1':>6}   note")
             notes = {
                 "pinL10C8": "block-count rule (bps-blocks)",
                 "pinL11C9": "bps-1",
@@ -176,7 +215,9 @@ def factorial(c, key):
                 m = c.med(a, vec, t, key)
                 lo, hi = c.band(a, vec, t, key)
                 dj = "*" if disjoint(c, a, base, vec, t, key) else ""
-                print(f"{a:<12}{m:>9.3f}{f'[{lo:.3f}..{hi:.3f}]':>20}{m / b:>9.4f}{dj:>4}   "
+                pm, plo, phi, nb, n = paired(c, a, base, vec, t, key)
+                print(f"{a:<12}{m:>9.3f}{f'[{lo:.3f}..{hi:.3f}]':>20}{m / b:>9.4f}{dj:>4}"
+                      f"{pm:>9.4f}{f'[{plo:.4f}..{phi:.4f}]':>18}{f'{nb}/{n}':>6}   "
                       f"{notes.get(a, '')}")
             print()
             # Additivity: is the (L, C) grid separable?

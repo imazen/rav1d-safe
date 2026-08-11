@@ -92,6 +92,12 @@ __bps_8 = []
 # feature because it IS the default. See `ROWS_PER_BLOCK_MIN` in
 # src/tracker_shard.rs and benchmarks/bps_rows_default_2026-08-11.meta.
 __bps_blocks = []
+# The ladder for the SHIPPED constant: picture ROWS a block must span. Default 4.
+# (The `__bps_*` rungs re-fit the block-COUNT rule this replaced, so they cannot
+# answer "is 4 right?" — see `ROWS_PER_BLOCK_MIN`.)
+__rpb_2 = []
+__rpb_8 = []
+__rpb_16 = []
 # THROWAWAY: pin a declared-stride buffer's block shift from RAV1D_PIN_SHIFT
 # ("<stride>:<shift>,..."), so a factorial over PER-PLANE shifts can be measured.
 # The rows rule and the ladder both move luma and chroma together, so the grid

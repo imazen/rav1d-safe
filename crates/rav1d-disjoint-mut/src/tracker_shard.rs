@@ -1187,9 +1187,20 @@ const ROWS_RULE_ACTIVE: bool = !cfg!(any(
 /// coarse side of it by one step.
 ///
 /// **Fitted on that grid with no held-out size, and that is a stated weakness of
-/// the shipped value** (`docs/SHARD_SIZE_SWEEP.md` §1). Re-fit it with
-/// `--features bps-blocks` as the base arm and the `bps-*` rungs as the ladder;
-/// nothing else needs to change to run the sweep again.
+/// the shipped value** (`docs/SHARD_SIZE_SWEEP.md` §1). `__rpb_2` / `__rpb_8` /
+/// `__rpb_16` are the ladder for re-fitting THIS constant — the `__bps_*` rungs
+/// re-fit the block-COUNT rule, which is the thing this replaced, so they are
+/// the wrong instrument for the question. `__bps_blocks` is the base arm.
+#[cfg(feature = "__rpb_2")]
+const ROWS_PER_BLOCK_MIN: usize = 2;
+#[cfg(all(feature = "__rpb_8", not(feature = "__rpb_2")))]
+const ROWS_PER_BLOCK_MIN: usize = 8;
+#[cfg(all(
+    feature = "__rpb_16",
+    not(any(feature = "__rpb_2", feature = "__rpb_8"))
+))]
+const ROWS_PER_BLOCK_MIN: usize = 16;
+#[cfg(not(any(feature = "__rpb_2", feature = "__rpb_8", feature = "__rpb_16")))]
 const ROWS_PER_BLOCK_MIN: usize = 4;
 
 /// Floor on how many blocks a buffer keeps, whatever the rows target asks for.
@@ -2695,8 +2706,14 @@ mod tests {
             (3840, 2160),
         ] {
             let (rows, blocks) = rows_of(w, h, 0);
+            // Either the rows target is met, or the ONLY reason it is not is
+            // that one more shift would fall under the block floor. `blocks <=
+            // MIN_BLOCKS` was the earlier form and is too strict at a coarser
+            // target: `ilog2` rounds the cap down, so a floor-bound cell can sit
+            // anywhere in [MIN_BLOCKS, 2*MIN_BLOCKS). 1024x192 at a target of 8
+            // lands on 34 blocks and would fail it while being exactly right.
             assert!(
-                rows >= ROWS_PER_BLOCK_MIN || blocks <= MIN_BLOCKS,
+                rows >= ROWS_PER_BLOCK_MIN || (blocks >> 1) < MIN_BLOCKS,
                 "{w}x{h}: {rows} rows/block, {blocks} blocks — below the target \
                  with the block floor not binding"
             );
@@ -2725,6 +2742,11 @@ mod tests {
             (256, 4096),
             (128, 2048),
             (1024, 2048),
+            // Narrow enough that the unclamped rows target stays finer than the
+            // block rule even at `__rpb_16`: that needs `aligned_h > 256 * R`,
+            // and without a cell like this the anti-vacuity check below FAILS at
+            // the coarse rungs — which is the check doing its job, not a bug.
+            (128, 8192),
         ] {
             for hbd in [0, 1] {
                 let (len, stride) = plane(w, h, hbd);
