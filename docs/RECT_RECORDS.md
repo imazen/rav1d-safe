@@ -363,7 +363,110 @@ mechanism's own target cell gains nothing.
 
 ## 6. Gates
 
-PLACEHOLDER_GATES
+Driver `scripts/perf/rect_gates.sh`, logs `~/tmp/rectrec/gates`. Nothing here is
+timed, so everything is `nice`d and nothing takes the measurement lock.
+
+### 6a. Correctness
+
+| gate | result |
+|---|---|
+| **corpus, `__lf_rect` arm, t=1**, no `--skip-group` | **766 PASS + 2 SKIP**, mismatch=0 error=0 |
+| **corpus, `__lf_rect` arm, t=8**, no `--skip-group` | **766 PASS + 2 SKIP**, mismatch=0 error=0 |
+| **corpus, DEFAULT arm, t=1** | **766 PASS + 2 SKIP** |
+| **corpus, DEFAULT arm, t=8** | **766 PASS + 2 SKIP** |
+| set-diff BY NAME (key `(group, name)`, value `(status, ACTUAL md5)`) vs `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst` | **CLEAN on all four**: 0 only-in-baseline, 0 only-in-head, 0 differing |
+| set-diff t=1 vs t=8 within each arm | CLEAN, both arms |
+| `cargo test --lib`, release AND debug | pass, both |
+| tracker unit tests, ONE feature configuration at a time: default, `--no-default-features`, `__rect_1shard`, `__probe_wide`, `__probe_wide,__rect_1shard`, `__probe_sites`, `zerocopy`, `__probe_lock_park`, `__bps_blocks`, `__msb_5` | **42 pass each** (40 under `__rect_1shard`, which `#[cfg]`s out the two tests whose subject it removes) |
+| `decode_md5_verify`, `thread_cleanup_test`, `tile_threading_overlap`, `reproduce_overlap`, `mt_stress`, plain AND `-- --ignored` | pass, all |
+| every timed arm's `CHECKSUM` before any timing | 9 arms x 2 thread counts -> **ONE md5 per cell**, on all seven cells |
+| `cargo fmt --all --check` | rc=0 |
+| clippy `-D warnings`: tracker `--all-targets`, `--no-default-features --all-targets`, `--all-targets --features __rect_1shard`, `--all-targets --features __shards_1`, root `--lib`, `--lib --features __lf_rect`, `--lib --features __lf_rect1` | rc=0, all seven |
+
+The DEFAULT arm is not a formality: `ShardRecs::find` — the hottest loop in the
+decoder — was edited, so "the rectangle path is off" is a claim about a file that
+changed, and 766/766 BY NAME is the evidence rather than the assertion.
+
+### 6b. Test teeth, proven by planting
+
+Every mutation was restored from a `~/tmp` backup COPY, never `git checkout --`,
+and verified byte-exact by sha256 AND `git diff --exit-code`.
+`tracker_shard.rs` sha256 `7137b697…` before and after the battery.
+
+| planted mutation | result |
+|---|---|
+| (control, no mutation) | 42 pass |
+| `rect_hit_range` always returns `Some` — the record degrades to a HULL | **FAILS (6)** |
+| `rect_hit_range` always returns `None` — **detection OFF** | **FAILS (7)** |
+| `rect_decode`'s row count off by one | **FAILS (8)** |
+| `find` ignores the rect bit (rectangle treated as its hull interval) | **FAILS (2)** |
+| rectangle-vs-rectangle compares only row 0 | **FAILS (1)** |
+| `add_rect` never scans before registering | **FAILS (3)** |
+| `add_rect` drops the O(1) block-span cap (in-loop belt remains) | **passes** — reported as a NON-mutation: the two cap checks are deliberate duplicates of each other |
+| `add_rect` drops the in-loop cap belt (O(1) pre-check remains) | **passes** — same reason |
+| **both cap checks removed together** | **FAILS (1)** |
+
+The fifth row is why the round's own first test grid was rewritten: with
+non-negative offsets only, the registrant's row 0 is always the nearest to the
+counterparty, so a mutation that compares only row 0 CANNOT be caught. The grid
+now runs signed offsets and catches it. That mutation passed the first time it
+was planted, and the test was fixed rather than the finding softened.
+
+**Decoder-level teeth**, because the tracker tests alone do not prove the corpus
+would notice a wrong pixel from this path: planting `rect.row(row + 1)` in
+`LfBlock::fill`'s rectangle loop gives **277 mismatches of 358** on
+`8-bit/data` at t=8; restoring gives **358/358 clean**.
+`src/loopfilter.rs` sha256 `4338932e…` before and after.
+
+**`forbid(unsafe_code)` proven ACTIVE, not read**: an
+`unsafe { core::mem::transmute(x) }` planted in `src/picture.rs` (no
+module-level forbid of its own, compiled in every configuration) fails the build
+against **`lib.rs:13:12`** — the campaign brief's anchor. Restored, sha256
+`fa02c12b…` before and after, `git diff` clean, lib rebuilt green. No `unsafe`
+was added to `rav1d-safe`. The `unsafe` this round adds is all in
+`crates/rav1d-disjoint-mut` (which has no `forbid`): one `NonNull::new_unchecked`
++ `add` in `index_rect_inner` and one `slice::from_raw_parts` in
+`DisjointImmutRectGuard::row`, each with a safety comment naming the invariant —
+the live registration, the alignment check, and the in-bounds proof from the
+constructor.
+
+### 6c. Miri, both aliasing models
+
+`cargo +nightly miri test -p rav1d-disjoint-mut --no-fail-fast --test <target>`,
+ONE TARGET AT A TIME (Miri aborts the process on first UB and cargo stops at the
+first failing TARGET, so a batch run lets later targets never execute and their
+silence reads as health). Both Stacked Borrows and Tree Borrows, and both the
+default feature set and `__rect_1shard` — the arm that changes WHICH of
+`add_rect`'s two registration shapes runs, i.e. a different pointer/reference
+sequence. Driver `scripts/perf/rect_miri.sh`, record
+`benchmarks/rect_records_miri_2026-08-11.tsv`.
+
+**Miri is the gate this mechanism most needed.** The March-2026 strided tracker
+had an exact record and a reference over the whole hull; that combination is UB
+under both models, 766 corpus vectors did not see it, and Miri did.
+`DisjointImmutRectGuard` has no `Deref` and derives each row from the buffer
+pointer specifically so that no reference ever spans a gap — these legs are what
+says so instead of the doc asserting it.
+
+MIRI_TABLE_PLACEHOLDER
+
+The exhaustive differential grids are scaled down under `cfg!(miri)` (point count
+only — every assertion, oracle and liveness floor is unchanged, and the native
+run keeps the full grid). Without that, `--lib` cannot finish inside any sane
+timeout, and **a timed-out target reports nothing at all, which is strictly worse
+than a smaller grid that still asserts.**
+
+### 6d. Pre-existing failures, verified on the base commit
+
+None of these are this branch's, and each was confirmed by running the same
+command in a worktree at 140f914:
+
+| leg | base 140f914 | this branch |
+|---|---|---|
+| tracker tests `--features __shards_1` | **5 FAIL** (`adaptive_shift_keeps_the_block_count_near_target`, `coarser_blocks_collapse_a_strided_access_onto_fewer_shards`, `declaring_a_stride_installs_the_derived_shift`, `one_tile_does_not_get_the_coarse_shift`, `rows_rule_targets_picture_rows_not_block_count`) | the **same 5 by NAME**, set-diffed |
+| tracker tests `--all-features` | does not COMPILE (`probe_shard_of` / `probe_geometry` absent under `__probe_bounds` + `__tracker_legacy`) | same |
+| clippy tracker `--all-features --all-targets` | 8 errors | same |
+| `cargo clippy --release --all-targets` (root, NOT a CI leg) | fails on `_dev` examples | same |
 
 ## 7. What this establishes, and what the next lever must be
 
@@ -375,29 +478,36 @@ PLACEHOLDER_GATES
 | it is sound under tile threading, unlike the hull | **YES** — 766/766 by NAME at t=1 and t=8, and the exact test provably excludes the gaps (12 tests against a brute-force byte-set oracle, 7 of 9 planted mutations caught) |
 | it removes the registrations it was aimed at | **YES** — 569,690 -> 409,349 per frame (−28.1%), `fill` 180,434 -> 20,093 |
 | it stays off the wide path | **YES** — `w_shards = w_blocks = w_full` unchanged from base on every cell |
-| **it makes `c256x2048` t=8 faster** | **NO, at the noise floor**: −1.2 to −1.4% wall vs `main`, CPU 0.000, against a ±2-3% identity band |
-| **it should be the default** | **NO** — and the machinery's residual +0.8% CPU is charged to every cell including t=1, where no rectangle is ever registered |
+| **it makes `c256x2048` t=8 faster** | **NO** — 0.9955 wall with a **4/7** sign on the breadth grid and 0.9908 with **8/15** on the n=15 grid: a coin flip on the cell the round was aimed at |
+| it makes OTHER multi-tile t=8 cells faster | **YES, 5 of 6** — −1.0% to −1.8% wall, −1.3% to −3.0% CPU, signs 5/7 to 7/7, both controls at 1.000 with coin-flip signs |
+| **it is free where it does not fire** | **NO** — `v4k8tile` t=1 is **+1.26% with 0/11**, and at t=1 the path is never taken, so that is code size |
+| **it should be the default** | **NO.** A +1.26% t=1 regression on 4K, where this decoder's largest gap already lives, is not worth a −1.5% t=8 win — and no attempt was made to shrink `fill` first |
 | the five CDEF/`cdef_apply` sites were also routed through it | **NO — not attempted.** See below |
 
-### 7b. Why the CDEF sites were not attempted, stated as an expectation and not as a result
+### 7b. Why the CDEF sites were not attempted, as an expectation and not a result
 
 The counterfactual (§3) makes them look better than `fill` on paper: 7.27-8.00
-rows on **1.000** shards, so a 7-8x count cut with a strictly-cheaper record
-(one shard -> one `try_lock` on add, one lock-free store on release). Their
-combined population on this cell is 118,624 registrations/frame, 20.8%.
+rows on **1.000** shards, so a 7-8x count cut with a strictly-cheaper record (one
+shard -> one `try_lock` on add, one lock-free store on release). Their combined
+population on the primary cell is 118,624 registrations/frame, 20.8%.
 
-But `dblon` priced a `fill` registration at 2.42-2.71 ns, and there is no reason
-to expect a CDEF-site registration to be dearer — they are the same shape, dense
-runs on few shard lines. 118,624 x 2.6 ns = **0.31 CPU ms/frame, 2.7% of the
-tracker, ~1.2% of wall at best.** That is inside the band this round could not
-resolve a −1.3% in. **Wiring them is a day's work for a number this grid cannot
-measure**, and `rect1` — the strictly-cheaper-record variant — came out WORSE
-than base twice, which is the closest available evidence about what a
-one-shard-rectangle site actually does.
+Two measurements argue against expecting much, and one argues for trying:
 
-If someone does wire them, the arm to build first is `dblon` at those sites (a
-`RAV1D_CDEF_DOUBLE`), because it prices the prize in ten minutes without
-implementing anything.
+* **Against:** `dblon` priced a `fill` registration at 2.42-2.71 ns, and a
+  CDEF-site registration is the same shape — a dense run on few shard lines.
+  118,624 x 2.6 ns = **0.31 CPU ms/frame, 2.7% of the tracker**, and the `fill`
+  cut delivered less than its own arithmetic predicted.
+* **Against:** `rect1` — the one-shard, strictly-cheaper-record variant — came out
+  WORSE than base in both sessions. The CDEF sites are all one-shard, so `rect1`
+  is the closest available evidence about what such a site does, and it is
+  negative.
+* **For:** the t=8 breadth win (§5b) is real on five cells, and the CDEF sites'
+  populations are concentrated on exactly the 1024-wide and screen-content cells
+  where it is largest.
+
+**The arm to build first is a `RAV1D_CDEF_DOUBLE`, not the rectangle.** It prices
+those sites' whole registration population in ten minutes, in one binary, without
+implementing anything — and if it reads under ~1% there is nothing to win.
 
 ### 7c. The corrected cost model
 
@@ -433,7 +543,7 @@ it is the one that was named as the remaining direction in the task brief:
 | COARSER blocks (#501, #503) | null | 0.987 / 0.987 / 0.995 |
 | FINER blocks (#504) | adverse, monotone | +2.2% / +11.8% / +21% at −2/−3/−5 shifts |
 | waiting policy (#504) | null, bounded at 10.7% if perfect | 0.9857-1.0091, all inside ±1.8% |
-| **registration DENSITY at the top site (this round)** | **at the noise floor, and priced** | −1.2 to −1.4% wall / 0.0% CPU for −28.1% of the population; the site is 3.9-4.4% of the tracker |
+| **registration DENSITY at the top site (this round)** | **null ON THIS CELL, and priced** | 0.9955 wall (4/7) / 0.9908 (8/15) for −28.1% of the population; the site is 3.9-4.4% of the tracker. It DOES pay −1.0..−1.8% on five other t=8 cells, and costs +1.26% at t=1 on 4K |
 
 **The remaining mechanism is unchanged and this round sharpens why**: reduce the
 number of DISTINCT shard lines a worker touches, or stop registering. The two
@@ -442,7 +552,21 @@ spellings already on the board are `get_mut`-style untracked reads (#492's
 a count cut. And the prize is still bounded by a **1.33x** tracker-removed
 ceiling, so this cell asks for the tracker to be nearly free at t=8, not cheaper.
 
-### 7e. What is kept
+### 7e. The one thing here that is worth someone else's time
+
+**The t=8 breadth win is real and it is not this cell's.** −1.0% to −1.8% wall on
+`c1024x{192,384,576}`, `c3840x256` and `text_q20`, with `text_q20` at −3.0% CPU
+and 6/6 on both, is a bigger and more reproducible effect than anything the four
+`c256x2048` levers produced. It is currently unshippable only because of a
++1.26% t=1 code-size cost on `v4k8tile`, and that cost has an obvious untried
+fix: `LfBlock::fill` is `#[inline(always)]` and monomorphised over six `W` values
+and two bit depths, so the rectangle attempt is duplicated twelve times inside
+the hottest function in the filter chain. Moving it behind an `#[inline(never)]`
+shim, or out of the `W`-generic body entirely, costs nothing at t=8 (the
+rectangle is taken once per `fill`, not once per row) and is the difference
+between this arm and a default. **That is the next chunk, and it is small.**
+
+### 7f. What is kept
 
 The rectangle record itself is kept on `main`, behind `__lf_rect`, because it is
 the only exact 2-D reservation the tracker has ever had and it cost this round to
