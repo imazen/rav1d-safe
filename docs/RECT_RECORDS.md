@@ -10,19 +10,21 @@ threading, is live, and keeps the corpus at 766/766 by name at t=1 and t=8.
 What it measures, on an idle box against TWO controls (a byte-identical copy and
 a same-source-different-build layout control), is three things at once:
 
-| where | wall | CPU | sign |
-|---|---|---|---|
-| **multi-tile t=8, 5 of 6 cells** | **−1.0% to −1.8%** | −1.3% to **−3.0%** | 6/7 to 7/7 |
-| **`c256x2048` t=8 — the cell it was built for** | −0.45% | −0.55% | **4/7, a coin flip** |
-| **`v4k8tile` t=1, where the path never fires** | **+1.26%** | +1.25% | **0/11** |
+| where | wall | CPU | sign | replicated? |
+|---|---|---|---|---|
+| **multi-tile t=8, 5 of 6 cells** | **−1.0% to −1.8%** | −1.3% to **−3.3%** | 6/7 to **11/11** | **yes, two sessions** |
+| **`c256x2048` t=8 — the cell it was built for** | −0.2% to −0.5% | −0.6% | **4/7, 5/10, 8/15 — a coin flip** | yes, three grids |
+| **`v4k8tile` t=1, where the path never fires** | **+0.9% to +1.3%** | same | **0/11 twice** | **yes, two sessions** |
 
 Both controls sit at 1.000 with coin-flip signs on every one of those cells, so
 the t=8 wins and the t=1 regression are both above the floor. **The t=1 cost is
-pure code size** — at t=1 `fill` takes the hull path and no rectangle is ever
-registered, so the only thing the arm changes there is a never-taken block inside
-a function that is `#[inline(always)]` and monomorphised 12 ways. Paying +1.26%
-at t=1 on 4K content, where this decoder's largest gap already lives, to buy
-−1.5% at t=8 is not a trade this round will make.
+code size, and it is NOT explained** — at t=1 `fill` takes the hull path and no
+rectangle is ever registered, so the arm cannot differ in work done. Moving the
+attempt out of line (`#[inline(never)]`, the obvious fix for a function that is
+`#[inline(always)]` and monomorphised 12 ways) moved it 1.0103 -> 1.0088 and left
+the sign at 0/11 (§5e). Paying ~1% at t=1 on 4K content, where this decoder's
+largest gap already lives, to buy −1.5% at t=8 is not a trade this round will
+make on the strength of an effect it cannot account for.
 
 The prize was small for a reason that is now measured. **A `LfBlock::fill`
 per-row registration costs 2.42-2.71 ns at the margin** — measured by ADDING a
@@ -335,31 +337,74 @@ pre-rectangle codegen, its hit downgraded to a prefilter, the exact test moved
 into a cold `refine`/`find_exact` — because that is the right shape whether or
 not the measurement could see it.
 
-### 5d. Grid D — t=1, where the path never fires, and where it LOSES
+### 5d. Grids D and E — t=1, where the path never fires, and where it LOSES
 
-At t=1 `tile_threading_active()` is false, so `fill` takes the hull path and
-`add_rect` is never called. The `rect` arm is therefore semantically identical to
-`plain` at t=1, and any difference is code size or layout. Idle box, n=11-12.
+At t=1 `tile_threading_active()` is false, so `fill` returns through the hull path
+and `add_rect` is never called. The `rect` arm is therefore semantically identical
+to `plain` at t=1, and any difference is code size or layout. Idle box.
 
-| cell t=1 | `rect` wall | sign | `plainB` (sign) | `plainC` (sign) |
-|---|---|---|---|---|
-| **`v4k8tile`** | **1.0126** | **0/11** | 1.0007 (4/11) | 1.0012 (3/11) |
-| `c1024x576` | 1.0032 | 2/12 | 1.0004 (6/12) | 1.0014 (6/12) |
-| `c256x2048` | 1.0027 | 3/11 | 0.9987 (6/11) | 1.0013 (3/11) |
-| `text_q20` | 0.9925 | 9/12 | 0.9989 (6/12) | 1.0032 (5/12) |
+| cell t=1 | grid | `rect` wall | sign | `plainB` (sign) | `plainC` (sign) |
+|---|---|---|---|---|---|
+| **`v4k8tile`** | D, n=11 | **1.0126** | **0/11** | 1.0007 (4/11) | 1.0012 (3/11) |
+| **`v4k8tile`** | E, n=11 | **1.0103** | **0/11** | 0.9990 (7/11) | 0.9996 (8/11) |
+| `c1024x576` | D, n=12 | 1.0032 | 2/12 | 1.0004 (6/12) | 1.0014 (6/12) |
+| `c1024x576` | E, n=9 | 1.0044 | 1/9 | 1.0000 (3/9) | 1.0004 (4/9) |
+| `c256x2048` | D, n=11 | 1.0027 | 3/11 | 0.9987 (6/11) | 1.0013 (3/11) |
+| `text_q20` | D, n=12 | 0.9925 | 9/12 | 0.9989 (6/12) | 1.0032 (5/12) |
 
-**`v4k8tile` at t=1 is +1.26% with 0 of 11 rounds below 1.000**, while both
-controls are at 1.001 with coin-flip signs. That is the clearest single signal in
-the whole round after `dblon`, and it is a REGRESSION in the arm, on the cell
-where this decoder's single-thread gap is largest (`docs/TILED_SCALING.md` §6:
-the filter chain alone is 4.0x dav1d at 4K t=1). `text_q20` t=1 goes the other
-way (−0.75%, 9/12), so the effect is layout-sensitive rather than a uniform tax —
-but a 4K t=1 regression of that size is not something to ship for a −1.5% t=8
-win, and no attempt was made to shrink `fill` (see §1).
+**`v4k8tile` at t=1 is +1.0% to +1.3% with 0 of 11 rounds below 1.000 in TWO
+independent sessions**, while both controls sit within ±0.1% of 1.000 with
+coin-flip signs. That is the clearest signal in the round after `dblon`, and it is
+a REGRESSION, on the cell where this decoder's single-thread gap is largest
+(`docs/TILED_SCALING.md` §6: the filter chain alone is 4.0x dav1d at 4K t=1).
 
-**Decision: the rectangle path stays behind `__lf_rect`.** The gain is real at
-t=8 and the loss is real at t=1, the loss lands on the worse cell, and the
-mechanism's own target cell gains nothing.
+### 5e. The obvious fix for it was tried and DID NOT WORK
+
+`fill` is `#[inline(always)]` and monomorphised over six `W` values x two bit
+depths, so an inlined rectangle attempt is twelve copies of it inside the hottest
+function in the filter chain — the natural explanation for a cost paid where the
+code cannot run. Moving it into `#[inline(never)] fill_rect` (`c9ee1ec`) is the
+whole fix, and it is not enough:
+
+| cell | `rect` (inlined) | `rect2` (out of line) | controls |
+|---|---|---|---|
+| `v4k8tile` t=1 | 1.0103, **0/11** | **1.0088, 0/11** | 0.9990 / 0.9996 |
+| `c1024x576` t=1 | 1.0044, 1/9 | 1.0040, **0/9** | 1.0000 / 1.0004 |
+| `c1024x576` t=8 | 0.9922, 10/11 | 0.9922, **11/11** | 0.9981 / 1.0039 |
+| `c1024x192` t=8 | 0.9900, 10/10 | **0.9876, 10/10** | 0.9951 / 1.0000 |
+| `text_q20` t=8 CPU | 0.9696, 10/10 | **0.9670, 10/10** | 1.0017 / 1.0026 |
+| `c256x2048` t=8 | 0.9977, 6/10 | 0.9978, 5/10 | 0.9985 / 1.0232 |
+
+**So the t=1 cost is NOT the inlined code size, and it is not yet explained.** The
+out-of-line form is kept because it is equal-or-better everywhere, but the honest
+statement is that a ~1% t=1 penalty from code that provably cannot execute is
+unresolved, and the next step is `cargo asm` / `cargo llvm-lines` on `fill` — not
+more timing.
+
+### 5f. And the t=8 win REPLICATES
+
+Grid E is a second, independent session for four of grid B3's cells and it
+reproduces the effect with stronger signs:
+
+| cell t=8 | B3 wall (sign) | E wall (sign) | E CPU (sign) |
+|---|---|---|---|
+| `c1024x192` | 0.9900 (7/7) | **0.9876 (10/10)** | 0.9944 (9/10) |
+| `c1024x576` | 0.9825 (7/7) | **0.9922 (11/11)** | **0.9951 (11/11)** |
+| `text_q20` | 0.9867 (6/6) | 0.9885 (8/10) | **0.9670 (10/10)** |
+| **`c256x2048` (primary)** | 0.9955 (4/7) | **0.9978 (5/10)** | 0.9938 (6/10) |
+
+Two sessions, two controls per cell, and the same answer in both: **a real
+−1% to −1.8% at t=8 everywhere except the cell the round was opened for.**
+
+### 5g. Decision
+
+**The rectangle path stays behind `__lf_rect`.** The t=8 gain is real and
+replicated; the t=1 loss is real and replicated; the loss lands on 4K
+single-threaded, which is this decoder's worst cell; and the mechanism's own
+target cell gains nothing. Making it the default would trade a measured
+regression on the worse workload for a measured win on the better one, on the
+strength of an unexplained code-size effect. That is not a trade to make in the
+same PR that discovered it.
 
 ## 6. Gates
 
