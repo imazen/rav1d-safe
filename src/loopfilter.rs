@@ -814,6 +814,37 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
                 stride * ps as isize,
             );
         }
+        // The strided-RECTANGLE record: ONE registration describing the `h`
+        // exact row segments, reserving no inter-row gap. This is the third
+        // path, not a replacement for either of the other two — `None` means the
+        // geometry is not representable as one record (no declared stride, a
+        // hull spanning more than `MAX_SHARDS_PER_BORROW` blocks, a full shard)
+        // and the per-row loop below runs exactly as before.
+        //
+        // It is sound at t=8 for the reason the hull is not: the record covers
+        // only the segments, so a concurrent writer in a GAP — another tile
+        // column of the same picture rows, which is the routine case — is not
+        // reported. `fill_hull` cannot be used here for exactly that reason; see
+        // its doc comment.
+        #[cfg(feature = "__lf_rect")]
+        if let Some(rect) = origin
+            .data
+            .dm()
+            .index_rect_as::<BD::Pixel>(origin.offset, W, h, stride)
+        {
+            for row in 0..h {
+                let src: &[BD::Pixel; W] = rect.row(row).try_into().expect("row is W long");
+                let dst: &mut [BD::Pixel; W] = (&mut scratch.buf[row * LF_BW..][..W])
+                    .try_into()
+                    .expect("scratch row is LF_BW >= W long");
+                *dst = *src;
+                let pri: &mut [BD::Pixel; W] = (&mut scratch.pristine[row * LF_BW..][..W])
+                    .try_into()
+                    .expect("scratch row is LF_BW >= W long");
+                *pri = *src;
+            }
+            return;
+        }
         for row in 0..h {
             let off = origin.offset.wrapping_add_signed(row as isize * stride);
             // The MARGINAL price of one filter-chain registration, measured on

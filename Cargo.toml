@@ -100,6 +100,14 @@ __probe_lf_hull = []
 # decode errors. A silent pass would mean the instrument is lying.
 # Absent from `default` and from every published feature.
 __probe_rect_hull = []
+# MEASUREMENT ARM for the strided-RECTANGLE record: `LfBlock::fill` takes ONE
+# exact `h x W` registration instead of `h` per-row ones, under tile threading.
+# The tracker's rectangle support is unconditional (and inert unless called), so
+# the arm WITHOUT this feature prices the machinery on its own — which is the
+# isolation `benchmarks/lf_vbatch_iso_2026-08-10_v1.tsv` had to be built after
+# the fact. Absent from `default`; deleted (and the path made unconditional) if
+# it wins. See src/loopfilter.rs `LfBlock::fill`.
+__lf_rect = []
 probe-tinynop = ["rav1d-disjoint-mut/__probe_tinynop"]
 probe-addnop = ["rav1d-disjoint-mut/__probe_addnop"]
 probe-noscan = ["rav1d-disjoint-mut/__probe_noscan"]

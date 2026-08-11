@@ -320,6 +320,24 @@ impl BorrowTracker {
     /// can call it unconditionally against either tracker.
     pub fn set_row_stride(&mut self, _len: usize, _stride: usize) {}
 
+    /// Always DECLINES, so every caller takes its per-row path.
+    ///
+    /// A strided-rectangle record buys nothing here and could only lose: this
+    /// tracker is one lock and one 64-slot table per instance, so a registration
+    /// costs the same whatever its shape, and the sharded tracker's motivation
+    /// (one shard line touched per row) does not exist. Declining keeps the
+    /// legacy A/B arm measuring the tracker it names and nothing else.
+    #[inline(always)]
+    pub fn add_rect_immut(
+        &self,
+        _lo: usize,
+        _seg: usize,
+        _rows: usize,
+        _stride: usize,
+    ) -> Option<BorrowId> {
+        None
+    }
+
     /// Mark this tracker as poisoned. All future borrow attempts will panic.
     pub fn poison(&self) {
         self.poisoned.store(true, Ordering::Release);
