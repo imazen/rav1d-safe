@@ -53,7 +53,21 @@ __probe_addnop = []
 __probe_shardsim = ["__probe_count"]
 # THROWAWAY: TinyLock spin backoff + scheduler yield, re-tested on the adaptive
 # shard set (the P1 campaign measured it null on the 32-shard base).
+#
+# The four arms below are ONE ladder over the shard lock's WAITING policy, and
+# they exist because both prior nulls were measured where `lock_slow` is not the
+# top symbol. On `c256x2048` at t=8 it is 3.2-4.8% of busy self time, which is a
+# different regime — see the doc comment on `TinyLock` and docs/C256_CONTENTION.md.
+#   __probe_lock_backoff  spin 64, then yield_now, repeat
+#   __probe_lock_yield    yield_now on EVERY iteration (deschedule immediately)
+#   __probe_lock_relax    exponential pause BETWEEN loads, never yields
+#   __probe_lock_park     parking_lot::RawMutex — bounded spin, then a real park
+# `__probe_lock_park` is size-neutral (AtomicU8 vs AtomicBool), so the arm moves
+# the waiting policy and nothing else.
 __probe_lock_backoff = ["std"]
+__probe_lock_yield = ["std"]
+__probe_lock_relax = []
+__probe_lock_park = ["std", "dep:parking_lot"]
 # Sharded-tracker A/B knobs (perf/shard-tracker). Compile-time only; the
 # defaults are the measured winners, see benchmarks/shard_tracker_*.meta.
 __tracker_legacy = []
@@ -117,6 +131,10 @@ zerocopy = ["dep:zerocopy"]
 aligned = { version = "0.4", default-features = false, optional = true }
 aligned-vec = { version = "0.6", default-features = false, optional = true }
 zerocopy = { version = "0.8", default-features = false, optional = true }
+# MEASUREMENT ARM ONLY (`__probe_lock_park`), never in `default` and never in a
+# published feature: the parking shard-lock A/B. rav1d-safe already depends on
+# parking_lot 0.12, so this adds nothing to the workspace graph.
+parking_lot = { version = "0.12.2", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", default-features = false }

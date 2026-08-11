@@ -64,7 +64,9 @@
 
 use super::*;
 use core::panic::Location;
-use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicUsize, Ordering};
+#[cfg(not(feature = "__probe_lock_park"))]
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::{AtomicU8, AtomicU32, AtomicUsize, Ordering};
 
 // =============================================================================
 // Tunables (compile-time A/B knobs — see benchmarks/shard_tracker_*.meta)
@@ -401,6 +403,24 @@ pub mod wide_probe {
     pub static N_SLOW: AtomicU64 = AtomicU64::new(0);
     /// `add_multi` entries.
     pub static N_MULTI: AtomicU64 = AtomicU64::new(0);
+    /// [`super::BorrowTracker::add_contended`] entries: the single-block fast
+    /// path's `try_lock` LOST — somebody else held the shard. This is the
+    /// primary contention rate, and it is strictly larger than [`N_LOCKSLOW`]
+    /// because the retry inside `lock()` often succeeds without ever spinning.
+    pub static N_CONTENDED: AtomicU64 = AtomicU64::new(0);
+    /// [`super::TinyLock::lock_slow`] entries: a thread found a shard lock held
+    /// and had to WAIT for it. This is the direct CONTENTION count, and it is
+    /// the quantity the wide/multi counters are only a proxy for — a cell can
+    /// have zero multi-shard registrations and still be contention-bound
+    /// (`c256x2048`). Free: `lock_slow` is `#[cold] #[inline(never)]` and is
+    /// about to take a blocking lock anyway.
+    pub static N_LOCKSLOW: AtomicU64 = AtomicU64::new(0);
+    /// Total spin-loop iterations across all `lock_slow` entries, accumulated
+    /// ONCE per entry rather than per iteration, so the counter costs one
+    /// relaxed RMW per wait and not one per spin. `N_SPINS / N_LOCKSLOW` is the
+    /// mean depth of a wait, which separates "many short waits" (a granularity
+    /// problem) from "few long ones" (a scheduling problem).
+    pub static N_SPINS: AtomicU64 = AtomicU64::new(0);
     /// Total registrations — NOT counted. One shared `fetch_add` per `add`, at
     /// 136 M adds per 4K frame from eight threads, serialises the decoder hard
     /// enough that slot pressure disappears and `WIDE_FULL` reads zero for the
@@ -417,11 +437,11 @@ pub mod wide_probe {
         // an `__blockshift_adaptive` build uses — that one is per instance.
         let _ = writeln!(
             out,
-            "WIDEHDR\tconst_shift\tslow\tmulti\tw_shards\tw_blocks\tw_full\twide_total"
+            "WIDEHDR\tconst_shift\tslow\tmulti\tw_shards\tw_blocks\tw_full\twide_total\tcontended\tlockslow\tspins"
         );
         let _ = writeln!(
             out,
-            "WIDE\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "WIDE\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             super::BLOCK_SHIFT,
             N_SLOW.load(Relaxed),
             N_MULTI.load(Relaxed),
@@ -429,6 +449,9 @@ pub mod wide_probe {
             WIDE_BLOCKS.load(Relaxed),
             WIDE_FULL.load(Relaxed),
             w,
+            N_CONTENDED.load(Relaxed),
+            N_LOCKSLOW.load(Relaxed),
+            N_SPINS.load(Relaxed),
         );
         out
     }
@@ -441,6 +464,9 @@ pub mod wide_probe {
             &N_SLOW,
             &N_MULTI,
             &N_ADD,
+            &N_CONTENDED,
+            &N_LOCKSLOW,
+            &N_SPINS,
         ] {
             a.store(0, Relaxed);
         }
@@ -457,8 +483,34 @@ pub mod wide_probe {
 /// on the old value, which is what the uncontended path wants. **Not
 /// reentrant** — every multi-shard operation in this module depends on that
 /// being remembered, hence the ascending acquisition order.
+///
+/// # The waiting policy is an A/B axis, and it is NOT settled
+///
+/// `docs/AGENT_BRIEF.md` §6 records "TinyLock backoff: null, measured twice",
+/// and both of those measurements were taken where contention is ~0.02% of
+/// registrations. On `c256x2048` at t=8 the same lock spends **1.136 CPU
+/// ms/frame** in [`Self::lock_slow`], which is a different regime, so the arms
+/// below re-open the question THERE rather than overwrite the earlier null.
+/// See `docs/C256_CONTENTION.md`.
+///
+/// | feature | waiting policy |
+/// |---|---|
+/// | (default) | pure relaxed-load spin, never yields |
+/// | `__probe_lock_backoff` | spin 64, then `yield_now`, repeat |
+/// | `__probe_lock_yield` | `yield_now` on every iteration |
+/// | `__probe_lock_relax` | exponential pause BETWEEN loads, never yields |
+/// | `__probe_lock_park` | `parking_lot::RawMutex` — spins, then genuinely parks |
+///
+/// `__probe_lock_relax` is the only one of the four that changes how often a
+/// waiter TOUCHES the line rather than what it does between touches, and it
+/// exists because a spin iteration here was measured at **~627 ns** against
+/// 7.6 ns for `spin_loop()` on an idle core — the cost is the relaxed load
+/// pulling a line the holder is hammering, so a waiter that reads less often
+/// may let the holder finish sooner.
+#[cfg(not(feature = "__probe_lock_park"))]
 struct TinyLock(AtomicBool);
 
+#[cfg(not(feature = "__probe_lock_park"))]
 impl TinyLock {
     const fn new() -> Self {
         Self(AtomicBool::new(false))
@@ -490,11 +542,33 @@ impl TinyLock {
     fn lock_slow(&self) {
         #[cfg(feature = "__probe_lock_backoff")]
         let mut spins = 0u32;
+        #[cfg(feature = "__probe_lock_relax")]
+        let mut pause = 1u32;
+        // Total spin iterations for THIS wait, published once at the end so the
+        // counter costs one relaxed RMW per wait rather than one per spin.
+        #[cfg(feature = "__probe_wide")]
+        let mut total = 0u64;
         loop {
             // Spin on a load, not a swap: a read-only spin keeps the line in
             // Shared instead of ping-ponging it Exclusive between waiters.
             while self.0.load(Ordering::Relaxed) {
+                #[cfg(feature = "__probe_wide")]
+                {
+                    total += 1;
+                }
+                #[cfg(not(any(feature = "__probe_lock_yield", feature = "__probe_lock_relax")))]
                 core::hint::spin_loop();
+                #[cfg(feature = "__probe_lock_yield")]
+                std::thread::yield_now();
+                #[cfg(feature = "__probe_lock_relax")]
+                {
+                    // Pause `pause` times BETWEEN loads, doubling up to a cap,
+                    // so a waiter stops pulling the line away from the holder.
+                    for _ in 0..pause {
+                        core::hint::spin_loop();
+                    }
+                    pause = (pause * 2).min(64);
+                }
                 #[cfg(feature = "__probe_lock_backoff")]
                 {
                     spins += 1;
@@ -505,6 +579,11 @@ impl TinyLock {
                 }
             }
             if !self.0.swap(true, Ordering::Acquire) {
+                #[cfg(feature = "__probe_wide")]
+                {
+                    wide_probe::N_LOCKSLOW.fetch_add(1, Ordering::Relaxed);
+                    wide_probe::N_SPINS.fetch_add(total, Ordering::Relaxed);
+                }
                 return;
             }
         }
@@ -513,6 +592,54 @@ impl TinyLock {
     #[inline(always)]
     fn unlock(&self) {
         self.0.store(false, Ordering::Release);
+    }
+}
+
+/// THROWAWAY arm (`__probe_lock_park`): the same one-byte shard lock, but a
+/// waiter PARKS instead of spinning.
+///
+/// `parking_lot::RawMutex` is an `AtomicU8`, so this is size- and
+/// layout-neutral against [`TinyLock`]'s `AtomicBool` — the arm changes the
+/// waiting policy and nothing else, which is what makes it a clean A/B against
+/// a pure spin. It already does a bounded adaptive spin before parking, so it
+/// is the "spin then really sleep" end of the ladder that `__probe_lock_yield`
+/// (deschedule immediately) and `__probe_lock_backoff` (spin 64, then yield)
+/// bracket.
+///
+/// Measurement only; absent from `default` and from every published feature.
+#[cfg(feature = "__probe_lock_park")]
+struct TinyLock(parking_lot::RawMutex);
+
+#[cfg(feature = "__probe_lock_park")]
+impl TinyLock {
+    const fn new() -> Self {
+        Self(<parking_lot::RawMutex as parking_lot::lock_api::RawMutex>::INIT)
+    }
+
+    #[inline(always)]
+    fn lock(&self) {
+        use parking_lot::lock_api::RawMutex as _;
+        #[cfg(feature = "__probe_wide")]
+        if self.0.is_locked() {
+            wide_probe::N_LOCKSLOW.fetch_add(1, Ordering::Relaxed);
+        }
+        self.0.lock();
+    }
+
+    #[inline(always)]
+    fn try_lock(&self) -> bool {
+        use parking_lot::lock_api::RawMutex as _;
+        self.0.try_lock()
+    }
+
+    #[inline(always)]
+    fn unlock(&self) {
+        use parking_lot::lock_api::RawMutex as _;
+        // SAFETY: every caller reached here through `lock`/`try_lock` returning
+        // success on this same lock and has not unlocked it since — the same
+        // obligation the spin implementation's `store(false)` carries, made
+        // explicit by `RawMutex`'s signature.
+        unsafe { self.0.unlock() }
     }
 }
 
@@ -1861,6 +1988,8 @@ impl BorrowTracker {
     #[inline(never)]
     #[track_caller]
     fn add_contended<const IS_MUT: bool>(&self, start: usize, end: usize, si: usize) -> BorrowId {
+        #[cfg(feature = "__probe_wide")]
+        wide_probe::N_CONTENDED.fetch_add(1, Ordering::Relaxed);
         let shard = &self.shards[si & (N_SHARDS - 1)];
         shard.lock.lock();
         let g = ShardGuard(&shard.lock);

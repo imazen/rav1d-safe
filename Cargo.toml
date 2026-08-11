@@ -124,6 +124,11 @@ shards-4 = ["rav1d-disjoint-mut/__shards_4"]
 shards-8 = ["rav1d-disjoint-mut/__shards_8"]
 shards-16 = ["rav1d-disjoint-mut/__shards_16"]
 probe-lock-backoff = ["rav1d-disjoint-mut/__probe_lock_backoff"]
+# The other three rungs of the shard-lock WAITING-policy ladder. See the doc
+# comment on `TinyLock` and docs/C256_CONTENTION.md.
+probe-lock-yield = ["rav1d-disjoint-mut/__probe_lock_yield"]
+probe-lock-relax = ["rav1d-disjoint-mut/__probe_lock_relax"]
+probe-lock-park = ["rav1d-disjoint-mut/__probe_lock_park"]
 shards-32 = ["rav1d-disjoint-mut/__shards_32"]
 shards-64 = ["rav1d-disjoint-mut/__shards_64"]
 shards-128 = ["rav1d-disjoint-mut/__shards_128"]

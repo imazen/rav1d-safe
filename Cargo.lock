@@ -852,6 +852,7 @@ dependencies = [
  "aligned",
  "aligned-vec",
  "criterion",
+ "parking_lot",
  "zerocopy",
 ]
 
