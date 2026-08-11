@@ -1118,6 +1118,61 @@ const TARGET_BLOCKS: usize = {
     if t == 0 { 1 } else { t }
 };
 
+// =============================================================================
+// The rows-per-block rule (`__bps_rows`) — a DERIVED shift, not a rung
+// =============================================================================
+
+/// Picture rows a block should span, once the buffer's stride is known.
+///
+/// **Why a rows target rather than a block count.** [`TARGET_BLOCKS`] fixes how
+/// many blocks a buffer is cut into, so a block spans `len / TARGET_BLOCKS`
+/// BYTES and therefore `len / (TARGET_BLOCKS * stride)` ROWS — which for a
+/// picture plane is about `aligned_h / TARGET_BLOCKS`, i.e. a function of the
+/// picture's HEIGHT. The hot strided accesses are a fixed number of ROWS
+/// (CDEF tap windows and superblock-row compacts; measured `rows_mean` 7.16-9.02
+/// at every hot site, on every picture size), so on a short picture one access
+/// spreads over many blocks and on a tall one over few. That is a defect in the
+/// rule's SHAPE, and no single constant fixes it — which the size sweep then
+/// confirmed the hard way: `len` alone cannot even ORDER the sizes by how much
+/// coarsening they want (1024x1024's plane is 1.11 MB and wants one shift,
+/// 2048x576's is 1.35 MB and wants two, 1024x2048's is 2.23 MB and wants none).
+///
+/// **4, and it is fitted, not derived from the tap window.** The obvious value
+/// is the tap window itself (8-9 rows, so one access fits in one block), and it
+/// is measurably too coarse: replaying the rule over the sweep's own arms, a
+/// target of 8 picks a worse arm than a target of 4 on five of fifteen cells and
+/// picks the WORST available arm (1.023x) on 512x288. 4 is enough because the
+/// door that matters is `MAX_SHARDS_PER_BORROW = 4`, not one block: at 4 rows
+/// per block an 8-row window spans three blocks and never promotes, while every
+/// further doubling only trades shard lines for shard COLLISIONS.
+///
+/// Measured across the 15-cell size sweep
+/// (`benchmarks/shard_size_sweep_2026-08-10.*`, aarch64, 8 tiles, t=8): against
+/// the shipped rule the wall win is 10-25% where the shipped rule lands below 1
+/// row per block, 8-14% between 1.8 and 2.2, and inside the bands at 3.8 and
+/// above — so the crossover sits between 2.1 and 3.8 and this target is on the
+/// coarse side of it by one step.
+#[cfg(feature = "__bps_rows")]
+const ROWS_PER_BLOCK_MIN: usize = 4;
+
+/// Floor on how many blocks a buffer keeps, whatever the rows target asks for.
+///
+/// Coarsening is NOT free: it trades "one borrow touching several shard lines"
+/// for "several borrows landing on one shard", and the second cost grows as the
+/// block count falls towards the worker count. 32 is the coarsest block count
+/// the sweep measured to still be a win — `bps-quarter` cuts the 1024x192 and
+/// 1024x384 planes into 34 and 51 blocks and reads 0.78x and 0.74x wall — so
+/// this stops a shorter picture than the sweep contains from going past the last
+/// point with evidence. It is a MEASURED bound, not a safety one; every value
+/// here is sound.
+///
+/// At [`ROWS_PER_BLOCK_MIN`] = 4 it does not actually bind on any cell of the
+/// sweep — 1024x192 ties it exactly — so it is a guard against pictures shorter
+/// than the grid contains, not a fitted parameter. It DOES bind at a target of
+/// 8, which is part of why 8 was rejected.
+#[cfg(feature = "__bps_rows")]
+const MIN_BLOCKS: usize = 32;
+
 /// Block shift for an instance of `len` bytes: the power of two that lands
 /// `len` on about [`TARGET_BLOCKS`] = `N_SHARDS * BPS` blocks.
 ///
@@ -1168,6 +1223,48 @@ fn block_shift_rule(len: usize, shards: usize, tiles: usize) -> u32 {
     let want = (len as u64 / target.max(1)).max(1);
     // `ilog2` rounds down, so the block count lands at or above the target.
     (u64::BITS - 1 - want.leading_zeros()).clamp(6, 24)
+}
+
+/// The rows-per-block refinement of [`block_shift_rule`], for a buffer whose
+/// row stride is known (`__bps_rows`).
+///
+/// Never FINER than the block-count rule — only coarser, and only far enough to
+/// put [`ROWS_PER_BLOCK_MIN`] picture rows in a block, and only while the buffer
+/// still holds [`MIN_BLOCKS`] blocks. A buffer with no declared stride keeps the
+/// block-count rule exactly, so nothing outside the picture planes moves.
+///
+/// SOUND FOR ANY VALUE, for the same reason the block-count rule is: the "no
+/// missed overlap" argument needs only that both registrants of a shared byte
+/// agree on the block boundaries, and this runs from `&mut self` (see
+/// [`BorrowTracker::set_row_stride`]) so no borrow can be outstanding when it
+/// moves.
+#[cfg(feature = "__bps_rows")]
+#[inline]
+fn block_shift_rule_rows(len: usize, shards: usize, tiles: usize, stride: usize) -> u32 {
+    let base = block_shift_rule(len, shards, tiles);
+    if stride == 0 || FIXED_SHIFT_SELECTED {
+        return base;
+    }
+    // The SAME gates the block-count rule uses, restated rather than inferred
+    // from `base` (a size whose adaptive shift happens to equal `BLOCK_SHIFT` is
+    // not a disarmed one). Arming this rule can therefore never arm a case the
+    // plain rule leaves disarmed.
+    if !ADAPTIVE_WHEN_SERIAL && (shards < SHARDS_CONCURRENT || tiles < 2) {
+        return base;
+    }
+    // Smallest shift with `2^shift >= ROWS_PER_BLOCK_MIN * stride`, i.e.
+    // ceil(log2(want)). Written from `leading_zeros` rather than
+    // `next_power_of_two`, which panics in debug on a `want` above 2^63 — the
+    // `clamp` below would bound the result either way, but a panic in the
+    // tracker's construction path is not something to leave reachable at all.
+    let want = (ROWS_PER_BLOCK_MIN as u64)
+        .saturating_mul(stride as u64)
+        .max(1);
+    let rows_shift = u64::BITS - (want - 1).leading_zeros();
+    // Coarsest shift that still leaves MIN_BLOCKS blocks.
+    let cap_want = (len as u64 / MIN_BLOCKS as u64).max(1);
+    let cap_shift = u64::BITS - 1 - cap_want.leading_zeros();
+    base.max(rows_shift.min(cap_shift)).clamp(6, 24)
 }
 
 /// True when one of the fixed `blockshift-*` rungs was selected, in which case
@@ -1371,6 +1468,29 @@ impl BorrowTracker {
         #[cfg(feature = "__probe_tinynop")]
         {
             self.tiny = len < SHARD_MIN_LEN;
+        }
+    }
+
+    /// Tell the tracker this buffer's picture row stride in bytes, so the block
+    /// shift can be chosen in ROWS rather than in blocks-per-buffer.
+    ///
+    /// `&mut self` carries the same whole safety argument as
+    /// [`Self::reprovision`]: the caller holds `&mut DisjointMut`, so no borrow
+    /// can be outstanding and no record can be lost when the shift moves.
+    ///
+    /// A no-op in the default build — `__bps_rows` is an A/B arm and the shipped
+    /// rule reads `len` only. It is still called unconditionally by the picture
+    /// allocator, because a hint that is only wired up under the feature is a
+    /// hint that has never been compiled on the shipped path.
+    #[inline]
+    pub fn set_row_stride(&mut self, len: usize, stride: usize) {
+        #[cfg(feature = "__bps_rows")]
+        {
+            self.shift = block_shift_rule_rows(len, active_shards(), tile_concurrency(), stride);
+        }
+        #[cfg(not(feature = "__bps_rows"))]
+        {
+            let _ = (len, stride);
         }
     }
 
@@ -2444,6 +2564,129 @@ mod tests {
         // Two tiles is already "multi-tile"; the gate is a threshold, not a
         // proportion.
         assert_eq!(block_shift_rule(LEN, SHARDS_CONCURRENT, 2), adapted);
+    }
+
+    /// The rows-per-block rule, checked against the exact plane geometry the
+    /// picture allocator produces — not against round numbers.
+    ///
+    /// `stride = (w + 127 & !127) << hbd`, `+ 64` when that is a multiple of
+    /// 1024; `len = stride * (h + 127 & !127)` (`Rav1dPicAllocator`). Those are
+    /// the buffers the size sweep measured, so the rule is pinned on the same
+    /// inputs the numbers came from.
+    ///
+    /// This test is about the RULE, so it drives it with both concurrency facts
+    /// declared, like its block-count sibling above.
+    #[cfg(feature = "__bps_rows")]
+    #[test]
+    fn rows_rule_targets_picture_rows_not_block_count() {
+        fn plane(w: usize, h: usize, hbd: u32) -> (usize, usize) {
+            let mut stride = ((w + 127) & !127) << hbd;
+            if stride & 1023 == 0 {
+                stride += 64;
+            }
+            (stride * ((h + 127) & !127), stride)
+        }
+        let rows_of = |w, h, hbd| {
+            let (len, stride) = plane(w, h, hbd);
+            let sh = block_shift_rule_rows(len, SHARDS_CONCURRENT, 8, stride);
+            ((1usize << sh) / stride, len >> sh)
+        };
+        // Every cell of the sweep grid must land at or above the rows target,
+        // unless the block floor bit first. THIS is the property the rule is
+        // for; the block-count rule fails it by construction on short pictures.
+        for (w, h) in [
+            (512, 288),
+            (512, 576),
+            (1024, 192),
+            (1024, 576),
+            (1024, 1024),
+            (1024, 2160),
+            (2048, 576),
+            (2048, 1152),
+            (3840, 576),
+            (3840, 2160),
+        ] {
+            let (rows, blocks) = rows_of(w, h, 0);
+            assert!(
+                rows >= ROWS_PER_BLOCK_MIN || blocks <= MIN_BLOCKS,
+                "{w}x{h}: {rows} rows/block, {blocks} blocks — below the target \
+                 with the block floor not binding"
+            );
+            assert!(blocks >= 1, "{w}x{h}: {blocks} blocks");
+        }
+        // The floor is not decorative: 1024x192 is the cell where it binds, and
+        // it must leave at least MIN_BLOCKS/2 blocks rather than collapse the
+        // plane onto a handful.
+        let (_, blocks) = rows_of(1024, 192, 0);
+        assert!(
+            blocks >= MIN_BLOCKS / 2,
+            "1024x192 kept only {blocks} blocks"
+        );
+        // Never FINER than the block-count rule, at any cell or bit depth. The
+        // narrow-and-tall cells are the ones that make this a real assertion:
+        // 256x2048's stride is 256, so its rows target lands at shift 10 while
+        // the block-count rule already chose 11. Without the `max` the rule
+        // would go a step FINER there, which is the opposite of its purpose —
+        // and a list of only wide cells would never notice.
+        let mut narrower = 0;
+        for (w, h) in [
+            (512, 288),
+            (1024, 576),
+            (3840, 2160),
+            (256, 2048),
+            (256, 4096),
+            (128, 2048),
+            (1024, 2048),
+        ] {
+            for hbd in [0, 1] {
+                let (len, stride) = plane(w, h, hbd);
+                let base = block_shift_rule(len, SHARDS_CONCURRENT, 8);
+                assert!(
+                    block_shift_rule_rows(len, SHARDS_CONCURRENT, 8, stride) >= base,
+                    "{w}x{h} hbd{hbd}: rows rule went finer than the block rule"
+                );
+                // Would the unclamped target have been finer? If it never is,
+                // the assertion above cannot fail and is decoration.
+                let want = (ROWS_PER_BLOCK_MIN as u64)
+                    .saturating_mul(stride as u64)
+                    .max(1);
+                let rows_shift = u64::BITS - (want - 1).leading_zeros();
+                let cap_shift =
+                    u64::BITS - 1 - ((len as u64 / MIN_BLOCKS as u64).max(1)).leading_zeros();
+                if rows_shift.min(cap_shift) < base {
+                    narrower += 1;
+                }
+            }
+        }
+        assert!(
+            narrower > 0,
+            "no cell in the list has an unclamped target finer than the block \
+             rule, so the never-finer assertion above is vacuous"
+        );
+        // An undeclared stride keeps the shipped rule EXACTLY — this is what
+        // stops every non-picture buffer moving under the arm.
+        let (len, _) = plane(1024, 576, 0);
+        assert_eq!(
+            block_shift_rule_rows(len, SHARDS_CONCURRENT, 8, 0),
+            block_shift_rule(len, SHARDS_CONCURRENT, 8)
+        );
+        // And the arm must actually DO something on the cell it was fitted for,
+        // or every assertion above is vacuous.
+        let (len, stride) = plane(1024, 576, 0);
+        assert!(
+            block_shift_rule_rows(len, SHARDS_CONCURRENT, 8, stride)
+                > block_shift_rule(len, SHARDS_CONCURRENT, 8),
+            "the rows rule is inert on 1024x576, where the sweep measured 0.86x"
+        );
+        // The gates are shared: one tile, or one thread, and nothing moves.
+        assert_eq!(
+            block_shift_rule_rows(len, SHARDS_CONCURRENT, 1, stride),
+            block_shift_rule(len, SHARDS_CONCURRENT, 1)
+        );
+        assert_eq!(
+            block_shift_rule_rows(len, SHARDS_SERIAL, 8, stride),
+            block_shift_rule(len, SHARDS_SERIAL, 8)
+        );
     }
 
     /// Distinct shards a strided access maps to, i.e. the number of cache lines

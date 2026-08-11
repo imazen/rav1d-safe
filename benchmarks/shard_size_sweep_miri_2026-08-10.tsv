@@ -1,0 +1,32 @@
+sb_default	lib	rc=0 passed=27
+sb_default	narrow_release	rc=0 passed=1
+sb_default	soundness	rc=0 passed=25
+sb_default	wide_exclusion	rc=0 passed=1
+sb_default	guard_move_release	rc=0 passed=2
+sb_default	pic_buf_overflow	0 tests ran (rc=0) — proves nothing here
+sb_default	aligned_miri	0 tests ran (rc=0) — proves nothing here
+sb___bps_rows	lib	rc=0 passed=28
+sb___bps_rows	narrow_release	rc=0 passed=1
+sb___bps_rows	soundness	rc=0 passed=25
+sb___bps_rows	wide_exclusion	rc=0 passed=1
+sb___bps_rows	guard_move_release	rc=0 passed=2
+sb___bps_rows	pic_buf_overflow	0 tests ran (rc=0) — proves nothing here
+sb___bps_rows	aligned_miri	0 tests ran (rc=0) — proves nothing here
+tb_default	lib	rc=0 passed=27
+tb_default	narrow_release	rc=0 passed=1
+tb_default	soundness	rc=0 passed=25
+tb_default	wide_exclusion	rc=0 passed=1
+tb_default	guard_move_release	rc=0 passed=2
+tb_default	pic_buf_overflow	0 tests ran (rc=0) — proves nothing here
+tb_default	aligned_miri	0 tests ran (rc=0) — proves nothing here
+tb___bps_rows	lib	rc=0 passed=28
+tb___bps_rows	narrow_release	rc=0 passed=1
+tb___bps_rows	soundness	rc=0 passed=25
+tb___bps_rows	wide_exclusion	rc=0 passed=1
+tb___bps_rows	guard_move_release	rc=0 passed=2
+tb___bps_rows	pic_buf_overflow	0 tests ran (rc=0) — proves nothing here
+tb___bps_rows	aligned_miri	0 tests ran (rc=0) — proves nothing here
+sb_default	shard_liveness	TIMEOUT(900s)
+sb___bps_rows	shard_liveness	TIMEOUT(900s)
+tb_default	shard_liveness	TIMEOUT(900s)
+tb___bps_rows	shard_liveness	TIMEOUT(900s)

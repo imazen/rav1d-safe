@@ -57,6 +57,10 @@ fn main() {
     rav1d_disjoint_mut::site_probe::reset();
     #[cfg(feature = "__probe_bounds")]
     rav1d_disjoint_mut::bounds_probe::reset();
+    // Reset AFTER the warmup decode, like every other counter here, so the
+    // reported activity covers the timed iterations only.
+    #[cfg(feature = "__ablate")]
+    rav1d_safe::src::ablate::activity_reset();
 
     let t0 = Instant::now();
     for _ in 0..iters {
@@ -70,6 +74,32 @@ fn main() {
         "RUN\t{file}\t{w}x{h}\t{bpc}bpc\tthreads={threads}\titers={iters}\tms_total={ms:.2}\tms_per_frame={:.3}",
         ms / iters as f64
     );
+
+    // `--features __ablate`: per-family execution units, so "did this stage run
+    // at all on this vector?" is answered by a counter instead of by the
+    // sequence header's permission bit. AGENT_BRIEF: permission is not
+    // execution — `enable_cdef = 1` at every size, yet CDEF can execute zero
+    // blocks. Only itx / cdef / looprestoration call `ablate::note()`; the other
+    // six read 0 whatever ran, which is why they are printed as `-`.
+    #[cfg(feature = "__ablate")]
+    {
+        let a = rav1d_safe::src::ablate::activity_snapshot();
+        let instrumented = [
+            (rav1d_safe::src::ablate::Family::Itx, "itx"),
+            (rav1d_safe::src::ablate::Family::Cdef, "cdef"),
+            (
+                rav1d_safe::src::ablate::Family::LoopRestoration,
+                "looprestoration",
+            ),
+        ];
+        for (f, name) in instrumented {
+            println!(
+                "ACTIVITY\t{name}\t{}\t{:.1}",
+                a[f as usize],
+                a[f as usize] as f64 / iters as f64
+            );
+        }
+    }
 
     #[cfg(feature = "probe-wide")]
     print!("{}", rav1d_disjoint_mut::wide_probe::report());

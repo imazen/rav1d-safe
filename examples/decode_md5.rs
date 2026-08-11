@@ -5,7 +5,7 @@
 //!
 //! Usage:
 //!   cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16" --example decode_md5
-//!   ./target/release/examples/decode_md5 [--filmgrain] [-q] <input> [expected_md5]
+//!   ./target/release/examples/decode_md5 [--filmgrain] [-q] [--threads N] <input> [expected_md5]
 
 use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
 use std::env;
@@ -185,20 +185,33 @@ fn main() {
     let mut filmgrain = false;
     let mut quiet = false;
     let mut per_frame = false;
+    // Default 1 to keep every existing invocation byte-identical. `--threads 8`
+    // exists because a single-threaded-only identity check cannot see a
+    // tile-threading or borrow-tracker defect at all, and ad-hoc vectors (a
+    // size sweep, a forced-tile grid) are not in the corpus that
+    // `md5_inventory --threads` covers.
+    let mut threads: u32 = 1;
     let mut positional = Vec::new();
 
-    for arg in &args[1..] {
+    let mut it = args[1..].iter();
+    while let Some(arg) = it.next() {
         match arg.as_str() {
             "--filmgrain" => filmgrain = true,
             "-q" | "--quiet" => quiet = true,
             "--per-frame" => per_frame = true,
+            "--threads" => {
+                threads = it
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .expect("--threads needs a number");
+            }
             _ => positional.push(arg.as_str()),
         }
     }
 
     if positional.is_empty() {
         eprintln!(
-            "Usage: {} [--filmgrain] [-q] <input> [expected_md5]",
+            "Usage: {} [--filmgrain] [-q] [--per-frame] [--threads N] <input> [expected_md5]",
             args[0]
         );
         std::process::exit(1);
@@ -210,7 +223,7 @@ fn main() {
     let verbose = !quiet;
 
     let mut settings = Settings::default();
-    settings.threads = 1;
+    settings.threads = threads;
     settings.apply_grain = filmgrain;
     let mut decoder = Decoder::with_settings(settings).expect("decoder creation failed");
     let mut hasher = md5::Context::new();
