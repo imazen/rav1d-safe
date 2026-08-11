@@ -102,6 +102,17 @@ campaigns. Every rule below cost real time to learn.
   saves 0.250 ms/frame and ablating CDEF 1.811, but ablating **both** saves 4.978 — super-additive.
   With the tracker compiled out the same arms are additive to 0.6%. **Test additivity** (ablate each
   and then all) before pricing any single-stage change on a contended path.
+- **`(plain − untracked) / registrations` is a LOWER BOUND on what removing a registration buys, not
+  a point estimate — and it is per cell, never a constant.** The census refuted the 4.5-6.4 ns band
+  as a cross-cell constant (2.78 at screen text t=1 to 18.78 at `c256x2048` t=8); #502 then measured
+  what an actual removal is worth and it came in ABOVE the cell's own rate on every cell that moved:
+  10.02 vs 2.78 ns at `text_q20` t=1, 6.21 vs 2.78-3.89 at `ui_q20` t=1, 5.05 vs 4.72 at `ui_q20`
+  t=8 — 1.6-3.6x on the screen cells. Same mechanism as the row above: the removal also makes the
+  entropy/kernel buckets cheaper. **So price a count cut with the cell's own rate and expect to
+  beat it; if you do NOT beat it, the cell is contention-bound and a count cut is the wrong lever**
+  (`c3840x256`: 0.77 measured against 8.12 nominal, and it measured null). Two independent removals
+  on `ui_q20` t=1 agree to 5% (6.21 ns here, 5.9 ns for #492's read-side part one), which is the
+  campaign's best calibration for screen content.
 - **An instrument that reads zero at `--threads 1` may not be measuring zero.** rav1d-safe's whole
   task/stage census lives inside `rav1d_task_run`, which `n_tc == 1` never enters, so every stage
   counter is 0.000 at t=1 — not "free", *not executed*. A t8/t1 ratio from such a probe does not
@@ -185,6 +196,7 @@ campaigns. Every rule below cost real time to learn.
 | **dav1d's tiled task scheduler as the explanation for the tiled t=8 deficit** (rav1d-safe #455) | **not the target, measured 2026-08-10**: `src/thread_task.rs` IS the port of dav1d's model, and profiling the tiled arm for the first time put **100% of the added-CPU half of the gap on the borrow tracker** — CPU growth t=1→t=8 is +27.3%/+10.5% for us, +4.4%/+3.6% with the tracker compiled out, +3.2%/+3.1% for dav1d. `deblock_cols` alone is +1.349 of +2.239 ms/frame (2.570x one stage) and `TinyLock::lock_slow` is 0.00% of busy self time at t=1 AND t=2 and 1.19% at t=8. `docs/TILED_SCALING.md` |
 | **Single-tile or t=1 profiles as a proxy for tiled t=8 behaviour** (rav1d-safe) | **REFUTED — this is why the deficit went 3 measurements / 0 profiles.** Every stage is flat from t=2 to t=8 on a single-tile vector in BOTH arms, so the whole effect is invisible there: a one-tile frame never has two tile workers or two filter tasks live at once. If the claim is about tiling, the vector must be tiled (`~/tmp/t8gap/vec/*__t8.avif`) |
 | **The post-tile filter tail** (rav1d-safe, the residual after the tracker) | **live, unpriced**: 34.1% of wall at a mean 3.22 of 8 workers at 1024x576/t=8 (17.5% at 2.59 with the tracker out), ~9-12% of wall structural at the ceiling. Instrument exists (`TAIL_CONC` in `probe-tasktime`). The axis is `sbh` vs `n_workers` — 9 rows on 8 workers is the hard case, 34 rows is visibly easier |
+| **A registration COUNT cut on `c256x2048` t=8** (rav1d-safe #455/#502) | **null on both instruments, measured 2026-08-10**: 35,283 of 604,973 registrations/frame removed (−5.8%) reads wall **1.0030** (2/9 rounds faster) and CPU **1.0016** (4/7). That cell's tracker cost is CONTENTION, not count — **18.78 ns/registration** against 2.78-8.11 on every other cell, mostly `TinyLock::lock_slow` spin at 8 rows/block with 4 tile columns per block. It is also the ONE cell whose tracker-removed ceiling is band-safely under 1.4x (1.315), so it is worth attacking — just not by removing records. `docs/CTX_TL_SPLIT.md` §6c |
 | **rav1d-safe's filter chain vs dav1d's, single-threaded** | **the biggest number in the record and NOT a threading problem**: with the tracker compiled out our filter chain is 2.8x (1024x576) / 4.0x (4K) dav1d's at t=1, deblock alone **5.6x** (11.5 vs 2.07 ms/frame at 4K), and the ratio is flat across thread count. That is the compact copy-in/write-back the safe-guard model needs, not the tracker. Belongs to the single-thread campaign. `docs/TILED_SCALING.md` §6 |
 
 **The meta-lesson from the top two rows: a large self-time share is not automatically a large
