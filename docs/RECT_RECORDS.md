@@ -1,33 +1,49 @@
-# The exact strided-rectangle record: built, sound, live — and at the noise floor
-# on the cell it was built for, with the cost model it corrects
+# The exact strided-rectangle record: built, sound, live, a small consistent win
+# at t=8 — NULL on the cell it was built for, and a code-size REGRESSION at t=1
 
-**Status: NOT SHIPPED, at the noise floor, and the number that matters is the
-one it corrects.** The mechanism this round was opened to test — collapsing
-`LfBlock::fill`'s `h` per-row registrations into ONE exact strided-rectangle
-record, the third shape after the per-row split and the refuted hull — works, is
-exact, is sound at t=8, is live, and measures **−1.2% to −1.4% wall with CPU
-flat** on `c256x2048` at t=8, against an identity-control band of ±2-3%.
+**Status: NOT the default, and the reasons are measured.** The mechanism this
+round was opened to test — collapsing `LfBlock::fill`'s `h` per-row
+registrations into ONE exact strided-rectangle record, the third shape after the
+per-row split and the refuted hull — works, is exact, is sound under tile
+threading, is live, and keeps the corpus at 766/766 by name at t=1 and t=8.
 
-The reason is a measured price, not a mystery. **A `LfBlock::fill` per-row
-registration costs 2.42-2.71 ns at the margin** — measured by ADDING a duplicate
-per row in the same binary (`RAV1D_LF_DOUBLE`), which is the only sound way to
-price a registration on a contended path — against this cell's **19.71 ns/registration
-AVERAGE**. So the largest registration site in the decoder, **31.7% of the
-population, is 3.9-4.4% of the tracker's CPU**, and removing 89% of it can only
-ever have been worth ~1.5% of wall. It delivered about that.
+What it measures, on an idle box against TWO controls (a byte-identical copy and
+a same-source-different-build layout control), is three things at once:
 
-**Therefore the campaign's cost model needs one word changed, and it is the word
-that decides the next lever.** `docs/AGENT_BRIEF.md` §6 records the `c256x2048`
-residual as "about one cross-core transfer of the shard's own cache line **per
-registration**". Per registration it is not: `fill`'s `h` registrations are 8.98
-back-to-back touches of the same **2.09** shard lines from one core, and a repeat
-touch of a line this core already owns is ~7.7x cheaper than the average
-registration. **The expensive registration is the one whose shard line another
-core has taken since — so the cost tracks the number of DISTINCT shard lines a
-worker visits, not the number of records it files.** That is the same conclusion
-`docs/C256_CONTENTION.md` §4 reached from the granularity side ("the money is the
-shard-line footprint"), now measured from the count side, and it means **a count
-cut at the DENSEST site is the least valuable count cut available.**
+| where | wall | CPU | sign |
+|---|---|---|---|
+| **multi-tile t=8, 5 of 6 cells** | **−1.0% to −1.8%** | −1.3% to **−3.0%** | 6/7 to 7/7 |
+| **`c256x2048` t=8 — the cell it was built for** | −0.45% | −0.55% | **4/7, a coin flip** |
+| **`v4k8tile` t=1, where the path never fires** | **+1.26%** | +1.25% | **0/11** |
+
+Both controls sit at 1.000 with coin-flip signs on every one of those cells, so
+the t=8 wins and the t=1 regression are both above the floor. **The t=1 cost is
+pure code size** — at t=1 `fill` takes the hull path and no rectangle is ever
+registered, so the only thing the arm changes there is a never-taken block inside
+a function that is `#[inline(always)]` and monomorphised 12 ways. Paying +1.26%
+at t=1 on 4K content, where this decoder's largest gap already lives, to buy
+−1.5% at t=8 is not a trade this round will make.
+
+The prize was small for a reason that is now measured. **A `LfBlock::fill`
+per-row registration costs 2.42-2.71 ns at the margin** — measured by ADDING a
+duplicate per row in the same binary (`RAV1D_LF_DOUBLE`; +180,434
+registrations/frame, +3.4% to +4.0% wall, **0 of 25 rounds on the other side**),
+which is the only sound way to price a registration on a contended path. This
+cell's AVERAGE is **19.71 ns/registration**. So the largest registration site in
+the decoder — **31.7% of the population** — is **3.9-4.4% of the tracker's CPU**,
+and removing 89% of it could never have been worth more than ~1.5% of wall.
+
+**That corrects the campaign's cost model in the word that decides the next
+lever.** `docs/AGENT_BRIEF.md` §6 records the `c256x2048` residual as "about one
+cross-core transfer of the shard's own cache line **per registration**". Per
+registration it is not: `fill` files 8.98 records per **2.09** distinct shard
+lines, and a repeat touch of a line this core already owns is ~7.7x cheaper than
+the average registration. **The expensive registration is the one whose shard
+line another core has taken since, so the cost tracks the DISTINCT SHARD LINES a
+worker visits, not the records it files** — the same conclusion
+`docs/C256_CONTENTION.md` §4 reached from the granularity side, now measured from
+the count side. **A count cut at the DENSEST site is the least valuable count cut
+available**, which is exactly why the densest site produced the smallest win.
 
 Record: `benchmarks/rect_records_2026-08-11.{meta,*.tsv}`.
 Prior art, not re-derived: `docs/C256_CONTENTION.md` (the four refuted levers
@@ -44,14 +60,23 @@ why the hull is refuted), `docs/BPS_ROWS_DEFAULT.md` (the shipped shift rule).
 * **The rectangle path is NOT the default and is NOT proposed as one.** It sits
   behind `--features __lf_rect`, absent from `default` and from every published
   feature. The brief this round was written to says a winning mechanism should
-  ship with its feature deleted; it did not win, so the feature stays as the
-  arm it is.
+  ship with its feature deleted; it wins at t=8 and LOSES at t=1, so the feature
+  stays as the arm it is (§5d).
 * **Only `LfBlock::fill` was routed through it.** The counterfactual names five
   more sites on this cell whose rectangles are cheaper still on paper
   (`cdef_apply.rs:104:32` and `:121:33`, `safe_simd/cdef_arm.rs:{192,622,1217}`
   — 7.27-8.00 rows on **1.000** shards, so a 7-8x count cut each). They were
-  NOT wired, and after `fill`'s result the expected value of doing so is a
-  fraction of a null. See §7.
+  NOT wired. See §7b for the price of doing so, and for the ten-minute arm that
+  settles it without implementing anything.
+* **The 5-of-6-cells t=8 win is n=6..7 rounds per cell**, not the n=12..15 the
+  primary cell got. It is above both controls by sign count on every one of them,
+  and it has NOT been replicated in a second session.
+* **The t=1 regression is attributed to code size by ELIMINATION, not by
+  measurement of code size.** At t=1 the rectangle path is unreachable, so the
+  arm cannot differ in work done; what it differs in is `fill`'s size. No
+  `cargo asm` or `llvm-lines` was taken and no attempt was made to shrink it
+  (moving the rectangle attempt behind `#[inline(never)]`, or out of the
+  `W`-monomorphised function, are the obvious things to try and were not tried).
 * **No mutable rectangle ships.** `add_rect_mut` is `#[cfg(test)]`; the only
   consumer is the exact rectangle-vs-rectangle detection test, which cannot be
   reached with two immutable records. `compact_write_back`'s per-row MUTABLE
@@ -65,10 +90,11 @@ why the hull is refuted), `docs/BPS_ROWS_DEFAULT.md` (the shipped shift rule).
   timed grid.
 * **Miri's `shard_liveness` target times out locally** and is reported as a
   timeout, never as green (§6c).
-* **The machinery's own cost is measured but small and confounded.** See §5b:
-  the same-tree isolation reads `PLACEHOLDER_MACH`, the different-tree build of
-  the base commit read −1.9% wall / +0.5% CPU, and a wall-down/CPU-up pair is
-  the signature of code layout rather than of instruction count.
+* **The machinery's own cost is NOT RESOLVABLE on this box.** See §5c: two
+  builds of the SAME base source differ by 1.5% wall, so the "+1.6% machinery"
+  reading the first implementation produced is inside build-to-build layout
+  noise. The machinery was rewritten to be free anyway (`b5ae4ac`), which is
+  the right change regardless of whether the measurement supported it.
 
 ## 2. The mechanism, and why it is neither of the two refuted shapes
 
@@ -224,80 +250,116 @@ Every arm's `CHECKSUM` was verified identical before any timing: **9 arms x 2
 thread counts -> ONE md5 per cell**, and identical across all seven measured
 cells.
 
-### 5a. The result, both sessions, against BOTH references
+### 5a. Grid C — the decisive one: primary cell, idle box, n=15, TWO controls
 
-`C256x2048_420_8b__t8` at t=8. Session A n=13, session A2 n=12; idle box apart
-from the discarded rounds (`foreign_max = 1`).
+`C256x2048_420_8b__t8` at t=8, `foreign_max = 0`, no round discarded for load.
+`plainC` is the SAME SOURCE as `plain` built in a second worktree, so it differs
+only in code layout; `base` and `machoff` are two builds of 140f914's tracker
+source, which makes them a second layout pair.
 
-| arm | wall/`plain` | sign | wall/`machoff` | sign | CPU/`machoff` | sign |
+| arm | wall ms/f | wall/`plain` | [min..max] | sign | CPU/`plain` | sign |
 |---|---|---|---|---|---|---|
-| **A: `plainB` (identity)** | 1.0026 [0.9692..1.0131] | 4/13 | 1.0119 | 2/13 | 1.0132 | 1/13 |
-| A: `machoff` | 0.9845 | 10/13 | 1.0000 | — | 1.0000 | — |
-| **A: `rect`** | 0.9704 | 13/13 | **0.9881** [0.9650..1.0013] | **11/13** | **1.0008** | 6/13 |
-| A: `rect1` | 1.0077 | 3/13 | 1.0199 | 1/13 | 1.0134 | 1/13 |
-| A: `dbloff` | 0.9961 | 8/13 | 1.0092 | 3/13 | 1.0174 | 0/13 |
-| **A: `dblon`** | 1.0322 | 0/13 | **1.0398** | 0/13 | **1.0380** | 0/13 |
-| **A2: `plainB` (identity)** | 1.0066 [0.9744..1.0225] | 3/12 | 1.0039 | 4/12 | 1.0073 | 0/12 |
-| A2: `machoff` | 1.0086 | 3/12 | 1.0000 | — | 1.0000 | — |
-| **A2: `rect`** | 0.9973 | 8/12 | **0.9856** [0.9778..1.0291] | **10/12** | **1.0031** | 3/12 |
-| A2: `rect1` | 1.0164 | 0/12 | 1.0092 | 3/12 | 1.0106 | 0/12 |
-| A2: `dbloff` | 1.0153 | 0/12 | 1.0078 | 2/12 | 1.0148 | 0/12 |
-| **A2: `dblon`** | 1.0495 | 0/12 | 1.0466 | 0/12 | 1.0346 | 0/12 |
+| `plain` | 3.749 | 1.0000 | — | — | 1.0000 | — |
+| **`plainB` byte-identical** | 3.754 | **1.0039** | [0.9727..1.0133] | **4/15** | 1.0031 | 5/15 |
+| **`plainC` layout only** | 3.768 | **1.0040** | [0.9752..1.0265] | **5/15** | 0.9953 | 10/15 |
+| `machoff` (base src, this tree) | 3.759 | 1.0027 | [0.9702..1.0146] | 6/15 | 0.9902 | 14/15 |
+| `base` (base src, other tree) | 3.709 | 0.9881 | [0.9662..1.0133] | 13/15 | 0.9951 | 12/15 |
+| **`rect`** | 3.714 | **0.9908** | [0.9690..1.0278] | **8/15** | **1.0002** | 6/15 |
 
-`untracked` reads 0.5470 / 0.5581 wall and dav1d 0.4187 / 0.4259, i.e. the cell
-is unmoved at ~2.35x of dav1d against a ~1.33x ceiling.
+**Two readings, and the second is the one that matters.**
 
-**Read it three ways:**
+1. **Two builds of the same base source read 1.0027 and 0.9881 — a 1.5% wall
+   spread from code layout alone**, and `plainC` (same source as `plain`) reads
+   1.0040 against `plainB`'s 1.0039. So on this cell **build-to-build layout
+   noise is ~1.5% on wall and ~0.5% on CPU**, and any claim below that from a
+   pair of different binaries is unsupportable. That retires the "+1.6%
+   machinery" reading of §5c.
+2. **On the primary cell `rect` is 0.9908 with an 8/15 SIGN — a coin flip.** The
+   cell the round was aimed at is the one where the mechanism does least.
 
-1. **The rectangle is worth −1.2% to −1.4% wall against `main`, replicated
-   across two sessions with different binaries (11/13 and 10/12 rounds), and
-   0.0% CPU.** A wall gain with no CPU gain at 6.7 busy cores is a
-   critical-path effect, not a work reduction, and it is the size of the
-   identity control's own band (±2-3%). By the standard this campaign applied to
-   `lockrelax` in `docs/C256_CONTENTION.md` §5 — a −1.4% point estimate inside a
-   ±1.8% band, declared null — **this does not clear the bar.**
-2. **`rect1` is WORSE than `plain` in both sessions** (1.0077, 1.0164, signs 3/13
-   and 0/12). One-shard-only rectangles are the strictly-cheaper-per-record
-   variant, and they cover only 20.4% of `fill`s; the arm says coverage
-   dominates and that the multi-shard lock traffic is NOT what eats the win.
-   That was the competing hypothesis and it is refuted.
-3. **`dblon` is the measurement that explains everything else.** Adding 180,434
-   registrations/frame — the same population the rectangle removes, in the same
-   binary, changing nothing else — costs **+3.4% to +4.0% wall and +1.8% to
-   +3.7% CPU**, with 0 of 25 rounds on the other side. So a `fill` registration
-   is worth **2.42-2.71 ns of CPU** at the margin. The rectangle removes 160,341
-   of them net and gains what that predicts. **Nothing is broken; the prize was
-   small.**
+### 5b. Grid B3 — breadth, idle box, and this is where it wins
 
-### 5b. The machinery, priced twice, and made free once
+Ten cells, `plain` / `plainB` / `plainC` / `rect` / dav1d, 9 rounds, loaded
+rounds dropped per cell (`foreign_max` 1-5 on a few, none above). Both controls
+are in every cell, so each row carries its own floor.
 
-The first implementation put the row stride in `ShardRecs::find`'s parameter list
-and the rectangle test inside its loop. Measured cost of that machinery ALONE
-(`plain / machoff`, the rectangle path never taken): **+1.6% wall / +1.1% CPU**
-(session A), corroborated by a different-tree build of 140f914 at +1.9% wall.
-That is more than the rectangle path then recovered.
+| cell | `rect` wall | sign | `rect` CPU | sign | `plainB` wall (sign) | `plainC` wall (sign) |
+|---|---|---|---|---|---|---|
+| `c1024x192` t=8 | **0.9900** | **7/7** | 0.9911 | 6/7 | 0.9950 (4/7) | 1.0050 (1/7) |
+| `c1024x384` t=8 | **0.9880** | 5/7 | **0.9872** | **7/7** | 0.9970 (4/7) | 1.0030 (2/7) |
+| `c1024x576` t=8 | **0.9825** | **7/7** | **0.9849** | **7/7** | 0.9981 (4/7) | 0.9981 (5/7) |
+| `c3840x256` t=8 | **0.9867** | 6/7 | 1.0000 | 2/7 | 1.0019 (3/7) | 0.9981 (4/7) |
+| **`text_q20` t=8** | **0.9867** | **6/6** | **0.9705** | **6/6** | 1.0000 (3/6) | 1.0000 (3/6) |
+| `ui_q20` t=8 | 0.9930 | 5/7 | 0.9948 | 5/7 | 0.9977 (4/7) | 1.0023 (2/7) |
+| **`c256x2048` t=8 (primary)** | **0.9955** | **4/7** | 0.9945 | 6/7 | 1.0075 (3/7) | 1.0195 (1/7) |
+| `v4k8tile` t=8 | 0.9990 | 3/4 | 0.9976 | 3/4 | 1.0018 (1/4) | 0.9956 (2/4) |
 
-The fix is in `b5ae4ac`: `find` reverts to exactly its pre-rectangle codegen (no
-stride parameter, no rectangle test, `self.mutable` swapped for the low byte of
-`flags`), its hit becomes a PREFILTER, and the caller passes it through `refine`
-— one load and one branch when the shard holds no rectangle record, inside a
-branch that is itself essentially never taken, and otherwise a cold `find_exact`
-that redoes the scan exactly.
+**Five of six multi-tile t=8 cells are −1.0% to −1.8% wall with 5/7-7/7 signs,
+while both controls sit within ±0.5% of 1.000 with coin-flip signs.** Screen
+text is the best cell in the grid: **−1.3% wall and −3.0% CPU, 6/6 on both.**
+`v4k8tile` is flat (n=4 after load-dropping — too few to call), and the primary
+cell is the weakest.
 
-After the fix (session A2): `plain / machoff` = **1.0086 wall [3/12] / 1.0079 CPU
-[1/12]**. The wall cost is gone into the noise; **a ~+0.8% CPU cost remains and
-its sign is consistent (1/13 and 1/12 rounds below 1.000 across both sessions).**
-That residual is honest and unexplained — the remaining hot-path delta is a `u8`
-load becoming a `u16` load and one extra `usize` in `BorrowTracker` — and it is
-charged against EVERY cell and every thread count, including t=1 where `fill`
-takes the hull path and no rectangle is ever registered. **A default that costs
-+0.8% CPU everywhere to buy −1.3% wall on one cell at t=8 is not a trade this
-round can justify**, which is the second reason the feature stays a feature.
+**This is the shape `docs/C256_CONTENTION.md` §5c used to REJECT `lockrelax`,
+inverted**: that arm was −1.4% on one cell and flat on five others, so it was
+called noise. This one is −1.0..−1.8% on five cells and flat on the one it was
+built for, which by the same standard is a real effect.
 
-This is `docs/AGENT_BRIEF.md` §6's last clause — "price the MACHINERY the count
-reduction needs" — biting for the second time in this campaign, and the isolation
-arm that catches it (`machoff`, the base tracker source built in the same tree
-with the same paths) is cheap enough that it should be standard.
+### 5c. Grid A / A2 — the doubling arm, which prices a registration
+
+Sessions A (n=13) and A2 (n=12) on the primary cell also carried
+`dbloff`/`dblon`: ONE binary (`--features __probe_lf_hull`), `RAV1D_LF_DOUBLE`
+off and on, which takes each per-row guard TWICE. Both guards are immutable over
+the same bytes, so it cannot invent an overlap; it changes the count and nothing
+else.
+
+| quantity | session A | session A2 |
+|---|---|---|
+| `dblon` / `dbloff` wall | **1.0337** | **1.0337** |
+| `dblon` / `dbloff` CPU | 1.0202 | 1.0182 |
+| rounds with `dblon` faster | **0/13** | **0/12** |
+| CPU delta for +180,434 regs/frame | +0.488 ms/f | +0.436 ms/f |
+| **ns per `fill` registration, marginal** | **2.70** | **2.42** |
+
+`rect1` (rectangles accepted only when they land in ONE shard — 20.4% of `fill`s
+here) reads **1.0077** and **1.0164** against `plain`, signs 3/13 and 0/12: WORSE
+than base in both sessions despite being the strictly-cheaper record. That
+refutes the competing explanation that the multi-shard `add_rect` +
+`remove_multi` lock traffic is what eats the win. **Coverage dominates, not the
+per-record cost.**
+
+The first implementation's machinery reading (`plain / machoff` = +1.6% wall /
++1.1% CPU) is superseded by §5a: it is inside the 1.5% layout spread. The
+machinery was made free anyway in `b5ae4ac` — `find` reverted to exactly its
+pre-rectangle codegen, its hit downgraded to a prefilter, the exact test moved
+into a cold `refine`/`find_exact` — because that is the right shape whether or
+not the measurement could see it.
+
+### 5d. Grid D — t=1, where the path never fires, and where it LOSES
+
+At t=1 `tile_threading_active()` is false, so `fill` takes the hull path and
+`add_rect` is never called. The `rect` arm is therefore semantically identical to
+`plain` at t=1, and any difference is code size or layout. Idle box, n=11-12.
+
+| cell t=1 | `rect` wall | sign | `plainB` (sign) | `plainC` (sign) |
+|---|---|---|---|---|
+| **`v4k8tile`** | **1.0126** | **0/11** | 1.0007 (4/11) | 1.0012 (3/11) |
+| `c1024x576` | 1.0032 | 2/12 | 1.0004 (6/12) | 1.0014 (6/12) |
+| `c256x2048` | 1.0027 | 3/11 | 0.9987 (6/11) | 1.0013 (3/11) |
+| `text_q20` | 0.9925 | 9/12 | 0.9989 (6/12) | 1.0032 (5/12) |
+
+**`v4k8tile` at t=1 is +1.26% with 0 of 11 rounds below 1.000**, while both
+controls are at 1.001 with coin-flip signs. That is the clearest single signal in
+the whole round after `dblon`, and it is a REGRESSION in the arm, on the cell
+where this decoder's single-thread gap is largest (`docs/TILED_SCALING.md` §6:
+the filter chain alone is 4.0x dav1d at 4K t=1). `text_q20` t=1 goes the other
+way (−0.75%, 9/12), so the effect is layout-sensitive rather than a uniform tax —
+but a 4K t=1 regression of that size is not something to ship for a −1.5% t=8
+win, and no attempt was made to shrink `fill` (see §1).
+
+**Decision: the rectangle path stays behind `__lf_rect`.** The gain is real at
+t=8 and the loss is real at t=1, the loss lands on the worse cell, and the
+mechanism's own target cell gains nothing.
 
 ## 6. Gates
 

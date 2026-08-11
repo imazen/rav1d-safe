@@ -3666,6 +3666,13 @@ mod tests {
     // really is inside the hull and the pass is not free.
     // =========================================================================
 
+    /// Miri interprets every instruction, so the exhaustive grids below are
+    /// scaled down under it rather than left to hit the harness timeout — a
+    /// timed-out target reports NOTHING, which is strictly worse than a smaller
+    /// grid that still asserts. Every assertion is unchanged; only the number of
+    /// points changes, and the native run keeps the full grid.
+    const MIRI: bool = cfg!(miri);
+
     /// Sorted byte set of a rectangle. The oracle's ground truth.
     fn rect_set(lo: usize, seg: usize, rows: usize, s: usize) -> alloc::vec::Vec<usize> {
         let mut v = alloc::vec::Vec::new();
@@ -3697,8 +3704,9 @@ mod tests {
     /// includes `seg == s` (the widest legal row) and `seg == 1`.
     #[test]
     fn rect_decode_is_the_exact_inverse_of_the_hull() {
-        for s in 1..=40usize {
-            for rows in 1..=17usize {
+        let (s_max, rows_max) = if MIRI { (9usize, 5usize) } else { (40, 17) };
+        for s in 1..=s_max {
+            for rows in 1..=rows_max {
                 for seg in 1..=s {
                     let (h0, h1) = hull_of(1000, seg, rows, s);
                     assert_eq!(
@@ -3719,8 +3727,10 @@ mod tests {
         const LO: usize = 64;
         let mut hits = 0usize;
         let mut misses = 0usize;
-        for s in [3usize, 4, 7, 16] {
-            for rows in 1..=6usize {
+        let strides: &[usize] = if MIRI { &[3, 7] } else { &[3, 4, 7, 16] };
+        let rows_max = if MIRI { 3usize } else { 6 };
+        for &s in strides {
+            for rows in 1..=rows_max {
                 for seg in 1..=s {
                     let (h0, h1) = hull_of(LO, seg, rows, s);
                     for a in (LO - 3)..(h1 + 3) {
@@ -3749,8 +3759,9 @@ mod tests {
             }
         }
         // Liveness of the test itself: both outcomes must be exercised in bulk.
-        assert!(hits > 1000, "hits={hits}");
-        assert!(misses > 1000, "misses={misses}");
+        let floor = if MIRI { 100 } else { 1000 };
+        assert!(hits > floor, "hits={hits}");
+        assert!(misses > floor, "misses={misses}");
     }
 
     /// A tracker with a declared stride and the FULL shard set.
@@ -3947,17 +3958,20 @@ mod tests {
         let s = 64usize;
         let mut checked = 0usize;
         let mut collisions = 0usize;
-        for seg_a in [1usize, 7, 32, 64] {
-            for seg_c in [1usize, 7, 32, 64] {
-                for rows_a in [1usize, 3, 9] {
-                    for rows_c in [1usize, 3, 9] {
+        let segs: &[usize] = if MIRI { &[7, 64] } else { &[1, 7, 32, 64] };
+        let rowss: &[usize] = if MIRI { &[1, 3] } else { &[1, 3, 9] };
+        let doff_max = if MIRI { s } else { 5 * s };
+        for &seg_a in segs {
+            for &seg_c in segs {
+                for &rows_a in rowss {
+                    for &rows_c in rowss {
                         // Signed offsets. With `lo_c >= lo_a` the registrant's
                         // row 0 is always the nearest to A, so a grid of
                         // non-negative offsets can never require a row k > 0 to
                         // be compared — and a mutation that compares only row 0
                         // passes it. (Measured: it did. See the teeth table in
                         // docs/RECT_RECORDS.md.)
-                        for doff in 0..(5 * s) {
+                        for doff in 0..doff_max {
                             let lo_a = 8192usize;
                             let lo_c = (lo_a + doff) - 2 * s;
                             let want = {
@@ -4005,8 +4019,9 @@ mod tests {
                 }
             }
         }
-        assert!(checked > 500, "checked={checked}");
-        assert!(collisions > 100, "collisions={collisions}");
+        let (c_floor, k_floor) = if MIRI { (30usize, 3usize) } else { (500, 100) };
+        assert!(checked > c_floor, "checked={checked}");
+        assert!(collisions > k_floor, "collisions={collisions}");
     }
 
     /// A rectangle whose hull straddles a block boundary registers in every
@@ -4136,8 +4151,10 @@ mod tests {
         let (lo, seg, rows) = (4096usize, 12usize, 9usize);
         let mut agreed = 0usize;
         let mut refused = 0usize;
-        for a in (lo - 4)..(lo + rows * s + 4) {
-            for len in [1usize, 5, 13, 100] {
+        let a_step = if MIRI { 17usize } else { 1 };
+        let lens: &[usize] = if MIRI { &[5, 100] } else { &[1, 5, 13, 100] };
+        for a in ((lo - 4)..(lo + rows * s + 4)).step_by(a_step) {
+            for &len in lens {
                 let probe = a..a + len;
                 let via_rect = {
                     let t = rect_tracker(LEN, s);
@@ -4164,7 +4181,8 @@ mod tests {
                 }
             }
         }
-        assert!(agreed > 100, "agreed={agreed}");
-        assert!(refused > 20, "refused={refused}");
+        let (a_floor, r_floor) = if MIRI { (10usize, 2usize) } else { (100, 20) };
+        assert!(agreed > a_floor, "agreed={agreed}");
+        assert!(refused > r_floor, "refused={refused}");
     }
 }
