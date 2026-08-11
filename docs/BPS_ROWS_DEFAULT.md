@@ -170,8 +170,8 @@ CPU per frame, same runs, paired: 0.8748 / 0.8519 / 0.8736 / 0.9261 / 0.9318 on
 the five moving cells, all 7/7 rounds below 1.0; `c512x576` 0.9947 (6/7),
 `c256x2048` 0.9957 and `v4k8tile` 0.9973 (both controls, spanning 1.0).
 
-**No cell regresses.** The two above 1.000 in point estimate are the provable
-identity controls, and they read 0.9921 and 1.0000.
+**No cell regresses.** The two that do not move read 0.9921 and 1.0000, and both
+are the provable identity controls — not attempts that failed.
 
 ### 5b. t=1 — unchanged by construction, and measured to be
 
@@ -219,9 +219,14 @@ mean registration at 3.2-3.9 ns, which is the census's UNCONTENDED (t=1) rate of
 contention premium rather than a slice of it.
 
 `c256x2048` stays at 19.16 ns, and that is consistent rather than surprising: it
-is the cell the census singled out as contention-bound, where #502 measured a
-5.8% registration-count cut as a null on both instruments. A granularity cut is
-a null there too. Two different levers, same answer — that cell needs a third.
+is the cell the cost census singled out as contention-bound, where #502 measured
+a 5.8% registration-count cut as a null on both instruments. **Careful about
+what this round adds there, though**: the derived rule *declines* to touch that
+cell (8 rows per block already), so 0.9921 is the control, not a failed attempt.
+The evidence that granularity is also the wrong lever there is #501's, not this
+round's — its `bps1` / `bps-half` / `bps-quarter` rungs, which DO coarsen it,
+measured 0.987 / 0.987 / 0.995. Two different levers, same answer, one of them
+cited rather than re-run — that cell needs a third.
 
 The `c1024x576` count here is 529,092/frame against the cost census's
 566,594. That is not a disagreement: the census ran on `main @ 414515c` and
@@ -231,7 +236,7 @@ this branch's counts with this branch's timings.
 ## 6. The counted half — three questions a clock cannot answer
 
 `--features probe-wide` / `__probe_bounds`, t=8 and t=1, both arms, all eight
-cells. Full tables: `benchmarks/bps_rows_default_counts_2026-08-11.tsv`.
+cells. Full tables: `benchmarks/bps_rows_default_{shifts,wide,regs}_2026-08-11.tsv`.
 
 1. **The registration COUNT is identical between the arms on every cell** —
    156,777 / 333,863 / 749,831 / 529,092 / 569,690 / 283,821 / 662,694 /
