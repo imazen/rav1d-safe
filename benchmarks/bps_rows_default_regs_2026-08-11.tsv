@@ -1,0 +1,17 @@
+cell	arm	threads	regs_per_frame	distinct_sites
+C1024x192_420_8b__t8	plain	8	156777	41
+C1024x192_420_8b__t8	bpsblocks	8	156777	41
+C1024x384_420_8b__t8	plain	8	333863	41
+C1024x384_420_8b__t8	bpsblocks	8	333863	41
+C3840x256_420_8b__t8	plain	8	749831	41
+C3840x256_420_8b__t8	bpsblocks	8	749831	41
+C1024x576_420_8b__t8	plain	8	529092	41
+C1024x576_420_8b__t8	bpsblocks	8	529092	41
+C256x2048_420_8b__t8	plain	8	569690	42
+C256x2048_420_8b__t8	bpsblocks	8	569690	42
+C512x576_420_8b__t8	plain	8	283821	42
+C512x576_420_8b__t8	bpsblocks	8	283821	42
+L1024x576_420_10b__t8	plain	8	662694	41
+L1024x576_420_10b__t8	bpsblocks	8	662694	41
+v4k_8tile	plain	8	8929449	42
+v4k_8tile	bpsblocks	8	8929449	42

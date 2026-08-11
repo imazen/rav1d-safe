@@ -144,12 +144,28 @@ blockshift-adaptive = ["rav1d-disjoint-mut/__blockshift_adaptive"]
 # scored on TAIL concurrency as well as whole-frame wall — the objective the
 # original fit used was wall alone, and docs/TILED_SCALING.md §4 put 32-42% of
 # the t=8 gap in the idle-core tail. See `BPS` in the tracker.
+#
+# The DEFAULT is no longer any of these: a picture plane's shift is derived from
+# its row stride so a block spans >= ROWS_PER_BLOCK_MIN picture rows
+# (docs/SHARD_SIZE_SWEEP.md, docs/BPS_ROWS_DEFAULT.md). Selecting a rung turns
+# that off and pins the constant, so the ladder stays a clean re-fit instrument.
+# `bps-blocks` is the centre rung = the rule that shipped before 2026-08-11, and
+# is the base arm for any A/B against the default.
 bps-quarter = ["rav1d-disjoint-mut/__bps_quarter"]
 bps-half = ["rav1d-disjoint-mut/__bps_half"]
 bps-1 = ["rav1d-disjoint-mut/__bps_1"]
 bps-4 = ["rav1d-disjoint-mut/__bps_4"]
 bps-8 = ["rav1d-disjoint-mut/__bps_8"]
-bps-rows = ["rav1d-disjoint-mut/__bps_rows"]
+bps-blocks = ["rav1d-disjoint-mut/__bps_blocks"]
+# The ladder for the SHIPPED constant (picture ROWS per block; default 4). The
+# bps-* rungs re-fit the block-COUNT rule this replaced and cannot answer
+# "is 4 right?" — these can. See `ROWS_PER_BLOCK_MIN` in src/tracker_shard.rs.
+rpb-2 = ["rav1d-disjoint-mut/__rpb_2"]
+rpb-8 = ["rav1d-disjoint-mut/__rpb_8"]
+rpb-16 = ["rav1d-disjoint-mut/__rpb_16"]
+# THROWAWAY per-plane shift pin (RAV1D_PIN_SHIFT="<stride>:<shift>,..."), the
+# only instrument that separates a luma shift from a chroma one.
+probe-shiftpin = ["rav1d-disjoint-mut/__probe_shiftpin"]
 # MAX_SHARDS_PER_BORROW 4 -> 5 (BorrowId pairs narrowed to log2(N_SHARDS)+3 bits).
 msb-5 = ["rav1d-disjoint-mut/__msb_5"]
 

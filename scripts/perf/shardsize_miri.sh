@@ -10,9 +10,11 @@
 # "0 tests ran" is reported as 0 — two targets are feature-gated and select
 # nothing under default features.
 #
-# The `__bps_rows` leg is the point of this run: the derived rule moves block
-# boundaries, and the tracker's whole soundness argument is that both registrants
-# of a shared byte agree on them.
+# BOTH feature sets: the DEFAULT (the derived rows-per-block rule, since
+# 2026-08-11) and `__bps_blocks` (the block-count rule it replaced). The rule
+# decides where block boundaries fall, and the tracker's whole soundness argument
+# is that both registrants of a shared byte agree on them, so each rule is worth
+# its own Miri leg.
 #
 # Usage: shardsize_miri.sh <outdir> [timeout_seconds]
 set -u
@@ -31,7 +33,7 @@ for model in sb tb; do
     sb) FLAGS="" ;;
     tb) FLAGS="-Zmiri-tree-borrows" ;;
   esac
-  for feat in "" "__bps_rows"; do
+  for feat in "" "__bps_blocks"; do
     tag="${model}_${feat:-default}"
     for t in $TARGETS; do
       if [ "$t" = "--lib" ]; then sel="--lib"; else sel="--test $t"; fi

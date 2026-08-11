@@ -1,5 +1,15 @@
 # The shard-granularity rung across picture size, and the rule that replaces it
 
+> **SUPERSEDED IN PART, 2026-08-11 (PR #503).** The derived rule this round built
+> and left default-off **is now the default**; `bps-blocks` is the arm that
+> reverts to the block-count rule. Two consequences for reading this file:
+> §5d's `bps-rows / dav1d` column is now the SHIPPED decoder's number rather
+> than an arm's (which is exactly the confusion the flip removes — main was
+> measuring 2.09-2.27x on those cells while this table read 1.61-1.70x), and
+> §5b's unexplained 512x576 row **does not reproduce**: a 3x3 per-plane shift
+> factorial puts the derived rule between `bps1` and `bps-half` there, with the
+> planes separable to ±2%. See `docs/BPS_ROWS_DEFAULT.md` §7.
+
 **Status: the size axis is measured — 17 multi-tile cells, all bit-identical to
 dav1d before timing — and it says the shipped rule is the wrong SHAPE, not the
 wrong constant. A derived rule keyed on ROWS PER BLOCK is built (`bps-rows`,
@@ -449,6 +459,11 @@ in `tracker_shard.rs`, `crates/rav1d-disjoint-mut/src/lib.rs`,
 in which target clippy aborted at first.
 
 ## 8. Recommendation
+
+**Superseded 2026-08-11: the derived rule shipped (PR #503,
+`docs/BPS_ROWS_DEFAULT.md`). Two of the four preconditions below were met (the
+512x576 anomaly and a 10-bit leg); the held-out size and the x86_64 leg were
+NOT, and are recorded as open there rather than quietly dropped.**
 
 **Do not ship a rung.** A global constant is now measured to be the wrong shape:
 it must be one step for every picture, and the right step ranges from 0 to 3

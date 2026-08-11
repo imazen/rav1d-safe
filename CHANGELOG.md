@@ -93,6 +93,48 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   Record: `benchmarks/verify_compose4_2026-08-08.meta` §6.
 
 ### Changed
+- **A picture plane's borrow-tracker block shift is now DERIVED FROM ITS ROW
+  STRIDE, not from a target block count** (#455, `docs/BPS_ROWS_DEFAULT.md`,
+  `benchmarks/bps_rows_default_2026-08-11.*`). The block-count rule targets
+  `N_SHARDS * BPS` blocks, so a block spans `~aligned_h / 256` picture ROWS while
+  the hot strided accesses are a fixed number of rows — a defect in the rule's
+  shape that no constant fixes. The new rule coarsens from the block-count
+  answer until a block spans `ROWS_PER_BLOCK_MIN = 4` picture rows, never finer
+  than before and never past a `MIN_BLOCKS = 32` floor; buffers with no declared
+  stride (everything that is not a picture plane) and every serial or
+  single-tile decode keep the old rule exactly. Measured on the SHIPPED build,
+  n=7 paired per-round ratios, idle box, twice on independently built binaries:
+  **wall 0.7656 / 0.7530 / 0.7473 / 0.8889 at 1024x192, 1024x384, 3840x256 and
+  1024x576 (8 tiles, t=8), all seven rounds below 1.0 on each**, and 0.9000 on
+  the 10-bit 1024x576 twin. Against dav1d 1.5.4 `--framedelay 1` on the same
+  clock: **2.093 -> 1.601, 2.268 -> 1.708, 2.195 -> 1.649, 1.825 -> 1.616,
+  1.834 -> 1.645.** CPU 0.85-0.93 on the same cells. Nothing regresses: the two
+  cells that read ~1.000 (`c256x2048`, `v4k_8tile`) are cells where the rule
+  provably computes the SAME shift, so they are identity controls and their
+  spread is the grid's noise floor (±1.0% and ±3.1%). t=1 is unchanged by
+  construction and measured so (medians 0.9972-1.0004). Registration counts are
+  identical between the arms on every cell — the knob changes the COST of a
+  registration, taking it from 5.8-9.3 ns to 3.2-3.9 ns, which is the
+  uncontended rate. `w_full` is 0 everywhere, so the coarser block does not
+  trade wide-by-shard-count for wide-by-slot-exhaustion. Corpus 766/766 at t=1
+  AND t=8 on the DEFAULT build with no `--skip-group`, set-diffed by name with
+  the actual md5 as the value; 10/10 sweep vectors bit-identical to dav1d at
+  both thread counts before any timing. #501's one unexplained cell (512x576)
+  **does not reproduce**: a 3x3 per-plane shift factorial (new
+  `--features probe-shiftpin`) puts the derived rule between `bps1` and
+  `bps-half` with the planes separable to ±2%; the real residual is that one
+  rows target serves both planes while a 4:2:0 chroma tap window is half the
+  luma one, worth ~0.7% there. Still open: no x86_64 leg, no held-out size for
+  `ROWS_PER_BLOCK_MIN` (the new `__rpb_{2,8,16}` ladder is for re-fitting it and
+  was not swept), no 4:4:4 / 12-bit / inter content. (318a4bc, f97a168, c2b5d0f)
+- **Feature rename in the shard ladder**: `bps-rows` is gone (it is the default,
+  and a flag for the default can never fail) and `bps-blocks` is new — the
+  block-count rule that shipped before this, and the base arm any A/B against
+  the default must be differenced against. Selecting ANY `__bps_*` rung now also
+  turns the derived rule off, so the ladder stays a clean re-fit instrument.
+  Added `rpb-2` / `rpb-8` / `rpb-16` (the ladder for the constant that actually
+  ships) and `probe-shiftpin` (`RAV1D_PIN_SHIFT="<stride>:<shift>,…"`, the only
+  instrument that separates a luma shift from a chroma one). (318a4bc, c2b5d0f)
 - **The zerocopy slice cast no longer puts a 112-byte cold-error frame on the
   10-bit hot path** (`crates/rav1d-disjoint-mut/src/lib.rs`). `.unwrap()` on
   `mut_from_bytes`/`ref_from_bytes` required a several-word `CastError` to be
@@ -138,7 +180,9 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   has the best CPU geomean; on wall geomean it ties `bps-half`. Not enabled: one
   cell (512x576) is an unexplained 7% miss, and there is no 10-bit, 4:4:4 or
   x86_64 leg. Corpus 766/766 at t=1 and t=8 on both the default build and the
-  arm. (dad8f15, eb4169c)
+  arm. (dad8f15, eb4169c) **Superseded 2026-08-11: `__bps_rows` is now the
+  DEFAULT (see the Changed entry above), the 512x576 miss did not reproduce, and
+  a 10-bit leg landed; the 4:4:4 and x86_64 legs are still missing.**
 - `examples/decode_md5 --threads N` (was hardcoded to 1) and an `__ablate`
   per-stage execution census in `examples/probe_tracker`, so an ad-hoc vector
   can be identity-checked at t=8 and "did this stage run at all?" is a counter

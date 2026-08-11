@@ -1504,10 +1504,12 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     /// `&mut self` is the safety argument, exactly as for the resize path: no
     /// borrow can be outstanding while the block boundaries move.
     ///
-    /// The shipped rule reads `len` only and this is a no-op for it; it feeds
-    /// the `__bps_rows` A/B arm. Buffers that never call it (everything that is
-    /// not a picture plane — there is no stride to declare) keep the block-count
-    /// rule under every arm.
+    /// **This decides the shipped block shift for a picture plane** since
+    /// 2026-08-11: the tracker coarsens from the block-count answer until a
+    /// block spans `ROWS_PER_BLOCK_MIN` picture rows. Buffers that never call it
+    /// (everything that is not a picture plane — there is no stride to declare)
+    /// keep the block-count rule under every arm, as does the whole build when a
+    /// `__bps_*` ladder rung or `__bps_blocks` is compiled in.
     ///
     /// Not sticky: a later [`Self::resize`] re-derives the shift from `len`
     /// alone and drops the hint. That degrades to the shipped rule, which is a

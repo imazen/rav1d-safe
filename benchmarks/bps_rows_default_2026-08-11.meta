@@ -1,0 +1,108 @@
+the derived rows-per-block shard rule as the DEFAULT — 2026-08-11
+=================================================================
+Branch  perf/bps-rows-default off main @ 52c61d9 (PR #502 merged).
+        Timed binaries rebuilt at c2b5d0f, the LAST code-touching commit, and
+        the whole t=8 table re-measured on them; the first pass (built at
+        f97a168) is kept as ..._run1_... and agrees within 1.1% on every cell.
+Box     Apple M4 Pro, 8P+4E, macOS, aarch64. Idle: foreign_max = 1 on the two
+        wall sweeps (one row), 0 on the per-plane factorial.
+Build   cargo --release, default features. No target-cpu=native.
+        head  = DEFAULT build (the derived rows-per-block rule)
+        base  = --features bps-blocks (the block-count rule shipped before this)
+        half  = --features bps-half   (the best global constant on offer)
+        untrk = --features probe-untracked (tracker-removed ceiling)
+        pin   = --features probe-shiftpin, RAV1D_PIN_SHIFT="<stride>:<shift>,..."
+Locks   every timed run under `measlock`. Builds/tests niced, timed runs never.
+Fit     two-point, total = alpha + beta*frames, wall and user+sys separately,
+        n_lo/n_hi PER CELL and never past the IVF's real length (checked by the
+        harness, which fails loud). ROUNDS=8, ROUND 0 DISCARDED (first touch of
+        each (arm,cell) is cold: a smoke read ms_lo 382 vs 326-330 warm). n=7.
+        Ratios are PAIRED PER ROUND: v4k8tile drifts 47.5/50.6/48.9 ms/frame
+        across rounds for ALL FIVE arms including dav1d, and that cancels in a
+        paired ratio but not in a ratio of medians (6% band -> 1%).
+Vectors ~/tmp/bpsrows/{vec,ivf} — 1:1 crops from mk_shardsize_vectors.sh (4x2 =
+        8 tiles each), plus v4k_8tile and the 10-bit 1024x576 t8 ladder vector.
+        All 10 bit-identical to dav1d 1.5.4 at t=1 AND t=8 on the final build
+        BEFORE any timing (bps_rows_default_verify_2026-08-11.tsv).
+
+IN-GRID NOISE CONTROLS (this is why the null cells are trustworthy)
+   c256x2048 and v4k8tile: the derived rule computes the SAME shift as the
+   block-count rule on every plane (verified off the tracker, shifts.tsv), so
+   head and base are the same decoder there and the true ratio is exactly 1.000.
+   Measured 0.9921 [0.9552..1.0175] and 1.0000 [0.9937..1.0093].
+   Every cell at t=1 is the same kind of control (the rule is gated on
+   tiles>=2 AND shards>=SHARDS_CONCURRENT): medians 0.9972-1.0004, all spanning 1.
+
+1. WALL t=8, ms/frame, and the gap (n=7, paired ratios)
+   cell            base    head  head/base [min..max]      base/dav1d  HEAD/dav1d
+   c1024x192      1.454   1.115     0.7656 [.7594..0.7698]      2.093       1.601
+   c1024x384      2.470   1.844     0.7530 [.7374..0.7678]      2.268       1.708
+   c3840x256      5.898   4.407     0.7473 [.7287..0.7886]      2.195       1.649
+   c1024x576      3.200   2.839     0.8889 [.8637..0.9022]      1.825       1.616
+   c1024x576_10b  3.444   3.100     0.9000 [.8907..0.9144]      1.834       1.645
+   c512x576       1.658   1.608     0.9732 [.9071..0.9916]      1.812       1.734
+   c256x2048      3.744   3.719     0.9921 [.9552..1.0175]      2.358       2.323  <- identity control
+   v4k8tile      49.778  49.639     1.0000 [.9937..1.0093]      1.389       1.395  <- identity control
+   All 7 paired rounds below 1.0 on the first six. NO CELL REGRESSES.
+
+   CPU t=8 head/base: 0.8748 0.8519 0.8736 0.9261 0.9318 (7/7 each),
+   0.9947 0.9957 0.9973 on the rest.
+
+2. WALL t=1 — unchanged BY CONSTRUCTION and measured to be (n=7)
+   head/base 1.0004 1.0004 1.0000 0.9992 0.9996 0.9972 0.9989 0.9989
+   HEAD/dav1d 1.252 1.258 1.244 1.268 1.321 1.285 1.337 1.206 (= base/dav1d)
+
+3. THE 512x576 PER-PLANE FACTORIAL (probe-shiftpin, n=7, foreign_max=0)
+   paired wall vs pinL10C8 (= the block-count rule):
+                 chroma 8   chroma 9   chroma 10
+      luma 10      1.0000     0.9625      0.9918
+      luma 11      0.9418     0.9213      0.9282   <- (11,10) IS the derived rule
+      luma 12      0.9410     0.9184      0.9336   <- (12,10) = bps-half
+   unpinned DEFAULT build in the same sweep: 0.9244 (vs its pinned twin 0.9282,
+   0.4% — the instrument cross-checks).
+   Additivity residual (measured / r(L,8)*r(10,C)): 1.0086 0.9909 1.0192 0.9943
+   on wall, 0.9979 0.9920 0.9963 1.0026 on CPU. THE PLANES DO NOT INTERACT.
+   #501's 0.995 "worse than both arms it sits between" DOES NOT REPRODUCE.
+   Real residual: chroma is non-monotone (8->9 worth 3.75%, 9->10 gives most
+   back at all three luma shifts) because ROWS_PER_BLOCK_MIN is one number for
+   both planes while a 4:2:0 chroma tap window is half the luma one. Cost of the
+   shared constant at this cell: ~0.7% vs bps1.
+
+4. NS PER REGISTRATION (regs identical between arms on every cell)
+   cell           regs/f     base  head   saved
+   c1024x192     156,777     7.60  3.20    4.39
+   c1024x384     333,863     9.26  3.83    5.44
+   c3840x256     749,831     8.38  3.45    4.94
+   c1024x576     529,092     6.42  3.92    2.50
+   c1024x576_10b 662,694     5.80  3.83    1.97
+   c512x576      283,821     6.50  6.15    0.35
+   c256x2048     569,690    19.40 19.16    0.23
+   v4k8tile    8,929,449     3.64  3.53    0.11
+   The 4.5-6.4 ns band is again refuted as a cross-cell constant (3.64-19.40).
+   NEW: on every cell that moves, the rule lands the mean registration at
+   3.2-3.9 ns = the census's UNCONTENDED t=1 rate (2.78-3.89). It removes
+   essentially the whole contention premium there, not a slice of it.
+   c1024x576 reads 529,092/frame against the cost census's 566,594 because #502
+   landed in between; use this branch's counts with this branch's timings.
+
+5. TIMER-FREE (probe-wide / __probe_bounds, both arms, all 8 cells, t=8 and t=1)
+   * registration COUNT identical between arms on every cell
+   * w_full = 0 on every row (the slot-exhaustion trap does not fire, including
+     where the rule coarsens by three shifts)
+   * multi/20f: 15,580->1,260 (c1024x192), 31,600->2,520 (c1024x384),
+     72,680->21,320 (c3840x256), 34,910->23,582 (c1024x576),
+     77,156->38,924 (10-bit); 0 in both arms at c512x576
+   * CORRECTION to SHARD_GRANULARITY.md §1: the 153 all-shards promotions/frame
+     at 1024x576 are NOT on a picture plane. This branch coarsens both planes by
+     two shifts and w_shards stays 3,060/20f in both arms, while --features
+     bps-1 (one shift on EVERY instance) takes it to 0. Coarsening is monotone,
+     so if +1 everywhere removes them and +2 on the planes does not, they belong
+     to a buffer with no declared stride. Unidentified; ~1 point of wall (#500 §5e).
+
+NOT COVERED
+   x86_64 (clippy target only), 4:4:4, 12-bit, film grain, inter/video content,
+   `unchecked`, `asm`, t=2/4/16. One content class (photo), one quality point,
+   all-intra, one key-frame OBU re-decoded. Loop restoration executes zero
+   blocks on every cell. ROWS_PER_BLOCK_MIN = 4 is still fitted on #501's grid
+   with no held-out size — __rpb_{2,8,16} is the ladder to re-fit it and was NOT
+   swept here. msb-5 not bundled (~1%, not separated from zero). SLOTS untouched.

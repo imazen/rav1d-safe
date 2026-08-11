@@ -1076,7 +1076,18 @@ unsafe impl Sync for BorrowTracker {}
 /// The ratio is a rational so the ladder can go BELOW one block per shard
 /// (coarser blocks than the default), which a `usize` count cannot express.
 /// `__bps_half` = 1/2 is one shift COARSER than the default, `__bps_4` = 4/1 is
-/// one shift FINER. Rungs are `__`-gated A/B arms; the default is unchanged.
+/// one shift FINER. Rungs are `__`-gated A/B arms.
+///
+/// **This is no longer the shipped rule for a picture plane (2026-08-11).** The
+/// size sweep measured a block COUNT to be the wrong shape and the default is
+/// now [`block_shift_rule_rows`], which coarsens from here until a block spans
+/// [`ROWS_PER_BLOCK_MIN`] picture rows. `BPS` still decides
+/// 1. the **base** the derived rule starts from and never goes finer than;
+/// 2. the shift for every buffer with **no declared stride** (everything that
+///    is not a picture plane); and
+/// 3. the shift for the whole build when a rung is compiled in — selecting any
+///    `__bps_*` rung, or `__bps_blocks`, turns the derived rule OFF so the
+///    ladder stays a clean re-fit instrument. See [`ROWS_RULE_ACTIVE`].
 #[cfg(feature = "__bps_quarter")]
 const BPS: (usize, usize) = (1, 4);
 #[cfg(all(feature = "__bps_half", not(feature = "__bps_quarter")))]
@@ -1119,8 +1130,30 @@ const TARGET_BLOCKS: usize = {
 };
 
 // =============================================================================
-// The rows-per-block rule (`__bps_rows`) — a DERIVED shift, not a rung
+// The rows-per-block rule — a DERIVED shift, not a rung. THE DEFAULT since
+// 2026-08-11 (PR #503); `__bps_blocks` is the arm that reverts to the old
+// block-count rule.
 // =============================================================================
+
+/// Whether the derived rows-per-block rule decides a strided buffer's shift.
+///
+/// **On unless a rung is compiled in.** The `__bps_*` ladder and `__bps_blocks`
+/// are A/B instruments for re-fitting the block-COUNT rule, so a rung means
+/// "give me exactly that constant" — mixing a rung with the derived rule would
+/// measure neither. `__bps_blocks` is the ladder's centre rung, i.e. the rule
+/// that shipped before this one, and is the base arm any re-measurement of the
+/// default must be differenced against.
+///
+/// SOUND EITHER WAY: the block shift is a locality knob, never a correctness
+/// one (see the module's soundness note and [`block_shift_for`]).
+const ROWS_RULE_ACTIVE: bool = !cfg!(any(
+    feature = "__bps_blocks",
+    feature = "__bps_quarter",
+    feature = "__bps_half",
+    feature = "__bps_1",
+    feature = "__bps_4",
+    feature = "__bps_8"
+));
 
 /// Picture rows a block should span, once the buffer's stride is known.
 ///
@@ -1148,11 +1181,26 @@ const TARGET_BLOCKS: usize = {
 ///
 /// Measured across the 15-cell size sweep
 /// (`benchmarks/shard_size_sweep_2026-08-10.*`, aarch64, 8 tiles, t=8): against
-/// the shipped rule the wall win is 10-25% where the shipped rule lands below 1
+/// the block-count rule the wall win is 10-25% where that rule lands below 1
 /// row per block, 8-14% between 1.8 and 2.2, and inside the bands at 3.8 and
 /// above — so the crossover sits between 2.1 and 3.8 and this target is on the
 /// coarse side of it by one step.
-#[cfg(feature = "__bps_rows")]
+///
+/// **Fitted on that grid with no held-out size, and that is a stated weakness of
+/// the shipped value** (`docs/SHARD_SIZE_SWEEP.md` §1). `__rpb_2` / `__rpb_8` /
+/// `__rpb_16` are the ladder for re-fitting THIS constant — the `__bps_*` rungs
+/// re-fit the block-COUNT rule, which is the thing this replaced, so they are
+/// the wrong instrument for the question. `__bps_blocks` is the base arm.
+#[cfg(feature = "__rpb_2")]
+const ROWS_PER_BLOCK_MIN: usize = 2;
+#[cfg(all(feature = "__rpb_8", not(feature = "__rpb_2")))]
+const ROWS_PER_BLOCK_MIN: usize = 8;
+#[cfg(all(
+    feature = "__rpb_16",
+    not(any(feature = "__rpb_2", feature = "__rpb_8"))
+))]
+const ROWS_PER_BLOCK_MIN: usize = 16;
+#[cfg(not(any(feature = "__rpb_2", feature = "__rpb_8", feature = "__rpb_16")))]
 const ROWS_PER_BLOCK_MIN: usize = 4;
 
 /// Floor on how many blocks a buffer keeps, whatever the rows target asks for.
@@ -1170,7 +1218,6 @@ const ROWS_PER_BLOCK_MIN: usize = 4;
 /// sweep — 1024x192 ties it exactly — so it is a guard against pictures shorter
 /// than the grid contains, not a fitted parameter. It DOES bind at a target of
 /// 8, which is part of why 8 was rejected.
-#[cfg(feature = "__bps_rows")]
 const MIN_BLOCKS: usize = 32;
 
 /// Block shift for an instance of `len` bytes: the power of two that lands
@@ -1226,23 +1273,23 @@ fn block_shift_rule(len: usize, shards: usize, tiles: usize) -> u32 {
 }
 
 /// The rows-per-block refinement of [`block_shift_rule`], for a buffer whose
-/// row stride is known (`__bps_rows`).
+/// row stride is known. **This is the shipped rule for picture planes.**
 ///
 /// Never FINER than the block-count rule — only coarser, and only far enough to
 /// put [`ROWS_PER_BLOCK_MIN`] picture rows in a block, and only while the buffer
 /// still holds [`MIN_BLOCKS`] blocks. A buffer with no declared stride keeps the
-/// block-count rule exactly, so nothing outside the picture planes moves.
+/// block-count rule exactly, so nothing outside the picture planes moves; so
+/// does every buffer when a ladder rung is compiled in ([`ROWS_RULE_ACTIVE`]).
 ///
 /// SOUND FOR ANY VALUE, for the same reason the block-count rule is: the "no
 /// missed overlap" argument needs only that both registrants of a shared byte
 /// agree on the block boundaries, and this runs from `&mut self` (see
 /// [`BorrowTracker::set_row_stride`]) so no borrow can be outstanding when it
 /// moves.
-#[cfg(feature = "__bps_rows")]
 #[inline]
 fn block_shift_rule_rows(len: usize, shards: usize, tiles: usize, stride: usize) -> u32 {
     let base = block_shift_rule(len, shards, tiles);
-    if stride == 0 || FIXED_SHIFT_SELECTED {
+    if stride == 0 || FIXED_SHIFT_SELECTED || !ROWS_RULE_ACTIVE {
         return base;
     }
     // The SAME gates the block-count rule uses, restated rather than inferred
@@ -1265,6 +1312,43 @@ fn block_shift_rule_rows(len: usize, shards: usize, tiles: usize, stride: usize)
     let cap_want = (len as u64 / MIN_BLOCKS as u64).max(1);
     let cap_shift = u64::BITS - 1 - cap_want.leading_zeros();
     base.max(rows_shift.min(cap_shift)).clamp(6, 24)
+}
+
+/// THROWAWAY (`__probe_shiftpin`): pin a declared-stride buffer's block shift
+/// from the environment, so a factorial over PER-PLANE shifts can be measured.
+///
+/// `RAV1D_PIN_SHIFT="1088:13,512:11"` — a comma-separated `stride:shift` list,
+/// matched on the row stride the picture allocator declares. A stride not named
+/// keeps the ordinary rule, and no variable at all leaves everything alone.
+///
+/// It exists because the rows rule and the `__bps_*` ladder move LUMA and CHROMA
+/// together in a fixed pattern, so the grid they span cannot separate the two —
+/// and the size sweep's one unexplained cell (512x576, where the derived rule
+/// reads 0.995 between two rungs that read 0.927/0.930) is exactly a question
+/// about whether the two planes' shifts interact.
+///
+/// SOUND FOR ANY VALUE, for the same reason every other shift choice is: both
+/// registrants of a shared byte read the same live `shift`, which moves only
+/// from `&mut self`. This is a measurement instrument, not a shipping knob, and
+/// it is `__`-gated and absent from every published feature.
+#[cfg(feature = "__probe_shiftpin")]
+fn pinned_shift(stride: usize) -> Option<u32> {
+    use std::sync::OnceLock;
+    static PINS: OnceLock<Vec<(usize, u32)>> = OnceLock::new();
+    let pins = PINS.get_or_init(|| {
+        let Ok(spec) = std::env::var("RAV1D_PIN_SHIFT") else {
+            return Vec::new();
+        };
+        spec.split(',')
+            .filter_map(|kv| {
+                let (k, v) = kv.split_once(':')?;
+                Some((k.trim().parse().ok()?, v.trim().parse::<u32>().ok()?))
+            })
+            .collect()
+    });
+    pins.iter()
+        .find(|(s, _)| *s == stride)
+        .map(|(_, sh)| (*sh).clamp(6, 24))
 }
 
 /// True when one of the fixed `blockshift-*` rungs was selected, in which case
@@ -1478,20 +1562,19 @@ impl BorrowTracker {
     /// [`Self::reprovision`]: the caller holds `&mut DisjointMut`, so no borrow
     /// can be outstanding and no record can be lost when the shift moves.
     ///
-    /// A no-op in the default build — `__bps_rows` is an A/B arm and the shipped
-    /// rule reads `len` only. It is still called unconditionally by the picture
-    /// allocator, because a hint that is only wired up under the feature is a
-    /// hint that has never been compiled on the shipped path.
+    /// **This decides the shipped block shift for every picture plane** since
+    /// 2026-08-11; before that it was a no-op feeding an A/B arm. It reverts to
+    /// re-deriving [`block_shift_for`]'s answer — i.e. changes nothing — when a
+    /// ladder rung is compiled in ([`ROWS_RULE_ACTIVE`]) or the caller has no
+    /// stride to declare.
     #[inline]
     pub fn set_row_stride(&mut self, len: usize, stride: usize) {
-        #[cfg(feature = "__bps_rows")]
-        {
-            self.shift = block_shift_rule_rows(len, active_shards(), tile_concurrency(), stride);
+        #[cfg(feature = "__probe_shiftpin")]
+        if let Some(pinned) = pinned_shift(stride) {
+            self.shift = pinned;
+            return;
         }
-        #[cfg(not(feature = "__bps_rows"))]
-        {
-            let _ = (len, stride);
-        }
+        self.shift = block_shift_rule_rows(len, active_shards(), tile_concurrency(), stride);
     }
 
     /// The prefix of [`Self::shards`] this instance can actually reach.
@@ -2576,7 +2659,23 @@ mod tests {
     ///
     /// This test is about the RULE, so it drives it with both concurrency facts
     /// declared, like its block-count sibling above.
-    #[cfg(feature = "__bps_rows")]
+    // Gated on the CONFIG, never skipped at runtime: a compiled-in rung turns
+    // the derived rule off by design, and `a_rung_disables_the_derived_rule`
+    // below is the assertion for that side. Both configs assert something.
+    #[cfg(not(any(
+        feature = "__bps_blocks",
+        feature = "__bps_quarter",
+        feature = "__bps_half",
+        feature = "__bps_1",
+        feature = "__bps_4",
+        feature = "__bps_8",
+        feature = "__blockshift_8",
+        feature = "__blockshift_10",
+        feature = "__blockshift_13",
+        feature = "__blockshift_14",
+        feature = "__blockshift_15",
+        feature = "__blockshift_16"
+    )))]
     #[test]
     fn rows_rule_targets_picture_rows_not_block_count() {
         fn plane(w: usize, h: usize, hbd: u32) -> (usize, usize) {
@@ -2607,8 +2706,14 @@ mod tests {
             (3840, 2160),
         ] {
             let (rows, blocks) = rows_of(w, h, 0);
+            // Either the rows target is met, or the ONLY reason it is not is
+            // that one more shift would fall under the block floor. `blocks <=
+            // MIN_BLOCKS` was the earlier form and is too strict at a coarser
+            // target: `ilog2` rounds the cap down, so a floor-bound cell can sit
+            // anywhere in [MIN_BLOCKS, 2*MIN_BLOCKS). 1024x192 at a target of 8
+            // lands on 34 blocks and would fail it while being exactly right.
             assert!(
-                rows >= ROWS_PER_BLOCK_MIN || blocks <= MIN_BLOCKS,
+                rows >= ROWS_PER_BLOCK_MIN || (blocks >> 1) < MIN_BLOCKS,
                 "{w}x{h}: {rows} rows/block, {blocks} blocks — below the target \
                  with the block floor not binding"
             );
@@ -2637,6 +2742,11 @@ mod tests {
             (256, 4096),
             (128, 2048),
             (1024, 2048),
+            // Narrow enough that the unclamped rows target stays finer than the
+            // block rule even at `__rpb_16`: that needs `aligned_h > 256 * R`,
+            // and without a cell like this the anti-vacuity check below FAILS at
+            // the coarse rungs — which is the check doing its job, not a bug.
+            (128, 8192),
         ] {
             for hbd in [0, 1] {
                 let (len, stride) = plane(w, h, hbd);
@@ -2687,6 +2797,52 @@ mod tests {
             block_shift_rule_rows(len, SHARDS_SERIAL, 8, stride),
             block_shift_rule(len, SHARDS_SERIAL, 8)
         );
+    }
+
+    /// The SEAM, not the rule: declaring a stride must actually install the
+    /// derived shift on the tracker in the DEFAULT build, and must install the
+    /// block-count one when a ladder rung is compiled in.
+    ///
+    /// The rule's own test above drives [`block_shift_rule_rows`] directly, so
+    /// it stays green if [`BorrowTracker::set_row_stride`] is re-gated back into
+    /// a no-op — which is exactly what this change reverses, so it needs its own
+    /// assertion. Both configs assert; neither skips.
+    ///
+    /// Process-state note: the two latches are monotone process-globals and
+    /// other tests in this module already raise them, so this test raises them
+    /// itself and then reads them, rather than assuming an initial value.
+    #[test]
+    fn declaring_a_stride_installs_the_derived_shift() {
+        // 1024x576 8-bit luma, the plane the sweep measured: stride
+        // `(1024+127)&!127 = 1024`, a multiple of 1024 so `+64` -> 1088;
+        // `len = 1088 * ((576+127)&!127) = 1088 * 640`.
+        const STRIDE: usize = 1088;
+        const LEN: usize = STRIDE * 640;
+        set_parallelism(64);
+        set_tile_concurrency(8);
+        let (shards, tiles) = (active_shards(), tile_concurrency());
+        let mut t = BorrowTracker::new(LEN);
+        let from_len = t.shift;
+        t.set_row_stride(LEN, STRIDE);
+        assert_eq!(
+            t.shift,
+            block_shift_rule_rows(LEN, shards, tiles, STRIDE),
+            "set_row_stride did not install the derived shift"
+        );
+        assert_eq!(from_len, block_shift_rule(LEN, shards, tiles));
+        if ROWS_RULE_ACTIVE {
+            assert!(
+                t.shift > from_len,
+                "the default build must coarsen 1024x576 past the block-count \
+                 rule ({from_len}), got {}",
+                t.shift
+            );
+        } else {
+            assert_eq!(
+                t.shift, from_len,
+                "a compiled-in rung must leave the block-count shift alone"
+            );
+        }
     }
 
     /// Distinct shards a strided access maps to, i.e. the number of cache lines
