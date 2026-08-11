@@ -430,6 +430,7 @@ two levers, needs a third". It has now been refused by four:
 | COARSER blocks (#501, #503) | null | 0.987 / 0.987 / 0.995; and (12, 10) here reads 0.9882 |
 | **FINER blocks (this round)** | **adverse, monotone** | 0.9947 / 1.0221 / 1.1179 / 1.2026 / 1.2106 at −1/−2/−3/−4/−5 shifts |
 | **waiting policy (this round)** | **null, and bounded at 10.7% even if perfect** | 0.9857-1.0091 wall, all inside a ±1.8% identity-control band |
+| **registration DENSITY at the top site (#505, 2026-08-11)** | **null HERE, and priced** | 0.9955 wall (4/7) / 0.9908 (8/15) for −28.1% of the population; the site is 3.9-4.4% of the tracker at a MEASURED 2.42-2.71 ns marginal per registration. It pays −1.0..−1.8% on five OTHER t=8 cells. `docs/RECT_RECORDS.md` |
 
 The next lever must remove the SHARING, not the count, the granularity or the
 wait — and the two spellings of that are already on the board: registering
@@ -437,6 +438,20 @@ nothing (the `get_mut` direction, which is where #492's 21-25% and #502's cuts
 came from) or keying a record on its worker. Before either is built, note the
 size of the prize on this geometry: the ceiling is 1.32x, so this cell is asking
 for the tracker to be nearly free at t=8, not cheaper.
+
+**CORRECTION, 2026-08-11 (#505, `docs/RECT_RECORDS.md`):** §7's "one cross-core
+transfer of the shard's own cache line per registration, priced at ~17.5 ns of
+premium" is an AVERAGE and is NOT a marginal price. Doubling `LfBlock::fill`'s
+registration population in ONE binary (`RAV1D_LF_DOUBLE`, +180,434/frame, 0 of 25
+rounds on the other side) prices a `fill` registration at **2.42-2.71 ns**, 7.7x
+below this cell's 19.71 ns average — because its 8.98 records per `fill` land on
+only **2.09 distinct shard lines**, and a repeat touch of a line this core already
+owns is nearly free. So the expensive registration is the one whose shard line
+another core has taken since, and **the cost tracks DISTINCT SHARD LINES a worker
+visits, not records filed.** That is §4's "the money is the shard-line footprint"
+measured from the count side, and it is why an exact strided-rectangle record cut
+28.1% of this cell's population for a coin-flip wall result. §9's table gains a
+fifth refused lever accordingly.
 
 `docs/AGENT_BRIEF.md` §6's "TinyLock backoff: null, measured twice" now has a
 third row rather than a rewrite: **null a third time, measured where the

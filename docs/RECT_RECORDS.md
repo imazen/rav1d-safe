@@ -90,8 +90,9 @@ why the hull is refuted), `docs/BPS_ROWS_DEFAULT.md` (the shipped shift rule).
   about whether it is *worse* there.
 * **`RGB16`/10-bit rectangles are exercised only by the corpus**, not by the
   timed grid.
-* **Miri's `shard_liveness` target times out locally** and is reported as a
-  timeout, never as green (§6c).
+* **Miri's `shard_liveness` target times out locally** in all four
+  configurations and is reported as a timeout, never as green (§6c). The other 7
+  targets are clean under BOTH models.
 * **The machinery's own cost is NOT RESOLVABLE on this box.** See §5c: two
   builds of the SAME base source differ by 1.5% wall, so the "+1.6% machinery"
   reading the first implementation produced is inside build-to-build layout
@@ -493,19 +494,25 @@ under both models, 766 corpus vectors did not see it, and Miri did.
 pointer specifically so that no reference ever spans a gap — these legs are what
 says so instead of the doc asserting it.
 
-**Stacked Borrows, default features — the shipping configuration — is CLEAN on
-every non-timeout target, `--lib` INCLUDING all 13 new rectangle tests:**
+**Both models, both feature sets, CLEAN on every non-timeout target:**
 
 | target | SB default | SB `__rect_1shard` | TB default | TB `__rect_1shard` |
 |---|---|---|---|---|
-| `--lib` | **42 passed** | MIRI_LIB_SB1 | MIRI_LIB_TB | MIRI_LIB_TB1 |
-| `narrow_release` | 1 | MIRI_NR_SB1 | MIRI_NR_TB | MIRI_NR_TB1 |
-| `soundness` | 25 | MIRI_SO_SB1 | MIRI_SO_TB | MIRI_SO_TB1 |
-| `wide_exclusion` | 1 | MIRI_WE_SB1 | MIRI_WE_TB | MIRI_WE_TB1 |
-| `guard_move_release` | 2 | MIRI_GM_SB1 | MIRI_GM_TB | MIRI_GM_TB1 |
-| `pic_buf_overflow` | **0 tests ran** | MIRI_PB_SB1 | MIRI_PB_TB | MIRI_PB_TB1 |
-| `aligned_miri` | **0 tests ran** | MIRI_AM_SB1 | MIRI_AM_TB | MIRI_AM_TB1 |
-| `shard_liveness` | **TIMEOUT** | MIRI_SL_SB1 | MIRI_SL_TB | MIRI_SL_TB1 |
+| `--lib` | **42 passed** | **40 passed** | **42 passed** | **40 passed** |
+| `narrow_release` | 1 | 1 | 1 | 1 |
+| `soundness` | 25 | 25 | 25 | 25 |
+| `wide_exclusion` | 1 | 1 | 1 | 1 |
+| `guard_move_release` | 2 | 2 | 2 | 2 |
+| `pic_buf_overflow` | **0 tests ran** | **0 tests ran** | **0 tests ran** | **0 tests ran** |
+| `aligned_miri` | **0 tests ran** | **0 tests ran** | **0 tests ran** | **0 tests ran** |
+| `shard_liveness` | **TIMEOUT** | **TIMEOUT** | **TIMEOUT** | **TIMEOUT** |
+
+**CLEAN in all four columns on every one of the 7 non-timeout targets**, and
+`--lib` includes all 13 new rectangle tests (40 rather than 42 under
+`__rect_1shard`, which `#[cfg]`s out the two whose subject that arm removes).
+This is BETTER coverage than the previous round achieved: `docs/C256_CONTENTION.md`
+§8c had two extra Tree-Borrows timeouts in its `park` corner, and this round has
+none.
 
 `shard_liveness` times out (rc=124) exactly as `docs/AGENT_BRIEF.md` warns and as
 `docs/C256_CONTENTION.md` §8c recorded; it is reported AS a timeout, never as
