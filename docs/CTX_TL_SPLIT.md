@@ -555,6 +555,8 @@ silently reads 0). Raw `benchmarks/ctx_read_split_cpu_2026-08-10.tsv`.
 | c3840x256 | 8 | 29.046 | 29.000 | 0.9984 | no | 4/7 | 1.000 |
 | c256x2048 | 8 | 24.878 | 24.917 | 1.0016 | no | 4/7 | 1.000 |
 
+CPU geomean over the same eleven cells: **0.9826** (wall 0.9842).
+
 **The CPU leg is the one that settles the three nominally-adverse wall rows: it
 does not reproduce them.** `c1024x384` reads 0.9973 in CPU against 1.0045 in
 wall, `c256x2048` 1.0016 against 1.0030, `c3840x256` 0.9984 against 0.9858 — all
