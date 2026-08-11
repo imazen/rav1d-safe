@@ -334,6 +334,80 @@ const SLOTS: usize = 7;
 /// Bits 0..SLOTS of the occupancy masks.
 const SLOTS_MASK: u8 = ((1u16 << SLOTS) - 1) as u8;
 
+/// Where the RECTANGLE bitmap starts inside [`ShardRecs::flags`]. The mutability
+/// bitmap occupies bits `0..SLOTS`.
+const RECT_SHIFT: u32 = 8;
+const _: () = assert!(SLOTS as u32 <= RECT_SHIFT);
+const _: () = assert!(RECT_SHIFT + SLOTS as u32 <= u16::BITS);
+
+/// Rows a single strided-rectangle record may describe.
+///
+/// This is a REPRESENTABILITY limit, not an approximation: a caller whose
+/// rectangle is taller declines the rectangle record and takes its own per-row
+/// path (see [`BorrowTracker::add_rect`]), so nothing is ever rounded up. The
+/// bound exists because the exact rectangle-vs-rectangle test walks rows, so an
+/// unbounded row count would put an unbounded loop inside an overlap scan.
+///
+/// 64 covers the decoder's real geometry with room to spare: the loop filter's
+/// compact read is at most 16 rows (`2 * lf_reach(16)` down a column, or
+/// `4 * groups` along one), and the CDEF/MC strided helpers are at most 8-16.
+const MAX_RECT_ROWS: usize = 64;
+
+/// `(rows, seg)` of the rectangle whose hull is `[h0, h1)` on stride `s`.
+///
+/// **Exact, and the inverse of the encoding.** A rectangle stores
+/// `h1 - h0 = (rows - 1) * s + seg` with `1 <= seg <= s`, so
+/// `h1 - h0 - 1 = (rows - 1) * s + (seg - 1)` with `0 <= seg - 1 < s`: the
+/// division recovers `rows - 1` uniquely, and `seg` follows. That bijection is
+/// the whole reason a rectangle record needs no storage beyond the two words a
+/// plain interval already uses.
+///
+/// `seg <= s` is enforced at registration ([`BorrowTracker::add_rect`] declines
+/// otherwise), and `s > 0` because a record is only marked as a rectangle when
+/// the instance has a declared stride.
+#[inline(always)]
+fn rect_decode(h0: usize, h1: usize, s: usize) -> (usize, usize) {
+    debug_assert!(s > 0 && h1 > h0);
+    let span = h1 - h0;
+    let rows = (span - 1) / s + 1;
+    (rows, span - (rows - 1) * s)
+}
+
+/// The first row segment of the rectangle hulled by `[h0, h1)` on stride `s`
+/// that intersects `[a, b)`, or `None` when the rectangle and the interval are
+/// genuinely disjoint.
+///
+/// This is the test that makes a rectangle record EXACT rather than a hull: the
+/// inter-row gaps are not part of the record, so a probe that only touches them
+/// gets `None`. It reserves nothing and rounds nothing — the returned interval
+/// is one real row segment.
+#[cold]
+#[inline(never)]
+fn rect_hit_range(h0: usize, h1: usize, s: usize, a: usize, b: usize) -> Option<(usize, usize)> {
+    let (rows, seg) = rect_decode(h0, h1, s);
+    // Clip the probe to the hull first: outside it there is nothing to find, and
+    // inside it the first candidate row is a division away.
+    let lo = if a > h0 { a } else { h0 };
+    let hi = if b < h1 { b } else { h1 };
+    if lo >= hi {
+        return None;
+    }
+    let mut r = (lo - h0) / s;
+    while r < rows {
+        let rs = h0 + r * s;
+        if rs >= hi {
+            break;
+        }
+        // `rs + seg` cannot overflow: it is at most `h1`, which the caller
+        // already holds as a valid buffer offset.
+        if lo < rs + seg {
+            return Some((rs, rs + seg));
+        }
+        r += 1;
+    }
+    None
+}
+
 /// The registration site handed to `alloc`.
 ///
 /// Only debug builds keep it: in release the wrapper methods do not propagate
@@ -427,6 +501,21 @@ pub mod wide_probe {
     /// wrong reason. The counters that remain fire 10^4-10^5 times per frame,
     /// which is free. Kept as a field so the report's shape does not change.
     pub static N_ADD: AtomicU64 = AtomicU64::new(0);
+    /// Strided-RECTANGLE registrations that were ACCEPTED
+    /// ([`super::BorrowTracker::add_rect`]). This is the liveness proof for the
+    /// rectangle path: a timed arm whose `n_rect` is 0 measured nothing.
+    pub static N_RECT: AtomicU64 = AtomicU64::new(0);
+    /// Rectangle registrations DECLINED — unrepresentable geometry, a >
+    /// `MAX_SHARDS_PER_BORROW`-block hull, a full shard, or a live wide record.
+    /// Every one of these fell back to the caller's per-row path, so
+    /// `n_rect_declined` is the count of `fill`s the mechanism did not reach.
+    pub static N_RECT_DECLINED: AtomicU64 = AtomicU64::new(0);
+    /// Accepted rectangles whose hull spanned MORE THAN ONE shard. Those pay a
+    /// multi-shard `add` (n locks) AND a `remove_multi` (n locks again) against a
+    /// per-row registration's ONE `try_lock` and ONE lock-free store, so this
+    /// column is what decides whether the record COUNT or the LOCK TRAFFIC is
+    /// what a rectangle actually changes.
+    pub static N_RECT_MULTI: AtomicU64 = AtomicU64::new(0);
 
     pub fn report() -> std::string::String {
         use core::fmt::Write as _;
@@ -437,11 +526,11 @@ pub mod wide_probe {
         // an `__blockshift_adaptive` build uses — that one is per instance.
         let _ = writeln!(
             out,
-            "WIDEHDR\tconst_shift\tslow\tmulti\tw_shards\tw_blocks\tw_full\twide_total\tcontended\tlockslow\tspins"
+            "WIDEHDR\tconst_shift\tslow\tmulti\tw_shards\tw_blocks\tw_full\twide_total\tcontended\tlockslow\tspins\tn_rect\tn_rect_declined\tn_rect_multi"
         );
         let _ = writeln!(
             out,
-            "WIDE\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            "WIDE\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             super::BLOCK_SHIFT,
             N_SLOW.load(Relaxed),
             N_MULTI.load(Relaxed),
@@ -452,6 +541,9 @@ pub mod wide_probe {
             N_CONTENDED.load(Relaxed),
             N_LOCKSLOW.load(Relaxed),
             N_SPINS.load(Relaxed),
+            N_RECT.load(Relaxed),
+            N_RECT_DECLINED.load(Relaxed),
+            N_RECT_MULTI.load(Relaxed),
         );
         out
     }
@@ -680,11 +772,28 @@ struct ShardRecs {
     /// a stale-small one would be unsound, and cannot happen because a slot
     /// becomes live only through a publish that sets its bit here first.
     allocated: u8,
-    /// Bit `i` set iff slot `i`'s record is a mutable borrow.
+    /// Two per-slot bitmaps in one word: **low** byte bit `i` set iff slot `i`'s
+    /// record is a mutable borrow, **high** byte bit `i` set iff slot `i`'s
+    /// record is a strided RECTANGLE rather than a plain interval (see
+    /// [`RECT_SHIFT`] and [`BorrowTracker::add_rect`]).
     ///
     /// Only meaningful for slots that [`Shard::live_mask`] reports live, and
     /// only ever read or written by a lock holder.
-    mutable: u8,
+    ///
+    /// ONE `u16` and not two `u8`s. [`Self::alloc`]'s empty-shard arm is the
+    /// measured steady state (mean occupancy 0.02, `occ_max == 1`) and it
+    /// publishes the whole word with a SINGLE store, exactly as it did when
+    /// `mutable` stood alone; [`Self::find`] loads it once. Two adjacent bytes
+    /// would have put a second store on the dependency chain between the lock
+    /// acquire and the record write, which is the only kind of work this path
+    /// has been measured to be sensitive to (a single extra load there measured
+    /// +0.8%, `benchmarks/tracker_borrowcost_2026-08-08.tsv`).
+    flags: u16,
+    /// The rectangle case reads the row stride out of the tracker, so a record
+    /// stays two words: `starts[i]`/`ends[i]` hold the rectangle's **hull**,
+    /// which is what shard selection needs anyway, and `(rows, seg)` is
+    /// recovered from the hull and the stride by [`rect_decode`]. That is an
+    /// exact bijection, so nothing about the footprint is approximated.
     starts: [usize; SLOTS],
     ends: [usize; SLOTS],
     /// Registration site, for the overlap panic message.
@@ -701,7 +810,7 @@ impl ShardRecs {
     const fn new() -> Self {
         Self {
             allocated: 0,
-            mutable: 0,
+            flags: 0,
             starts: [0; SLOTS],
             ends: [0; SLOTS],
             #[cfg(debug_assertions)]
@@ -709,15 +818,18 @@ impl ShardRecs {
         }
     }
 
+    /// `start`/`end` are passed in rather than read from the record: for a
+    /// rectangle record the interesting extent is the ROW SEGMENT that actually
+    /// collided, not the hull, and the panic message must name the real one.
     #[inline(always)]
-    fn hit(&self, i: usize) -> OverlapHit {
+    fn hit(&self, i: usize, start: usize, end: usize) -> OverlapHit {
         // `min` rather than a bounds check: it is a `umin`, and it lets LLVM
         // drop the panic path from the hottest loop in the decoder.
         let i = i.min(SLOTS - 1);
         (
-            self.starts[i],
-            self.ends[i],
-            self.mutable & (1 << i) != 0,
+            start,
+            end,
+            self.flags & (1 << i) != 0,
             #[cfg(debug_assertions)]
             self.locs[i],
             #[cfg(not(debug_assertions))]
@@ -736,6 +848,15 @@ impl ShardRecs {
     /// `occupied` is passed in because liveness now lives outside the lock, in
     /// [`Shard::live`]; the caller derives it once with [`Shard::live_mask`]
     /// and uses the same snapshot for the scan and for [`Self::alloc`].
+    /// **A HIT FROM HERE IS A PREFILTER, NOT AN ANSWER, AND THE CALLER MUST
+    /// PASS IT THROUGH [`Self::refine`].** A rectangle record stores its HULL,
+    /// so this test can report an overlap with a byte the rectangle never
+    /// reserved. `refine` is free when the shard holds no rectangle record,
+    /// which is why the stride is not a parameter here: keeping it out is what
+    /// leaves this function's codegen bit-for-bit what it was before rectangle
+    /// records existed. The machinery COST of the rectangle scheme was measured
+    /// at +1.6% wall on `c256x2048` t=8 when the stride WAS a parameter and this
+    /// loop carried the rectangle test — see docs/RECT_RECORDS.md §5b.
     #[inline(always)]
     fn find<const IS_MUT: bool>(
         &self,
@@ -752,12 +873,127 @@ impl ShardRecs {
         let mut mask = if IS_MUT {
             occupied
         } else {
-            occupied & self.mutable
+            occupied & (self.flags as u8)
         };
         while mask != 0 {
             let i = (mask.trailing_zeros() as usize).min(SLOTS - 1);
             if self.starts[i] < end && start < self.ends[i] {
-                return Some(self.hit(i));
+                return Some(self.hit(i, self.starts[i], self.ends[i]));
+            }
+            mask &= mask - 1;
+        }
+        None
+    }
+
+    /// Turn a [`Self::find`] hit into a real one.
+    ///
+    /// With no rectangle record in this shard — always, unless a caller has
+    /// registered one — the hit stands and this is one load and one branch,
+    /// inside a branch that is itself essentially never taken. Otherwise the
+    /// whole scan is redone EXACTLY, which cannot be a continuation of `find`'s:
+    /// `find` returns the first HULL hit, and that may be a rectangle that does
+    /// not really overlap while a LATER record does.
+    #[inline(always)]
+    fn refine<const IS_MUT: bool>(
+        &self,
+        occupied: u8,
+        start: usize,
+        end: usize,
+        row_stride: usize,
+        hit: OverlapHit,
+    ) -> Option<OverlapHit> {
+        if self.flags >> RECT_SHIFT == 0 {
+            return Some(hit);
+        }
+        self.find_exact::<IS_MUT>(occupied, start, end, row_stride)
+    }
+
+    /// [`Self::find`] with the rectangle records tested EXACTLY rather than
+    /// against their hulls. Cold: only reached when this shard holds a rectangle
+    /// record AND the hull prefilter fired.
+    #[cold]
+    #[inline(never)]
+    fn find_exact<const IS_MUT: bool>(
+        &self,
+        occupied: u8,
+        start: usize,
+        end: usize,
+        row_stride: usize,
+    ) -> Option<OverlapHit> {
+        let flags = self.flags;
+        let mut mask = if IS_MUT {
+            occupied
+        } else {
+            occupied & (flags as u8)
+        };
+        let rect = (flags >> RECT_SHIFT) as u8;
+        while mask != 0 {
+            let i = (mask.trailing_zeros() as usize).min(SLOTS - 1);
+            if self.starts[i] < end && start < self.ends[i] {
+                if rect & (1 << i) == 0 {
+                    return Some(self.hit(i, self.starts[i], self.ends[i]));
+                }
+                // The exact test: walk the rows the probe range can reach and
+                // report the row segment that actually collided. The inter-row
+                // gaps are not part of the record and are not reported.
+                if let Some((rs, re)) =
+                    rect_hit_range(self.starts[i], self.ends[i], row_stride, start, end)
+                {
+                    return Some(self.hit(i, rs, re));
+                }
+            }
+            mask &= mask - 1;
+        }
+        None
+    }
+
+    /// [`Self::find`] with a strided RECTANGLE as the probe instead of an
+    /// interval: `[h0, h1)` is the registrant's hull and `row_stride` the
+    /// instance's declared stride, so [`rect_decode`] recovers `(rows, seg)`.
+    ///
+    /// Cold by construction — one call per rectangle registration, against a
+    /// shard whose measured occupancy is 0.02.
+    #[inline]
+    fn find_from_rect<const IS_MUT: bool>(
+        &self,
+        occupied: u8,
+        h0: usize,
+        h1: usize,
+        row_stride: usize,
+    ) -> Option<OverlapHit> {
+        let flags = self.flags;
+        let mut mask = if IS_MUT {
+            occupied
+        } else {
+            occupied & (flags as u8)
+        };
+        let rect = (flags >> RECT_SHIFT) as u8;
+        let (rows, seg) = rect_decode(h0, h1, row_stride);
+        while mask != 0 {
+            let i = (mask.trailing_zeros() as usize).min(SLOTS - 1);
+            let (es, ee) = (self.starts[i], self.ends[i]);
+            // Hull-vs-hull prefilter, exactly as in `find`.
+            if es < h1 && h0 < ee {
+                if rect & (1 << i) == 0 {
+                    // Stored record is a plain interval: ask whether OUR rows
+                    // reach it.
+                    if rect_hit_range(h0, h1, row_stride, es, ee).is_some() {
+                        // The counterparty is a plain interval, so its stored
+                        // extent IS its footprint and is what the panic reports.
+                        return Some(self.hit(i, es, ee));
+                    }
+                } else {
+                    // Both sides are rectangles on the same stride. Compare row
+                    // by row: `rows` and the counterparty's row count are both
+                    // capped at `MAX_RECT_ROWS`, so this is bounded, and it is
+                    // the honest test — no common-grid assumption is made.
+                    for r in 0..rows {
+                        let rs = h0 + r * row_stride;
+                        if let Some((cs, ce)) = rect_hit_range(es, ee, row_stride, rs, rs + seg) {
+                            return Some(self.hit(i, cs, ce));
+                        }
+                    }
+                }
             }
             mask &= mask - 1;
         }
@@ -771,7 +1007,7 @@ impl ShardRecs {
     /// caller's job and must happen *after* this returns, so that the record
     /// fields are complete before any other thread can observe the bit.
     #[inline(always)]
-    fn alloc<const IS_MUT: bool>(
+    fn alloc<const IS_MUT: bool, const IS_RECT: bool>(
         &mut self,
         occupied: u8,
         start: usize,
@@ -786,11 +1022,13 @@ impl ShardRecs {
         if occupied == 0 {
             self.starts[0] = start;
             self.ends[0] = end;
-            // Whole-byte STORE, not `|= 1` / `&= !1`: with no live slot, no
-            // other slot's mutability bit is meaningful (`find` masks with the
-            // live set), so there is nothing to preserve — and that turns a
-            // load-or-store on the dependency chain into a single store.
-            self.mutable = IS_MUT as u8;
+            // Whole-WORD STORE, not `|= 1` / `&= !1`: with no live slot, no
+            // other slot's mutability or rectangle bit is meaningful (`find`
+            // masks with the live set), so there is nothing to preserve — and
+            // that turns a load-or-store on the dependency chain into a single
+            // store. One `u16` store, the same instruction count the `u8`
+            // `mutable` field cost before the rectangle bitmap joined it.
+            self.flags = IS_MUT as u16 | ((IS_RECT as u16) << RECT_SHIFT);
             #[cfg(debug_assertions)]
             {
                 self.locs[0] = Some(loc);
@@ -806,9 +1044,14 @@ impl ShardRecs {
         self.starts[free] = start;
         self.ends[free] = end;
         if IS_MUT {
-            self.mutable |= 1 << free;
+            self.flags |= 1 << free;
         } else {
-            self.mutable &= !(1 << free);
+            self.flags &= !(1u16 << free);
+        }
+        if IS_RECT {
+            self.flags |= 1 << (RECT_SHIFT + free as u32);
+        } else {
+            self.flags &= !(1u16 << (RECT_SHIFT + free as u32));
         }
         #[cfg(debug_assertions)]
         {
@@ -1117,6 +1360,15 @@ pub(super) struct BorrowTracker {
     /// the array a fixed-size field, so a masked index needs no fat-pointer
     /// load and no bounds check.
     mask: usize,
+    /// This instance's picture row stride in BYTES, or 0 when none was declared.
+    ///
+    /// Written only through [`Self::set_row_stride`] / [`Self::reprovision`],
+    /// both `&mut self`, so it is fixed for as long as any record can exist —
+    /// which is what lets a rectangle record's `(rows, seg)` be *derived* from
+    /// its hull instead of stored (see [`rect_decode`]). Both registrants of a
+    /// shared byte read the same value, exactly as they do for `shift` and
+    /// `mask`, and it lives on the same line as those.
+    row_stride: usize,
     /// THROWAWAY (`__probe_tinynop`): this instance is shorter than
     /// [`SHARD_MIN_LEN`]. Set once in [`Self::new`]/[`Self::reprovision`] off
     /// the same line as `mask`, and read only to SKIP tracking entirely.
@@ -1660,6 +1912,7 @@ impl BorrowTracker {
             shards: [const { Shard::new() }; N_SHARDS],
             shift: block_shift_for(len),
             mask: mask_for(len),
+            row_stride: 0,
             #[cfg(feature = "__probe_tinynop")]
             tiny: len < SHARD_MIN_LEN,
             wide: UnsafeCell::new(Vec::new()),
@@ -1676,6 +1929,12 @@ impl BorrowTracker {
         // there, and `&mut self` guarantees every one of them is empty.
         self.shift = block_shift_for(len);
         self.mask = mask_for(len);
+        // A resize drops the stride hint, exactly as it drops the derived shift
+        // (see `DisjointMut::declare_row_stride`). Rectangle records simply stop
+        // being offered until a stride is declared again; every caller has a
+        // per-row path to fall back to, so this is a performance question and
+        // never a correctness one.
+        self.row_stride = 0;
         #[cfg(feature = "__probe_tinynop")]
         {
             self.tiny = len < SHARD_MIN_LEN;
@@ -1696,6 +1955,10 @@ impl BorrowTracker {
     /// stride to declare.
     #[inline]
     pub fn set_row_stride(&mut self, len: usize, stride: usize) {
+        // Stored regardless of which shift rule wins below: it is what makes a
+        // rectangle record's geometry derivable, and that is independent of the
+        // block size.
+        self.row_stride = stride;
         #[cfg(feature = "__probe_shiftpin")]
         if let Some(pinned) = pinned_shift(stride) {
             self.shift = pinned;
@@ -1952,13 +2215,15 @@ impl BorrowTracker {
         // never a subset, and the only cost of a stale bit is one extra flag
         // load in a later scan. The success path narrows it on every borrow,
         // so it cannot saturate.
-        if let Some(existing) = recs.find::<IS_MUT>(occ, start, end) {
-            drop(g);
-            Self::overlap_panic(
-                start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
-            );
+        if let Some(hit) = recs.find::<IS_MUT>(occ, start, end) {
+            if let Some(existing) = recs.refine::<IS_MUT>(occ, start, end, self.row_stride, hit) {
+                drop(g);
+                Self::overlap_panic(
+                    start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
+                );
+            }
         }
-        match recs.alloc::<IS_MUT>(occ, start, end, here()) {
+        match recs.alloc::<IS_MUT, false>(occ, start, end, here()) {
             Some(slot) => {
                 recs.allocated = occ | (1u8 << (slot as usize).min(SLOTS - 1));
                 shard.publish(slot);
@@ -2001,13 +2266,15 @@ impl BorrowTracker {
         let recs = unsafe { &mut *shard.recs.get() };
         let occ = shard.live_mask(recs.allocated);
         recs.allocated = occ;
-        if let Some(existing) = recs.find::<IS_MUT>(occ, start, end) {
-            drop(g);
-            Self::overlap_panic(
-                start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
-            );
+        if let Some(hit) = recs.find::<IS_MUT>(occ, start, end) {
+            if let Some(existing) = recs.refine::<IS_MUT>(occ, start, end, self.row_stride, hit) {
+                drop(g);
+                Self::overlap_panic(
+                    start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
+                );
+            }
         }
-        match recs.alloc::<IS_MUT>(occ, start, end, here()) {
+        match recs.alloc::<IS_MUT, false>(occ, start, end, here()) {
             Some(slot) => {
                 recs.allocated = occ | (1u8 << (slot as usize).min(SLOTS - 1));
                 shard.publish(slot);
@@ -2064,7 +2331,9 @@ impl BorrowTracker {
             let recs = unsafe { &mut *shard.recs.get() };
             let occ = shard.live_mask(recs.allocated);
             recs.allocated = occ;
-            let mut hit = recs.find::<IS_MUT>(occ, start, end);
+            let mut hit = recs
+                .find::<IS_MUT>(occ, start, end)
+                .and_then(|h| recs.refine::<IS_MUT>(occ, start, end, self.row_stride, h));
             if hit.is_none() {
                 // SAFETY: a shard lock is held, and wide records are only
                 // written while every shard lock is held.
@@ -2076,7 +2345,7 @@ impl BorrowTracker {
                     start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
                 );
             }
-            return match recs.alloc::<IS_MUT>(occ, start, end, here()) {
+            return match recs.alloc::<IS_MUT, false>(occ, start, end, here()) {
                 Some(slot) => {
                     recs.allocated = occ | (1u8 << (slot as usize).min(SLOTS - 1));
                     shard.publish(slot);
@@ -2141,7 +2410,10 @@ impl BorrowTracker {
             let recs = unsafe { &mut *shard.recs.get() };
             let occ = shard.live_mask(recs.allocated);
             recs.allocated = occ;
-            if let Some(h) = recs.find::<IS_MUT>(occ, start, end) {
+            if let Some(h) = recs
+                .find::<IS_MUT>(occ, start, end)
+                .and_then(|h| recs.refine::<IS_MUT>(occ, start, end, self.row_stride, h))
+            {
                 hit = Some(h);
                 break;
             }
@@ -2168,7 +2440,7 @@ impl BorrowTracker {
             // nothing can have published since (this thread holds every one of
             // these locks), so it IS the occupancy snapshot here.
             let occ = recs.allocated;
-            match recs.alloc::<IS_MUT>(occ, start, end, here()) {
+            match recs.alloc::<IS_MUT, false>(occ, start, end, here()) {
                 Some(slot) => {
                     slots[done] = slot;
                     done += 1;
@@ -2197,6 +2469,227 @@ impl BorrowTracker {
         BorrowId::from_pairs(&set[..n], &slots[..n])
     }
 
+    /// Register a strided RECTANGLE — `rows` segments of `seg` bytes, the first
+    /// at `lo`, successive ones the instance's declared row stride apart — as
+    /// ONE record instead of `rows` of them.
+    ///
+    /// `None` means *not representable here*, and the caller must take its own
+    /// per-row path. Nothing is ever approximated to make a rectangle fit: the
+    /// declining cases are
+    ///
+    /// * no declared row stride, or a stride that does not match the caller's;
+    /// * `seg > stride` (rows would overlap) or `rows > MAX_RECT_ROWS`;
+    /// * the hull spans more than [`MAX_SHARDS_PER_BORROW`] BLOCKS, which is
+    ///   what keeps a rectangle off the wide path — the wide list stores plain
+    ///   intervals, so a promoted rectangle would degrade to its hull and could
+    ///   then refuse a legitimate borrow;
+    /// * a shard along the way is full (same reason: the fallback is the wide
+    ///   path);
+    /// * poisoning or a live wide record — the per-row path handles both, and
+    ///   poisoning must still panic, which it does there.
+    ///
+    /// # Why this is exact
+    ///
+    /// The record stores the hull, and [`rect_decode`] recovers `(rows, seg)`
+    /// from it — a bijection, not a widening. Shard SELECTION uses the hull's
+    /// blocks, which is a superset of the blocks the rows occupy and therefore
+    /// sound (a shared byte's block is in both registrants' sets, which is all
+    /// the module header's argument needs). Overlap DETECTION uses
+    /// [`rect_hit_range`], which knows nothing of the inter-row gaps, so the gap
+    /// bytes are neither reserved nor reported: the false positive that gates
+    /// `LfBlock::fill_hull` cannot arise here.
+    #[inline]
+    #[track_caller]
+    pub fn add_rect_immut(
+        &self,
+        lo: usize,
+        seg: usize,
+        rows: usize,
+        stride: usize,
+    ) -> Option<BorrowId> {
+        self.add_rect::<false>(lo, seg, rows, stride)
+    }
+
+    /// [`Self::add_rect_immut`] for a mutable rectangle.
+    ///
+    /// **No shipping caller yet** — `#[cfg(test)]` says so rather than an
+    /// `allow(dead_code)` pretending otherwise. It exists because the exact
+    /// rectangle-vs-rectangle test can only be reached with a MUTABLE rectangle
+    /// (two immutable records never conflict), and that test is the one gate
+    /// that distinguishes an exact record from a hull.
+    #[cfg(test)]
+    #[inline]
+    #[track_caller]
+    pub fn add_rect_mut(
+        &self,
+        lo: usize,
+        seg: usize,
+        rows: usize,
+        stride: usize,
+    ) -> Option<BorrowId> {
+        self.add_rect::<true>(lo, seg, rows, stride)
+    }
+
+    #[track_caller]
+    fn add_rect<const IS_MUT: bool>(
+        &self,
+        lo: usize,
+        seg: usize,
+        rows: usize,
+        stride: usize,
+    ) -> Option<BorrowId> {
+        let s = self.row_stride;
+        if s == 0 || s != stride || seg == 0 || seg > s || rows == 0 || rows > MAX_RECT_ROWS {
+            #[cfg(feature = "__probe_wide")]
+            wide_probe::N_RECT_DECLINED.fetch_add(1, Ordering::Relaxed);
+            return None;
+        }
+        let span = (rows - 1) * s + seg;
+        let end = lo.checked_add(span)?;
+        // A live wide record or a poisoned tracker. The per-row fallback
+        // consults the wide list and panics on poison, so declining here is not
+        // a hole — it is the same answer, taken by the path that already knows
+        // how to give it.
+        if self.state.load(Ordering::Acquire) != 0 {
+            #[cfg(feature = "__probe_wide")]
+            wide_probe::N_RECT_DECLINED.fetch_add(1, Ordering::Relaxed);
+            return None;
+        }
+        // Shard set: the hull's blocks. On a one-shard instance every block maps
+        // to shard 0, so the block span cannot promote and is not consulted.
+        let mut set = [0u16; MAX_SHARDS_PER_BORROW];
+        let n;
+        if self.mask == 0 {
+            set[0] = 0;
+            n = 1;
+        } else {
+            let shift = self.block_shift();
+            let b0 = lo >> shift;
+            let b1 = (end - 1) >> shift;
+            // `>= MAX` and not `>`: `b1 - b0 + 1` blocks, and distinct shards
+            // are never more than blocks.
+            if b1 - b0 >= MAX_SHARDS_PER_BORROW {
+                #[cfg(feature = "__probe_wide")]
+                wide_probe::N_RECT_DECLINED.fetch_add(1, Ordering::Relaxed);
+                return None;
+            }
+            let mut k = 0usize;
+            for b in b0..=b1 {
+                let sh = shard_of(b, self.mask) as u16;
+                if set[..k].contains(&sh) {
+                    continue;
+                }
+                // Belt as well as braces. The block-span test above already
+                // bounds `k`, but this is the invariant the array's size rests
+                // on, and `add_multi` writes it the same way: exceeding the cap
+                // must DECLINE, never index past `set`.
+                if k == MAX_SHARDS_PER_BORROW {
+                    #[cfg(feature = "__probe_wide")]
+                    wide_probe::N_RECT_DECLINED.fetch_add(1, Ordering::Relaxed);
+                    return None;
+                }
+                set[k] = sh;
+                k += 1;
+            }
+            n = k;
+            set[..n].sort_unstable();
+        }
+        // THROWAWAY (`__rect_1shard`): accept ONLY rectangles that land in one
+        // shard. A one-shard rectangle is strictly cheaper than the per-row
+        // registrations it replaces — one `try_lock` on `add`, one lock-free
+        // store on `remove`, exactly what a single per-row guard costs — whereas
+        // a 2-shard one pays two locks on `add` and two more in `remove_multi`
+        // against the per-row scheme's lock-FREE release. This arm separates the
+        // record-count effect from the lock-traffic effect instead of measuring
+        // their sum.
+        #[cfg(feature = "__rect_1shard")]
+        if n != 1 {
+            #[cfg(feature = "__probe_wide")]
+            wide_probe::N_RECT_DECLINED.fetch_add(1, Ordering::Relaxed);
+            return None;
+        }
+        #[cfg(feature = "__probe_sites")]
+        crate::site_probe::record(Location::caller(), IS_MUT, span);
+
+        for &sh in &set[..n] {
+            self.shards[(sh as usize) & (N_SHARDS - 1)].lock.lock();
+        }
+        // RE-READ `state` inside the locks, for the reason spelled out in
+        // `Self::add`: a wide registrant publishes into `self.wide` and bumps
+        // `state` while holding EVERY shard, so a check made before this
+        // thread's first acquire could be stale. Holding one of its shards is
+        // enough to make this read authoritative.
+        if self.state.load(Ordering::Acquire) != 0 {
+            Self::unlock_all(&self.shards, &set[..n]);
+            #[cfg(feature = "__probe_wide")]
+            wide_probe::N_RECT_DECLINED.fetch_add(1, Ordering::Relaxed);
+            return None;
+        }
+        let mut hit = None;
+        for &sh in &set[..n] {
+            let shard = &self.shards[(sh as usize) & (N_SHARDS - 1)];
+            // SAFETY: shard `sh`'s lock is held.
+            let recs = unsafe { &mut *shard.recs.get() };
+            let occ = shard.live_mask(recs.allocated);
+            recs.allocated = occ;
+            if let Some(h) = recs.find_from_rect::<IS_MUT>(occ, lo, end, s) {
+                hit = Some(h);
+                break;
+            }
+        }
+        if let Some(existing) = hit {
+            Self::unlock_all(&self.shards, &set[..n]);
+            Self::overlap_panic(
+                lo, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
+            );
+        }
+        let mut slots = [0u8; MAX_SHARDS_PER_BORROW];
+        let mut done = 0usize;
+        while done < n {
+            let shard = &self.shards[(set[done] as usize) & (N_SHARDS - 1)];
+            // SAFETY: the shard's lock is held.
+            let recs = unsafe { &mut *shard.recs.get() };
+            // Refreshed to the live mask by the scan above, and nothing can have
+            // published since — this thread holds every one of these locks.
+            let occ = recs.allocated;
+            match recs.alloc::<IS_MUT, true>(occ, lo, end, here()) {
+                Some(slot) => {
+                    slots[done] = slot;
+                    done += 1;
+                }
+                None => break,
+            }
+        }
+        if done < n {
+            // Nothing was published yet (`alloc` only fills fields), so there is
+            // nothing to undo. Decline rather than promote: see the doc comment.
+            #[cfg(feature = "__probe_wide")]
+            wide_probe::N_RECT_DECLINED.fetch_add(1, Ordering::Relaxed);
+            Self::unlock_all(&self.shards, &set[..n]);
+            return None;
+        }
+        for i in 0..n {
+            let shard = &self.shards[(set[i] as usize) & (N_SHARDS - 1)];
+            // SAFETY: the shard's lock is held.
+            let recs = unsafe { &mut *shard.recs.get() };
+            recs.allocated |= 1u8 << (slots[i] as usize).min(SLOTS - 1);
+            shard.publish(slots[i]);
+        }
+        Self::unlock_all(&self.shards, &set[..n]);
+        #[cfg(feature = "__probe_wide")]
+        {
+            wide_probe::N_RECT.fetch_add(1, Ordering::Relaxed);
+            if n > 1 {
+                wide_probe::N_RECT_MULTI.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        Some(if n == 1 {
+            BorrowId::narrow1(set[0] as usize, slots[0])
+        } else {
+            BorrowId::from_pairs(&set[..n], &slots[..n])
+        })
+    }
+
     /// Last-resort registration: hold **every** shard, so the record is atomic
     /// against all narrow registrants, and publish it to the wide list that
     /// they all consult.
@@ -2214,7 +2707,10 @@ impl BorrowTracker {
             let recs = unsafe { &mut *shard.recs.get() };
             let occ = shard.live_mask(recs.allocated);
             recs.allocated = occ;
-            if let Some(h) = recs.find::<IS_MUT>(occ, start, end) {
+            if let Some(h) = recs
+                .find::<IS_MUT>(occ, start, end)
+                .and_then(|h| recs.refine::<IS_MUT>(occ, start, end, self.row_stride, h))
+            {
                 hit = Some(h);
                 break;
             }
@@ -3157,5 +3653,536 @@ mod tests {
         for h in hs {
             h.join().unwrap();
         }
+    }
+
+    // =========================================================================
+    // Strided-rectangle records
+    //
+    // Every test here is against a BRUTE-FORCE BYTE-SET oracle, not against a
+    // transcription of the predicate under test, and the two liveness tests
+    // (a rectangle must NOT collide with a foreign borrow that only touches an
+    // inter-row GAP) each carry a non-vacuity assertion: the same pair
+    // registered as the HULL is checked to collide, which proves the gap byte
+    // really is inside the hull and the pass is not free.
+    // =========================================================================
+
+    /// Miri interprets every instruction, so the exhaustive grids below are
+    /// scaled down under it rather than left to hit the harness timeout — a
+    /// timed-out target reports NOTHING, which is strictly worse than a smaller
+    /// grid that still asserts. Every assertion is unchanged; only the number of
+    /// points changes, and the native run keeps the full grid.
+    const MIRI: bool = cfg!(miri);
+
+    /// Sorted byte set of a rectangle. The oracle's ground truth.
+    fn rect_set(lo: usize, seg: usize, rows: usize, s: usize) -> alloc::vec::Vec<usize> {
+        let mut v = alloc::vec::Vec::new();
+        for r in 0..rows {
+            for k in 0..seg {
+                v.push(lo + r * s + k);
+            }
+        }
+        v.sort_unstable();
+        v
+    }
+
+    fn oracle_rect_vs_range(
+        lo: usize,
+        seg: usize,
+        rows: usize,
+        s: usize,
+        a: usize,
+        b: usize,
+    ) -> bool {
+        rect_set(lo, seg, rows, s).iter().any(|&x| x >= a && x < b)
+    }
+
+    fn hull_of(lo: usize, seg: usize, rows: usize, s: usize) -> (usize, usize) {
+        (lo, lo + (rows - 1) * s + seg)
+    }
+
+    /// `rect_decode` is the exact inverse of the hull encoding, over a grid that
+    /// includes `seg == s` (the widest legal row) and `seg == 1`.
+    #[test]
+    fn rect_decode_is_the_exact_inverse_of_the_hull() {
+        let (s_max, rows_max) = if MIRI { (9usize, 5usize) } else { (40, 17) };
+        for s in 1..=s_max {
+            for rows in 1..=rows_max {
+                for seg in 1..=s {
+                    let (h0, h1) = hull_of(1000, seg, rows, s);
+                    assert_eq!(
+                        rect_decode(h0, h1, s),
+                        (rows, seg),
+                        "s={s} rows={rows} seg={seg}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// `rect_hit_range` against the byte-set oracle, exhaustively over a grid
+    /// that includes gap-only probes, probes wider than the stride, probes
+    /// clipped by either end of the hull, and probes entirely outside it.
+    #[test]
+    fn rect_hit_range_matches_a_brute_force_byte_set_oracle() {
+        const LO: usize = 64;
+        let mut hits = 0usize;
+        let mut misses = 0usize;
+        let strides: &[usize] = if MIRI { &[3, 7] } else { &[3, 4, 7, 16] };
+        let rows_max = if MIRI { 3usize } else { 6 };
+        for &s in strides {
+            for rows in 1..=rows_max {
+                for seg in 1..=s {
+                    let (h0, h1) = hull_of(LO, seg, rows, s);
+                    for a in (LO - 3)..(h1 + 3) {
+                        for len in 0..(2 * s + 3) {
+                            let b = a + len;
+                            let got = rect_hit_range(h0, h1, s, a, b);
+                            let want = oracle_rect_vs_range(LO, seg, rows, s, a, b);
+                            assert_eq!(
+                                got.is_some(),
+                                want,
+                                "s={s} rows={rows} seg={seg} probe=[{a},{b})"
+                            );
+                            if let Some((rs, re)) = got {
+                                // The reported extent must be a REAL row
+                                // segment, and it must be the one that collided.
+                                assert_eq!(re - rs, seg);
+                                assert_eq!((rs - h0) % s, 0);
+                                assert!(rs < b && a < re);
+                                hits += 1;
+                            } else {
+                                misses += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Liveness of the test itself: both outcomes must be exercised in bulk.
+        let floor = if MIRI { 100 } else { 1000 };
+        assert!(hits > floor, "hits={hits}");
+        assert!(misses > floor, "misses={misses}");
+    }
+
+    /// A tracker with a declared stride and the FULL shard set.
+    ///
+    /// `set_parallelism` is load-bearing, not decoration: with no parallelism
+    /// declared `mask_for` returns 0, every block maps to shard 0, and
+    /// `add_rect`'s multi-shard path — the one a real strided rectangle takes —
+    /// is never entered. A `mask == 0` grid would have made every test below
+    /// pass while exercising a single lock, which is the shape of vacuous gate
+    /// this repo has shipped six times. The assertion fails loudly if the
+    /// process state ever stops cooperating.
+    fn rect_tracker(len: usize, stride: usize) -> BorrowTracker {
+        set_parallelism(N_SHARDS);
+        let mut t = BorrowTracker::new(len);
+        t.set_row_stride(len, stride);
+        assert_eq!(
+            t.mask,
+            N_SHARDS - 1,
+            "the rectangle tests need the full shard set"
+        );
+        t
+    }
+
+    /// Whether a rectangle can span more than one shard in THIS build.
+    ///
+    /// Two configurations say no, for different reasons, and the tests below
+    /// assert the corresponding behaviour in BOTH directions rather than
+    /// skipping: `__rect_1shard` declines a multi-shard rectangle by design (it
+    /// is the arm that isolates the record-count effect from the lock traffic),
+    /// and `__shards_1` has only one shard to land in.
+    const MULTI_SHARD_RECTS: bool = !cfg!(feature = "__rect_1shard") && N_SHARDS > 1;
+
+    /// The multi-shard rectangle path is REACHED by the grid below, and a
+    /// single-shard one is too. Without this, `add_rect`'s sort/lock/scan loop
+    /// could be dead code in every test and nothing would say so.
+    #[test]
+    fn rect_registrations_reach_both_the_one_shard_and_the_multi_shard_path() {
+        let s = 256usize;
+        let t = rect_tracker(1 << 20, s);
+        let bs = 1usize << t.block_shift();
+        // Wholly inside one block.
+        let one = t.add_rect_immut(0, 16, 4, s).expect("representable");
+        assert_eq!(one.pairs(), 1, "a rectangle inside one block is one shard");
+        t.remove(one);
+        // Straddling a block boundary: two blocks, and `shard_of` is a
+        // multiplicative hash, so two distinct shards — unless this build cannot
+        // have those, in which case the SAME rectangle must be handled the way
+        // that build promises, which is also an assertion.
+        let lo = bs - s;
+        let many = t.add_rect_immut(lo, 16, 4, s);
+        if MULTI_SHARD_RECTS {
+            let many = many.expect("representable");
+            assert!(
+                many.pairs() > 1,
+                "a rectangle straddling a block boundary must register in >1 shard"
+            );
+            t.remove(many);
+        } else if N_SHARDS == 1 {
+            let many = many.expect("one shard: every rectangle is single-shard");
+            assert_eq!(many.pairs(), 1);
+            t.remove(many);
+        } else {
+            assert!(
+                many.is_none(),
+                "__rect_1shard must DECLINE a multi-shard rectangle, not widen it"
+            );
+        }
+    }
+
+    /// The registration a rectangle replaces, as a control: `rows` plain per-row
+    /// records over the same bytes.
+    fn add_rows_immut(
+        t: &BorrowTracker,
+        lo: usize,
+        seg: usize,
+        rows: usize,
+        s: usize,
+    ) -> alloc::vec::Vec<BorrowId> {
+        (0..rows)
+            .map(|r| t.add_immut(&b(lo + r * s..lo + r * s + seg)))
+            .collect()
+    }
+
+    /// A mutable borrow ON a rectangle's row segment must be caught — the
+    /// rectangle record is a real reservation, not a hint.
+    #[test]
+    #[should_panic(expected = "overlapping DisjointMut")]
+    fn rect_vs_range_on_a_row_is_caught() {
+        let t = rect_tracker(1 << 20, 256);
+        let _r = t.add_rect_immut(4096, 16, 8, 256).expect("representable");
+        // Row 5, one byte in.
+        let _x = t.add_mut(&b(4096 + 5 * 256 + 1..4096 + 5 * 256 + 2));
+    }
+
+    /// The whole point of an exact record: a mutable borrow in an inter-row GAP
+    /// must NOT be caught, because the rectangle never reserved it.
+    ///
+    /// Non-vacuity: the same borrow against the HULL registered as a plain range
+    /// IS caught, which proves the gap byte lies inside the hull.
+    #[test]
+    fn rect_vs_range_in_a_gap_is_permitted_and_the_hull_would_have_refused_it() {
+        let (lo, seg, rows, s) = (4096usize, 16usize, 8usize, 256usize);
+        let gap = lo + 3 * s + seg + 4; // inside row 3's gap
+        {
+            let t = rect_tracker(1 << 20, s);
+            let r = t.add_rect_immut(lo, seg, rows, s).expect("representable");
+            let x = t.add_mut(&b(gap..gap + 4)); // must not panic
+            t.remove(x);
+            t.remove(r);
+        }
+        // NON-VACUITY: the hull over the same bytes refuses it.
+        let t = rect_tracker(1 << 20, s);
+        let (h0, h1) = hull_of(lo, seg, rows, s);
+        let _hull = t.add_immut(&b(h0..h1));
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _x = t.add_mut(&b(gap..gap + 4));
+        }))
+        .is_err();
+        assert!(
+            caught,
+            "the gap byte is not inside the hull — the permitting test above is vacuous"
+        );
+    }
+
+    /// Two rectangles on the SAME ROWS at OVERLAPPING COLUMNS must be caught.
+    /// This is the case a per-row scheme catches and a hull scheme also catches;
+    /// the exact record must not lose it.
+    #[test]
+    #[should_panic(expected = "overlapping DisjointMut")]
+    fn rect_vs_rect_same_rows_overlapping_columns_is_caught() {
+        let t = rect_tracker(1 << 20, 256);
+        let _a = t.add_rect_mut(4096, 16, 8, 256).expect("representable");
+        // Same rows, columns [8, 24) — overlaps [0, 16) in every row.
+        let _c = t.add_rect_immut(4096 + 8, 16, 8, 256);
+    }
+
+    /// Two rectangles on the same rows at DISJOINT columns must be permitted —
+    /// this is the pair `fill_hull` turns into a false positive, and it is the
+    /// routine case under tile threading (two tile columns, same picture rows).
+    ///
+    /// Non-vacuity: registering either side as its hull refuses the other.
+    #[test]
+    fn rect_vs_rect_same_rows_disjoint_columns_is_permitted() {
+        let (lo, seg, rows, s) = (4096usize, 16usize, 8usize, 256usize);
+        {
+            let t = rect_tracker(1 << 20, s);
+            let a = t.add_rect_mut(lo, seg, rows, s).expect("representable");
+            let c = t
+                .add_rect_mut(lo + 64, seg, rows, s)
+                .expect("representable");
+            t.remove(c);
+            t.remove(a);
+        }
+        let t = rect_tracker(1 << 20, s);
+        let (h0, h1) = hull_of(lo, seg, rows, s);
+        let _hull = t.add_mut(&b(h0..h1));
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _c = t.add_rect_mut(lo + 64, seg, rows, s);
+        }))
+        .is_err();
+        assert!(
+            caught,
+            "the two column ranges do not share a hull — vacuous"
+        );
+    }
+
+    /// Interleaved rows: rectangle A on even rows, B on odd rows, same columns.
+    /// Their hulls overlap heavily and their byte sets are disjoint.
+    #[test]
+    fn rect_vs_rect_interleaved_rows_is_permitted() {
+        let s = 256usize;
+        let t = rect_tracker(1 << 20, 2 * s);
+        let a = t.add_rect_mut(4096, 16, 4, 2 * s).expect("representable");
+        let c = t
+            .add_rect_mut(4096 + s, 16, 4, 2 * s)
+            .expect("representable");
+        t.remove(c);
+        t.remove(a);
+    }
+
+    /// The rectangle-vs-rectangle predicate against the byte-set oracle, over a
+    /// grid of offsets and row counts, run through the REAL tracker so that the
+    /// shard selection is exercised too.
+    ///
+    /// Excluded under `__rect_1shard`: that arm declines part of the grid by
+    /// design, so the test would be measuring its coverage rather than the
+    /// predicate. The predicate itself is covered feature-free by
+    /// `rect_hit_range_matches_a_brute_force_byte_set_oracle`, and the arm's
+    /// declining behaviour by `rect_registrations_reach_both_...`.
+    #[test]
+    #[cfg(not(feature = "__rect_1shard"))]
+    fn rect_vs_rect_agrees_with_the_byte_set_oracle_through_the_tracker() {
+        const LEN: usize = 1 << 20;
+        let s = 64usize;
+        let mut checked = 0usize;
+        let mut collisions = 0usize;
+        let segs: &[usize] = if MIRI { &[7, 64] } else { &[1, 7, 32, 64] };
+        let rowss: &[usize] = if MIRI { &[1, 3] } else { &[1, 3, 9] };
+        let doff_max = if MIRI { s } else { 5 * s };
+        for &seg_a in segs {
+            for &seg_c in segs {
+                for &rows_a in rowss {
+                    for &rows_c in rowss {
+                        // Signed offsets. With `lo_c >= lo_a` the registrant's
+                        // row 0 is always the nearest to A, so a grid of
+                        // non-negative offsets can never require a row k > 0 to
+                        // be compared — and a mutation that compares only row 0
+                        // passes it. (Measured: it did. See the teeth table in
+                        // docs/RECT_RECORDS.md.)
+                        for doff in 0..doff_max {
+                            let lo_a = 8192usize;
+                            let lo_c = (lo_a + doff) - 2 * s;
+                            let want = {
+                                let sa = rect_set(lo_a, seg_a, rows_a, s);
+                                let sc = rect_set(lo_c, seg_c, rows_c, s);
+                                sa.iter().any(|x| sc.binary_search(x).is_ok())
+                            };
+                            let t = rect_tracker(LEN, s);
+                            let a = t
+                                .add_rect_mut(lo_a, seg_a, rows_a, s)
+                                .expect("representable");
+                            let got =
+                                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    t.add_rect_mut(lo_c, seg_c, rows_c, s)
+                                }));
+                            match got {
+                                Ok(id) => {
+                                    assert!(
+                                        !want,
+                                        "missed overlap: A(lo={lo_a},seg={seg_a},rows={rows_a}) \
+                                         C(lo={lo_c},seg={seg_c},rows={rows_c}) s={s}"
+                                    );
+                                    if let Some(id) = id {
+                                        t.remove(id);
+                                    }
+                                }
+                                Err(_) => {
+                                    assert!(
+                                        want,
+                                        "false positive: A(lo={lo_a},seg={seg_a},rows={rows_a}) \
+                                         C(lo={lo_c},seg={seg_c},rows={rows_c}) s={s}"
+                                    );
+                                    collisions += 1;
+                                    // The tracker is left with A live and
+                                    // possibly poisoned; retire A and drop it.
+                                    t.remove(a);
+                                    checked += 1;
+                                    continue;
+                                }
+                            }
+                            t.remove(a);
+                            checked += 1;
+                        }
+                    }
+                }
+            }
+        }
+        let (c_floor, k_floor) = if MIRI { (30usize, 3usize) } else { (500, 100) };
+        assert!(checked > c_floor, "checked={checked}");
+        assert!(collisions > k_floor, "collisions={collisions}");
+    }
+
+    /// A rectangle whose hull straddles a block boundary registers in every
+    /// shard the hull maps to, so an overlap in the LATER block is still caught.
+    ///
+    /// Excluded under `__rect_1shard`, which declines such a rectangle outright —
+    /// there is no multi-shard record for it to detect through, and
+    /// `rect_registrations_reach_both_...` asserts that decline. Excluded under
+    /// `__shards_1` for the opposite reason: with one shard there is no "later
+    /// shard" and `same_block_overlap_is_caught` already covers it.
+    #[test]
+    #[cfg(all(not(feature = "__rect_1shard"), not(feature = "__shards_1")))]
+    #[should_panic(expected = "overlapping DisjointMut")]
+    fn rect_overlap_in_a_later_block_is_caught() {
+        const LEN: usize = 1 << 20;
+        let s = 256usize;
+        let t = rect_tracker(LEN, s);
+        let bs = 1usize << t.block_shift();
+        assert!(bs >= s, "block is at least one row here (bs={bs})");
+        // Start one row before a block boundary so the hull spans two blocks.
+        let lo = bs - s;
+        let rows = (bs / s) + 1;
+        assert!(rows <= MAX_RECT_ROWS);
+        let _r = t.add_rect_immut(lo, 16, rows, s).expect("representable");
+        // Last row, inside the second block.
+        let last = lo + (rows - 1) * s;
+        let _x = t.add_mut(&b(last..last + 4));
+    }
+
+    /// Every declining case returns `None` rather than registering something
+    /// approximate. A caller that gets `None` takes its own per-row path.
+    #[test]
+    fn unrepresentable_rectangles_are_declined_not_approximated() {
+        const LEN: usize = 1 << 20;
+        // No declared stride at all.
+        let t = BorrowTracker::new(LEN);
+        assert!(t.add_rect_immut(0, 16, 4, 256).is_none());
+
+        let s = 256usize;
+        let t = rect_tracker(LEN, s);
+        // A stride the tracker does not know about.
+        assert!(t.add_rect_immut(0, 16, 4, 128).is_none());
+        // Rows would overlap.
+        assert!(t.add_rect_immut(0, s + 1, 4, s).is_none());
+        // Degenerate.
+        assert!(t.add_rect_immut(0, 0, 4, s).is_none());
+        assert!(t.add_rect_immut(0, 16, 0, s).is_none());
+        // Too tall to compare row-by-row.
+        assert!(t.add_rect_immut(0, 16, MAX_RECT_ROWS + 1, s).is_none());
+        // A hull spanning more blocks than a borrow may hold shards for. The
+        // stride is chosen so the case is REACHABLE within `MAX_RECT_ROWS`
+        // rather than silently skipped: at stride 256 and a 4 KiB block it would
+        // take 65 rows, one past the cap.
+        //
+        // `mask == 0` instances skip the block arithmetic entirely — every block
+        // is shard 0, so no span can promote — which is why this half needs more
+        // than one shard. `__rect_1shard` declines every multi-block hull for its
+        // own reason, which `rect_registrations_reach_both_...` asserts.
+        let wide_s = 1024usize;
+        let tw = rect_tracker(LEN, wide_s);
+        let bs = 1usize << tw.block_shift();
+        let rows = (MAX_SHARDS_PER_BORROW * bs) / wide_s + 2;
+        if MULTI_SHARD_RECTS {
+            assert!(
+                rows <= MAX_RECT_ROWS,
+                "the >{MAX_SHARDS_PER_BORROW}-block case must be reachable: \
+                 rows={rows} bs={bs} stride={wide_s}"
+            );
+            assert!(
+                tw.add_rect_immut(0, 16, rows, wide_s).is_none(),
+                "a {rows}-row hull spans more than {MAX_SHARDS_PER_BORROW} blocks of {bs}"
+            );
+            // ...and one row fewer than the cap needs still registers, so the
+            // assertion above is not passing for an unrelated reason.
+            let ok_rows = (MAX_SHARDS_PER_BORROW - 1) * bs / wide_s;
+            let id = tw
+                .add_rect_immut(0, 16, ok_rows, wide_s)
+                .expect("just inside the cap");
+            tw.remove(id);
+        } else if N_SHARDS == 1 {
+            // One shard: `add_rect`'s `mask == 0` fast path skips the block
+            // arithmetic entirely, because every block maps to shard 0 and no
+            // span can promote. So a multi-BLOCK hull is representable here, and
+            // asserting that is the point. (`bs` is the whole buffer at one
+            // shard, so the >cap-blocks case does not exist to be tested.)
+            let tall = MAX_RECT_ROWS.min(8);
+            let id = tw
+                .add_rect_immut(0, 16, tall, wide_s)
+                .expect("one shard: no span can promote");
+            assert_eq!(id.pairs(), 1);
+            tw.remove(id);
+        } else {
+            assert!(
+                tw.add_rect_immut(0, 16, rows.min(MAX_RECT_ROWS), wide_s)
+                    .is_none(),
+                "__rect_1shard must decline a multi-block hull"
+            );
+        }
+        // And the representable one still works, so the assertions above are not
+        // all failing for one shared reason.
+        let id = t.add_rect_immut(0, 16, 4, s).expect("representable");
+        t.remove(id);
+    }
+
+    /// A rectangle record is retired like any other: registering and releasing
+    /// the same rectangle far more times than there are slots must not leak.
+    #[test]
+    fn rect_records_are_retired() {
+        let s = 256usize;
+        let t = rect_tracker(1 << 20, s);
+        for _ in 0..(SLOTS * 8) {
+            let id = t.add_rect_immut(4096, 16, 8, s).expect("representable");
+            t.remove(id);
+        }
+        // If any slot leaked, a mutable borrow over the same rows would now trip.
+        let x = t.add_mut(&b(4096..4096 + 16));
+        t.remove(x);
+    }
+
+    /// The per-row control and the rectangle must agree on every verdict. This
+    /// is the substitution test: replace `rows` records with one and no answer
+    /// may change.
+    #[test]
+    fn a_rectangle_and_its_per_row_control_give_the_same_verdicts() {
+        const LEN: usize = 1 << 20;
+        let s = 128usize;
+        let (lo, seg, rows) = (4096usize, 12usize, 9usize);
+        let mut agreed = 0usize;
+        let mut refused = 0usize;
+        let a_step = if MIRI { 17usize } else { 1 };
+        let lens: &[usize] = if MIRI { &[5, 100] } else { &[1, 5, 13, 100] };
+        for a in ((lo - 4)..(lo + rows * s + 4)).step_by(a_step) {
+            for &len in lens {
+                let probe = a..a + len;
+                let via_rect = {
+                    let t = rect_tracker(LEN, s);
+                    let r = t.add_rect_immut(lo, seg, rows, s).expect("representable");
+                    let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        t.add_mut(&b(probe.clone()))
+                    }));
+                    let _ = r;
+                    out.is_err()
+                };
+                let via_rows = {
+                    let t = rect_tracker(LEN, s);
+                    let ids = add_rows_immut(&t, lo, seg, rows, s);
+                    let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        t.add_mut(&b(probe.clone()))
+                    }));
+                    let _ = ids;
+                    out.is_err()
+                };
+                assert_eq!(via_rect, via_rows, "probe={probe:?}");
+                agreed += 1;
+                if via_rect {
+                    refused += 1;
+                }
+            }
+        }
+        let (a_floor, r_floor) = if MIRI { (10usize, 2usize) } else { (100, 20) };
+        assert!(agreed > a_floor, "agreed={agreed}");
+        assert!(refused > r_floor, "refused={refused}");
     }
 }

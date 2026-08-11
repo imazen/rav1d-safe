@@ -4,6 +4,33 @@ All notable changes to `rav1d-disjoint-mut` are documented in this file. Format 
 
 ## [Unreleased]
 
+### Added
+- **Exact strided-rectangle borrow records.** `BorrowTracker::add_rect_immut`
+  registers `rows` segments of `seg` bytes, the instance's declared row stride
+  apart, as ONE record whose footprint is exactly those segments — no inter-row
+  gap is reserved, so it does not invent the false positive a hull extent does.
+  `DisjointMut::index_rect` / `index_rect_as` return a
+  `DisjointImmutRectGuard`, which has **no `Deref`**: `row(r)` derives that row's
+  slice from the buffer's own pointer, so no reference wider than one row is ever
+  materialised (the reverted March-2026 strided tracker had an exact record and a
+  hull-wide reference, which is UB under both aliasing models).
+  Storage is free — the record stores the hull in the two words a plain interval
+  already used, and `(rows, seg)` is recovered from the hull and the stride by an
+  exact bijection, so `Shard` remains exactly 128 bytes with no side table. The
+  per-slot `mutable: u8` bitmap became `flags: u16` (high byte = rectangle),
+  keeping `alloc`'s empty-shard arm at ONE store.
+  `add_rect` DECLINES — never approximates — when there is no declared stride, the
+  stride does not match, `seg > stride`, `rows > MAX_RECT_ROWS`, the hull spans
+  more than `MAX_SHARDS_PER_BORROW` blocks, a shard is full, or a wide record is
+  live; the caller then takes its own per-row path. Declining rather than
+  promoting is why the wide list needs no rectangle support.
+  `find`'s hot loop is unchanged: its hit is a PREFILTER and the caller passes it
+  through `refine`, which is one load and one branch when the shard holds no
+  rectangle record and otherwise defers to a cold exact rescan.
+  12 tests against a brute-force byte-set oracle; Miri clean under Stacked
+  Borrows on every non-timeout target. Consumer status and measurements:
+  `docs/RECT_RECORDS.md` in the rav1d-safe repo.
+
 ### Fixed
 - **Soundness: moving a guard by value was UB while another thread held the
   same region.** `DisjointMutGuard`/`DisjointImmutGuard` carried the borrowed

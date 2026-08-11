@@ -4,6 +4,32 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Added
+- **Exact strided-rectangle borrow records in the tracker, and a
+  `LfBlock::fill` arm that uses them — MEASURED, NOT SHIPPED as a default**
+  (`crates/rav1d-disjoint-mut`, `src/loopfilter.rs`, `--features __lf_rect`,
+  `docs/RECT_RECORDS.md`). One registration describing `h` exact row segments
+  with NO inter-row gap reserved: the third shape after the per-row split and
+  the refuted hull. Storage is free — the record keeps the rectangle's hull in
+  the two words a plain interval already used and `(rows, seg)` is recovered
+  from the hull and the instance's declared row stride, an exact bijection, so
+  `Shard` stays 128 bytes. Detection is exact in both directions (shard
+  selection uses the hull's blocks, a sound superset; overlap detection walks
+  rows and never reports a gap byte), and `add_rect` DECLINES rather than
+  approximating whenever the geometry is not representable. Registrations drop
+  569,690 -> 409,349 per frame (−28.1%) on `c256x2048` t=8.
+  **Measured −1.0% to −1.8% wall (up to −3.3% CPU) on 5 of 6 multi-tile t=8
+  cells, replicated across two sessions with 10/10-11/11 sign counts; NULL on
+  `c256x2048` t=8, the cell it was built for; and +0.9% to +1.3% wall at t=1 on
+  `v4k8tile` (0 of 11 rounds either session) where the path never executes.**
+  Default-off for that last reason. The round's other deliverable is a
+  correction to the campaign's cost model: a `fill` per-row registration costs
+  **2.42-2.71 ns at the margin** (measured by doubling the population in one
+  binary, 0 of 25 rounds on the other side) against a 19.71 ns/registration
+  cell AVERAGE, so the largest registration site in the decoder is 31.7% of the
+  population and 3.9-4.4% of the tracker's CPU. The cost tracks distinct shard
+  LINES visited, not records filed.
+
 ### Fixed
 - **x86_64 at `--threads 8`: the loop filter read 3 picture rows past its own
   superblock row and raced concurrent reconstruction** (#494,

@@ -1,0 +1,142 @@
+rect_records_2026-08-11 — the exact strided-rectangle borrow record
+===================================================================
+
+Branch      perf/rect-records, base 140f914 (PR #504 merged)
+Host        Apple M4 Pro, 8P + 4E, macOS 26.5.2, aarch64
+Toolchain   stable-aarch64-apple-darwin, no -C target-cpu=native
+Harness     scripts/perf/tiled_wallcpu.sh under ~/bin/measlock, NEVER niced
+Report      scripts/perf/rect_report.py (paired per-round ratios, round 0
+            dropped as cold, whole rounds dropped when any arm saw a foreign
+            process above 25% CPU)
+Fit         total = a + b*frames at two frame counts per cell, so process
+            startup / mmap / decoder construction drop out of wall AND CPU
+Full write-up  docs/RECT_RECORDS.md
+
+VERDICT
+-------
+NOT the default. The mechanism is exact, sound, live and correct; it is
+-1.0%..-1.8% wall on 5 of 6 multi-tile t=8 cells, NULL on `c256x2048` t=8 (the
+cell it was built for, 4/7 sign), and +1.26% at t=1 on `v4k8tile` (0/11 rounds
+below 1.000) where the path is never taken and the only difference is code size.
+It stays behind `--features __lf_rect`.
+
+THE NUMBER THE ROUND EXISTS FOR
+-------------------------------
+A `LfBlock::fill` per-row registration costs 2.42-2.71 ns at the MARGIN, measured
+by adding a duplicate per row in ONE binary (RAV1D_LF_DOUBLE, +180,434
+registrations/frame, 0 of 25 rounds on the other side), against `c256x2048` t=8's
+19.71 ns/registration AVERAGE. The decoder's largest registration site is 31.7%
+of the population and 3.9-4.4% of the tracker's CPU. The cost tracks DISTINCT
+SHARD LINES visited, not records filed.
+
+ARMS (all verified to emit ONE md5 per (cell, threads) before any timing)
+------------------------------------------------------------------------
+plain      HEAD default codegen: machinery present, rectangle path OFF
+plainB     byte-identical copy of plain (same sha256) — the noise floor
+plainC     SAME SOURCE as plain built in a second worktree — layout-only control
+machoff    140f914's tracker source built in THIS tree
+base       140f914's tracker source built in its own worktree
+rect       --features __lf_rect
+rect1      --features __lf_rect1 (one-shard rectangles only; 20.4% of fills)
+dbloff/on  ONE binary (--features __probe_lf_hull), RAV1D_LF_DOUBLE off / on
+untracked  --features probe-untracked (tracker-removed ceiling, bit-identical)
+dav1d_fd1  dav1d 1.5.4 --framedelay 1
+
+FILES
+-----
+rect_records_A_2026-08-11.tsv    primary cell, n=13, FIRST machinery (superseded
+                                 for the machinery number, kept for dblon/rect1)
+rect_records_A2_2026-08-11.tsv   primary cell, n=12, machinery made free
+rect_records_B_2026-08-11.tsv    breadth grid, LOAD-INVALIDATED (foreign_max
+                                 7-17, only 1 of 9 rounds clean). Kept as the
+                                 record of an invalidated run; do not quote it.
+rect_records_B3_2026-08-11.tsv   breadth grid re-run on an idle box — the one to
+                                 quote for the t=8 breadth result
+rect_records_C_2026-08-11.tsv    primary cell, n=15, foreign_max=0, with BOTH
+                                 controls plus both layout pairs — the decisive
+                                 grid for the primary cell and for the layout
+                                 noise floor
+rect_records_D_2026-08-11.tsv    t=1 grid, n=11-12, idle — where the arm loses
+rect_records_counterfactual_2026-08-11.tsv
+                                 --features __probe_bounds RECT rows on the
+                                 primary cell at the SHIPPED shift rule, plus
+                                 the top registration sites
+
+Column layout of the timed TSVs (tiled_wallcpu.sh):
+  round arm vec threads nlo wall_lo user_lo sys_lo nhi wall_hi user_hi sys_hi foreign
+
+HEADLINE ROWS
+-------------
+Grid C, C256x2048_420_8b__t8 t=8, n=15, foreign_max=0, ratios vs plain:
+  plainB (byte-identical)  wall 1.0039 [0.9727..1.0133]  4/15   cpu 1.0031   5/15
+  plainC (layout only)     wall 1.0040 [0.9752..1.0265]  5/15   cpu 0.9953  10/15
+  machoff (base src, here) wall 1.0027                   6/15   cpu 0.9902  14/15
+  base    (base src, there)wall 0.9881                  13/15   cpu 0.9951  12/15
+  rect                     wall 0.9908 [0.9690..1.0278]  8/15   cpu 1.0002   6/15
+  => two builds of the SAME base source differ by 1.5% wall: that is the
+     layout floor, and it retires the "+1.6% machinery" reading from grid A.
+  => on the primary cell the rectangle's sign is a COIN FLIP.
+
+Grid B3, t=8, ratios vs plain (rect wall / sign, then both controls):
+  c1024x192   0.9900  7/7   | plainB 0.9950 (4/7)  plainC 1.0050 (1/7)
+  c1024x384   0.9880  5/7   | plainB 0.9970 (4/7)  plainC 1.0030 (2/7)
+  c1024x576   0.9825  7/7   | plainB 0.9981 (4/7)  plainC 0.9981 (5/7)
+  c3840x256   0.9867  6/7   | plainB 1.0019 (3/7)  plainC 0.9981 (4/7)
+  text_q20    0.9867  6/6   | plainB 1.0000 (3/6)  plainC 1.0000 (3/6)
+              cpu 0.9705  6/6  <- best cell in the grid
+  ui_q20      0.9930  5/7   | plainB 0.9977 (4/7)  plainC 1.0023 (2/7)
+  c256x2048   0.9955  4/7   | plainB 1.0075 (3/7)  plainC 1.0195 (1/7)
+  v4k8tile    0.9990  3/4   (n=4 after load-dropping, too few to call)
+
+Grid D, t=1 (the rectangle path is NEVER taken at t=1), ratios vs plain:
+  v4k8tile    1.0126  0/11  | plainB 1.0007 (4/11) plainC 1.0012 (3/11)  <- REGRESSION
+  c1024x576   1.0032  2/12  | plainB 1.0004 (6/12) plainC 1.0014 (6/12)
+  c256x2048   1.0027  3/11  | plainB 0.9987 (6/11) plainC 1.0013 (3/11)
+  text_q20    0.9925  9/12  | plainB 0.9989 (6/12) plainC 1.0032 (5/12)
+
+Grids A / A2, primary cell, the doubling arm and the one-shard arm:
+  dblon/dbloff wall  1.0337 (A)  1.0337 (A2)   0/13 and 0/12 rounds faster
+  dblon/dbloff cpu   1.0202      1.0182
+    +180,434 regs/frame => +0.488 / +0.436 CPU ms/frame => 2.70 / 2.42 ns per reg
+  rect1 vs plain     1.0077 (3/13)  1.0164 (0/12)  <- WORSE than base, twice
+
+COUNTERS (niced; count-shaped, not contention-shaped), c256x2048 t=8
+--------------------------------------------------------------------
+                                base        rect
+registrations/frame (lost=0)    569690      409349     (-28.1%)
+  loopfilter.rs fill site       180434       20093     (one per fill call)
+  effective shard-touches       180434       41994     (20093 x 2.090 shards)
+n_rect accepted /frame               0       22605
+n_rect_declined /frame               -           0
+n_rect_multi (>1 shard)              -       79.6%
+w_shards / w_blocks / w_full     0/0/0       0/0/0     (never promotes to wide)
+
+Counterfactual at the SHIPPED shift rule (--features __probe_bounds):
+  loopfilter.rs:809  rows_mean 8.98  row_shards_mean 2.090  row_shards_max 4
+                     pct_row_wide 0.00%   => saving is rows/row_shards = 4.30x
+  cdef_apply.rs:{104,121}, safe_simd/cdef_arm.rs:{192,622,1217}
+                     rows 7.27-8.00 on 1.000 shards, pct_row_wide 0.00%
+                     (NOT wired — see docs/RECT_RECORDS.md 7b)
+NOTE benchmarks/strided_2d_rect_2026-08-10.tsv reports pct_row_wide 50.82% for
+     the fill site; that run PREDATES the shipped rows-per-block shift rule and
+     does not apply to this configuration.
+
+GATES
+-----
+corpus 766 PASS + 2 SKIP, mismatch=0 error=0, in BOTH arms x t=1 and t=8, no
+  --skip-group; set-diff BY NAME vs benchmarks/aarch64_md5_fixes_2026-08-07_final
+  .tsv.zst CLEAN on all four, and t=1-vs-t=8 CLEAN in both arms
+tracker unit tests 42 pass across default / --no-default-features / __rect_1shard
+  / __probe_wide / __probe_sites / zerocopy / __probe_lock_park / __bps_blocks /
+  __msb_5 (one configuration at a time)
+teeth, tracker: 7 of 9 planted mutations FAIL the suite; the 2 that do not are
+  belt-and-braces duplicates of one cap and removing BOTH fails
+teeth, decoder: planting `row+1` in the rectangle path gives 277 mismatches of
+  358 in 8-bit/data; restored gives 358/358 clean
+forbid(unsafe_code) proven ACTIVE by planting an unsafe transmute in
+  src/picture.rs: build fails at lib.rs:13:12; restored, sha256 identical
+Miri, BOTH aliasing models x {default, __rect_1shard}, one target at a time:
+  see benchmarks/rect_records_miri_2026-08-11.tsv
+PRE-EXISTING and verified identical on 140f914: __shards_1 fails 5 tests by the
+  same NAMES; --all-features does not compile; its clippy leg has 8 errors;
+  `cargo clippy --release --all-targets` on the root crate fails on _dev examples
