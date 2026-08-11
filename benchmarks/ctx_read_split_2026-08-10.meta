@@ -1,0 +1,45 @@
+# LEFT neighbour-context READ split — the `env.rs` `(a, l)` helpers
+
+Full record, including everything NOT done: `docs/CTX_TL_SPLIT.md` §6c.
+Campaign index: issue #455. Base `main` @ `414515c`. Branch
+`perf/ctx-read-split`.
+
+Box: Apple M4 Pro, 8P+4E, aarch64, macOS 26.5.2, idle. Every timed run wrapped
+in `measlock`; no `nice` on any timed run; no `-C target-cpu=native`.
+dav1d 1.5.4, `--framedelay 1`, in the same interleaved sweep.
+
+## Files
+
+| file | what |
+|---|---|
+| `ctx_read_split_regs_tot_2026-08-10.tsv` | registrations/frame, base vs head, 8 cells x {t=1, t=8}. `--features probe-sites`, 3 iterations (2 on `v4k8tile`). `lost = 0` on all 16 runs. |
+| `ctx_read_split_regs_site_2026-08-10.tsv.zst` | the same, per site. NOTE: site keys are `file:line:col` and the change ADDS lines, so base and head keys are not comparable by key — match by helper (§6c-4). |
+| `ctx_read_split_wall_2026-08-10.tsv` | wall, 10 rounds x 11 cells x 3 arms. Round 1 is COLD and is discarded by the report (n=9). |
+| `ctx_read_split_cpu_2026-08-10.tsv` | user+sys, 8 rounds, same grid (n=7). |
+
+## Harness
+
+* `scripts/perf/ctxread_wall.sh`, `scripts/perf/ctxread_cpu.sh` — adapted from
+  the census's `census_wall.sh` / `census_cpu.sh`. Two-point fit
+  (`total = a + b*frames`) at two frame counts per cell so process startup
+  cancels; `nlo`/`nhi` never exceed the stream's frame count; arms rotate every
+  round.
+* `scripts/perf/ctxread_report.py` — ratio of medians WITH each arm's
+  [min..max] band, plus the PAIRED per-round quotient and an exact two-sided
+  sign test, because at a ~2-3% effect against this box's ~1.2% floor a ratio of
+  medians on its own is not a verdict.
+* `scripts/perf/ctxread_gates.sh` — the correctness gates (niced, no lock).
+
+## Headline
+
+Registrations: −10.5% to −13.9% at t=1, −5.3% to −7.4% at t=8, same absolute
+count at both (these sites do not latch with thread count).
+
+Wall geomean over 11 cells **0.9842**. Five cells established (bands disjoint,
+9/9 paired, p = 0.004): `text_q20` t=1 0.9623, `ui_q20` t=1 0.9656, `text_q20`
+t=8 0.9667, `c1024x576` t=8 0.9778, `ui_q20` t=8 0.9786. **No cell crosses 1.4x
+against dav1d**, and the census predicted that before the change was written.
+
+Three wall rows read above 1.000 (`c1024x384` 1.0045, `c256x2048` 1.0030,
+`v4k8tile` t=8 1.0052); none is significant and the CPU leg does not reproduce
+any of them.

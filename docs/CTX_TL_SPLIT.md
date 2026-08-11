@@ -10,13 +10,17 @@ is.
 
 ## 0. What is NOT done, and what is only measured on n=1 source per class
 
-* **The READ side is only PARTLY done.** A second commit (`f7c4e6f`, §6b)
-  converted the 17 direct `t.l.<field>.index(..)` reads in
-  `decode.rs`/`recon.rs`. It did **not** convert the 14
-  `(a: &BlockContext, l: &BlockContext)` helpers in `src/env.rs` — that needs a
-  signature change and `sm_flag`/`sm_uv_flag` are called with both roles. What
-  remains is ~**8,200 registrations/frame** on screen UI q20 t=1 (`env.rs:105:72`
-  4,288 + `env.rs:89:18` 3,926), ~4.3% of that arm's remaining population.
+* **The READ side is now DONE in two parts, and this bullet's own estimate of
+  the second part was 2.4x too small.** `f7c4e6f` (§6b) converted the 17 direct
+  `t.l.<field>.index(..)` reads in `decode.rs`/`recon.rs` and left the fifteen
+  `(a: &BlockContext, l: &BlockContext)` helpers in `src/env.rs` alone. §6c
+  converts those plus `sm_flag`/`sm_uv_flag`. This bullet used to size the
+  remainder as ~**8,200 registrations/frame** on screen UI q20 t=1
+  (`env.rs:105:72` 4,288 + `env.rs:89:18` 3,926); the measured removal is
+  **19,811**, because `sm_flag`/`sm_uv_flag` were named here as a complication
+  and never counted — three sites in another file, together larger than both
+  `env.rs` pairs. Sizing a population from the rows a census lists under ONE
+  filename misses the ones that live in another.
 * **The read-side increment is NOT established at t=8 for screen UI, nor at
   q20 for photo** (§6b): 0.9854 at 6/11 and 1.0013 at 4/11 for UI t=8, 1.0000 at
   5/11 for photo q20. Those rows carry `foreign_max=3` — my own Miri run was on
@@ -387,6 +391,210 @@ kind"): 23,152 registrations on `Cui…q20` t=1 bought 0.137 ms, i.e. **5.9 ns
 each** — the same order as the write side, so the "cheap kind" claim is NOT
 confirmed here at t=1. Where it does show is the four not-established cells, all
 at t=8 or on the photo class.
+
+## 6c. The read side, part two — `env.rs`'s `(a, l)` helpers (branch `perf/ctx-read-split`)
+
+### 6c-0. What this does NOT do, first
+
+* **It does not move a single cell across the 1.4x bar, and it was never going
+  to.** `benchmarks/cost_census_2026-08-10.meta` priced this family before it
+  was built and said so: "the cheapest remaining count cut. Do not expect it to
+  move screen text." The measured geomean over 11 cells is **0.9842**.
+* **Three of eleven cells read NOMINALLY SLOWER in WALL and are reported as
+  such**, not rounded to null: `c1024x384` t=8 **1.0045** (2/9 rounds faster,
+  p=0.180), `c256x2048` t=8 **1.0030** (2/9, p=0.180), `v4k8tile` t=8 **1.0052**
+  (4/9, p=1.000, `foreign_max = 2`). None has disjoint bands, none is
+  significant, and **the CPU leg does not reproduce any of them** (0.9973 /
+  1.0016 / 0.9920) — so they are read as this box's ~1.2% wall floor rather than
+  as regressions. That reading is a judgement about two instruments disagreeing
+  inside their own noise, not a measurement, and the wall rows are printed
+  unrounded in §6c-5 so a later reader can disagree with it.
+* **`c256x2048` t=8 — the one cell in the census whose tracker-removed ceiling
+  is band-safely under 1.4x — does not move.** 35,283 registrations came out and
+  both instruments read null (wall 1.0030, CPU 1.0016). Its tracker cost is
+  contention, not count: 18.78 ns/registration in the census against 2.78-8.11
+  everywhere else, most of it `TinyLock::lock_slow` spin. **A count cut is not
+  the lever for that cell**, which is the single most useful negative here.
+* **Eleven of the sixteen converted helpers never fire on this corpus.** Every
+  timed cell here is a still, so `get_comp_ctx`, `get_comp_dir_ctx`,
+  `get_filter_ctx`, `get_jnt_comp_ctx`, `get_mask_comp_ctx` and the six
+  `av1_get_*_ref_*_ctx` are inter-only: they are covered by the 766-vector md5
+  gate and by the differential test, and by **no wall-clock cell at all**. Their
+  registration population on inter content is UNKNOWN, not zero.
+* **Not measured:** x86_64 / wasm32 / linux at run time (compile + clippy only),
+  `unchecked`, `asm`, `c-ffi`, t=2/4/16, 10-bit, 12-bit, 4:4:4, and any inter
+  (video) content.
+* One source image per screen class, same n=1 caveat as §0.
+
+### 6c-1. The change
+
+`l` becomes `&mut BlockContext` in all fifteen `env.rs` helpers, and its reads
+go through a `lread!` macro that expands to `get_mut()[i]`. `sm_flag` and
+`sm_uv_flag` gained `sm_flag_left` / `sm_uv_flag_left` twins, because they are
+called once with each role from one line of `recon.rs`. The ABOVE side is
+untouched and keeps `index()`. No extent moves; nothing is reserved that was not
+reserved before; `get_mut` is a field access, so there is no new machinery to
+price against the registrations removed — the trap that sank the V batch cap
+(`MUT_RECON_KERNELS.md` §19e).
+
+Four helpers needed restructuring rather than re-typing, and it is the same
+shape §7e of `OWNERSHIP_MODELS.md` names: `get_filter_ctx`, `get_jnt_comp_ctx`
+and `get_mask_comp_ctx` each did `[(a, xb4), (l, yb4)].map(..)`, a HOMOGENEOUS
+container that cannot hold two different reference types, and `get_comp_dir_ctx`
+had a closure over `&BlockContext` plus two run-time `let edge = if .. { &l }
+else { &a }` selections. Each becomes a macro expanded once per direction, and
+each `edge` choice becomes a branch on the same condition.
+
+### 6c-2. §0's own estimate of the remainder was 2.4x too small
+
+§0 sized what was left as `env.rs:105:72` (4,288) + `env.rs:89:18` (3,926) =
+**~8,200/frame** on `Cui…q20` t=1. Measured removal on that cell is **19,811**.
+The gap is `sm_flag`/`sm_uv_flag`, which §0 named as a *complication* ("called
+with BOTH roles") and never counted — three sites in a different file, together
+larger than both `env.rs` pairs. **A population sized from the rows a census
+happens to list under one filename will miss the ones that live in another.**
+
+### 6c-3. Counted first — `--features probe-sites`, per frame, `lost = 0` on all 16 runs
+
+| cell | t=1 base | t=1 head | t=1 | t=8 base | t=8 head | t=8 |
+|---|---|---|---|---|---|---|
+| ui_q20 | 189,450 | 169,639 | **−10.46%** | 337,452 | 317,641 | −5.87% |
+| text_q20 | 119,983 | 106,611 | **−11.14%** | 212,659 | 199,287 | −6.29% |
+| c1024x192 | 84,922 | 73,773 | **−13.13%** | 167,926 | 156,777 | −6.64% |
+| c1024x384 | 179,319 | 155,974 | **−13.02%** | 357,208 | 333,863 | −6.54% |
+| c1024x576 | 290,990 | 253,488 | **−12.89%** | 566,594 | 529,092 | −6.62% |
+| c256x2048 | 307,788 | 272,505 | **−11.46%** | 604,973 | 569,690 | −5.83% |
+| c3840x256 | 428,077 | 368,538 | **−13.91%** | 809,370 | 749,831 | −7.36% |
+| v4k8tile | 4,034,732 | 3,533,652 | **−12.42%** | 9,430,529 | 8,929,449 | −5.31% |
+
+The removed count is IDENTICAL at t=1 and t=8 on every cell — none of these
+sites is one of the four `tile_threading_active()` hull-to-per-row latches, so
+they do not inflate with thread count, and the same absolute cut is a smaller
+FRACTION of the larger t=8 population.
+
+**Four of the five cells the census predicted match to the registration**
+(text_q20 13,372; c1024x384 23,345; c3840x256 59,539; v4k8tile 501,080).
+`ui_q20` reads 19,811 against a predicted 19,794 — and the 17 are exactly the
+thing the census flagged as an assumption: `ipred_prepare.rs:37:21`'s left/right
+split is **not** 50/50, because `sm_flag` returns before reading `mode` when
+`intra == 0` and the two neighbours have slightly different intra rates.
+Measured here: 3,733 left vs 3,698 above (50.2% / 49.8%). The other two
+`ipred_prepare` sites and both `env.rs` pairs are exactly 50/50, as claimed.
+
+### 6c-4. The attribution closes exactly
+
+`c3840x256` t=8, the `env.rs` + `ipred_prepare.rs` sites only. Line numbers move
+between arms because the change adds lines, so the rows are matched by helper,
+not by key:
+
+| helper | base (both directions) | head (ABOVE only) | removed |
+|---|---|---|---|
+| `sm_flag`'s `intra` | 22,782 | 11,391 | 11,391 |
+| `sm_flag`'s `mode` | 22,782 | 11,391 | 11,391 |
+| `sm_uv_flag`'s `uvmode` | 22,164 | 11,082 | 11,082 |
+| `get_partition_ctx` | 14,696 + 14,696 | 14,696 | 14,696 |
+| `get_tx_ctx` | 10,979 + 10,979 | 10,979 | 10,979 |
+| **total** | | | **59,539** |
+
+which is the whole-decoder delta for that cell, to the registration.
+
+### 6c-5. Wall clock — n = 9, idle box
+
+`scripts/perf/ctxread_wall.sh` (adapted from the census's `census_wall.sh`), 10
+rounds with **round 1 discarded as cold**, arms rotating inside every round,
+two-point fit at 2 frame counts so process startup cancels, `measlock`, no
+`nice` on any timed run. `foreign_max = 0` on every row except `ui_q20` t=1
+(1), `v4k8tile` t=1 (1) and `v4k8tile` t=8 (2). Report:
+`scripts/perf/ctxread_report.py`; raw `benchmarks/ctx_read_split_wall_2026-08-10.tsv`.
+
+The base column reproduces the committed census
+(`benchmarks/cost_census_2026-08-10.meta`) to within 0.3% on seven of eleven
+cells — 3.256 vs 3.244 at `c1024x576` t=8, 1.500 vs 1.500 at `text_q20` t=8 —
+which is the cross-check that this harness and that one agree.
+
+`paired` is the median of the per-round quotient (head and base ran inside the
+same round under the same load); `p` is the exact two-sided sign test on the
+count.
+
+| cell | t | base ms/f | head ms/f | ratio | bands disjoint | h<b | p | base/dav1d | head/dav1d |
+|---|---|---|---|---|---|---|---|---|---|
+| text_q20 | 1 | 2.656 [2.606..2.711] | 2.556 [2.544..2.583] | **0.9623** | **yes** | 9/9 | 0.004 | 3.464 | 3.333 |
+| ui_q20 | 1 | 3.228 [3.200..3.339] | 3.117 [3.106..3.172] | **0.9656** | **yes** | 9/9 | 0.004 | 1.917 | 1.851 |
+| text_q20 | 8 | 1.500 [1.483..1.511] | 1.450 [1.439..1.461] | **0.9667** | **yes** | 9/9 | 0.004 | 2.842 | 2.747 |
+| c1024x576 | 8 | 3.256 [3.233..3.267] | 3.183 [3.139..3.200] | **0.9778** | **yes** | 9/9 | 0.004 | 1.854 | 1.813 |
+| ui_q20 | 8 | 2.594 [2.583..2.628] | 2.539 [2.517..2.556] | **0.9786** | **yes** | 9/9 | 0.004 | 2.323 | 2.274 |
+| c3840x256 | 8 | 5.870 [5.787..5.944] | 5.787 [5.713..5.880] | 0.9858 | no | 8/9 | 0.039 | 2.240 | 2.208 |
+| c1024x192 | 8 | 1.456 [1.444..1.500] | 1.439 [1.406..1.483] | 0.9885 | no | 7/9 | 0.180 | 2.079 | 2.056 |
+| v4k8tile | 1 | 300.0 [297.3..301.3] | 296.9 [296.4..298.1] | 0.9896 | no | 8/9 | 0.039 | 1.217 | 1.205 |
+| c256x2048 | 8 | 3.711 [3.667..3.761] | 3.722 [3.694..3.750] | 1.0030 | no | 2/9 | 0.180 | 2.328 | 2.334 |
+| c1024x384 | 8 | 2.456 [2.411..2.478] | 2.467 [2.433..2.517] | 1.0045 | no | 2/9 | 0.180 | 2.267 | 2.277 |
+| v4k8tile | 8 | 48.14 [47.31..50.06] | 48.39 [47.50..50.03] | 1.0052 | no | 4/9 | 1.000 | 1.400 | 1.407 |
+
+**Five cells established** (bands disjoint AND 9/9 paired AND p = 0.004);
+three sign-consistent but band-overlapping; three not established and nominally
+adverse. **Geomean 0.9842 over all eleven.** No cell crosses 1.4x against dav1d,
+and the census said it would not.
+
+### 6c-6. CPU — n = 7, the same instrument on both arms
+
+`scripts/perf/ctxread_cpu.sh`, 8 rounds with round 1 discarded, bash's `time`
+KEYWORD (not `/usr/bin/time`, which shares fd 2 with the payload on macOS and
+silently reads 0). Raw `benchmarks/ctx_read_split_cpu_2026-08-10.tsv`.
+
+| cell | t | base cpu/f | head cpu/f | ratio | bands disjoint | h<b | p |
+|---|---|---|---|---|---|---|---|
+| text_q20 | 1 | 2.678 [2.606..2.694] | 2.544 [2.533..2.561] | **0.9502** | **yes** | 7/7 | 0.016 |
+| ui_q20 | 1 | 3.256 [3.239..3.317] | 3.133 [3.089..3.217] | **0.9625** | **yes** | 7/7 | 0.016 |
+| text_q20 | 8 | 3.267 [3.239..3.306] | 3.172 [3.144..3.206] | **0.9711** | **yes** | 7/7 | 0.016 |
+| ui_q20 | 8 | 4.700 [4.661..4.789] | 4.600 [4.550..4.650] | **0.9787** | **yes** | 7/7 | 0.016 |
+| c1024x576 | 8 | 17.550 [17.47..17.63] | 17.289 [17.08..17.47] | **0.9851** | **yes** | 7/7 | 0.016 |
+| c1024x192 | 8 | 5.722 [5.644..5.761] | 5.628 [5.589..5.644] | 0.9835 | no | 7/7 | 0.016 |
+| v4k8tile | 1 | 300.19 [296.5..301.0] | 297.06 [296.0..299.3] | 0.9895 | no | 7/7 | 0.016 |
+| v4k8tile | 8 | 356.19 [351.1..362.6] | 353.36 [344.1..361.2] | 0.9920 | no | 3/7 | 1.000 |
+| c1024x384 | 8 | 12.194 | 12.161 | 0.9973 | no | 5/7 | 0.453 |
+| c3840x256 | 8 | 29.046 | 29.000 | 0.9984 | no | 4/7 | 1.000 |
+| c256x2048 | 8 | 24.878 | 24.917 | 1.0016 | no | 4/7 | 1.000 |
+
+**The CPU leg is the one that settles the three nominally-adverse wall rows: it
+does not reproduce them.** `c1024x384` reads 0.9973 in CPU against 1.0045 in
+wall, `c256x2048` 1.0016 against 1.0030, `c3840x256` 0.9984 against 0.9858 — all
+four-to-five-of-seven, all inside their own bands. Those cells are NULL, not
+regressions, and the wall rows that read above 1.000 are this box's ~1.2% floor
+(`SHARD_SIZE_SWEEP.md` §5) rather than signal. `c1024x192` gains a 7/7 sign in
+CPU that its 7/9 wall row did not have.
+
+### 6c-7. The marginal registration is worth 1.5-3x what the census's per-cell rate says
+
+Measured CPU saving divided by the measured registration cut, on the seven cells
+whose CPU row is sign-consistent at p <= 0.016:
+
+| cell | t | regs removed | CPU ms/frame saved | ns per registration | census's `(plain − untracked)/regs` |
+|---|---|---|---|---|---|
+| text_q20 | 1 | 13,372 | 0.134 | **10.02** | 2.78 |
+| c1024x192 | 8 | 11,149 | 0.094 | **8.43** | 7.33 |
+| text_q20 | 8 | 13,372 | 0.095 | **7.10** | 3.25 |
+| c1024x576 | 8 | 37,502 | 0.261 | **6.96** | 6.49 |
+| v4k8tile | 1 | 501,080 | 3.138 | **6.26** | 2.78-3.89 (t=1 band) |
+| ui_q20 | 1 | 19,811 | 0.123 | **6.21** | 2.78-3.89 (t=1 band) |
+| ui_q20 | 8 | 19,811 | 0.100 | **5.05** | 4.72 |
+
+Three things fall out, and all three are for pricing the NEXT count cut:
+
+1. **`ui_q20` t=1 reads 6.21 ns here and §6b's read-side part one read 5.9 ns on
+   the very same cell** from a different population. Two independent removals
+   agreeing to 5% is the best calibration the campaign has for what one
+   registration is worth on screen content.
+2. **On the screen cells the marginal rate is 1.6-3.6x the census's per-cell
+   `(plain − untracked)/registrations`.** That rate is an AVERAGE over the whole
+   population, and the census predicted the direction of the discrepancy itself:
+   removing tracker work also makes other buckets cheaper ("4.32 ms reappears in
+   entropy, kernels and other"). Treat `(plain − untracked)/regs` as a **lower
+   bound** on a real removal, not a point estimate.
+3. **Where it is NOT above the census rate is exactly where the cell measured
+   null** — `c3840x256`'s census rate is 8.12 ns and its measured marginal rate
+   is 0.77. A cell can have a large population and a large nominal rate and
+   still not pay, and the only way to find that out is to remove the
+   registrations and time it.
 
 ---
 
