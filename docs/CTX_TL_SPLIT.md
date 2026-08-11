@@ -686,6 +686,49 @@ any decode ran: the pre-split `cnt[(ref0 - 4)]` ladders index past their arrays
 unless `intra == 0` implies `ref[0] >= 0`, so `random_ctx` now encodes that
 coupling instead of clamping it away.
 
+#### Miri, both models, ONE TARGET AT A TIME
+
+Batching is wrong here: Miri aborts the process on first UB and cargo stops at
+the first failing TARGET, so later targets never execute and their silence reads
+as health. Driver `~/tmp/lfg/miri.sh`, aarch64 macOS, `cargo +nightly miri test`.
+
+| target | Stacked Borrows | Tree Borrows |
+|---|---|---|
+| `rav1d-disjoint-mut --lib` | 27 passed | 27 passed |
+| `narrow_release` | 1 passed | 1 passed |
+| `soundness` | 25 passed | 25 passed |
+| `wide_exclusion` | 1 passed | 1 passed |
+| `guard_move_release` | 2 passed | 2 passed |
+| `pic_buf_overflow` | **0 tests ran** | **0 tests ran** |
+| `aligned_miri` | **0 tests ran** | **0 tests ran** |
+| `shard_liveness` | **TIMEOUT (900 s, rc=124)** | **TIMEOUT (900 s, rc=124)** |
+| **`rav1d-safe --lib env::left_split`** | **3 passed** (521.05 s) | **3 passed** (520.93 s) |
+
+The tracker crate is the CONTROL here — `git diff 414515c..HEAD -- crates/` is
+empty, so those eight rows can only reproduce `main`. The row that is new is the
+last one: it puts this round's actual `&mut BlockContext` + `get_mut()` path
+under both aliasing models rather than merely compiling it, and it is also what
+proves the 200-trial Miri floor reaches full liveness coverage (the assertions
+are unconditional, so a run that lost coverage would FAIL rather than pass).
+
+**"0 tests ran" is reported as 0, never as green** — both targets are
+feature-gated and select nothing under the features used here. **`shard_liveness`
+timed out in BOTH models and is reported AS a timeout**, exactly as the campaign
+brief warns for aarch64; CI's Linux legs cover it. Each attempt was `rc=124` at
+900 s — an `rc=1` with no `test result:` line would be an invocation error and a
+different thing.
+
+#### CI
+
+Opened against `main`, so the full `ci.yml` ran: **22 checks, all pass** on
+`7640a14`, including all nine `Build & Test` platforms (`windows-11-arm`,
+`macos-15-intel`, both i686 legs), both `Conformance (decode permutations)`
+legs, both `SIMD Permutation Tests`, `Tile Threading`, `Threading race gates`
+and `Coverage`. A PR against any other base would have run only the
+path-filtered `disjoint-mut CI` and looked equally green. `disjoint-mut CI`
+itself did not run, and that is correct: it is path-filtered on
+`crates/rav1d-disjoint-mut/**`, which this branch does not touch.
+
 ---
 
 ## 7. Correctness gates
