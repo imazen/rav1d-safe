@@ -248,6 +248,14 @@ __lrpoison = []
 # gated so a production build has no atomic load on the dispatch path.
 __ablate = []
 
+# Measurement only (x86_64): count grants/refusals at the three x86 dispatch
+# gates (`summon_avx2` / `summon_avx512` / `summon_avx512x`) so a run can PROVE
+# which SIMD tier it executed, and prove whether `CpuLevel::Scalar` actually
+# turns the vector kernels off on this arch. See `src/cpu.rs::tier_census` and
+# `examples/x86_tier_census.rs`. Compile-time gated: a production build has no
+# counter on the dispatch path.
+__probe_x86tier = []
+
 # Like __simd_test but LOG every mismatch and continue instead of panicking, for a
 # one-pass cross-module bit-exactness inventory. Compile-time so there is no
 # per-mismatch env-var read. (implies __simd_test)
