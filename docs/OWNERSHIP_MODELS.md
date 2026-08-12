@@ -167,6 +167,13 @@ whole campaign. Re-examined 2026-08-10 (`benchmarks/strided_2d_2026-08-10.meta`)
   registrations — not `h` — at a 17-91% wide-promotion rate. Plus machinery: a shard is exactly one
   128-byte line at `SLOTS = 7`, and `tracker_blockshift_2026-08-08.meta` §2 measured that the cost
   is a core waiting for that line, not the atomics on it.
+  **SUPERSEDED 2026-08-11: nothing stopped it — #505 built it and it wins at t=8.** −1.0% to −1.8%
+  wall on 5 of 6 multi-tile t=8 cells (10/10-11/11 signs, replicated), null on `c256x2048`. The
+  wide-promotion mechanism above is necessary but NOT sufficient to say which cells win, and the
+  follow-up model `rows_mean / row_shards_mean` is refuted (`c256x2048` has the highest ratio and is
+  the null). It is default-off only because of a t=1 cost that #506 then measured to be **code
+  placement**, not the mechanism — against a same-source control it costs 0.9967 (7/9).
+  `docs/RECT_RECORDS.md`, `docs/RECT_SHIP.md`.
 
 **Rule: "someone asserted it was unsound" is not "it is unsound", and a correct objection to one
 implementation is not an objection to the shape.** Both halves were settled here by instruments that
@@ -269,9 +276,14 @@ reserved extent, the footprint actually touched, and the distance to every
 concurrently-live foreign reservation — separating "does a foreign RESERVATION
 intersect" from "does a foreign FOOTPRINT intersect", which is the whole
 decision. For this site it says: `LfBlock::fill`'s per-row read guard comes
-within **232 bytes** of `cdef_arm.rs:622:9`'s concurrent write (2,217,283
-co-live pairs), and a widening of <=256 bytes collides **16** times across 1406
-frames of `8-bit/data`. #485's band widened by ~124 bytes and measured 1, 2 and
+within **60 bytes** of a concurrent write — `loopfilter.rs:887:14`, the loop
+filter's OWN write-back running in another superblock-row filter task, over
+1,176,771 co-live pairs. (**Corrected 2026-08-10** from the full pair table,
+`docs/BOUNDS_MAP.md` Part 2: `cdef_arm.rs:622:9` at 232 B is only the THIRD
+nearest, and the 232 B first published here was a per-pair number quoted as if
+it were the site's. `BCONC`'s site-level `min_gap_mut` was 60 all along. The
+budget columns below are unaffected.) A widening of <=256 bytes collides **16**
+times across 1406 frames of `8-bit/data`. #485's band widened by ~124 bytes and measured 1, 2 and
 0 errors on three passes of that group — retrodicted without writing it. The
 same table shows the 4K gap vectors under-report the risk by ~1000x, which is
 why the band's first full sample passed.
@@ -319,8 +331,27 @@ The options that remain, in the order the evidence supports:
 
 1. **Cut the guard cost rather than the guard.** `LfBlock::fill` (`src/loopfilter.rs:566`) is
    **3,835,042 registrations/frame at t=8 — 33.6% of the whole decoder's**, measured by a doubling
-   arm at **3.61 ms/frame of wall, 4.04 ns each**. One site. Coarsening it (per tap row, or per
-   fused group, instead of per tap) is sound, local, and does not need any ownership change.
+   arm at **3.61 ms/frame of wall, 4.04 ns each**. One site.
+   **CLOSED as an EXTENT question, 2026-08-10, by two independent measurements** (PR #488 and
+   `docs/BOUNDS_MAP.md` Part 2). PR #488 built the fused-run coarsening (`LF_BATCH_V` 4 -> 32, a
+   1.971x count cut on the V pass) and measured **no wall-clock win** (t=8 ratio 1.0005, p=1.000) —
+   the machinery cost more than the registrations were worth — then reverted it. And the bounds map
+   prices the extent it needs: the fused run's live reservation goes 16 px -> 128 px against a
+   measured clearance of **60 bytes** to a concurrent `loopfilter.rs:887:14` write-back, i.e. 2..16
+   collisions per 1406 corpus frames. The largest coarsening the budget allows is `LF_BATCH_V = 8`
+   at 8bpc only, whose whole prize is ~2.4 ms/frame of CPU. **A 60-byte clearance and a sub-noise
+   prize.** Note also that #488's soundness test ("does the reservation contain a byte no member of
+   the batch reads?") is necessary but NOT sufficient: `DisjointMut` compares live *reservations*,
+   not a reservation against a read set.
+   **The DENSITY question at this site was then reopened from the other side and answered
+   differently, 2026-08-11 (PR #505).** Not by widening the extent but by replacing the `h` per-row
+   records with ONE exact strided-RECTANGLE record — same bytes, no gaps, so no new collision
+   surface. That cuts registrations 569,690 -> 409,349/frame on `c256x2048` t=8 and measures
+   −1.0..−1.8% wall on 5 of 6 other multi-tile t=8 cells. It also **corrects the price quoted
+   above**: the 4.04 ns/registration is an average, and a `fill` registration marginally costs
+   **2.42-2.71 ns** — the site is 31.7% of the population and 3.9-4.4% of the tracker's CPU,
+   because cost tracks distinct shard LINES visited (2.09 per 8.98 records), not records filed.
+   `docs/RECT_RECORDS.md`.
 2. **Partition by edge class, not by region.** Filter the edges wholly interior to a band in
    parallel, and the boundary edges in a separate pass. This is a *scheduling* answer to a
    write-write overlap, and it is the only one that gets the filter off coordination entirely.
@@ -426,7 +457,8 @@ is free. Measured: 12 of 12 wall cells faster with disjoint bands, screen text
 
 0. Before proposing ANY extent change, run the bounds map
    (`--features __probe_bounds`, `docs/BOUNDS_MAP.md`) and read the site's
-   widening budget. It costs one build and one decode, and it is the only thing
+   widening budget. The per-site VERDICT table (`docs/BOUNDS_MAP.md` Part 2)
+   states it directly. It costs one build and one decode, and it is the only thing
    in the campaign that has priced a coarsening before it was written. Two
    further facts it has already established: at t=8 the shipped decoder's hot
    sites reserve exactly what they touch (`over_ratio = 1.000`, 1-16 bytes), so

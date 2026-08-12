@@ -156,6 +156,15 @@ The pair table names the counterparty:
 | `cdef_arm.rs:1217:9` | `cdef_arm.rs:622:9` | 2,344,598 | 0 | 0 | yes (all) | 64 B |
 | `mc.rs:1342:44` | `mc.rs:1342:44` | 5,508,684 | 61 | 21 | no | 0 (shared reads, legal) |
 
+ERRATUM (2026-08-10, same day, from the full pair table — see
+`docs/BOUNDS_MAP.md` Part 2): the sentence below is WRONG about which site is
+nearest. `cdef_arm.rs:622:9` at 232 B is the THIRD nearest concurrent writer.
+The nearest is `loopfilter.rs:887:14`, the loop filter's own write-back, at
+**60 B** over 1,176,771 co-live pairs, followed by `picture.rs:2027:22` at
+61 B. `BCONC`'s site-level `min_gap_mut` for `loopfilter.rs:710:14` is 60, and
+always was; the 232 was a per-pair figure quoted as if it were the site's. The
+budget columns (`<=64` = 2, `<=256` = 16) are unaffected and remain correct.
+
 So the loop filter's read guard has ~232 bytes of headroom against the nearest
 concurrent writer (CDEF's `cdef_arm.rs:622:9`) and unlimited headroom against
 other readers — 128 bytes is inside the budget on average and outside it 16

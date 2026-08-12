@@ -1,0 +1,130 @@
+cell	site	regs_per_frame	rw	res_mean_B	over_ratio	fp_kind	waste	n_conc_mut	headroom_min_gap_mut_B	headroom_v4k_cell	coll_k64	coll_k256	coll_k1k	verdict	nearest_concurrent_writer	conflict_facts_from
+v4k_8tile_t8	src/loopfilter.rs:710:14	3835042	R	10.50	1.000	whole	<= 10 B	3952914	60	1108	2	16	324	COARSEN-60	loopfilter.rs:887:14@60B	corpus
+v4k_8tile_t8	src/ctx.rs:99:27	2534988	W	2.93	1.000	whole	<= 3 B	2568	0	1	2568	2568	2568	BLOCKED-0	-	corpus
+v4k_8tile_t8	src/safe_simd/cdef_arm.rs:192:9	646912	R	7.90	1.000	whole	<= 8 B	4146661	118	3848	0	8	219	COARSEN-118	safe_simd/cdef_arm.rs:622:9@118B	corpus
+v4k_8tile_t8	src/safe_simd/cdef_arm.rs:622:9	646912	RW	5.91	1.000	whole	<= 6 B	4355998	80	1344	0	8	189	COARSEN-80	safe_simd/cdef_arm.rs:622:9@80B	corpus
+v4k_8tile_t8	src/cdef_apply.rs:121:33	414592	R	2.00	1.000	whole	<= 2 B	1648638	100	3840	0	8	168	COARSEN-100	safe_simd/cdef_arm.rs:622:9@100B	corpus
+v4k_8tile_t8	src/cdef_apply.rs:104:32	254784	R	2.00	1.000	whole	<= 2 B	2861832	120	4032	0	2	30	COARSEN-120	safe_simd/cdef_arm.rs:622:9@398B	corpus
+v4k_8tile_t8	src/safe_simd/cdef_arm.rs:1217:9	247040	R	8.00	1.000	whole	<= 8 B	3092619	64	1320	1	1	26	COARSEN-64	safe_simd/cdef_arm.rs:622:9@64B	corpus
+v4k_8tile_t8	src/recon.rs:2734:46	188130	R	1.73	1.000	whole	<= 2 B	129	0	4	129	129	129	BLOCKED-0	-	corpus
+v4k_8tile_t8	src/ipred_prepare.rs:34:17	188130	R	1.00	1.000	whole	<= 1 B	214	0	7	214	214	214	BLOCKED-0	-	corpus
+v4k_8tile_t8	src/ipred_prepare.rs:47:23	188130	R	1.00	1.000	whole	<= 1 B	54	0	0	54	54	54	BLOCKED-0	-	corpus
+v4k_8tile_t8	src/recon.rs:2735:46	188130	R	1.48	1.000	whole	<= 1 B	0	INF	INF	0	0	0	COARSENABLE-INF	-	corpus
+v4k_8tile_t8	src/ipred_prepare.rs:37:21	188130	R	1.00	1.000	whole	<= 1 B	199	0	1	199	199	199	BLOCKED-0	-	corpus
+v4k_8tile_t8	src/safe_simd/cdef_arm.rs:223:18	161728	R	9.23	1.000	whole	<= 9 B	41056	0	5206	52	213	1430	BLOCKED-0	-	corpus
+v4k_8tile_t8	src/safe_simd/cdef_arm.rs:247:26	141344	R	9.23	1.000	whole	<= 9 B	1414012	486	24830	0	0	22	COARSEN-486	safe_simd/cdef_arm.rs:622:9@486B	corpus
+v4k_8tile_t8	src/recon.rs:2353:44	138714	R	1.75	1.000	whole	<= 2 B	0	INF	INF	0	0	0	COARSENABLE-INF	-	corpus
+v4k_8tile_t8	src/recon.rs:2352:49	138714	R	1.98	1.000	whole	<= 2 B	336	0	3	336	336	336	BLOCKED-0	-	corpus
+v4k_8tile_t8	src/env.rs:105:25	124820	R	1.00	1.000	whole	<= 1 B	56	0	3	56	56	56	BLOCKED-0	-	corpus
+v4k_8tile_t8	src/env.rs:105:72	124820	R	1.00	1.000	whole	<= 1 B	0	INF	INF	0	0	0	COARSENABLE-INF	-	corpus
+v4k_8tile_t8	src/env.rs:89:18	94065	R	1.00	1.000	whole	<= 1 B	0	INF	INF	0	0	0	COARSENABLE-INF	-	corpus
+v4k_8tile_t8	src/decode.rs:1974:35	94065	W	2.64	1.000	whole	<= 3 B	0	INF	INF	0	0	0	COARSENABLE-INF	-	corpus
+v4k_8tile_t8	src/decode.rs:1682:53	94065	R	1.00	1.000	whole	<= 1 B	0	INF	INF	0	0	0	COARSENABLE-INF	-	corpus
+v4k_8tile_t8	src/decode.rs:1973:34	94065	W	3.45	1.000	whole	<= 3 B	1181	0	2	1181	1181	1181	BLOCKED-0	-	corpus
+v4k_8tile_t8	src/decode.rs:1446:61	94065	R	1.00	1.000	whole	<= 1 B	0	INF	INF	0	0	0	COARSENABLE-INF	-	corpus
+v4k_8tile_t8	src/decode.rs:1977:48	94065	W	1.58	1.000	whole	<= 2 B	0	INF	INF	0	0	0	COARSENABLE-INF	-	corpus
+v4k_8tile_t8	src/decode.rs:1446:29	94065	R	1.00	1.000	whole	<= 1 B	232	1	5	232	232	232	COARSEN-1	-	corpus
+v4k_8tile_t8	src/decode.rs:1681:52	94065	R	1.00	1.000	whole	<= 1 B	268	0	14	268	268	268	BLOCKED-0	-	corpus
+v4k_8tile_t8	src/env.rs:90:24	94065	R	1.00	1.000	whole	<= 1 B	68	0	1	68	68	68	BLOCKED-0	-	corpus
+v4k_8tile_t8	src/decode.rs:1976:47	94065	W	2.01	1.000	whole	<= 2 B	278	0	4	278	278	278	BLOCKED-0	-	corpus
+v4k_8tile_t8	src/ipred_prepare.rs:232:24	39505	R	19.97	1.000	whole	<= 20 B	22	16	632	2	4	5	COARSEN-16	-	corpus
+v4k_8tile_t8	src/owned_recon.rs:937:42	25920	RW	335.67	1.000	whole	NOT MEASURED	24237	0	0	18	45	146	UNMEASURED	-	corpus
+v4k_8tile_t8	src/safe_simd/cdef_arm.rs:256:25	19712	R	9.22	1.000	whole	<= 9 B	304	338	18702	0	0	6	COARSEN-338	-	corpus
+v4k_8tile_t8	src/loopfilter.rs:887:14	17852	RW	4.85	1.000	whole	<= 5 B	1420392	71	63819	0	4	90	COARSEN-71	picture.rs:2027:22@79B	corpus
+v4k_8tile_t8	src/lf_apply.rs:636:60	960	R	1.00	1.000	whole	<= 1 B	0	INF	INF	0	0	0	COARSENABLE-INF	-	corpus
+v4k_8tile_t8	src/lf_apply.rs:623:54	960	R	1.00	1.000	whole	<= 1 B	0	INF	INF	0	0	0	COARSENABLE-INF	-	corpus
+v4k_8tile_t8	src/cdef_apply.rs:84:26	944	R	456.23	1.000	whole	NOT MEASURED	6644	952	67056	0	0	1	UNMEASURED	-	corpus
+v4k_8tile_t8	src/cdef_apply.rs:83:30	944	RW	456.23	1.000	whole	NOT MEASURED	819	0	INF	4	4	61	UNMEASURED	-	corpus
+v4k_8tile_t8	src/cdef_apply.rs:60:22	472	R	900.38	1.000	whole	NOT MEASURED	6581	4616	29040	0	0	0	UNMEASURED	-	corpus
+v4k_8tile_t8	src/cdef_apply.rs:59:26	472	RW	900.38	1.000	whole	NOT MEASURED	339	0	INF	4	7	26	UNMEASURED	-	corpus
+v4k_8tile_t8	src/lf_apply.rs:126:30	396	R	610.25	1.000	whole	NOT MEASURED	3012	804	242136	0	0	2	UNMEASURED	-	corpus
+v4k_8tile_t8	src/lf_apply.rs:125:39	396	RW	610.25	1.000	whole	NOT MEASURED	215	640	INF	0	0	6	UNMEASURED	-	corpus
+v4k_8tile_t8	src/recon.rs:3904:35	272	RW	179.64	1.000	whole	NOT MEASURED	16	0	INF	3	3	9	UNMEASURED	-	corpus
+v4k_8tile_t8	src/internal.rs:719:40	136	W	27.11	1.000	whole	<= 27 B	3	32	INF	2	3	3	COARSEN-32	-	corpus
+v4k_8tile_t8	src/decode.rs:4341:23	136	R	27.11	1.000	whole	<= 27 B	0	INF	INF	0	0	0	COARSENABLE-INF	-	corpus
+v4k_8tile_t8	src/recon.rs:3887:27	136	RW	352.17	1.000	whole	NOT MEASURED	5	0	INF	1	1	2	UNMEASURED	-	corpus
+v4k_8tile_t8	src/internal.rs:726:40	136	W	14.17	1.000	whole	<= 14 B	2	16	INF	2	2	2	COARSEN-16	-	corpus
+v4k_8tile_t8	src/decode.rs:4350:24	136	R	14.17	1.000	whole	<= 14 B	0	INF	INF	0	0	0	COARSENABLE-INF	-	corpus
+v4k_8tile_t8	src/internal.rs:712:24	102	R	24.36	1.000	whole	<= 24 B	0	INF	INF	0	0	0	COARSENABLE-INF	-	corpus
+v4k_8tile_t8	src/internal.rs:713:24	102	R	12.55	1.000	whole	<= 13 B	0	INF	2144	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/mc.rs:121:61	128998.5	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/mc.rs:1342:44	47870.0	R	8.00	1.000	whole	<= 8 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	include/dav1d/picture.rs:2027:22	38489.4	RW	14.60	1.000	whole	<= 15 B	1450464	0	n/a	886	4689	16953	BLOCKED-0	picture.rs:2027:22@0B	corpus
+corpus_8bitdata_t8	src/safe_simd/mc_arm.rs:5655:25	20308.4	R	14.59	1.000	whole	<= 15 B	707173	0	n/a	386	2247	8778	BLOCKED-0	picture.rs:2027:22@0B	corpus
+corpus_8bitdata_t8	src/owned_recon.rs:570:45	7192.0	R	16.15	1.000	whole	<= 16 B	369482	0	n/a	151	1002	3772	BLOCKED-0	picture.rs:2027:22@0B	corpus
+corpus_8bitdata_t8	src/owned_recon.rs:505:31	6560.9	RW	11.75	1.000	whole	<= 12 B	110559	0	n/a	89	584	2268	BLOCKED-0	-	corpus
+corpus_8bitdata_t8	include/dav1d/picture.rs:168:38	6184.4	R	1.00	1.000	whole	<= 1 B	274491	15	n/a	105	756	2932	COARSEN-15	-	corpus
+corpus_8bitdata_t8	src/safe_simd/mc_arm.rs:5118:25	4418.2	R	13.10	1.000	whole	<= 13 B	116361	16	n/a	22	184	718	COARSEN-16	-	corpus
+corpus_8bitdata_t8	src/safe_simd/mc_arm.rs:5240:25	4388.3	R	8.37	1.000	whole	<= 8 B	209024	0	n/a	96	544	2561	BLOCKED-0	picture.rs:2027:22@0B	corpus
+corpus_8bitdata_t8	src/owned_recon.rs:433:42	3230.4	RW	8.35	1.000	whole	<= 8 B	254334	16	n/a	70	536	2295	COARSEN-16	picture.rs:2027:22@20B	corpus
+corpus_8bitdata_t8	src/mc.rs:1354:29	3191.3	RW	8.00	1.000	whole	<= 8 B	233405	0	n/a	110	696	2911	BLOCKED-0	picture.rs:2027:22@16B	corpus
+corpus_8bitdata_t8	src/mc.rs:1457:20	2828.6	R	22.96	1.000	whole	<= 23 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/refmvs.rs:508:34	2804.6	W	5.55	1.000	whole	<= 6 B	38080	0	n/a	2227	4169	9075	BLOCKED-0	refmvs.rs:508:34@0B	corpus
+corpus_8bitdata_t8	src/safe_simd/mc_arm.rs:5971:41	2515.5	R	2466545.57	1.000	whole	NOT MEASURED	0	INF	n/a	0	0	0	UNMEASURED	-	corpus
+corpus_8bitdata_t8	src/refmvs.rs:645:25	1606.2	R	1.00	1.000	whole	<= 1 B	13701	0	n/a	701	1551	3382	BLOCKED-0	-	corpus
+corpus_8bitdata_t8	src/refmvs.rs:1589:33	1589.5	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/refmvs.rs:715:25	1567.4	R	1.00	1.000	whole	<= 1 B	13373	1	n/a	673	1427	3084	COARSEN-1	-	corpus
+corpus_8bitdata_t8	src/env.rs:168:25	1498.3	R	1.00	1.000	whole	<= 1 B	9	4	n/a	9	9	9	COARSEN-4	-	corpus
+corpus_8bitdata_t8	src/safe_simd/mc_arm.rs:4741:25	1451.6	R	26.89	1.000	whole	<= 27 B	120639	0	n/a	62	308	1377	BLOCKED-0	-	corpus
+corpus_8bitdata_t8	src/looprestoration.rs:463:37	1368.4	R	245.10	1.000	whole	NOT MEASURED	108322	901	n/a	0	0	1	UNMEASURED	-	corpus
+corpus_8bitdata_t8	src/refmvs.rs:1674:16	1301.9	W	2.92	1.000	whole	<= 3 B	2634	6	n/a	84	263	803	COARSEN-6	-	corpus
+corpus_8bitdata_t8	src/refmvs.rs:1660:29	1301.9	R	1.00	1.000	whole	<= 1 B	15085	0	n/a	615	1440	3343	BLOCKED-0	-	corpus
+corpus_8bitdata_t8	src/env.rs:169:38	1294.2	R	1.00	1.000	whole	<= 1 B	9	8	n/a	9	9	9	COARSEN-8	-	corpus
+corpus_8bitdata_t8	src/refmvs.rs:1576:38	1236.6	W	1.00	1.000	whole	<= 1 B	108064	0	n/a	6684	20866	54794	BLOCKED-0	refmvs.rs:1576:38@0B	corpus
+corpus_8bitdata_t8	include/dav1d/picture.rs:589:26	1180.9	R	4096.00	1.000	whole	NOT MEASURED	0	INF	n/a	0	0	0	UNMEASURED	-	corpus
+corpus_8bitdata_t8	src/refmvs.rs:1554:33	1106.5	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/mc.rs:235:40	1024.1	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/lr_apply.rs:143:25	974.4	R	4.00	1.000	whole	<= 4 B	95734	512	n/a	0	0	1	COARSEN-512	-	corpus
+corpus_8bitdata_t8	src/recon.rs:3629:46	944.0	R	2.00	1.000	whole	<= 2 B	10	4	n/a	10	10	10	COARSEN-4	-	corpus
+corpus_8bitdata_t8	src/recon.rs:3630:46	944.0	R	1.69	1.000	whole	<= 2 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/mc.rs:247:29	847.3	RW	12.97	1.000	whole	<= 13 B	2760	32	n/a	4	33	136	COARSEN-32	-	corpus
+corpus_8bitdata_t8	src/safe_simd/looprestoration_arm.rs:351:51	794.7	RW	250.02	1.000	whole	NOT MEASURED	65713	280	n/a	0	0	6	UNMEASURED	-	corpus
+corpus_8bitdata_t8	src/owned_recon.rs:630:39	753.9	R	22.01	1.000	whole	<= 22 B	26566	0	n/a	25	95	465	BLOCKED-0	-	corpus
+corpus_8bitdata_t8	src/env.rs:67:63	743.6	R	1.00	1.000	whole	<= 1 B	13	3	n/a	13	13	13	COARSEN-3	-	corpus
+corpus_8bitdata_t8	src/env.rs:67:32	743.6	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/refmvs.rs:1151:33	726.3	R	1.00	1.000	whole	<= 1 B	24770	0	n/a	1277	4382	13676	BLOCKED-0	-	corpus
+corpus_8bitdata_t8	src/refmvs.rs:1192:19	709.0	R	1.00	1.000	whole	<= 1 B	6022	3	n/a	303	689	1447	COARSEN-3	-	corpus
+corpus_8bitdata_t8	src/recon.rs:1404:41	689.9	RW	2.55	1.000	whole	<= 3 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/recon.rs:1403:46	689.9	RW	3.05	1.000	whole	<= 3 B	85	0	n/a	85	85	85	BLOCKED-0	-	corpus
+corpus_8bitdata_t8	src/env.rs:370:29	673.7	R	1.00	1.000	whole	<= 1 B	10	6	n/a	10	10	10	COARSEN-6	-	corpus
+corpus_8bitdata_t8	src/env.rs:377:30	672.6	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/owned_recon.rs:482:32	671.9	R	1.00	1.000	whole	<= 1 B	104000	27	n/a	12	137	688	COARSEN-27	-	corpus
+corpus_8bitdata_t8	src/env.rs:409:30	662.3	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/env.rs:448:30	662.1	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/env.rs:398:29	661.9	R	1.00	1.000	whole	<= 1 B	15	5	n/a	15	15	15	COARSEN-5	-	corpus
+corpus_8bitdata_t8	src/env.rs:437:29	661.8	R	1.00	1.000	whole	<= 1 B	9	8	n/a	9	9	9	COARSEN-8	-	corpus
+corpus_8bitdata_t8	src/env.rs:379:24	651.8	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/env.rs:378:26	651.8	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/env.rs:372:24	651.5	R	1.00	1.000	whole	<= 1 B	18	2	n/a	18	18	18	COARSEN-2	-	corpus
+corpus_8bitdata_t8	src/env.rs:371:26	651.5	R	1.00	1.000	whole	<= 1 B	15	9	n/a	15	15	15	COARSEN-9	-	corpus
+corpus_8bitdata_t8	src/decode.rs:3127:34	651.0	W	4.16	1.000	whole	<= 4 B	214	0	n/a	214	214	214	BLOCKED-0	-	corpus
+corpus_8bitdata_t8	src/decode.rs:3128:35	651.0	W	3.48	1.000	whole	<= 3 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/env.rs:414:32	642.3	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/env.rs:410:32	642.3	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/env.rs:415:24	642.3	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/env.rs:449:32	642.1	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/env.rs:454:24	642.1	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/env.rs:453:32	642.1	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/env.rs:399:32	640.8	R	1.00	1.000	whole	<= 1 B	9	0	n/a	9	9	9	BLOCKED-0	-	corpus
+corpus_8bitdata_t8	src/env.rs:404:24	640.8	R	1.00	1.000	whole	<= 1 B	14	4	n/a	14	14	14	COARSEN-4	-	corpus
+corpus_8bitdata_t8	src/env.rs:403:32	640.8	R	1.00	1.000	whole	<= 1 B	11	3	n/a	11	11	11	COARSEN-3	-	corpus
+corpus_8bitdata_t8	src/env.rs:438:32	640.6	R	1.00	1.000	whole	<= 1 B	7	9	n/a	7	7	7	COARSEN-9	-	corpus
+corpus_8bitdata_t8	src/env.rs:443:24	640.6	R	1.00	1.000	whole	<= 1 B	11	5	n/a	11	11	11	COARSEN-5	-	corpus
+corpus_8bitdata_t8	src/env.rs:442:32	640.6	R	1.00	1.000	whole	<= 1 B	9	3	n/a	9	9	9	COARSEN-3	-	corpus
+corpus_8bitdata_t8	src/decode.rs:3131:48	575.4	W	1.95	1.000	whole	<= 2 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/decode.rs:3130:47	575.4	W	2.27	1.000	whole	<= 2 B	108	0	n/a	108	108	108	BLOCKED-0	-	corpus
+corpus_8bitdata_t8	src/safe_simd/looprestoration_arm.rs:1226:51	573.7	RW	233.17	1.000	whole	NOT MEASURED	43545	1280	n/a	0	0	0	UNMEASURED	-	corpus
+corpus_8bitdata_t8	src/mc.rs:1393:44	492.8	R	8.00	1.000	whole	<= 8 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/refmvs.rs:1389:36	458.8	R	1.00	1.000	whole	<= 1 B	658	1	n/a	50	95	183	COARSEN-1	-	corpus
+corpus_8bitdata_t8	src/recon.rs:1984:31	435.5	R	1.00	1.000	whole	<= 1 B	4628	1	n/a	278	516	1067	COARSEN-1	-	corpus
+corpus_8bitdata_t8	src/recon.rs:2012:41	424.8	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/recon.rs:2011:52	424.8	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/refmvs.rs:1379:36	424.5	R	1.00	1.000	whole	<= 1 B	642	8	n/a	41	110	213	COARSEN-8	-	corpus
+corpus_8bitdata_t8	src/refmvs.rs:1120:19	406.4	R	1.00	1.000	whole	<= 1 B	3868	4	n/a	178	483	958	COARSEN-4	-	corpus
+corpus_8bitdata_t8	src/decode.rs:492:41	385.4	R	1.00	1.000	whole	<= 1 B	4497	4	n/a	247	471	1004	COARSEN-4	-	corpus
+corpus_8bitdata_t8	src/mc.rs:390:70	360.7	R	1.00	1.000	whole	<= 1 B	1484	14170	n/a	0	0	0	COARSEN-14170	-	corpus
+corpus_8bitdata_t8	src/safe_simd/mc_arm.rs:4862:25	350.3	R	24.71	1.000	whole	<= 25 B	23688	8	n/a	15	109	352	COARSEN-8	-	corpus
+corpus_8bitdata_t8	src/decode.rs:311:32	335.9	R	1.00	1.000	whole	<= 1 B	3	7	n/a	3	3	3	COARSEN-7	-	corpus
+corpus_8bitdata_t8	src/decode.rs:312:27	335.9	R	1.00	1.000	whole	<= 1 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/decode.rs:2898:57	323.1	R	4.15	1.000	whole	<= 4 B	0	INF	n/a	0	0	0	COARSENABLE-INF	-	corpus
+corpus_8bitdata_t8	src/decode.rs:458:26	321.6	R	1.00	1.000	whole	<= 1 B	3997	0	n/a	206	444	923	BLOCKED-0	-	corpus

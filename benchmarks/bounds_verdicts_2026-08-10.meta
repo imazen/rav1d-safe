@@ -1,0 +1,255 @@
+# Per-site VERDICTs + the standing extent gate — 2026-08-10
+
+Branch `probe/bounds-verdict`, based on `probe/bounds-map` @ `be55376`
+(itself on `main` @ `f87b12c`). Host: macOS aarch64 (Darwin 25.5.0).
+
+Two products:
+
+1. `bounds_verdicts_2026-08-10.tsv` — the per-site verdict table, derived by
+   `scripts/perf/bounds_verdicts.py` from `bounds_map_raw_2026-08-10.tar.zst`.
+   **Deterministic**: no new decoding, no new instrumentation. Re-run
+   `python3 scripts/perf/bounds_verdicts.py <extracted-raw-dir>` and every table
+   in `docs/BOUNDS_MAP.md` Part 2 regenerates byte-for-byte.
+2. The standing extent gate itself — `include/dav1d/picture.rs::note_pic_extent`
+   + `PIC_EXTENT_CEILINGS` + `tests/guard_extent_budget.rs` + CI `extent-gate`.
+   This one IS a new measurement; its numbers are below.
+
+## NO WALL-CLOCK NUMBER HERE
+
+Nothing timed was run. `measlock` was therefore not needed and not taken. Every
+build and test was `nice -n 19`. The gate's own counters are under
+`--features probe-sites`, which perturbs the decoder; no timing claim is made
+from that build or any other.
+
+## 1. The verdict table — what is derived, and from what
+
+Input is the same eight cells as `bounds_map_2026-08-10.meta`; no cell was
+re-run. Verdict rules are stated in the script's module docstring and in
+`docs/BOUNDS_MAP.md` Part 2, and are applied mechanically.
+
+Conflict facts come from `corpus 8-bit/data` t=8 where the site runs there and
+from `v4k_8tile` t=8 otherwise; the TSV's last column records which.
+
+Class shares over the corpus cell's 936,867,496 registrations:
+
+| class | registrations | share |
+|---|---|---|
+| COARSENABLE-N (finite budget) | 407,958,230 | 43.5% |
+| COARSENABLE-INF (no concurrent writer, ever) | 288,180,835 | 30.8% |
+| BLOCKED (butt-adjacent write) | 229,489,855 | 24.5% |
+| UNMEASURED (`fp_kind = whole`, large) | 11,238,576 | 1.2% |
+
+(The 30.8% here counts by verdict class; counting directly by
+`n_conc_mut == 0` gives 293,787,973 = 31.4%, the difference being sites that
+are also UNMEASURED. Both numbers are in `docs/BOUNDS_MAP.md`; the 31.4% is the
+one to quote for "cannot collide".)
+
+### Corrections this pass forced on the previous record
+
+* **`loopfilter.rs:710:14`'s nearest concurrent writer is
+  `loopfilter.rs:887:14` at 60 B, not `cdef_arm.rs:622:9` at 232 B.** The 232
+  was a per-pair figure quoted as the site's; `BCONC`'s `min_gap_mut` said 60
+  all along. Errata added to `bounds_map_2026-08-10.meta`; fixed in
+  `docs/OWNERSHIP_MODELS.md` §7d and `docs/AGENT_BRIEF.md`.
+* **205 of 253 sites never execute on either 4K gap vector**, and only 49.5% of
+  corpus registrations land at a site the 4K vector runs at all. `src/mc*` is
+  **0** there (33.0% of the corpus) because `photo_4k.avif` is an all-intra
+  still; `looprestoration`/`lr_apply`, `refmvs` and `picture.rs:2027:22` are
+  likewise 0. The previously-recorded blindness ("LR is off in both 4K
+  vectors") is a subset of a much larger one.
+
+## 2. The standing extent gate — the measurement behind the ceilings
+
+Instrument: `extent_budget` in `include/dav1d/picture.rs`, compiled under
+`debug_assertions` or `--features probe-sites`. It records, per source FILE,
+the largest partial picture-plane reservation taken while
+`tile_threading_active()` and the largest number of picture rows one spanned.
+
+Corpus: the 30 committed `tests/crash_vectors/*.obu` plus every `.ivf` in
+`dav1d-test-data` `8-bit/data` (358) and `10-bit/data` (71), 4 frames each,
+`threads = 8`, `max_frame_delay = 1` (pure tile threading). Release build.
+
+    checks                      575,577,925
+    checks under tile threading 575,577,925
+    whole-component exempt        5,740,796
+    frames                            1,734
+    MAX_ROWS_TT                           1
+
+| file | max B | registrations | ceiling shipped |
+|---|---|---|---|
+| `src/owned_recon.rs` | 3840 | 26,070,390 | one row |
+| `src/lf_apply.rs` | 3840 | 95,292 | one row |
+| `src/cdef_apply.rs` | 3840 | 72,788,816 | one row |
+| `src/mc.rs` | 640 | 79,807,872 | one row |
+| `src/looprestoration.rs` | 352 | 1,992,021 | one row |
+| `src/safe_simd/looprestoration_arm.rs` | 352 | 1,984,455 | one row |
+| `src/safe_simd/mc_arm.rs` | 128 | 45,093,084 | one row |
+| `include/dav1d/picture.rs` | 128 | 63,952,504 | one row |
+| **`src/loopfilter.rs`** | **32** | **90,170,282** | **32** |
+| `src/safe_simd/cdef_arm.rs` | 24 | 192,238,382 | 32 |
+| `src/lr_apply.rs` | 8 | 1,384,827 | 32 |
+
+Only the three constant-bounded files get a tight entry. `MAX_ROWS_TT = 1` over
+all 575 M is the strongest fact here: under tile threading the shipped decoder
+never reserves across a picture row boundary.
+
+**Not covered by this measurement:** 12-bit, the `multi-bit` / `oss-fuzz` /
+`8-bit/{issues,size,intra,mv,mfmv,resize,vq_suite,cdfupdate,quantizer}` groups,
+frames past the 4th of each vector, x86_64, wasm32, `asm`/`c-ffi`, `unchecked`,
+and t != 8. The three tight ceilings are nonetheless STRUCTURAL (`LF_BW = 16`
+px x 2 B; CDEF's <= 16 px; LR's 4 px), which is why they are safe to pin at the
+observed maximum rather than at the maximum plus slack.
+
+## 3. Teeth — planted and fired, restored byte-exact
+
+| plant | result |
+|---|---|
+| baseline | ok |
+| `--features __probe_lf_hull` + `RAV1D_LF_HULL=1` (#475's shape; the switch is already in the tree, **no source edit**) | **FAILED**: 17 in-decoder panics `src/loopfilter.rs:769:33 took a 1924 B picture-plane reservation ... spans 16 rows`, plus the test's `MAX_ROWS_TT` assertion at `left: 16, right: 1` |
+| LF per-row read `W` -> `W + 96` (the V-batch's shape, inside one row) | **FAILED**: in-decoder `src/loopfilter.rs:710:14 took a 100 B picture-plane reservation while tile threading is active; the measured ceiling for that file is 32 B`, and test-level `src/loopfilter.rs 220 B / ceiling 32 / rows 1  <-- OVER` (the test half only fires since `7a5a910` — see below) |
+| `unsafe { *(&0u8 as *const u8) }` planted in `tile_threading_active()` | **FAILED to compile**: `error: usage of an unsafe block`, anchored on `lib.rs:13 forbid(unsafe_code)` |
+| after restore | ok |
+
+Restores verified with `shasum -a 256 -c` on `src/loopfilter.rs`,
+`include/dav1d/picture.rs` and `tests/guard_extent_budget.rs` AND
+`git diff --exit-code`, then `touch`ed and re-run per the mtime trap in
+`docs/MUT_RECON_KERNELS.md` §7.
+
+**The mutation found a hole in the gate.** On the first pass mutation 2 fired the
+in-decoder panic but NOT the test's `<-- OVER` flag, because the test-level check
+was `bytes > ceiling && rows > 1` — so a widening confined to one row, which is
+the V-batch's shape and #485's, was invisible to the assertion that is supposed
+to restate the invariant. Fixed in `7a5a910`; both halves now apply the same
+bound. Recorded because "the gate's two halves disagreed" is only findable by
+mutation, never by reading.
+
+## 4. The V-batch's soundness TEST, contradicted (a PREDICTION, and one observation against it)
+
+`LF_BATCH_V` 4 -> 32 is **not in flight**: PR #488 built it, measured no
+wall-clock win (t=8 1.0005, p=1.000) and reverted it. What it keeps is the
+soundness argument, and that is what is contradicted here — its one-line test
+("does the reservation contain a byte no member of the batch reads?") is not the
+collision criterion. `DisjointMut` compares one LIVE reservation against
+another, and `fill_v`'s live reservation goes from 16 px to 128 px.
+
+| cell | widening | predicted collisions | x V-pass share (30.7%) |
+|---|---|---|---|
+| corpus `8-bit/data` t=8, 1406 frames | +112 B | 2 .. 16 | 0.6 .. 4.9 |
+| corpus `10-bit/data` t=8, 284 frames | +224 B | 0 .. 1 | 0.0 .. 0.3 |
+| `v4k_8tile` t=8 / `v4k_8tile_10b` t=8 | +112 / +224 B | 0 | 0 |
+
+**Against it:** PR #488 reports corpus 766/766 at t=1 and 753/753 at t=8 on the
+implementation. **Why that does not settle it:** the same PR planted a genuine
+over-reservation (un-chunked write-back) and measured 358/358 clean on
+`8-bit/data --threads 8`, and #485 measured 1, 2 and **0** on three passes of
+that group. One pass cannot resolve a ~1-5-per-pass rate. Not confirmed, not
+refuted; the settling measurement is one `--features __probe_bounds` corpus pass
+on top of `61f88dc`.
+
+**Unsettled and important:** a collision here is necessarily on a byte the run
+DOES read, so it is either a true ordering hazard (the fused run reads all 32
+tap windows up front, possibly before their writers are done — wrong pixels in
+an `unchecked` build) or a spurious panic. Which one depends on the sbrow-filter
+task's ordering contract, which neither PR #488 nor this map establishes.
+
+This branch never built `61f88dc`; it was read with `git show` and its worktree
+was not touched.
+
+Caveats: the histogram is not split H vs V (the 30.7% scaling is an assumption);
+it is direction-blind (a one-sided widening collides with ~half the column);
+`min_gap_mut = 60` is an observed minimum; and the standing check's `rows` metric
+is `bytes.div_ceil(row_bytes)`, which is alignment-blind, so on the corpus's
+small frames a 60-byte gap may be a different row rather than an adjacent column.
+
+### The DEBUG leg, proved
+
+`tests/mt_stress.rs` is the debug-mode carrier (most integration tests
+`compile_error!` in debug; `tests/reproduce_overlap.rs` is entirely `#[ignore]`d).
+
+| | |
+|---|---|
+| `cargo test --test mt_stress`, DEBUG, default features, no probe | ok, 98.75 s |
+| the same with the LF read widened `W` -> `W + 96` | **FAILED**: `rav1d-worker-0 panicked at src/loopfilter.rs:710:14: took a 110 B picture-plane reservation ...; the measured ceiling for that file is 32 B` |
+| after restore | `git diff --exit-code` clean |
+
+## 5. Correctness gates, this branch
+
+**Re-run at `38f314b`, the last code-touching commit.** The first corpus pass
+was taken at `84387d5`; two later commits touched code
+(`7a5a910` tightened the gate's own assertion, `38f314b` fixed a clippy lint in
+its summary print), so the whole corpus was re-run afterwards rather than
+inherited. The two passes are byte-identical by name with the actual MD5 as the
+value — 0 differences over 768 keys at t=1 and 755 at t=8 — which is what a
+`tests/`-only change should produce, and is now checked rather than assumed.
+
+### Corpus, by name, with the ACTUAL MD5 as the value
+
+`examples/md5_inventory`, release, aarch64. Records:
+`bounds_verdict_md5_{t1,t8}_2026-08-10.tsv.zst`.
+
+| comparison | keys | only-in-A | only-in-B | DIFFERENT (status or actual MD5) |
+|---|---|---|---|---|
+| `aarch64_md5_fixes_2026-08-07_final` vs head t=1 | 768 | 0 | 0 | **0** |
+| head t=1 vs head t=8 | 755 shared | 13 | 0 | **0** |
+| `..._2026-08-07_final` vs head t=8 | 755 shared | 13 | 0 | **0** |
+
+head t=1: **766 PASS**, 2 SKIP, 0 FAIL.
+head t=8: **753 PASS**, 2 SKIP, 0 FAIL.
+
+**The 13 missing at t=8 are the film-grain groups, and the reason is
+PRE-EXISTING (#479), verified on the base branch by direct A/B.** A single
+whole-corpus `md5_inventory --threads 8` run does not finish at all: the first
+`8-bit/film_grain` vector panics with
+
+    overlapping DisjointMut:
+     current: &mut _[0..147456] ... existing: &mut _[0..147456]
+
+— a whole-plane mutable guard taken concurrently — after which
+`src/thread_task.rs:534` unwraps a `None` and the process dies, truncating the
+run at 572 rows. Running the same binary from `probe/bounds-map` @ `be55376`
+(this branch's parent, i.e. `main` @ `f87b12c` + the probe) produces **the same
+572 rows, the same 569 PASS / 2 SKIP, and the same panic**. So the t=8 numbers
+above were taken per group with the two film-grain groups excluded, which is
+exactly the exclusion `bounds_map_2026-08-10.meta` already records for the
+bounds probe. This branch neither causes nor fixes it.
+
+### Standing hazards, `--features __probe_wide`
+
+`crates/` is byte-identical to the base (`git diff be55376 -- crates/` empty),
+and `tracker_shard.rs` still hashes to the `d4e03d4a…423176d` recorded in
+`docs/MUT_RECON_KERNELS.md` §7. Run anyway:
+
+| plant | `wide_exclusion` |
+|---|---|
+| baseline | ok (0.28 s) |
+| the `4af62ae` in-lock `state` re-read deleted from `add_contended` alone | **FAILED** |
+| `active()` cut to one shard | **FAILED** |
+| after both restores | ok (0.28 s) |
+
+Both restored byte-exact (`shasum -a 256 -c` OK, `git diff --exit-code -- crates/`
+clean) and re-run after `touch`.
+
+### Miri, both models, each target in isolation
+
+`cargo +nightly miri test -p rav1d-disjoint-mut --no-fail-fast`:
+
+| model | result |
+|---|---|
+| Stacked Borrows | **61 passed, 0 failed**, 0 UB (9 targets; `soundness` 992.7 s) |
+| Tree Borrows (`-Zmiri-tree-borrows`) | **61 passed, 0 failed**, 0 UB (9 targets; `soundness` 993.1 s) |
+
+### Everything else
+
+| gate | result |
+|---|---|
+| `cargo test --lib` RELEASE | 75 passed, 0 failed, 8 ignored |
+| `cargo test --lib` DEBUG | 75 passed, 0 failed, 8 ignored |
+| `cargo build --release` warnings | 0 (the funnel hook is `#[cfg]`-ed out entirely) |
+| `cargo build` (debug) warnings | 0 |
+| `cargo build --release --features probe-sites` warnings | 0 |
+| `cargo fmt --all -- --check` | clean |
+| `clippy --no-default-features --features bitdepth_8,bitdepth_16 -- -D warnings` | clean |
+| the same, `--target x86_64-unknown-linux-gnu` | clean |
+| `clippy --features c-ffi,... --target x86_64-unknown-linux-gnu -- -D warnings` | clean |
+| `clippy --features c-ffi,...` on **macOS** | fails — `Rav1dError::EAGAIN as u8 == libc::EAGAIN as u8` (35 vs 11). **Pre-existing**: identical failure reproduced on the base branch. |
+| `forbid(unsafe_code)` | proved ACTIVELY: an `unsafe` block planted in `tile_threading_active()` fails the build, anchored on `lib.rs:13` |
