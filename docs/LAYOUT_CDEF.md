@@ -630,8 +630,14 @@ the surplus is exactly the disjoint-mut workflow firing on both the branch push
 and the pull request.
 
 Notably `Test (ubuntu-latest, --features std,__probe_count,__probe_sites)` —
-the leg that failed locally on a throughput floor while Miri shared the box —
-**passes on CI, twice**.
+the leg that fails locally on a throughput floor (and fails identically at the
+base commit) — **passes on CI, twice**.
+
+One CI leg failed once on infrastructure, not code: `Wide-path exclusion gate`
+died in `actions/checkout` with `server certificate verification failed` before
+running anything. The same command passes locally
+(`a_wide_borrow_excludes_every_narrow_shard ... ok`). It is re-run rather than
+reported as a code failure — but it is reported.
 
 ## 7. What the next round should do
 
