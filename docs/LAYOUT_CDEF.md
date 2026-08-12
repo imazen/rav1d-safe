@@ -290,18 +290,47 @@ CPU agrees (`a0rows`: 0.9867 / 0.9836 / 0.9794 / 0.9802 / 1.0000, signs
   collapse by ~1.3–1.8x. A doubling is still not a forecast — but a doubling
   discounted by a `fill`-calibrated `tau` was within a factor of two, which is
   the first time this campaign could price an unbuilt collapse at all.
-* **`c256x2048` finally moves.** −2.06% wall, **12 of 12**, on the cell that has
-  declined a count cut, a coarser shard, a finer shard, the waiting policy and
-  `fill`'s own rectangle. That is the fifth lever tried there and the first that
-  pays.
+* **`c256x2048` moves in the `a0` family and NOT in the `a4` one — so it is not
+  a result.** `a0rows` reads 0.9794 (12/12) against the pad and 0.9910 (11/12)
+  against `a0plain`, on the cell that has declined a count cut, a coarser shard,
+  a finer shard, the waiting policy and `fill`'s own rectangle. But the SAME
+  mechanism in the 16-byte-aligned family reads **`a4rows`/`a4plain` = 1.0007
+  (6/12)** — a coin flip. The 1024-family win replicates across both families
+  (below); this one does not, so `c256x2048` stays on the declined list and the
+  headline is the 1024 family only.
 * **The two mechanisms compose super-additively on the 1024 family**:
   0.9754 × 0.9829 = 0.9587 predicted, 0.9559 measured (`c1024x192`);
   0.9804 × 0.9850 = 0.9657 vs 0.9551 (`c1024x384`);
   0.9791 × 0.9848 = 0.9641 vs 0.9608 (`c1024x576`). Composed, **−3.9% to −4.5%
   wall at t=8** — the largest t=8 win in the campaign's record.
 
-**Unexplained, and named as such:** why `c256x2048` responds to this collapse and
-not to `fill`'s. The two differ in the shard-set size of the record that
+### 4c. The win REPLICATES inside the aligned family — which is the point of §3
+
+The same 10-arm grid carries the mechanism in the 16-byte-aligned family, paired
+against `a4plain` (its own unpadded build) with `a4pad2` as that family's inert
+layout control:
+
+| cell t=8 | `a4rows`/`a4plain` | sign | `a4pad2`/`a4plain` | sign | `a0rows`/`a0pad2` (for comparison) |
+|---|---|---|---|---|---|
+| `c1024x192` | **0.9801** | **10/10** | 1.0000 | 4/10 | 0.9754 (9/10) |
+| `c1024x384` | **0.9734** | **11/11** | 0.9945 | 8/11 | 0.9804 (11/11) |
+| `c1024x576` | **0.9801** | **9/9** | 0.9924 | 6/9 | 0.9791 (9/9) |
+| `c256x2048` | 1.0007 | 6/12 | 0.9905 | 8/12 | 0.9794 (12/12) |
+| `text_q20` (zero CDEF regs) | 0.9925 | 7/11 | 0.9962 | 6/11 | 1.0038 (4/11) |
+
+**−2.0% to −2.7% on the 1024 family in a binary where a layout draw cannot hide
+in the number**, which is what §3 was for. And it is the aligned family that
+exposes `c256x2048` as a non-result.
+
+Note also that the aligned family's own layout control moves ±0.95% at t=8
+(`a4pad2` 0.9905–1.0000) against the unaligned family's ±1.13% (`a0pad2`
+0.9887–1.0091) — **alignment is NOT shown to stabilise t=8.** One rung per
+family is not a spread, and this round did not sweep the rungs at t=8; §3's
+finding is a t=1 finding.
+
+**Unexplained, and named as such:** why `c256x2048` responds to this collapse in
+one layout and not the other, and why it responds at all when it does not to
+`fill`'s. The two differ in the shard-set size of the record that
 replaces the rows (CDEF's hull is **1.000** blocks there, `fill`'s is 2.090, and
 79.6% of `fill`'s accepted rectangles are multi-shard) and in marginal price
 (3.27 vs 2.42–2.71 ns). But on the 1024-wide family CDEF's own rectangles are
