@@ -160,6 +160,32 @@ padding cost.** That distinction is the whole of §5, and it is a decomposition,
 not a measurement of a third binary: no arm here isolates "aligned, and also
 lucky".
 
+### 3b2. The intercept, since every ratio here comes from a two-point fit
+
+`tiled_wallcpu.sh` fits `total = a + b·frames` at two frame counts and every
+ratio in this document is a ratio of `b`, so `a` — process exec, AVIF parse,
+decoder construction, pool spin-up — is differenced out rather than reported.
+It is reported here, median over rounds, for the shipped arm and `main`'s:
+
+| cell | arm | intercept `a` (ms) | slope `b` (ms/frame) | `a` as % of the `n_hi` run |
+|---|---|---|---|---|
+| `v4k8tile` t=1 | `a0plain` | 337.3 | 294.806 | 2.8% |
+| `v4k8tile` t=1 | `a0both` | 334.7 | 295.083 | 2.8% |
+| `c1024x576` t=1 | `a0plain` | 19.8 | 13.928 | 0.7% |
+| `c1024x576` t=1 | `a0both` | 19.4 | 13.911 | 0.7% |
+| `c1024x576` t=8 | `a0plain` | 7.0 | 2.953 | 1.2% |
+| `c1024x576` t=8 | `a0both` | 7.2 | 2.853 | 1.2% |
+| `c1024x192` t=8 | `a0plain` | 5.6 | 1.122 | 2.4% |
+| `c1024x192` t=8 | `a0both` | 6.3 | 1.078 | 2.8% |
+| `c256x2048` t=8 | `a0plain` | 8.6 | 3.733 | 1.1% |
+| `c256x2048` t=8 | `a0both` | 8.6 | 3.708 | 1.1% |
+| `text_q20` t=8 | `a0plain` | 6.6 | 1.472 | 2.2% |
+
+The intercept is **0.7% to 2.8%** of the long run and is **flat between the
+arms** — it never moves by more than 0.7 ms except at 4K, where it is 2.6 ms out
+of 335 (0.8%) and in the arm's FAVOUR. So the fit is not hiding a fixed cost in
+either direction, which is the thing a slope-only report cannot rule out.
+
 ### 3c. Not tried
 
 Basic-block alignment (`-align-all-nofallthru-blocks`) was **not measured** —
