@@ -220,6 +220,48 @@ records, so the added population is charged a scan cost the removed population
 does not refund at occupancy ~0.02. The prediction that follows — `tau` should be
 closer to 1 at low occupancy and fall as occupancy rises — is NOT tested here.
 
+### 4a. What was built: `__rows_rect`, one seam, both directions
+
+The five sites `docs/RECT_RECORDS.md` §7b names are not five pieces of code —
+they are four (five on 4:2:0 chroma) call sites of **two helpers**,
+`Rav1dPictureDataComponentOffset::for_rows` and `for_rows_mut`
+(`include/dav1d/picture.rs`). So the collapse is one change at that seam, not a
+per-site edit, and it needs the MUTABLE rectangle the tracker did not have:
+
+* `crates/rav1d-disjoint-mut`: `DisjointMutRectGuard` (`row_mut(&mut self)`, so
+  at most one row reference is live at a time and no `&mut [_]` wider than one
+  row is ever created), `DisjointMut::index_rect_mut{,_as}`, and `add_rect_mut`
+  un-`cfg(test)`-ed. All behind the crate feature `__rect_mut`, so a DEFAULT
+  build does not even grow a public symbol it never calls — which matters here
+  for the reason §3 measures.
+* the geometry validation `index_rect_inner` did inline is now
+  `rect_geometry`, shared by the immutable and mutable constructors so the two
+  cannot disagree about what is representable.
+* `include/dav1d/picture.rs`: both helpers try the rectangle first under tile
+  threading, and fall through to the unchanged per-row loop on refusal.
+
+**Liveness, checked before any clock** (`probe-wide`, `c1024x576`, t=8, 10
+iters + warmup):
+
+| arm | `n_rect` | declined | % multi-shard | `w_shards` | `w_blocks` | `w_full` |
+|---|---|---|---|---|---|---|
+| base | **0** | 0 | — | 1,530 | 0 | 0 |
+| `__rows_rect` | **167,552** (15,232/frame) | **0** | 92.8% | 1,530 | 0 | 0 |
+| `__lf_rect,__rows_rect` | 402,556 | 0 | 91.5% | 1,530 | 0 | 0 |
+
+15,232/frame is **exactly** the four sites' call count from the bounds probe
+(3,776 × 3 + 3,904), so every CDEF `for_rows`/`for_rows_mut` on this cell is
+representable and none is declined. The registration population goes
+529,092 → 422,468/frame (**−20.2%**). `w_shards` is IDENTICAL in all three arms
+and `w_blocks`/`w_full` stay 0, so the rectangle never promotes to the wide path
+(a promotion would degrade it to its hull and could refuse a legitimate borrow).
+
+**Correctness, before any clock**: the 766-vector corpus passes at t=1 AND t=8
+in the `__rows_rect` arm with no `--skip-group` (`766 PASS + 2 SKIP,
+mismatch=0 error=0`), set-diffed BY NAME against
+`benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst` — CLEAN at both — and
+all ten timed arms produce ONE md5 per cell at both thread counts.
+
 ## 5. The rectangle default
 
 ## 6. Gates
