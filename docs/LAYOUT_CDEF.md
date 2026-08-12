@@ -274,8 +274,21 @@ iters + warmup):
 
 15,232/frame is **exactly** the four sites' call count from the bounds probe
 (3,776 × 3 + 3,904), so every CDEF `for_rows`/`for_rows_mut` on this cell is
-representable and none is declined. The registration population goes
-529,092 → 422,468/frame (**−20.2%**). `w_shards` is IDENTICAL in all three arms
+representable and none is declined. That removes 121,856 − 15,232 = 106,624
+registrations/frame, i.e. 529,092 → 422,468 (**−20.2%**) for the CDEF seam
+alone. **Measured with `probe-sites` on the flipped default** (both rectangles,
+`lost = 0`), the composed population is:
+
+| cell t=8 | base | both rectangles | delta |
+|---|---|---|---|
+| `c1024x192` | 156,777 | **73,701** | **−53.0%** |
+| `c1024x384` | 333,863 | **155,794** | **−53.3%** |
+| `c1024x576` | 529,092 | **253,200** | **−52.1%** |
+| `c256x2048` | 569,690 | **271,389** | **−52.4%** |
+
+**The decoder's borrow-registration population is halved**, and — per the
+corrected cost model in `docs/AGENT_BRIEF.md` §6 — that is emphatically NOT the
+same statement as the wall win, which is −3.9% to −4.5%. `w_shards` is IDENTICAL in all three arms
 and `w_blocks`/`w_full` stay 0, so the rectangle never promotes to the wide path
 (a promotion would degrade it to its hull and could refuse a legitimate borrow).
 
@@ -561,6 +574,20 @@ and Tree Borrows, DEFAULT features (the rectangle IS the default now), ONE
 TARGET AT A TIME. Record `benchmarks/layout_miri_2026-08-11.tsv`.
 
 *(table below)*
+
+### 6d. CI
+
+PR **#513**. This branch touches `crates/rav1d-disjoint-mut/**`, so the 13
+path-filtered legs in `disjoint-mut-ci.yml` — **including BOTH Miri models**,
+which run the whole package with `--no-fail-fast` on Linux and therefore cover
+`shard_liveness`, the target that times out locally — fire without
+`workflow_dispatch`. **49 distinct checks reported**, against #505/#506's 33–35;
+the surplus is exactly the disjoint-mut workflow firing on both the branch push
+and the pull request.
+
+Notably `Test (ubuntu-latest, --features std,__probe_count,__probe_sites)` —
+the leg that failed locally on a throughput floor while Miri shared the box —
+**passes on CI, twice**.
 
 ## 7. What the next round should do
 
