@@ -25,6 +25,35 @@ fn dav1d_test_data() -> PathBuf {
     test_vectors::ensure_dav1d_test_data()
 }
 
+/// Worker-thread count for the conformance decode, from `RAV1D_MD5_THREADS`.
+///
+/// Defaults to 1, which is what `Settings::default()` gives and therefore what
+/// this suite has always run — so an unset variable changes nothing.
+///
+/// It is an env var read HERE rather than a second `#[test]` because the
+/// decision belongs to the caller and must be visible in the chain
+/// (CI workflow -> justfile -> invocation), per the project's rule against
+/// skip/spread decisions buried in a test body. `ci.yml` runs the corpus twice,
+/// once unset and once at 8.
+///
+/// Why this exists: until 2026-08-11 the corpus leg ran ONLY at the default of
+/// 1, so CI had no tile-threading coverage of the decoder at all. The x86_64
+/// t=8 deblock read/write race (#494/#497) — a V-window using a constant
+/// `tap_after = 7` instead of the mask-selected reach, reading 3 rows past its
+/// superblock row — could not have been caught here, and was not.
+///
+/// A malformed value is a hard error, not a silent fallback: a typo in a CI
+/// file must not quietly downgrade the gate to the single-threaded run it is
+/// meant to complement.
+fn md5_threads() -> u32 {
+    match std::env::var("RAV1D_MD5_THREADS") {
+        Ok(s) => s
+            .parse()
+            .unwrap_or_else(|e| panic!("RAV1D_MD5_THREADS={s:?} is not a u32: {e}")),
+        Err(_) => 1,
+    }
+}
+
 /// A test vector with its expected MD5 hash.
 struct TestVector {
     name: String,
@@ -154,6 +183,7 @@ fn compute_decode_md5_with_grain(
 
     let mut settings = Settings::default();
     settings.apply_grain = apply_grain;
+    settings.threads = md5_threads();
     let mut decoder =
         Decoder::with_settings(settings).map_err(|e| format!("Failed to create decoder: {e}"))?;
     let mut ctx = md5::Context::new();

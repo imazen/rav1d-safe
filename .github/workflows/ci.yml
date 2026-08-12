@@ -128,18 +128,47 @@ jobs:
 
       # Download test vectors and run the full dav1d MD5 conformance. Runs on x86
       # AND native arm64 (safe-simd-arm64) — the comprehensive aarch64 regression
-      # guard (issue #414). `continue-on-error` because aarch64 is not yet fully
-      # conformant (mc_arm 8-tap OOB on inter frames); this tracks the state and
-      # surfaces progress/regressions until it can become a hard gate.
+      # guard (issue #414).
+      #
+      # 2026-08-11: BOTH `continue-on-error`s removed and a t=8 leg added. The
+      # old comment justified them with "aarch64 is not yet fully conformant
+      # (mc_arm 8-tap OOB on inter frames)" — that is stale. The corpus now
+      # passes 766/766 on aarch64 AND x86_64 at t=1, and 766/766 at t=8 on
+      # aarch64, with nothing skipped (#455 campaign; 302/766 at its start).
+      #
+      # Both flags together made this gate unable to report anything: a failed
+      # download fell through to a run with no vectors, which then also could
+      # not fail. And `Settings::default()` is `threads: 1`, so the only leg
+      # that ran had NO tile-threading coverage — which is precisely why the
+      # x86_64 t=8 deblock race (#494/#497) reached main. The t=8 leg below is
+      # the cheapest thing that would have caught it.
+      #
+      # The download is retried instead of ignored: a network flake should cost
+      # a retry, not silently disarm the conformance suite.
       - name: Download test vectors
         if: (matrix.label == 'safe-simd' || matrix.label == 'safe-simd-arm64') && runner.os == 'Linux'
-        run: bash scripts/download-test-vectors.sh
-        continue-on-error: true
+        run: |
+          for attempt in 1 2 3; do
+            if bash scripts/download-test-vectors.sh; then exit 0; fi
+            echo "download-test-vectors.sh failed (attempt $attempt/3); retrying in $((attempt * 10))s" >&2
+            sleep $((attempt * 10))
+          done
+          echo "download-test-vectors.sh failed after 3 attempts" >&2
+          exit 1
 
-      - name: Run MD5 decode parity tests
+      - name: Run MD5 decode parity tests (t=1)
         if: (matrix.label == 'safe-simd' || matrix.label == 'safe-simd-arm64') && runner.os == 'Linux'
         run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }}" --release --test decode_md5_verify
-        continue-on-error: true
+
+      # Tile-threaded conformance. Same 766 vectors, same expected MD5s — a
+      # decode that changes with the worker count is a bug in the threading, and
+      # this is the gate that says so. `RAV1D_MD5_THREADS` is read by the test
+      # and defaults to 1, so the leg above is unaffected by its existence.
+      - name: Run MD5 decode parity tests (t=8, tile threading)
+        if: (matrix.label == 'safe-simd' || matrix.label == 'safe-simd-arm64') && runner.os == 'Linux'
+        env:
+          RAV1D_MD5_THREADS: 8
+        run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }}" --release --test decode_md5_verify
 
   # ==========================================================================
   # Clippy lint check
