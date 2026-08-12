@@ -116,6 +116,15 @@ __lf_rect1 = ["__lf_rect", "rav1d-disjoint-mut/__rect_1shard"]
 # in ONE binary — the LF_DOUBLE shape, applied to the five sites
 # docs/RECT_RECORDS.md §7b named. See `picture::cdef_double_reads`.
 __probe_cdef_double = []
+# MEASUREMENT ARM for the strided-RECTANGLE record at the `for_rows` /
+# `for_rows_mut` seam: ONE exact `h x w` registration (immutable for the read
+# helper, MUTABLE for the write one) instead of `h` per-row ones, under tile
+# threading. On every cell this campaign times, the population at that seam is
+# the CDEF sites `docs/RECT_RECORDS.md` §7b named — priced at +3.9% to +7.4% of
+# WALL by `__probe_cdef_double` — so this is the collapse that pricing was for.
+# Absent from `default`. See `include/dav1d/picture.rs::for_rows{,_mut}` and
+# `docs/LAYOUT_CDEF.md`.
+__rows_rect = ["rav1d-disjoint-mut/__rect_mut"]
 # LAYOUT-NOISE CONTROL (measurement only): never-executed `__text` emitted from
 # src/loopfilter.rs, so every hot symbol keeps a byte-identical instruction
 # stream and only its ADDRESS moves. This is the control the rectangle round did

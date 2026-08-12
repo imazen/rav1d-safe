@@ -1555,6 +1555,100 @@ impl<'a, T: ?Sized + AsMutPtr, V> Drop for DisjointImmutRectGuard<'a, T, V> {
     }
 }
 
+/// [`DisjointImmutRectGuard`], exclusively — a live EXCLUSIVE borrow of `rows`
+/// segments of `seg` elements, `stride` elements apart, registered as ONE
+/// tracker record (`add_rect_mut`) whose footprint is exactly those segments.
+///
+/// Everything the shared guard's type-level docs say about why this is neither
+/// a hull nor the reverted March-2026 strided tracker applies unchanged; the
+/// two differences are:
+///
+/// * the record is MUTABLE, so the tracker's `find::<true>` scan rejects a
+///   concurrent reader of any of the `rows` segments exactly as the `rows`
+///   per-row mutable guards it replaces would have; and
+/// * [`Self::row_mut`] takes `&mut self`, so **at most one row reference exists
+///   at a time**. That is what keeps this sound without ever materialising a
+///   `&mut [V]` wider than one row: the rows are pairwise disjoint (the
+///   constructor requires `|stride| >= seg`), and borrowck serialises them
+///   anyway.
+#[cfg(any(test, feature = "__rect_mut"))]
+pub struct DisjointMutRectGuard<'a, T: ?Sized + AsMutPtr, V> {
+    /// Row 0's first element; for a NEGATIVE stride, the highest-address row.
+    base: NonNull<V>,
+    /// Elements per row.
+    seg: usize,
+    rows: usize,
+    /// Elements between successive rows; may be negative.
+    stride: isize,
+    phantom: PhantomData<(&'a mut V, &'a DisjointMut<T>)>,
+    parent: Option<&'a DisjointMut<T>>,
+    borrow_id: checked::BorrowId,
+}
+
+// SAFETY: the same reasoning as `DisjointMutGuard`'s, whose auto-trait bounds
+// these mirror: the guard is a pointer plus `Option<&DisjointMut<T>>`, and the
+// bytes it points at are exclusively borrowed for its whole life, so sending it
+// needs what sending a `&'a mut [V]` needs.
+#[cfg(any(test, feature = "__rect_mut"))]
+unsafe impl<T: ?Sized + AsMutPtr + Sync, V: Send> Send for DisjointMutRectGuard<'_, T, V> {}
+// SAFETY: as above; sharing the guard hands out no `&mut` (that needs `&mut
+// self`), so sharing it shares only shared references.
+#[cfg(any(test, feature = "__rect_mut"))]
+unsafe impl<T: ?Sized + AsMutPtr + Sync, V: Sync> Sync for DisjointMutRectGuard<'_, T, V> {}
+
+#[cfg(any(test, feature = "__rect_mut"))]
+impl<'a, T: ?Sized + AsMutPtr, V> DisjointMutRectGuard<'a, T, V> {
+    /// Elements per row.
+    #[inline(always)]
+    pub fn seg(&self) -> usize {
+        self.seg
+    }
+
+    /// Rows the guard covers.
+    #[inline(always)]
+    pub fn rows(&self) -> usize {
+        self.rows
+    }
+
+    /// Row `r` of the rectangle, exclusively.
+    ///
+    /// # Panics
+    ///
+    /// If `r >= self.rows()`.
+    #[inline(always)]
+    pub fn row_mut(&mut self, r: usize) -> &mut [V] {
+        assert!(r < self.rows, "row index out of range");
+        // SAFETY: the MUTABLE registration covering exactly these `rows`
+        // segments is live for as long as the guard is (retired only in
+        // `Drop`), so no other borrow overlaps any of them. `r < rows`, and the
+        // constructor proved every row lies inside the allocation, so the
+        // offset is in bounds and the `seg` elements from it are writable.
+        // `&mut self` ties the result to the guard and makes at most one row
+        // reference live at a time, so no two of these can alias even though
+        // the rows are in fact pairwise disjoint (`|stride| >= seg`).
+        unsafe {
+            let p = self.base.as_ptr().offset(r as isize * self.stride);
+            core::slice::from_raw_parts_mut(p, self.seg)
+        }
+    }
+}
+
+#[cfg(any(test, feature = "__rect_mut"))]
+impl<'a, T: ?Sized + AsMutPtr, V> Drop for DisjointMutRectGuard<'a, T, V> {
+    fn drop(&mut self) {
+        if let Some(parent) = self.parent {
+            let tracker = parent.tracker.as_ref().unwrap();
+            // A panic while an exclusive guard is live may leave the data
+            // partially written; poison exactly as `DisjointMutGuard` does.
+            #[cfg(feature = "std")]
+            if std::thread::panicking() {
+                tracker.poison();
+            }
+            tracker.remove(self.borrow_id);
+        }
+    }
+}
+
 impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     /// Borrow `rows` rows of `seg` elements, `stride` elements apart, starting
     /// at element `lo`, as ONE exact strided-rectangle registration.
@@ -1597,6 +1691,82 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         rows: usize,
         stride: isize,
     ) -> Option<DisjointImmutRectGuard<'a, T, V>> {
+        let (lo_asc, astride, base) = self.rect_geometry::<V>(lo, seg, rows, stride)?;
+        let esz = mem::size_of::<V>();
+        let borrow_id = match &self.tracker {
+            Some(tracker) => {
+                tracker.add_rect_immut(lo_asc * esz, seg * esz, rows, astride.checked_mul(esz)?)?
+            }
+            None => checked::BorrowId::UNCHECKED,
+        };
+        let parent = self.tracker.as_ref().map(|_| self);
+        Some(DisjointImmutRectGuard {
+            base,
+            seg,
+            rows,
+            stride,
+            phantom: PhantomData,
+            parent,
+            borrow_id,
+        })
+    }
+
+    /// [`Self::index_rect_inner`], exclusively: ONE `add_rect_mut` record over
+    /// exactly the `rows` segments, and a guard that hands out one row at a
+    /// time.
+    ///
+    /// PRIVATE for [`Self::index_rect_inner`]'s reason — it materialises
+    /// `&mut [V]` over the buffer's bytes, which is only sound when every bit
+    /// pattern is a valid `V`; the public entry points establish that.
+    #[cfg(any(test, feature = "__rect_mut"))]
+    #[inline]
+    #[track_caller]
+    fn index_rect_mut_inner<'a, V>(
+        &'a self,
+        lo: usize,
+        seg: usize,
+        rows: usize,
+        stride: isize,
+    ) -> Option<DisjointMutRectGuard<'a, T, V>> {
+        let (lo_asc, astride, base) = self.rect_geometry::<V>(lo, seg, rows, stride)?;
+        let esz = mem::size_of::<V>();
+        let borrow_id = match &self.tracker {
+            Some(tracker) => {
+                tracker.add_rect_mut(lo_asc * esz, seg * esz, rows, astride.checked_mul(esz)?)?
+            }
+            None => checked::BorrowId::UNCHECKED,
+        };
+        let parent = self.tracker.as_ref().map(|_| self);
+        Some(DisjointMutRectGuard {
+            base,
+            seg,
+            rows,
+            stride,
+            phantom: PhantomData,
+            parent,
+            borrow_id,
+        })
+    }
+
+    /// The geometry half of a rectangle borrow, shared by the immutable and
+    /// mutable constructors so the two can never disagree about what is
+    /// representable.
+    ///
+    /// Returns `(lo_asc, astride, base)` — the ASCENDING hull's first element,
+    /// the absolute stride, and a pointer to ROW 0's first element (which for a
+    /// negative stride is the highest-address row). `None` is a REFUSAL: a
+    /// zero-sized element, an empty rectangle, rows that would overlap each
+    /// other (`|stride| < seg`, which includes `stride == 0`), an arithmetic
+    /// overflow, a rectangle running past the end of the buffer, or a base
+    /// pointer misaligned for `V`.
+    #[inline]
+    fn rect_geometry<V>(
+        &self,
+        lo: usize,
+        seg: usize,
+        rows: usize,
+        stride: isize,
+    ) -> Option<(usize, usize, NonNull<V>)> {
         let esz = mem::size_of::<V>();
         if esz == 0 || seg == 0 || rows == 0 {
             return None;
@@ -1625,27 +1795,31 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         if (base_ptr as usize) % mem::align_of::<V>() != 0 {
             return None;
         }
-        let borrow_id = match &self.tracker {
-            Some(tracker) => {
-                tracker.add_rect_immut(lo_asc * esz, seg * esz, rows, astride.checked_mul(esz)?)?
-            }
-            None => checked::BorrowId::UNCHECKED,
-        };
-        let parent = self.tracker.as_ref().map(|_| self);
         // SAFETY: `base_ptr` is the live allocation's pointer and is aligned for
-        // `V` (checked above); `lo` is a row start inside `[lo_asc, end_asc)` and
-        // `end_asc <= len_v`, so the offset is in bounds for the allocation. No
-        // reference is created here — see `DisjointImmutRectGuard`.
+        // `V` (checked above); `lo` is a row start inside `[lo_asc, end_asc)`
+        // and `end_asc <= len_v`, so the offset is in bounds for the
+        // allocation. No reference is created here — see the guard types.
         let base = unsafe { NonNull::new_unchecked((base_ptr as *mut V).add(lo)) };
-        Some(DisjointImmutRectGuard {
-            base,
-            seg,
-            rows,
-            stride,
-            phantom: PhantomData,
-            parent,
-            borrow_id,
-        })
+        Some((lo_asc, astride, base))
+    }
+
+    /// [`Self::index_rect`], exclusively.
+    ///
+    /// `None` means the geometry is not representable as one record and the
+    /// caller must take its own per-row path; nothing is approximated.
+    #[cfg(any(test, feature = "__rect_mut"))]
+    #[inline]
+    #[track_caller]
+    pub fn index_rect_mut<'a>(
+        &'a self,
+        lo: usize,
+        seg: usize,
+        rows: usize,
+        stride: isize,
+    ) -> Option<DisjointMutRectGuard<'a, T, <T as AsMutPtr>::Target>> {
+        // SAFETY (of the `V` choice): `V` is the buffer's own element type, so
+        // every byte of it is a valid `V` by construction.
+        self.index_rect_mut_inner::<<T as AsMutPtr>::Target>(lo, seg, rows, stride)
     }
 }
 
@@ -1667,6 +1841,26 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
         V: FromBytes + KnownLayout + Immutable,
     {
         self.index_rect_inner::<V>(lo, seg, rows, stride)
+    }
+
+    /// [`Self::index_rect_as`], exclusively. `V` must additionally be
+    /// [`IntoBytes`] — writing through the guard writes `V`'s bytes back into
+    /// the `u8` buffer, which is the same soundness class as
+    /// [`Self::mut_slice_as`].
+    #[cfg(any(test, feature = "__rect_mut"))]
+    #[inline]
+    #[track_caller]
+    pub fn index_rect_mut_as<'a, V>(
+        &'a self,
+        lo: usize,
+        seg: usize,
+        rows: usize,
+        stride: isize,
+    ) -> Option<DisjointMutRectGuard<'a, T, V>>
+    where
+        V: FromBytes + IntoBytes + KnownLayout + Immutable,
+    {
+        self.index_rect_mut_inner::<V>(lo, seg, rows, stride)
     }
 }
 

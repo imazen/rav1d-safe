@@ -1115,6 +1115,32 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
                 h,
                 pxstride * ps as isize,
             );
+            // MEASUREMENT ARM (`__rows_rect`): ONE exact strided-rectangle
+            // record instead of `h` per-row ones, the `LfBlock::fill_rect`
+            // mechanism applied at this seam. `None` is a REFUSAL — no declared
+            // stride, a stride mismatch, `w > stride`, `h > MAX_RECT_ROWS`, a
+            // hull spanning more than `MAX_SHARDS_PER_BORROW` blocks, a full
+            // shard, or a live wide record — and then the per-row loop below
+            // runs exactly as it did before rectangles existed. Nothing is ever
+            // rounded up to make a rectangle fit.
+            //
+            // Sound here for the reason it is sound in `LfBlock::fill_threaded`
+            // and the hull is not: the record covers only the `h` row segments,
+            // so a concurrent writer in an inter-row GAP (another tile column of
+            // the same picture rows, the routine case) is neither reserved
+            // against nor reported, and `DisjointImmutRectGuard` never
+            // materialises a reference wider than one row.
+            #[cfg(feature = "__rows_rect")]
+            if let Some(rect) =
+                self.data
+                    .dm()
+                    .index_rect_as::<BD::Pixel>(self.offset, w, h, pxstride)
+            {
+                for row in 0..h {
+                    f(row, rect.row(row));
+                }
+                return;
+            }
             for row in 0..h {
                 let off = self.offset.wrapping_add_signed(row as isize * pxstride);
                 let guard = self.data.slice::<BD, _>((off.., ..w));
@@ -1209,6 +1235,23 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
                 h,
                 pxstride * ps as isize,
             );
+            // MEASUREMENT ARM (`__rows_rect`), the write side: ONE exact
+            // MUTABLE rectangle record instead of `h` per-row ones. Same
+            // refusal list, same soundness argument as the read side above,
+            // plus: `DisjointMutRectGuard::row_mut` takes `&mut self`, so at
+            // most one row reference is live at a time and no `&mut [_]` wider
+            // than one row is ever created.
+            #[cfg(feature = "__rows_rect")]
+            if let Some(mut rect) =
+                self.data
+                    .dm()
+                    .index_rect_mut_as::<BD::Pixel>(self.offset, w, h, pxstride)
+            {
+                for row in 0..h {
+                    f(row, rect.row_mut(row));
+                }
+                return;
+            }
             for row in 0..h {
                 let off = self.offset.wrapping_add_signed(row as isize * pxstride);
                 let mut guard = self.data.slice_mut::<BD, _>((off.., ..w));
