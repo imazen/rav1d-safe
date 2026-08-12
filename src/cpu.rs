@@ -255,6 +255,71 @@ pub(crate) fn simd_enabled(flag: CpuFlags) -> bool {
     rav1d_get_cpu_flags().contains(flag)
 }
 
+/// Per-tier dispatch census (measurement only, `--features __probe_x86tier`).
+///
+/// A corpus PASS proves nothing about a SIMD kernel that never ran. On
+/// x86_64 every `safe_simd` dispatcher funnels through [`summon_avx2`] /
+/// [`summon_avx512`] / [`summon_avx512x`], so counting grants and refusals
+/// *there* answers two questions no md5 can: (1) did this run execute the
+/// vector kernels at all, and (2) does `CpuLevel::Scalar` actually turn them
+/// off on this arch — which is exactly the hole
+/// `docs/X64_APPLICABILITY.md` A6 records for aarch64, where the
+/// dispatchers call `Arm64::summon()` with no mask in the path.
+///
+/// Counters are `Relaxed`: they are a census, not a synchronisation.
+#[cfg(all(target_arch = "x86_64", feature = "__probe_x86tier"))]
+pub mod tier_census {
+    use core::sync::atomic::{AtomicU64, Ordering};
+
+    /// `[avx2_grant, avx2_refuse, avx512_grant, avx512_refuse, v4x_grant, v4x_refuse]`
+    pub static COUNTS: [AtomicU64; 6] = [
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+    ];
+
+    pub const LABELS: [&str; 6] = [
+        "avx2_grant",
+        "avx2_refuse",
+        "avx512_grant",
+        "avx512_refuse",
+        "avx512x_grant",
+        "avx512x_refuse",
+    ];
+
+    #[inline(always)]
+    pub(super) fn bump(idx: usize) {
+        COUNTS[idx].fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn reset() {
+        for c in &COUNTS {
+            c.store(0, Ordering::Relaxed);
+        }
+    }
+
+    pub fn snapshot() -> [u64; 6] {
+        let mut out = [0u64; 6];
+        for (o, c) in out.iter_mut().zip(COUNTS.iter()) {
+            *o = c.load(Ordering::Relaxed);
+        }
+        out
+    }
+}
+
+#[cfg(all(target_arch = "x86_64", feature = "__probe_x86tier"))]
+#[inline(always)]
+fn census(idx: usize) {
+    tier_census::bump(idx);
+}
+
+#[cfg(all(target_arch = "x86_64", not(feature = "__probe_x86tier")))]
+#[inline(always)]
+fn census(_idx: usize) {}
+
 /// Try to summon an AVX2 token, gated by the CPU flags mask.
 /// Returns `None` if AVX2 is masked out or unavailable.
 /// This is the primary dispatch gate for safe_simd x86_64 code.
@@ -263,9 +328,12 @@ pub(crate) fn simd_enabled(flag: CpuFlags) -> bool {
 pub(crate) fn summon_avx2() -> Option<archmage::prelude::Desktop64> {
     use archmage::SimdToken as _;
     if !simd_enabled(CpuFlags::AVX2) {
+        census(1);
         return None;
     }
-    archmage::prelude::Desktop64::summon()
+    let t = archmage::prelude::Desktop64::summon();
+    census(if t.is_some() { 0 } else { 1 });
+    t
 }
 
 /// Try to summon an AVX-512 token, gated by the CPU flags mask.
@@ -276,9 +344,12 @@ pub(crate) fn summon_avx2() -> Option<archmage::prelude::Desktop64> {
 pub(crate) fn summon_avx512() -> Option<archmage::prelude::Server64> {
     use archmage::SimdToken as _;
     if !simd_enabled(CpuFlags::AVX512ICL) {
+        census(3);
         return None;
     }
-    archmage::prelude::Server64::summon()
+    let t = archmage::prelude::Server64::summon();
+    census(if t.is_some() { 2 } else { 3 });
+    t
 }
 
 /// Try to summon an AVX-512ICL ("v4x") token, gated by the CPU flags mask.
@@ -296,9 +367,12 @@ pub(crate) fn summon_avx512() -> Option<archmage::prelude::Server64> {
 pub(crate) fn summon_avx512x() -> Option<archmage::X64V4xToken> {
     use archmage::SimdToken as _;
     if !simd_enabled(CpuFlags::AVX512ICL) {
+        census(5);
         return None;
     }
-    archmage::X64V4xToken::summon()
+    let t = archmage::X64V4xToken::summon();
+    census(if t.is_some() { 4 } else { 5 });
+    t
 }
 
 /// Check if a specific CPU feature is enabled after applying the mask (aarch64).

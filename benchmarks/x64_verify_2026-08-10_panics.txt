@@ -1,0 +1,117 @@
+# x86_64 t=8 overlapping-DisjointMut panics, base 5e9975f, colima QEMU-TCG guest
+# arm=default (768-vector pass):
+thread 'rav1d-worker-0' (887) panicked at include/dav1d/picture.rs:729:19:
+	overlapping DisjointMut:
+ current:    & _[82432..82560] on ThreadId(882) at include/dav1d/picture.rs:729:19
+existing: &mut _[82488..82496]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+rav1d worker thread panicked during shutdown: Any { .. }
+--
+thread 'rav1d-worker-1' (1640) panicked at include/dav1d/picture.rs:742:19:
+	overlapping DisjointMut:
+ current: &mut _[73844..73848] on ThreadId(1635) at include/dav1d/picture.rs:742:19
+existing:    & _[73728..73848]
+rav1d worker thread panicked during shutdown: Any { .. }
+VECTOR	8-bit/data	00000626
+--
+thread 'rav1d-worker-5' (2940) panicked at include/dav1d/picture.rs:729:19:
+	overlapping DisjointMut:
+ current:    & _[16640..16752] on ThreadId(2935) at include/dav1d/picture.rs:729:19
+existing: &mut _[16672..16688]
+rav1d worker thread panicked during shutdown: Any { .. }
+VECTOR	8-bit/issues	issue_86
+--
+thread 'rav1d-worker-6' (4517) panicked at include/dav1d/picture.rs:729:19:
+	overlapping DisjointMut:
+ current:    & _[49536..49660] on ThreadId(4512) at include/dav1d/picture.rs:729:19
+existing: &mut _[49536..49568]
+rav1d worker thread panicked during shutdown: Any { .. }
+done 8-bit/vq_suite
+
+# arm=RAV1D_OWNED_RECON=0 (partial pass, RUST_BACKTRACE=1):
+thread 'rav1d-worker-1' (1240) panicked at include/dav1d/picture.rs:729:19:
+	overlapping DisjointMut:
+ current:    & _[73728..73744] on ThreadId(1235) at include/dav1d/picture.rs:729:19
+existing: &mut _[73728..73732]
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+   2: overlap_panic
+             at ./crates/rav1d-disjoint-mut/src/tracker_shard.rs:1325:13
+   3: add<false>
+             at ./crates/rav1d-disjoint-mut/src/tracker_shard.rs:1494:13
+   4: add_immut
+             at ./crates/rav1d-disjoint-mut/src/tracker_shard.rs:1348:14
+   5: index<rav1d_disjoint_mut::pic_buf::PicBuf, (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>)>
+             at ./crates/rav1d-disjoint-mut/src/lib.rs:886:38
+   6: slice_as<rav1d_disjoint_mut::pic_buf::PicBuf, (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>), u8>
+             at ./crates/rav1d-disjoint-mut/src/lib.rs:998:26
+   7: slice<rav1d_safe::include::common::bitdepth::BitDepth8, (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>)>
+             at ./include/dav1d/picture.rs:729:19
+   8: compact_read_per_row<rav1d_safe::include::common::bitdepth::BitDepth8>
+             at ./include/dav1d/picture.rs:1176:35
+   9: loopfilter_sb_dispatch<rav1d_safe::include::common::bitdepth::BitDepth8>
+             at ./src/safe_simd/loopfilter.rs:5134:44
+  10: loopfilter_sb_direct<rav1d_safe::include::common::bitdepth::BitDepth8>
+             at ./src/loopfilter.rs:103:13
+  11: call<rav1d_safe::include::common::bitdepth::BitDepth8>
+--
+thread 'rav1d-worker-1' (1360) panicked at include/dav1d/picture.rs:729:19:
+	overlapping DisjointMut:
+ current:    & _[73728..73736] on ThreadId(1355) at include/dav1d/picture.rs:729:19
+existing: &mut _[73728..73736]
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+   2: overlap_panic
+             at ./crates/rav1d-disjoint-mut/src/tracker_shard.rs:1325:13
+   3: add<false>
+             at ./crates/rav1d-disjoint-mut/src/tracker_shard.rs:1494:13
+   4: add_immut
+             at ./crates/rav1d-disjoint-mut/src/tracker_shard.rs:1348:14
+   5: index<rav1d_disjoint_mut::pic_buf::PicBuf, (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>)>
+             at ./crates/rav1d-disjoint-mut/src/lib.rs:886:38
+   6: slice_as<rav1d_disjoint_mut::pic_buf::PicBuf, (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>), u8>
+             at ./crates/rav1d-disjoint-mut/src/lib.rs:998:26
+   7: slice<rav1d_safe::include::common::bitdepth::BitDepth8, (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>)>
+             at ./include/dav1d/picture.rs:729:19
+   8: compact_read_per_row<rav1d_safe::include::common::bitdepth::BitDepth8>
+             at ./include/dav1d/picture.rs:1176:35
+   9: loopfilter_sb_dispatch<rav1d_safe::include::common::bitdepth::BitDepth8>
+             at ./src/safe_simd/loopfilter.rs:5134:44
+  10: loopfilter_sb_direct<rav1d_safe::include::common::bitdepth::BitDepth8>
+             at ./src/loopfilter.rs:103:13
+  11: call<rav1d_safe::include::common::bitdepth::BitDepth8>
+--
+thread 'rav1d-worker-1' (1632) panicked at include/dav1d/picture.rs:742:19:
+	overlapping DisjointMut:
+ current: &mut _[24576..24584] on ThreadId(1627) at include/dav1d/picture.rs:742:19
+existing:    & _[24576..24632]
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/panicking.rs:80:14
+   2: overlap_panic
+             at ./crates/rav1d-disjoint-mut/src/tracker_shard.rs:1325:13
+   3: add<true>
+             at ./crates/rav1d-disjoint-mut/src/tracker_shard.rs:1494:13
+   4: add_mut
+             at ./crates/rav1d-disjoint-mut/src/tracker_shard.rs:1341:14
+   5: index_mut<rav1d_disjoint_mut::pic_buf::PicBuf, (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>)>
+             at ./crates/rav1d-disjoint-mut/src/lib.rs:828:38
+   6: mut_slice_as<rav1d_disjoint_mut::pic_buf::PicBuf, (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>), u8>
+             at ./crates/rav1d-disjoint-mut/src/lib.rs:970:26
+   7: slice_mut<rav1d_safe::include::common::bitdepth::BitDepth8, (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>)>
+             at ./include/dav1d/picture.rs:742:19
+   8: slice_mut<rav1d_safe::include::common::bitdepth::BitDepth8>
+             at ./include/dav1d/picture.rs:780:19
+   9: slice_mut<rav1d_safe::include::common::bitdepth::BitDepth8>
+             at ./src/owned_recon.rs:433:42
+  10: inv_txfm_add<rav1d_safe::include::common::bitdepth::BitDepth8>
+             at ./src/itx.rs:164:29
+  11: rav1d_safe::src::itx::inv_txfm_add_rust::<8, 8, 2, rav1d_safe::include::common::bitdepth::BitDepth8>
