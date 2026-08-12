@@ -288,6 +288,13 @@ times across 1406 frames of `8-bit/data`. #485's band widened by ~124 bytes and 
 same table shows the 4K gap vectors under-report the risk by ~1000x, which is
 why the band's first full sample passed.
 
+**Since 2026-08-12 this is also ENFORCED, not merely measurable.**
+`include/dav1d/picture.rs::note_pic_extent` fails the build's own test run the
+moment a picture-plane reservation spans more than one row, or exceeds its
+file's measured ceiling, while tile threading is active. CI job `extent-gate`;
+teeth proved by two mutations. See `docs/BOUNDS_MAP.md` Part 2, "The standing
+assertions".
+
 **A third refutation arrived from the other side (#494), and it is the one to internalise.** Every
 attempt above widened a RESERVATION and was caught by the tracker. The x86_64 loop-filter window did
 something the bounds map cannot see: its reservation exactly equalled its footprint — the panic
@@ -458,7 +465,8 @@ is free. Measured: 12 of 12 wall cells faster with disjoint bands, screen text
 0. Before proposing ANY extent change, run the bounds map
    (`--features __probe_bounds`, `docs/BOUNDS_MAP.md`) and read the site's
    widening budget. The per-site VERDICT table (`docs/BOUNDS_MAP.md` Part 2)
-   states it directly. It costs one build and one decode, and it is the only thing
+   states it directly, and `PIC_EXTENT_CEILINGS` will FAIL the test suite if you
+   widen past it. It costs one build and one decode, and it is the only thing
    in the campaign that has priced a coarsening before it was written. Two
    further facts it has already established: at t=8 the shipped decoder's hot
    sites reserve exactly what they touch (`over_ratio = 1.000`, 1-16 bytes), so

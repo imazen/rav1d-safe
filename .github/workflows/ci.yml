@@ -279,6 +279,44 @@ jobs:
         timeout-minutes: ${{ matrix.timeout }}
 
   # ==========================================================================
+  # Guard-extent gate: the bounds map's standing invariant, in RELEASE
+  # ==========================================================================
+  #
+  # `include/dav1d/picture.rs::note_pic_extent` compiles under
+  # `debug_assertions` OR `--features probe-sites`, so plain `cargo test`
+  # already carries it. This job runs it in RELEASE over the whole corpus,
+  # which is the only configuration where the decoder is fast enough to reach
+  # the ~575 M reservations the per-file maxima were measured over — a debug
+  # decode of the same set is ~50-100x slower.
+  #
+  # Its own job for the same reason `wide-path-gate` has one: it is the ONLY
+  # gate on "nobody widened a picture-plane reservation", the failure it
+  # prevents is rare and data-dependent (2-16 collisions across 1406 corpus
+  # frames for a ~124 B widening, ZERO on either 4K gap vector), and folding it
+  # into a broader job is how a gate goes quiet. `-- --nocapture` is
+  # load-bearing: the per-file table it prints IS the evidence for the ceilings
+  # in `PIC_EXTENT_CEILINGS`, and the next person raising one needs to see it.
+  extent-gate:
+    name: Guard-extent gate (bounds map invariant)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Download test vectors
+        run: |
+          if [ ! -d test-vectors/dav1d-test-data ]; then
+            git clone --depth 1 https://code.videolan.org/videolan/dav1d-test-data.git test-vectors/dav1d-test-data
+          fi
+      - name: Extent budget over committed vectors + the dav1d corpus
+        env:
+          # Caller-side skip control, per the no-graceful-skips rule: the test
+          # body never decides to skip the corpus leg, this line does.
+          RAV1D_EXTENT_GATE_CORPUS: "1"
+        run: cargo test --release --features probe-sites --test guard_extent_budget -- --nocapture
+        timeout-minutes: 30
+
+  # ==========================================================================
   # Threading: tile threading under forbid(unsafe_code)
   # ==========================================================================
   threading:
