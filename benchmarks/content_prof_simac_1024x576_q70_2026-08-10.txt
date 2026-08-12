@@ -1,0 +1,14 @@
+== simac_1024x576_q70   total self samples 37967
+   entropy         5018   13.22%
+   tracker        11611   30.58%
+   kernels         4511   11.88%
+   runtime         3734    9.83%
+   other          13093   34.49%
+      other>0.5%: 17.19%  rav1d_safe::src::decode::read_pal_indices
+      other>0.5%:  3.66%  rav1d_safe::src::recon::mc::<rav1d_safe::include::common::bitdepth::BitDepth8>
+      other>0.5%:  2.33%  <rav1d_safe::src::refmvs::splat_mv::Fn>::call
+      other>0.5%:  2.20%  rav1d_safe::src::recon::rav1d_read_pal_plane::<rav1d_safe::include::common::bitdepth::BitDepth8>
+      other>0.5%:  1.60%  rav1d_safe::src::refmvs::add_spatial_candidate
+      other>0.5%:  1.17%  <rav1d_safe::src::ctx::CaseSetter<32, false>>::set_disjoint::<aligned::Aligned<aligned::A8, [u8;
+      other>0.5%:  0.92%  rav1d_safe::src::mc::filter_bilin::<rav1d_safe::include::common::bitdepth::BitDepth8>::{closure#
+      other>0.5%:  0.75%  rav1d_safe::src::decode::decode_sb

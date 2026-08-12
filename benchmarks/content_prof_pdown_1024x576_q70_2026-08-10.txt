@@ -1,0 +1,9 @@
+== pdown_1024x576_q70   total self samples 38264
+   entropy        22500   58.80%
+   tracker         4395   11.49%
+   kernels         8966   23.43%
+   runtime          931    2.43%
+   other           1472    3.85%
+      other>0.5%:  0.77%  rav1d_safe::src::lf_mask::rav1d_create_lf_mask_intra
+      other>0.5%:  0.56%  <rav1d_safe::src::ctx::CaseSetter<32, false>>::set_disjoint::<aligned::Aligned<aligned::A8, [u8;
+      other>0.5%:  0.50%  rav1d_safe::src::recon::get_dc_sign_ctx
