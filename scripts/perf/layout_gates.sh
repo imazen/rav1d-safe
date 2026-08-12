@@ -80,10 +80,15 @@ run_corpus() { # <tag> <rustflags> <features...>
     note "setdiff_${tag}_t1_vs_t8" DIFFERS; rc_all=1
   fi
 }
-run_corpus default   ""                                        ""
-run_corpus rowsrect  ""                                        "__rows_rect"
-run_corpus a5        "-C llvm-args=-align-all-functions=5"      ""
-run_corpus a5rowsrect "-C llvm-args=-align-all-functions=5"     "__rows_rect"
+# ALIGN is the alignment rung grid L selected (log2 bytes); the aligned build is
+# gated too, because recommending it means shipping it.
+ALIGN=${ALIGN:-4}
+AF="-C llvm-args=-align-all-functions=$ALIGN"
+run_corpus default            ""    ""
+run_corpus rowsrect           ""    "__rows_rect"
+run_corpus lfrect             ""    "__lf_rect"
+run_corpus "a${ALIGN}"        "$AF" ""
+run_corpus "a${ALIGN}rowsrect" "$AF" "__rows_rect"
 
 echo "== 4. every measurement arm still builds ==" >&2
 for feat in __rows_rect __probe_cdef_double __pad_text __pad_small __pad2 __pad3 \

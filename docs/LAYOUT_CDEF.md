@@ -58,9 +58,167 @@ default changes.
 
 ## 3. Grid L — alignment × pad rungs
 
-*(filled in below)*
+18 arms in one rotation: four alignment families × four rungs, plus a
+byte-identical copy in the `a0` and `a6` families. `scripts/perf/layout_build.sh`
+builds them (one target dir per family — `RUSTFLAGS` is part of the fingerprint),
+`scripts/perf/layout_checksums.sh` proves **one md5 per cell across all 18 arms
+at BOTH thread counts** before any clock, and `scripts/perf/tiled_wallcpu.sh`
+under `measlock`, never `nice`d, two-point fit, times them.
+
+The alignment took: `nm` says **100.0%** of `__text` symbols are 16/32/64-byte
+aligned in `a4`/`a5`/`a6` against 23.9%/11.8%/6.3% in `a0`, and the pad rungs add
+the same `+4,828 / +9,692 / +19,420` bytes in every family.
+
+| arm | `__text` | vs `a0plain` | % 16B-aligned | % 64B-aligned |
+|---|---|---|---|---|
+| `a0plain` | 1,837,492 | — | 23.9 | 6.3 |
+| `a4plain` | 1,847,552 | +10,060 (+0.55%) | **100.0** | 22.0 |
+| `a5plain` | 1,859,360 | +21,868 (+1.19%) | 100.0 | 45.8 |
+| `a6plain` | 1,886,400 | +48,908 (+2.66%) | 100.0 | **100.0** |
+
+### 3a. The lottery IS removable, and 16-byte alignment removes 87% of it
+
+`v4k8tile` t=1, wall, paired per round against each family's own `plain`,
+n=12 (round 0 dropped). Nine of the twelve rounds saw a foreign process above
+25% CPU at some point, so both readings are given: the campaign's usual
+drop-the-loaded-round reduction leaves n=3, and the keep-loaded reduction keeps
+all 12 paired ratios. **They agree to within 0.04 percentage points of spread**,
+which is itself evidence that a loaded round costs drift and not pairing.
+
+| family | `pad1` (+4,828 B) | `pad2` (+9,692 B) | `pad4` (+19,420 B) | **SPREAD** | (n=3 drop-loaded) | `plain`/`a0plain` |
+|---|---|---|---|---|---|---|
+| **a0** none | 1.0101 | 1.0118 | 1.0137 | **1.37%** | (0.98%) | 1.0000 |
+| **a4** 16 B | 0.9993 | 0.9982 | 0.9982 | **0.18%** | (0.16%) | 1.0153 |
+| **a5** 32 B | 0.9973 | 0.9964 | 0.9962 | **0.38%** | (0.35%) | 1.0164 |
+| **a6** 64 B | 0.9925 | 0.9935 | 0.9977 | **0.75%** | (0.92%) | 1.0178 |
+
+Byte-identical controls in the same grid: `a0B` **0.9996 (7/12)**, `a6B`
+**1.0006 (5/12)** — coin-flip signs, medians inside 0.07%. So the instrument
+floor is ~0.05% and `a0`'s 1.37% spread is **20x** it.
+
+The other two cells, same reduction (keep-loaded, n=12):
+
+| cell t=1 | a0 spread | a4 | a5 | a6 | `a4plain`/`a0plain` | a0B |
+|---|---|---|---|---|---|---|
+| `v4k8tile` (4K, 8 tiles) | **1.37%** | **0.18%** | 0.38% | 0.75% | 1.0153 | 0.9996 (7/12) |
+| `c1024x576` | 0.94% | **0.36%** | 0.54% | 0.42% | 1.0082 | 1.0000 (6/12) |
+| `c256x2048` (the zero-tax cell) | 0.39% | 0.35% | **0.15%** | 0.86% | 1.0020 | 0.9993 (6/12) |
+
+CPU tracks wall exactly at t=1 (`v4k8tile`: a0 1.34%, a4 0.20%, a5 0.30%,
+a6 0.65%), as it must when one thread is busy the whole time.
+
+Three readings:
+
+1. **Whole-function alignment at 16 bytes shrinks the spread 7.6x on the cell
+   where the lottery lives** (1.37% → 0.18%), 2.6x at 1024x576, and does nothing
+   at 256x2048 — which is the cell that had no lottery to remove. The benefit
+   tracks the tax, exactly as an I-cache story predicts.
+2. **More alignment is worse.** 64-byte is only a 1.8x reduction and costs the
+   most; 32-byte sits between. The `__text` cost runs +0.55% / +1.19% / +2.66%,
+   so the padding's own I-cache pressure eats the stabilisation it buys. The
+   sweep was necessary: a single N would have given the wrong answer at 6.
+3. **The pre-registered criterion (2) FAILS as written**: `a4plain / a0plain` is
+   **1.0153**, five times the 1.003 bar. §5 argues that bar was mis-specified —
+   `a0plain` is `main`'s LOTTERY WINNER, not a neutral reference — but the rule
+   was pre-registered and it fails, so it is reported as failed.
+
+### 3b. What the +1.5% actually is
+
+`a0plain` is the best binary in the whole grid, and #506 already showed it beats
+nine other `a0`-family binaries by 1.1–1.6%. Against the `a0` family's own
+perturbed rungs (mean 1.0119 on `v4k8tile` t=1) the aligned build costs
+
+  `1.0153 / 1.0119 = 1.0034` — **+0.34%**,
+
+and at 1024x576 `1.0082 / 1.0069 = 1.0013`, at 256x2048 `1.0020 / 1.0004 =
+1.0016`. So the honest decomposition of the 1.53% is **~1.2 points of "stop
+being `main`'s exact binary", which any change forfeits, and ~0.3 points of real
+padding cost.** That distinction is the whole of §5, and it is a decomposition,
+not a measurement of a third binary: no arm here isolates "aligned, and also
+lucky".
+
+### 3c. Not tried
+
+Basic-block alignment (`-align-all-nofallthru-blocks`) was **not measured** —
+the whole-function sweep answered the question and the block flag would have
+needed its own 4-family grid. If a future round wants the residual 0.18%, that
+is where to look.
 
 ## 4. Grid D — the CDEF question, decided on a measured transfer coefficient
+
+The brief's gate for building anything at the CDEF sites was their
+**records-per-distinct-shard-line ratio**, on the theory that cost tracks
+distinct shard lines and a repeat touch of a line this core already owns is
+~7.7x cheaper. Measured first, before any clock (`probe_tracker --features
+__probe_bounds`, t=8, 40 iters, per-frame; `~/tmp/layout/counts/pb_*_t8.txt`):
+
+| cell t=8 | site | calls/frame | `rows_mean` | `row_shards_mean` | **records per line** | `pct_row_wide` |
+|---|---|---|---|---|---|---|
+| `c1024x576` | `loopfilter.rs:944` (`fill`) | 21,364 | 8.92 | 2.318 | **3.85** | 0.00% |
+| `c1024x576` | `cdef_arm.rs:{193,625,1222}` | 3,776 each | 8.00 | 1.928–1.929 | **4.15** | 0.00% |
+| `c1024x576` | `cdef_apply.rs:107` | 3,904 | 8.00 | 1.928 | **4.15** | 0.00% |
+| `c1024x384` | `fill` | 13,869 | 9.01 | 2.332 | 3.86 | 0.00% |
+| `c1024x384` | the four CDEF sites | 2,368–2,456 | 8.00 | 1.939–1.940 | 4.13 | 0.00% |
+| `c1024x192` | `fill` | 6,752 | 9.01 | 2.322 | 3.88 | 0.00% |
+| `c1024x192` | the four CDEF sites | 1,024–1,072 | 8.00 | 1.913–1.915 | 4.18 | 0.00% |
+| `c256x2048` | `fill` | 20,093 | 8.98 | 2.090 | 4.30 | 0.00% |
+| `c256x2048` | the five CDEF sites | 1,024–5,632 | 4.00–8.00 | **1.000** | 7.27–8.00 | 0.00% |
+
+**The ratio test does not disqualify the CDEF sites, and it also does not
+separate winners from losers.** On the 1024-wide family — the family where the
+`fill` rectangle actually delivered — CDEF's geometry is `fill`'s to within 8%
+(4.13–4.18 against 3.85–3.88), so if a high ratio predicted a null, `fill`
+should have measured null there too, and it measured **−1.5% to −2.4%**.
+`c256x2048` is the cell with both the highest ratio (4.30 at `fill`, 7.3–8.0 at
+CDEF) and the null, but four previous levers have died on that cell for reasons
+`docs/C256_CONTENTION.md` §7 attributes to coherence, not geometry. One ordered
+pair is not a rule.
+
+So the ratio was replaced with a **measured transfer coefficient**. Grid D
+prices BOTH populations by doubling, in one binary each, on the three cells
+where `fill`'s collapse is already known — which turns the standing caveat into
+a number instead of a worry. `scripts/perf/layout_transfer.py`,
+`benchmarks/layout_D_2026-08-11.tsv`, `measlock`, un-`nice`d, n=11–13 after
+dropping loaded rounds, two A/A controls in the grid (`lfoff2`, `cdefoff2`):
+
+| cell t=8 | site | +regs/frame | doubling wall | sign | doubling CPU | **ns/reg** |
+|---|---|---|---|---|---|---|
+| `c1024x192` | `fill` | 60,820 | **1.0784** | 0/11 | 1.0388 | 3.19 |
+| `c1024x192` | CDEF | 33,152 | **1.0743** | 0/11 | 1.0336 | 5.03 |
+| `c1024x384` | `fill` | 125,018 | **1.0885** | 0/13 | 1.0319 | 2.67 |
+| `c1024x384` | CDEF | 76,480 | **1.0601** | 0/13 | 1.0397 | 5.36 |
+| `c1024x576` | `fill` | 190,632 | **1.0720** | 0/12 | 1.0394 | 3.34 |
+| `c1024x576` | CDEF | 121,856 | **1.0385** | 0/12 | 1.0414 | 5.43 |
+
+A/A controls: `cdefoff2` 1.0000 (5/11) / 1.0030 (5/13) / 1.0009 (5/12);
+`lfoff2` 1.0049 (4/11) / 0.9970 (7/13) / 1.0019 (4/12). #506's single CDEF cell
+(`c1024x576`, +4.09% wall, 5.27 ns/reg) **replicates** here at +3.85% and
+5.43 ns/reg.
+
+Then, per cell, `ceiling = (1 − 1/rows) × (doubling − 1)` and
+`tau = delivered / ceiling`, with `delivered` for `fill` being its
+same-source-controlled t=8 win (`ship`/`plain2`, `docs/RECT_SHIP.md` §6 — cited,
+and re-measured in-grid by grid M):
+
+| cell t=8 | `fill` ceiling | `fill` delivered | **tau** | CDEF ceiling | **CDEF predicted** |
+|---|---|---|---|---|---|
+| `c1024x192` | −6.97% | −1.49% | **0.214** | −6.50% | **−1.39%** |
+| `c1024x384` | −7.87% | −2.38% | **0.303** | −5.26% | **−1.59%** |
+| `c1024x576` | −6.39% | −1.74% | **0.272** | −3.37% | **−0.92%** |
+
+**A doubling over-promises by 3.3x to 4.7x, consistently.** That is the number
+the campaign was missing, and it is the answer to "is a doubling an upper bound
+or a forecast": an upper bound, times ~0.26. It also says the honest expectation
+for the CDEF collapse is **−0.9% to −1.6% wall at t=8 on the 1024-wide family**,
+not the ~3.6% §7 of `docs/RECT_SHIP.md` computed — which is still worth building,
+because it is the same size as what the `fill` rectangle delivers on exactly
+these cells.
+
+**Why a doubling over-promises, as a hypothesis and not a result:** doubling
+raises each shard's occupancy, and both `find` and `remove` scan the shard's live
+records, so the added population is charged a scan cost the removed population
+does not refund at occupancy ~0.02. The prediction that follows — `tau` should be
+closer to 1 at low occupancy and fall as occupancy rises — is NOT tested here.
 
 ## 5. The rectangle default
 
