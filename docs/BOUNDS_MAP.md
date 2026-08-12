@@ -94,9 +94,16 @@ sides). Every co-live pair is therefore seen exactly once, at the later acquire.
 * **#485 is retrodicted.** Its ~124-byte widening lands in the `<=256 B` column:
   **16** predicted collisions across 1406 frames of `8-bit/data`; #485 measured
   1, 2 and 0 errors over three full passes of that group.
-* **The counterparty has a name.** `loopfilter.rs:710:14` comes within **232
-  bytes** of `cdef_arm.rs:622:9`'s concurrent write, over 2,217,283 co-live
-  pairs. Against other readers it has unlimited room.
+* **The counterparty has a name.** `loopfilter.rs:710:14` comes within **60
+  bytes** of a concurrent write. **Corrected 2026-08-10 from the full pair table
+  (Part 2, and the erratum in `benchmarks/bounds_map_2026-08-10.meta`): the
+  nearest writer is `loopfilter.rs:887:14`, the loop filter's OWN write-back in
+  another sbrow filter task, over 1,176,771 co-live pairs.** `cdef_arm.rs:622:9`
+  at 232 B over 2,217,283 co-live pairs — as this bullet originally read — is
+  only the THIRD nearest; 232 was a per-pair figure quoted as if it were the
+  site's, while `BCONC`'s site-level `min_gap_mut` said 60 all along. Against
+  other readers it has unlimited room, and the budget columns (`<=64` = 2,
+  `<=256` = 16) are unaffected.
 * **Some sites have zero headroom.** `ctx.rs:99:27` had a concurrent write at
   gap **0** (butt-adjacent) 36 times; widening it by one byte collides.
   **That site was since cut by 21-25% WITHOUT touching any extent** (PR #492,
