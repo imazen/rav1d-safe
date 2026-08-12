@@ -338,6 +338,19 @@ impl BorrowTracker {
         None
     }
 
+    /// [`Self::add_rect_immut`] for a mutable rectangle: also always DECLINES,
+    /// for the same reason.
+    #[inline(always)]
+    pub fn add_rect_mut(
+        &self,
+        _lo: usize,
+        _seg: usize,
+        _rows: usize,
+        _stride: usize,
+    ) -> Option<BorrowId> {
+        None
+    }
+
     /// Mark this tracker as poisoned. All future borrow attempts will panic.
     pub fn poison(&self) {
         self.poisoned.store(true, Ordering::Release);

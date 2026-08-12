@@ -50,9 +50,20 @@ nice -n 19 cargo test --lib --release -j 6 > "$OUT/lib_release.log" 2>&1 \
   && note lib_release PASS || { note lib_release FAIL; rc_all=1; }
 nice -n 19 cargo test --lib -j 6 > "$OUT/lib_debug.log" 2>&1 \
   && note lib_debug PASS || { note lib_debug FAIL; rc_all=1; }
-nice -n 19 cargo test -p rav1d-disjoint-mut --all-features -j 6 \
-  > "$OUT/tracker_tests.log" 2>&1 \
-  && note tracker_tests PASS || { note tracker_tests FAIL; rc_all=1; }
+# NOT `--all-features`: `__tracker_legacy` + `__probe_bounds` do not compose and
+# never have (`bounds_probe.rs` calls `BorrowTracker::probe_shard_of`, which the
+# legacy tracker has no counterpart for — broken at the base commit too, and the
+# CI workflow says so in a comment). These are CI's own feature sets.
+for tf in "" "--no-default-features" "--features std,__probe_count,__probe_sites" \
+          "--features __rect_1shard"; do
+  tag=$(echo "tracker${tf}" | tr -c 'a-zA-Z0-9' '_')
+  # shellcheck disable=SC2086
+  if nice -n 19 cargo test -p rav1d-disjoint-mut $tf -j 6 > "$OUT/$tag.log" 2>&1; then
+    note "$tag" PASS
+  else
+    note "$tag" FAIL; rc_all=1
+  fi
+done
 
 echo "== 3. corpus: the new default, the aligned default, and the 1-shard arm ==" >&2
 run_corpus() { # <tag> <rustflags> <features...>
@@ -121,7 +132,12 @@ run_clippy tracker_nodefault   -p rav1d-disjoint-mut --no-default-features --all
 run_clippy lib                 --lib
 run_clippy lib_rect1shard      --lib --features __lf_rect1
 run_clippy lib_cdefdouble      --lib --features __probe_cdef_double
-run_clippy alltargets          --all-targets
+# NOT `--all-targets`: it is pre-existing-broken in this repo and fails with 79
+# errors on the BASE commit too (verified 2026-08-11 in a throwaway worktree at
+# 3bed711) — dead code in `src/safe_simd/itx_arm*.rs` plus the `compile_error!`
+# that several integration tests raise outside `--release`. `--lib` plus the
+# feature legs is what CI gates and what #505/#506 gated.
+run_clippy lib_rowsseam        --lib --features __rows_rect
 if nice -n 19 cargo fmt --all -- --check > "$OUT/fmt.log" 2>&1; then
   note fmt_check rc=0
 else

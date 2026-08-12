@@ -1,0 +1,10 @@
+control_default_t8	10aefc15442d49f805530b1642490774
+control_1shard_t8	10aefc15442d49f805530b1642490774
+control_arms_agree	OK
+mut_rows_rect_read_reversed	CAUGHT (f4a483845b39613e3228daadfe6be770)
+mut_rows_rect_write_reversed	CAUGHT (4598c5f2520c73e5eb6bd383bed394a7)
+mut_add_rect_mut_becomes_immut	CAUGHT (4 failure lines)
+rect_vs_rect_restored	PASS
+wide_default	WIDEHDR	const_shift	slow	multi	w_shards	w_blocks	w_full	wide_total	contended	lockslow	spins	n_rect	n_rect_declined	n_rect_multi WIDE	12	11149	10776	1530	0	0	1530	1778	4138	54734	402556	0	368489 
+wide_1shard	WIDEHDR	const_shift	slow	multi	w_shards	w_blocks	w_full	wide_total	contended	lockslow	spins	n_rect	n_rect_declined	n_rect_multi WIDE	12	12147	11784	1530	0	0	1530	3669	1247	31150	34067	368489	0 
+forbid_unsafe_active	ENFORCED at lib.rs:13:12

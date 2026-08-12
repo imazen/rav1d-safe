@@ -98,14 +98,14 @@ assert s.count(old) == 1, s.count(old)
 new = "    ) -> Option<BorrowId> {\n        self.add_rect::<false>(lo, seg, rows, stride)\n    }"
 open(p,'w').write(s.replace(old, new, 1))
 PY
-if nice -n 19 cargo test -p rav1d-disjoint-mut --all-features -j 6 \
+if nice -n 19 cargo test -p rav1d-disjoint-mut -j 6 \
      rect_vs_rect > "$OUT/rectvsrect_mutated.log" 2>&1; then
   note mut_add_rect_mut_becomes_immut "NOT CAUGHT — the rect-vs-rect test still passes"
 else
   note mut_add_rect_mut_becomes_immut "CAUGHT ($(grep -c '^test .* FAILED\|panicked' "$OUT/rectvsrect_mutated.log") failure lines)"
 fi
 restore crates/rav1d-disjoint-mut/src/tracker_shard.rs > "$OUT/sha_tracker_after.txt"
-nice -n 19 cargo test -p rav1d-disjoint-mut --all-features -j 6 rect_vs_rect \
+nice -n 19 cargo test -p rav1d-disjoint-mut -j 6 rect_vs_rect \
   > "$OUT/rectvsrect_restored.log" 2>&1 \
   && note rect_vs_rect_restored PASS || note rect_vs_rect_restored FAIL
 

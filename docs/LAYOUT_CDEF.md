@@ -385,3 +385,163 @@ controls move ±2% (`a0B` 1.0046, `a0pad2` 1.0192) with per-round ranges from
 
 
 ## 6. Gates
+
+### 5b. Grid N — the ship decision, measured clean
+
+Grid M1 was too loaded to decide a default on, so the decision was re-measured:
+seven `a0` arms, `v4k8tile` t=1 and `c1024x576` t=1, 12 rounds, n=8–9 after
+dropping loaded rounds, `measlock`, un-`nice`d.
+
+| arm | `v4k8tile` t=1 | sign | `c1024x576` t=1 | sign |
+|---|---|---|---|---|
+| `a0B` byte-identical control | 0.9987 | 5/8 | 1.0024 | 4/9 |
+| **`a0both`** — what shipping BOTH rectangles produces | **1.0014** | **3/8** | **0.9992** | **5/9** |
+| `a0rows` — the CDEF rectangle alone | 0.9983 | 5/8 | 0.9980 | 6/9 |
+| `a0rect` — `fill`'s rectangle alone | **1.0115** | **0/8** | 1.0084 | 2/9 |
+| `a0pad2` — +9,692 B of dead text | **1.0110** | **0/8** | 1.0068 | 0/9 |
+| `a0pad4` — +19,420 B of dead text | **1.0159** | **0/8** | 1.0080 | 0/9 |
+
+All ratios are against **`a0plain`, which IS `main`'s binary** — the number a
+user of today's build would feel.
+
+**The binary that would ship costs nothing at t=1.** `a0both` reads 1.0014
+(3 of 8 rounds faster) at 4K and 0.9992 (5 of 9) at 1024x576, both inside the
+byte-identical control's own band (0.9987 / 1.0024) with coin-flip signs. It
+reproduces grid M1's independent reading (0.9992, 5/9). Meanwhile the two dead-
+text rungs and `fill`'s rectangle alone sit at +0.7% to +1.6% with 0/8 and 0/9
+signs — the lottery's other level, in the same grid, on the same rounds.
+
+So the t=1 question, which has gated this mechanism since #505, is answered: the
+composed default draws a NEUTRAL ticket, and that is measured against `main`'s
+own binary rather than argued from the arbitrariness of the draw.
+
+### 5c. The call
+
+**Both rectangles are flipped ON by default in this PR.** The case, entirely in
+same-source-controlled numbers:
+
+| question | answer |
+|---|---|
+| does it cost at t=1, in the binary that ships? | **No.** `a0both`/`a0plain` = 1.0014 (3/8) at 4K, 0.9992 (5/9) at 1024x576, against a byte-identical control at 0.9987/1.0024 |
+| does it pay at t=8? | **Yes.** −3.9% to −4.5% wall on the 1024-wide family (10/10, 11/11, 9/9) against a dead-text control of the same source |
+| is the win a layout draw? | **No.** It replicates in the 16-byte-aligned family, where §3 shows a draw cannot hide: `a4rows`/`a4plain` = 0.9801 / 0.9734 / 0.9801 with 10/10, 11/11, 9/9 |
+| is it correct? | 766 PASS + 2 SKIP at t=1 AND t=8, set-diffed BY NAME, in the flipped default; §6 |
+| does the shipped binary match the measured one? | **Yes** — `text_layout_diff.py` puts the flipped default's `__text` at exactly `bench_a0both`'s, 0 symbols resized, the only difference being two `drop_glue` symbols that swapped mangled names at identical sizes (§6) |
+
+**Alignment is NOT applied.** It is recommended as a MEASUREMENT flag and
+written into `docs/AGENT_BRIEF.md` §2, not into the build:
+
+* what it buys is a t=1 property (spread 1.37% → 0.18%), and this round did not
+  show it stabilises t=8 (§4c);
+* it costs ~+0.34% at 4K t=1 and ~+0.5% at t=8 against a typical binary, which
+  is real and is paid by every user;
+* and a **published crate's consumers do not inherit `RUSTFLAGS` anyway**, so
+  putting it in this repo's `.cargo/config.toml` would stabilise our benchmarks
+  and nobody else's. That is a legitimate thing to want — it is just not the
+  same thing as shipping it.
+
+If the project decides it wants a stable-layout shipped binary, the one-line
+change is `[build] rustflags = ["-C", "llvm-args=-align-all-functions=4"]` in
+`.cargo/config.toml`, and the price is the two numbers above.
+
+## 6. Gates
+
+Drivers `scripts/perf/layout_{gates,teeth}.sh`, records
+`benchmarks/layout_{gates,teeth}_2026-08-11.tsv`, logs `~/tmp/layout/{gates,teeth}`.
+Nothing here is timed, so everything is `nice`d and nothing takes the
+measurement lock.
+
+### 6a. Correctness — the flipped DEFAULT build
+
+| gate | result |
+|---|---|
+| **the DEFAULT build IS the arm that was timed** (`text_layout_diff.py` vs `bench_a0both`) | `__text` **1,887,580 → 1,887,580**, `resized_in_both` **0**, and the only difference is **2 `drop_glue` symbols that swapped mangled names at identical sizes** (336 B on each side, 1,629 symbols both) — a feature-set disambiguator artefact, not new code |
+| **corpus, DEFAULT (both rectangles), t=1**, no `--skip-group` | **766 PASS + 2 SKIP**, mismatch=0 error=0 |
+| **corpus, DEFAULT, t=8** | **766 PASS + 2 SKIP**, mismatch=0 error=0 |
+| corpus, 16-byte-aligned default, t=1 and t=8 | **766 PASS + 2 SKIP** each |
+| corpus, `__lf_rect1` (single-shard rectangles only), t=1 and t=8 | **766 PASS + 2 SKIP** each |
+| set-diff BY NAME (key `(group, name)`, value `(status, ACTUAL md5)`) vs `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst` | **CLEAN on all six** |
+| set-diff t=1 vs t=8 within each config | CLEAN, all three |
+| `cargo test --lib`, release AND debug | pass, both |
+| every measurement feature still builds: `__rows_rect`, `__probe_cdef_double`, `__pad_text`, `__pad_small`, `__pad2/3/4`, `__pad_far`, `__lf_rect`, `__lf_rect1`, `__probe_lf_hull`, `__probe_bounds` | rc=0, all 12 |
+| `decode_md5_verify`, `thread_cleanup_test`, `tile_threading_overlap`, `reproduce_overlap`, `mt_stress`, plain AND `-- --ignored`, DEFAULT arm | **pass, all 10 invocations** |
+| every timed arm's `CHECKSUM` before any timing | **ONE md5 per cell across 18 arms × 2 thread counts** (grid L) and **10 arms × 2** on 8 cells (grid M) |
+| `cargo fmt --all --check` | rc=0 |
+| clippy `-D warnings`: tracker `--all-targets`, tracker `--no-default-features --all-targets`, root `--lib`, `--lib --features {__lf_rect1, __probe_cdef_double, __rows_rect}` | rc=0, all 6 |
+| `cargo test -p rav1d-disjoint-mut` at CI's feature sets: default, `--no-default-features`, `--features __rect_1shard` | PASS |
+
+**Two pre-existing failures, verified pre-existing rather than assumed:**
+
+* `cargo clippy --all-targets -- -D warnings` on the ROOT package fails with
+  **79 errors at the BASE commit** (3bed711, checked in a throwaway worktree):
+  dead code in `src/safe_simd/itx_arm*.rs` plus the `compile_error!` several
+  integration tests raise outside `--release`. The head tree fails the same way
+  (81 errors, the same set modulo which test target reports the release
+  requirement first). That leg is not part of CI and was removed from the gate
+  script.
+* `cargo test -p rav1d-disjoint-mut --all-features` does not compile and never
+  has: `__tracker_legacy` + `__probe_bounds` do not compose
+  (`bounds_probe.rs:1305` calls `BorrowTracker::probe_shard_of`, which the
+  legacy tracker has no counterpart for — absent at the base commit too), and
+  the CI workflow says "NOT `--all-features`" in a comment for this reason. The
+  gate now runs CI's feature sets. (The flip did add
+  `tracker_legacy::add_rect_mut`, which always DECLINES like its `add_rect_immut`
+  neighbour, so the legacy arm keeps measuring the tracker it names.)
+
+### 6b. Test teeth, proven by planting
+
+Every mutation restored from a backup COPY, never `git checkout --`, and
+verified byte-exact by sha256 AND `git diff --exit-code`.
+
+| planted mutation | result |
+|---|---|
+| (control) DEFAULT and `__lf_rect1` arms | one md5, `10aefc15…`, both |
+| `for_rows` reads `rect.row(h - 1 - row)` (rows reversed, always in range) | **CAUGHT** — md5 `f4a48384…` |
+| `for_rows_mut` writes `rect.row_mut(h - 1 - row)` | **CAUGHT** — md5 `4598c5f2…` |
+| **`add_rect_mut` registers `add_rect::<false>`** — a mutable rectangle silently recorded as immutable, which decodes correctly on an uncontended run and is exactly the silent-corruption shape this campaign keeps hitting | **CAUGHT** — the tracker's `rect_vs_rect_same_rows_overlapping_columns_is_caught` fails, because only a MUTABLE record can raise the panic it asserts. Restored: PASS |
+| `unsafe { core::mem::transmute(x) }` planted in `src/picture.rs` (no module-level forbid of its own) | **build FAILS at `lib.rs:13:12`** — `forbid(unsafe_code)` proven ACTIVE, not read. Restored, `git diff` clean |
+
+**Liveness and the refusal path, in the DEFAULT build** (`probe-wide`,
+`c1024x576`, t=8):
+
+| arm | `n_rect` accepted | `n_rect_declined` | `n_rect_multi` | `w_shards` | `w_blocks` | `w_full` |
+|---|---|---|---|---|---|---|
+| DEFAULT | **402,556** | **0** | 368,489 | 1,530 | 0 | 0 |
+| `__lf_rect1` (single-shard only) | 34,067 | **368,489** | 0 | 1,530 | 0 | 0 |
+
+`34,067 + 368,489 = 402,556` exactly: the single-shard arm declines precisely
+the multi-shard rectangles and **decodes to the same md5**, which is the
+mechanism's central claim — a refusal is never an approximation, the caller just
+runs its per-row loop. `w_shards` is identical to base in every arm and
+`w_blocks`/`w_full` are 0, so no rectangle ever promotes to the wide path.
+
+**No `unsafe` was added to `rav1d-safe`.** `crates/rav1d-disjoint-mut` gains
+`DisjointMutRectGuard::row_mut`'s `from_raw_parts_mut` — one `unsafe` block in
+the crate that is allowed to have them, mirroring the immutable guard's, and
+argued at the type level: `row_mut` takes `&mut self`, so at most one row
+reference exists at a time.
+
+### 6c. Miri
+
+`cargo +nightly miri test -p rav1d-disjoint-mut --no-fail-fast`, Stacked Borrows
+and Tree Borrows, DEFAULT features (the rectangle IS the default now), ONE
+TARGET AT A TIME. Record `benchmarks/layout_miri_2026-08-11.tsv`.
+
+*(table below)*
+
+## 7. What the next round should do
+
+* **Sweep the pad rungs at t=8.** §3 is a t=1 finding; the one rung each family
+  carries at t=8 (`a0pad2` ±1.13%, `a4pad2` ±0.95%) is not a spread, so whether
+  alignment stabilises t=8 is OPEN and the t=8 numbers in this round are still
+  drawing from a lottery of unknown width.
+* **Explain `c256x2048`.** The CDEF collapse pays −2.1% there unaligned and
+  nothing aligned. Either the win or the null is a layout artefact and the
+  campaign should know which.
+* **`__lf_rect1`** (accept only single-shard rectangles) is the built, unrun
+  arm that tests whether the record's shard-set size is what decides. `fill`'s
+  rectangles are 79.6% multi-shard on `c256x2048`; CDEF's are 0%.
+* **Basic-block alignment** for the residual 0.18%.
+* **A linker order file** is the only remaining lever that could give a stable
+  layout *without* alignment's padding cost. It would have to beat +0.34% at
+  4K t=1 while being maintained per-platform; nobody has priced that.
