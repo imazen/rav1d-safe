@@ -1,0 +1,48 @@
+default_codegen	resized=0 added=2 text 1887580 -> 1887580
+lib_release	PASS
+lib_debug	PASS
+tracker_tests	FAIL
+corpus_default_t1	TOTAL threads=1 pass=766 mismatch=0 error=0 skip=2 skipped_groups=-
+setdiff_default_t1	CLEAN
+corpus_default_t8	TOTAL threads=8 pass=766 mismatch=0 error=0 skip=2 skipped_groups=-
+setdiff_default_t8	CLEAN
+setdiff_default_t1_vs_t8	CLEAN
+corpus_a4_t1	TOTAL threads=1 pass=766 mismatch=0 error=0 skip=2 skipped_groups=-
+setdiff_a4_t1	CLEAN
+corpus_a4_t8	TOTAL threads=8 pass=766 mismatch=0 error=0 skip=2 skipped_groups=-
+setdiff_a4_t8	CLEAN
+setdiff_a4_t1_vs_t8	CLEAN
+corpus_rect1shard_t1	TOTAL threads=1 pass=766 mismatch=0 error=0 skip=2 skipped_groups=-
+setdiff_rect1shard_t1	CLEAN
+corpus_rect1shard_t8	TOTAL threads=8 pass=766 mismatch=0 error=0 skip=2 skipped_groups=-
+setdiff_rect1shard_t8	CLEAN
+setdiff_rect1shard_t1_vs_t8	CLEAN
+build___rows_rect	rc=0
+build___probe_cdef_double	rc=0
+build___pad_text	rc=0
+build___pad_small	rc=0
+build___pad2	rc=0
+build___pad3	rc=0
+build___pad4	rc=0
+build___pad_far	rc=0
+build___lf_rect	rc=0
+build___lf_rect1	rc=0
+build___probe_lf_hull	rc=0
+build___probe_bounds	rc=0
+test_decode_md5_verify	PASS
+test_decode_md5_verify_ignored	PASS
+test_thread_cleanup_test	PASS
+test_thread_cleanup_test_ignored	PASS
+test_tile_threading_overlap	PASS
+test_tile_threading_overlap_ignored	PASS
+test_reproduce_overlap	PASS
+test_reproduce_overlap_ignored	PASS
+test_mt_stress	PASS
+test_mt_stress_ignored	PASS
+clippy_tracker	rc=0
+clippy_tracker_nodefault	rc=0
+clippy_lib	rc=0
+clippy_lib_rect1shard	rc=0
+clippy_lib_cdefdouble	rc=0
+clippy_alltargets	rc!=0
+fmt_check	rc=0

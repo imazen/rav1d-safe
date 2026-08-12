@@ -1,0 +1,657 @@
+# The code-placement lottery: can it be removed? And the CDEF rectangle, priced
+# against a MEASURED transfer coefficient rather than its ceiling
+
+**Read `docs/RECT_SHIP.md` first.** PR #506 established that the `+0.9..1.3%`
+t=1 cost that kept the rectangle record default-off is **code placement, not
+work**: 4,828 bytes of provably-dead `#[used]` text — zero symbols resized,
+every hot loop-filter symbol byte-identical — costs the same `+1.1%` as the real
+feature, and nine binaries differing from `main`'s by 1–19 KB all land in
+`+1.1%..+1.6%` while a byte-identical copy reads `1.0006`.
+
+That leaves a **±1.5% layout lottery underneath every t=1 measurement in this
+repo**, with `main`'s current binary sitting on a lucky draw. This round asks
+the two questions that follow.
+
+**Three answers.**
+
+1. **The lottery is removable.** `-C llvm-args=-align-all-functions=4` cuts the
+   spread across four dead-text rungs from **1.37% to 0.18%** at 4K t=1 — and
+   more alignment is *worse* (64-byte: 0.75%, +2.66% of `__text`). It is
+   recommended as a MEASUREMENT flag and is NOT applied to the build (§5c).
+2. **The CDEF sites were worth collapsing.** One seam — `for_rows` /
+   `for_rows_mut`, which needed a MUTABLE rectangle guard the tracker did not
+   have — buys **−2.0% to −2.5% wall at t=8** on the 1024-wide family, 9/10 to
+   12/12, replicated inside the aligned family, null on the cell that files zero
+   CDEF registrations. Composed with `fill`'s rectangle: **−3.9% to −4.5%**.
+3. **Both rectangles are flipped ON by default here**, because the binary that
+   would ship measures **1.0014 (3/8)** at 4K t=1 and **0.9992 (5/9)** at
+   1024x576 t=1 against `main`'s own binary, inside a byte-identical control's
+   band.
+
+*(The decision rule in §2 was written and committed BEFORE the grid that decides
+it finished — see this file's first revision.)*
+
+---
+
+## 1. What is NOT covered, first
+
+* **One box** (Apple M4 Pro, 8P+4E, macOS 26.5.2, aarch64), **one toolchain**
+  (rustc 1.97.1), **8-bit 4:2:0 only** in every timed grid. Nothing here says an
+  x86_64 or a different microarchitecture has the same lottery or responds the
+  same way to alignment.
+* **The sub-mechanism of the lottery is still not identified.** This round tests
+  whether *forcing function alignment removes it*; it does not distinguish
+  I-cache set conflicts from fetch-window effects from branch-predictor
+  aliasing. A negative here closes "can alignment fix it", not "what is it".
+* **A linker order file was NOT tried.** It is the remaining lever and it is
+  platform-specific and maintenance-heavy; §5 prices what it would have to beat.
+* **`-C llvm-args=-align-all-nofallthru-blocks`** (basic-block alignment) was
+  NOT measured: whole-function alignment answered the question, and the block
+  flag would have needed its own four-family grid to say anything about spread.
+* **Alignment's effect at t=8 is NOT established** — each family carries one pad
+  rung there, and one rung is not a spread (§4c).
+* **`c256x2048`'s response to the CDEF collapse is contradictory** between the
+  two alignment families and is reported as a non-result (§4b).
+* No `unsafe` is added to `rav1d-safe`; `crates/rav1d-disjoint-mut` DOES change
+  (the mutable rectangle guard), so it is Miri'd under both models and its CI
+  legs fire on this branch by path filter — see §6c.
+
+## 2. The decision rule, pre-registered
+
+The success criterion for Task 1 is **spread reduction, not a good draw**. For
+each alignment family (a0 = none, a4/a5/a6 = 16/32/64-byte) the grid measures
+four rungs — `plain`, and `+4,828 / +9,692 / +19,420` bytes of dead text — and
+reduces the family to
+
+  `SPREAD = max(rung medians) − min(rung medians)`, paired per round against
+  that family's OWN unpadded build.
+
+Alignment is worth shipping **for measurement quality alone** iff, on
+`v4k8tile` t=1 (the cell with the largest tax):
+
+1. `SPREAD` falls by at least **2x** against `a0`, **and**
+2. the absolute cost `aNplain / a0plain` is **≤ 1.003**.
+
+If (1) fails, that is a clean negative and it goes in `docs/AGENT_BRIEF.md` §6.
+If (1) holds and (2) fails, the trade is reported with both numbers and no
+default changes.
+
+## 3. Grid L — alignment × pad rungs
+
+18 arms in one rotation: four alignment families × four rungs, plus a
+byte-identical copy in the `a0` and `a6` families. `scripts/perf/layout_build.sh`
+builds them (one target dir per family — `RUSTFLAGS` is part of the fingerprint),
+`scripts/perf/layout_checksums.sh` proves **one md5 per cell across all 18 arms
+at BOTH thread counts** before any clock, and `scripts/perf/tiled_wallcpu.sh`
+under `measlock`, never `nice`d, two-point fit, times them.
+
+The alignment took: `nm` says **100.0%** of `__text` symbols are 16/32/64-byte
+aligned in `a4`/`a5`/`a6` against 23.9%/11.8%/6.3% in `a0`, and the pad rungs add
+the same `+4,828 / +9,692 / +19,420` bytes in every family.
+
+| arm | `__text` | vs `a0plain` | % 16B-aligned | % 64B-aligned |
+|---|---|---|---|---|
+| `a0plain` | 1,837,492 | — | 23.9 | 6.3 |
+| `a4plain` | 1,847,552 | +10,060 (+0.55%) | **100.0** | 22.0 |
+| `a5plain` | 1,859,360 | +21,868 (+1.19%) | 100.0 | 45.8 |
+| `a6plain` | 1,886,400 | +48,908 (+2.66%) | 100.0 | **100.0** |
+
+### 3a. The lottery IS removable, and 16-byte alignment removes 87% of it
+
+`v4k8tile` t=1, wall, paired per round against each family's own `plain`,
+n=12 (round 0 dropped). Nine of the twelve rounds saw a foreign process above
+25% CPU at some point, so both readings are given: the campaign's usual
+drop-the-loaded-round reduction leaves n=3, and the keep-loaded reduction keeps
+all 12 paired ratios. **They agree to within 0.04 percentage points of spread**,
+which is itself evidence that a loaded round costs drift and not pairing.
+
+| family | `pad1` (+4,828 B) | `pad2` (+9,692 B) | `pad4` (+19,420 B) | **SPREAD** | (n=3 drop-loaded) | `plain`/`a0plain` |
+|---|---|---|---|---|---|---|
+| **a0** none | 1.0101 | 1.0118 | 1.0137 | **1.37%** | (0.98%) | 1.0000 |
+| **a4** 16 B | 0.9993 | 0.9982 | 0.9982 | **0.18%** | (0.16%) | 1.0153 |
+| **a5** 32 B | 0.9973 | 0.9964 | 0.9962 | **0.38%** | (0.35%) | 1.0164 |
+| **a6** 64 B | 0.9925 | 0.9935 | 0.9977 | **0.75%** | (0.92%) | 1.0178 |
+
+Byte-identical controls in the same grid: `a0B` **0.9996 (7/12)**, `a6B`
+**1.0006 (5/12)** — coin-flip signs, medians inside 0.07%. So the instrument
+floor is ~0.05% and `a0`'s 1.37% spread is **20x** it.
+
+The other two cells, same reduction (keep-loaded, n=12):
+
+| cell t=1 | a0 spread | a4 | a5 | a6 | `a4plain`/`a0plain` | a0B |
+|---|---|---|---|---|---|---|
+| `v4k8tile` (4K, 8 tiles) | **1.37%** | **0.18%** | 0.38% | 0.75% | 1.0153 | 0.9996 (7/12) |
+| `c1024x576` | 0.94% | **0.36%** | 0.54% | 0.42% | 1.0082 | 1.0000 (6/12) |
+| `c256x2048` (the zero-tax cell) | 0.39% | 0.35% | **0.15%** | 0.86% | 1.0020 | 0.9993 (6/12) |
+
+CPU tracks wall exactly at t=1 (`v4k8tile`: a0 1.34%, a4 0.20%, a5 0.30%,
+a6 0.65%), as it must when one thread is busy the whole time.
+
+Three readings:
+
+1. **Whole-function alignment at 16 bytes shrinks the spread 7.6x on the cell
+   where the lottery lives** (1.37% → 0.18%), 2.6x at 1024x576, and does nothing
+   at 256x2048 — which is the cell that had no lottery to remove. The benefit
+   tracks the tax, exactly as an I-cache story predicts.
+2. **More alignment is worse.** 64-byte is only a 1.8x reduction and costs the
+   most; 32-byte sits between. The `__text` cost runs +0.55% / +1.19% / +2.66%,
+   so the padding's own I-cache pressure eats the stabilisation it buys. The
+   sweep was necessary: a single N would have given the wrong answer at 6.
+3. **The pre-registered criterion (2) FAILS as written**: `a4plain / a0plain` is
+   **1.0153**, five times the 1.003 bar. §5 argues that bar was mis-specified —
+   `a0plain` is `main`'s LOTTERY WINNER, not a neutral reference — but the rule
+   was pre-registered and it fails, so it is reported as failed.
+
+### 3b. What the +1.5% actually is
+
+`a0plain` beats every other binary in THIS grid, and #506 saw it beat nine more
+by 1.1–1.6%. (§5a corrects that picture: two of grid M1's perturbed `a0`
+binaries land ON `a0plain`'s level, so the lottery has at least two levels
+rather than one winner. It does not change the arithmetic here, which is about
+the level the pad rungs sit at.) Against the `a0` family's own perturbed rungs
+(mean 1.0119 on `v4k8tile` t=1) the aligned build costs
+
+  `1.0153 / 1.0119 = 1.0034` — **+0.34%**,
+
+and at 1024x576 `1.0082 / 1.0069 = 1.0013`, at 256x2048 `1.0020 / 1.0004 =
+1.0016`. So the honest decomposition of the 1.53% is **~1.2 points of "stop
+being `main`'s exact binary", which any change forfeits, and ~0.3 points of real
+padding cost.** That distinction is the whole of §5, and it is a decomposition,
+not a measurement of a third binary: no arm here isolates "aligned, and also
+lucky".
+
+### 3b2. The intercept, since every ratio here comes from a two-point fit
+
+`tiled_wallcpu.sh` fits `total = a + b·frames` at two frame counts and every
+ratio in this document is a ratio of `b`, so `a` — process exec, AVIF parse,
+decoder construction, pool spin-up — is differenced out rather than reported.
+It is reported here, median over rounds, for the shipped arm and `main`'s:
+
+| cell | arm | intercept `a` (ms) | slope `b` (ms/frame) | `a` as % of the `n_hi` run |
+|---|---|---|---|---|
+| `v4k8tile` t=1 | `a0plain` | 337.3 | 294.806 | 2.8% |
+| `v4k8tile` t=1 | `a0both` | 334.7 | 295.083 | 2.8% |
+| `c1024x576` t=1 | `a0plain` | 19.8 | 13.928 | 0.7% |
+| `c1024x576` t=1 | `a0both` | 19.4 | 13.911 | 0.7% |
+| `c1024x576` t=8 | `a0plain` | 7.0 | 2.953 | 1.2% |
+| `c1024x576` t=8 | `a0both` | 7.2 | 2.853 | 1.2% |
+| `c1024x192` t=8 | `a0plain` | 5.6 | 1.122 | 2.4% |
+| `c1024x192` t=8 | `a0both` | 6.3 | 1.078 | 2.8% |
+| `c256x2048` t=8 | `a0plain` | 8.6 | 3.733 | 1.1% |
+| `c256x2048` t=8 | `a0both` | 8.6 | 3.708 | 1.1% |
+| `text_q20` t=8 | `a0plain` | 6.6 | 1.472 | 2.2% |
+
+The intercept is **0.7% to 2.8%** of the long run and is **flat between the
+arms** — it never moves by more than 0.7 ms except at 4K, where it is 2.6 ms out
+of 335 (0.8%) and in the arm's FAVOUR. So the fit is not hiding a fixed cost in
+either direction, which is the thing a slope-only report cannot rule out.
+
+### 3c. Not tried
+
+Basic-block alignment (`-align-all-nofallthru-blocks`) was **not measured** —
+the whole-function sweep answered the question and the block flag would have
+needed its own 4-family grid. If a future round wants the residual 0.18%, that
+is where to look.
+
+## 4. Grid D — the CDEF question, decided on a measured transfer coefficient
+
+The brief's gate for building anything at the CDEF sites was their
+**records-per-distinct-shard-line ratio**, on the theory that cost tracks
+distinct shard lines and a repeat touch of a line this core already owns is
+~7.7x cheaper. Measured first, before any clock (`probe_tracker --features
+__probe_bounds`, t=8, 40 iters, per-frame; `~/tmp/layout/counts/pb_*_t8.txt`):
+
+| cell t=8 | site | calls/frame | `rows_mean` | `row_shards_mean` | **records per line** | `pct_row_wide` |
+|---|---|---|---|---|---|---|
+| `c1024x576` | `loopfilter.rs:944` (`fill`) | 21,364 | 8.92 | 2.318 | **3.85** | 0.00% |
+| `c1024x576` | `cdef_arm.rs:{193,625,1222}` | 3,776 each | 8.00 | 1.928–1.929 | **4.15** | 0.00% |
+| `c1024x576` | `cdef_apply.rs:107` | 3,904 | 8.00 | 1.928 | **4.15** | 0.00% |
+| `c1024x384` | `fill` | 13,869 | 9.01 | 2.332 | 3.86 | 0.00% |
+| `c1024x384` | the four CDEF sites | 2,368–2,456 | 8.00 | 1.939–1.940 | 4.13 | 0.00% |
+| `c1024x192` | `fill` | 6,752 | 9.01 | 2.322 | 3.88 | 0.00% |
+| `c1024x192` | the four CDEF sites | 1,024–1,072 | 8.00 | 1.913–1.915 | 4.18 | 0.00% |
+| `c256x2048` | `fill` | 20,093 | 8.98 | 2.090 | 4.30 | 0.00% |
+| `c256x2048` | the five CDEF sites | 1,024–5,632 | 4.00–8.00 | **1.000** | 7.27–8.00 | 0.00% |
+
+**The ratio test does not disqualify the CDEF sites, and it also does not
+separate winners from losers.** On the 1024-wide family — the family where the
+`fill` rectangle actually delivered — CDEF's geometry is `fill`'s to within 8%
+(4.13–4.18 against 3.85–3.88), so if a high ratio predicted a null, `fill`
+should have measured null there too, and it measured **−1.5% to −2.4%**.
+`c256x2048` is the cell with both the highest ratio (4.30 at `fill`, 7.3–8.0 at
+CDEF) and the null, but four previous levers have died on that cell for reasons
+`docs/C256_CONTENTION.md` §7 attributes to coherence, not geometry. One ordered
+pair is not a rule.
+
+So the ratio was replaced with a **measured transfer coefficient**. Grid D
+prices BOTH populations by doubling, in one binary each, on the three cells
+where `fill`'s collapse is already known — which turns the standing caveat into
+a number instead of a worry. `scripts/perf/layout_transfer.py`,
+`benchmarks/layout_D_2026-08-11.tsv`, `measlock`, un-`nice`d, n=11–13 after
+dropping loaded rounds, two A/A controls in the grid (`lfoff2`, `cdefoff2`):
+
+| cell t=8 | site | +regs/frame | doubling wall | sign | doubling CPU | **ns/reg** |
+|---|---|---|---|---|---|---|
+| `c1024x192` | `fill` | 60,820 | **1.0784** | 0/11 | 1.0388 | 3.19 |
+| `c1024x192` | CDEF | 33,152 | **1.0743** | 0/11 | 1.0336 | 5.03 |
+| `c1024x384` | `fill` | 125,018 | **1.0885** | 0/13 | 1.0319 | 2.67 |
+| `c1024x384` | CDEF | 76,480 | **1.0601** | 0/13 | 1.0397 | 5.36 |
+| `c1024x576` | `fill` | 190,632 | **1.0720** | 0/12 | 1.0394 | 3.34 |
+| `c1024x576` | CDEF | 121,856 | **1.0385** | 0/12 | 1.0414 | 5.43 |
+
+A/A controls: `cdefoff2` 1.0000 (5/11) / 1.0030 (5/13) / 1.0009 (5/12);
+`lfoff2` 1.0049 (4/11) / 0.9970 (7/13) / 1.0019 (4/12). #506's single CDEF cell
+(`c1024x576`, +4.09% wall, 5.27 ns/reg) **replicates** here at +3.85% and
+5.43 ns/reg.
+
+Then, per cell, `ceiling = (1 − 1/rows) × (doubling − 1)` and
+`tau = delivered / ceiling`, with `delivered` for `fill` being its
+same-source-controlled t=8 win (`ship`/`plain2`, `docs/RECT_SHIP.md` §6 — cited,
+and re-measured in-grid by grid M):
+
+| cell t=8 | `fill` ceiling | `fill` delivered | **tau** | CDEF ceiling | **CDEF predicted** |
+|---|---|---|---|---|---|
+| `c1024x192` | −6.97% | −1.49% | **0.214** | −6.50% | **−1.39%** |
+| `c1024x384` | −7.87% | −2.38% | **0.303** | −5.26% | **−1.59%** |
+| `c1024x576` | −6.39% | −1.74% | **0.272** | −3.37% | **−0.92%** |
+
+**A doubling over-promises by 3.3x to 4.7x, consistently.** That is the number
+the campaign was missing, and it is the answer to "is a doubling an upper bound
+or a forecast": an upper bound, times ~0.26. It also says the honest expectation
+for the CDEF collapse is **−0.9% to −1.6% wall at t=8 on the 1024-wide family**,
+not the ~3.6% §7 of `docs/RECT_SHIP.md` computed — which is still worth building,
+because it is the same size as what the `fill` rectangle delivers on exactly
+these cells.
+
+**Why a doubling over-promises, as a hypothesis and not a result:** doubling
+raises each shard's occupancy, and both `find` and `remove` scan the shard's live
+records, so the added population is charged a scan cost the removed population
+does not refund at occupancy ~0.02. The prediction that follows — `tau` should be
+closer to 1 at low occupancy and fall as occupancy rises — is NOT tested here.
+
+### 4a. What was built: `__rows_rect`, one seam, both directions
+
+The five sites `docs/RECT_RECORDS.md` §7b names are not five pieces of code —
+they are four (five on 4:2:0 chroma) call sites of **two helpers**,
+`Rav1dPictureDataComponentOffset::for_rows` and `for_rows_mut`
+(`include/dav1d/picture.rs`). So the collapse is one change at that seam, not a
+per-site edit, and it needs the MUTABLE rectangle the tracker did not have:
+
+* `crates/rav1d-disjoint-mut`: `DisjointMutRectGuard` (`row_mut(&mut self)`, so
+  at most one row reference is live at a time and no `&mut [_]` wider than one
+  row is ever created), `DisjointMut::index_rect_mut{,_as}`, and `add_rect_mut`
+  un-`cfg(test)`-ed. All behind the crate feature `__rect_mut`, so a DEFAULT
+  build does not even grow a public symbol it never calls — which matters here
+  for the reason §3 measures.
+* the geometry validation `index_rect_inner` did inline is now
+  `rect_geometry`, shared by the immutable and mutable constructors so the two
+  cannot disagree about what is representable.
+* `include/dav1d/picture.rs`: both helpers try the rectangle first under tile
+  threading, and fall through to the unchanged per-row loop on refusal.
+
+**Liveness, checked before any clock** (`probe-wide`, `c1024x576`, t=8, 10
+iters + warmup):
+
+| arm | `n_rect` | declined | % multi-shard | `w_shards` | `w_blocks` | `w_full` |
+|---|---|---|---|---|---|---|
+| base | **0** | 0 | — | 1,530 | 0 | 0 |
+| `__rows_rect` | **167,552** (15,232/frame) | **0** | 92.8% | 1,530 | 0 | 0 |
+| `__lf_rect,__rows_rect` | 402,556 | 0 | 91.5% | 1,530 | 0 | 0 |
+
+15,232/frame is **exactly** the four sites' call count from the bounds probe
+(3,776 × 3 + 3,904), so every CDEF `for_rows`/`for_rows_mut` on this cell is
+representable and none is declined. That removes 121,856 − 15,232 = 106,624
+registrations/frame, i.e. 529,092 → 422,468 (**−20.2%**) for the CDEF seam
+alone. **Measured with `probe-sites` on the flipped default** (both rectangles,
+`lost = 0`), the composed population is:
+
+| cell t=8 | base | both rectangles | delta |
+|---|---|---|---|
+| `c1024x192` | 156,777 | **73,701** | **−53.0%** |
+| `c1024x384` | 333,863 | **155,794** | **−53.3%** |
+| `c1024x576` | 529,092 | **253,200** | **−52.1%** |
+| `c256x2048` | 569,690 | **271,389** | **−52.4%** |
+
+**The decoder's borrow-registration population is halved**, and — per the
+corrected cost model in `docs/AGENT_BRIEF.md` §6 — that is emphatically NOT the
+same statement as the wall win, which is −3.9% to −4.5%. `w_shards` is IDENTICAL in all three arms
+and `w_blocks`/`w_full` stay 0, so the rectangle never promotes to the wide path
+(a promotion would degrade it to its hull and could refuse a legitimate borrow).
+
+**Correctness, before any clock**: the 766-vector corpus passes at t=1 AND t=8
+in the `__rows_rect` arm with no `--skip-group` (`766 PASS + 2 SKIP,
+mismatch=0 error=0`), set-diffed BY NAME against
+`benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst` — CLEAN at both — and
+all ten timed arms produce ONE md5 per cell at both thread counts.
+
+### 4b. Grid M8 — the collapse measured, and it beats its own prediction
+
+t=8, `measlock`, un-`nice`d, two-point fit, 10 arms rotating, n=9–12 after
+dropping loaded rounds. `a0pad2` (+9,692 B of dead text, same source, provably
+never executed) is the layout-matched base — the control #506 established is the
+right one — and the `vs a0plain` column is what a user of today's binary gets.
+
+| cell t=8 | **`a0rows`** CDEF rect | sign | `a0rect` `fill` rect | sign | **`a0both`** | sign | `a0B` byte-identical |
+|---|---|---|---|---|---|---|---|
+| `c1024x192` | **0.9754** | 9/10 | 0.9829 | 9/10 | **0.9559** | 10/10 | 0.9975 (5/10) |
+| `c1024x384` | **0.9804** | 11/11 | 0.9850 | 10/11 | **0.9551** | 11/11 | 1.0029 (5/11) |
+| `c1024x576` | **0.9791** | 9/9 | 0.9848 | 8/9 | **0.9608** | 9/9 | 0.9924 (6/9) |
+| `c256x2048` | **0.9794** | 12/12 | 1.0007 | 5/12 | **0.9787** | 12/12 | 1.0007 (5/12) |
+| `text_q20` (**zero** CDEF regs) | 1.0038 | 4/11 | 0.9962 | 6/11 | 0.9924 | 10/11 | 1.0114 (0/11) |
+
+CPU agrees (`a0rows`: 0.9867 / 0.9836 / 0.9794 / 0.9802 / 1.0000, signs
+10/10–12/12 on the four cells that move).
+
+* **The CDEF rectangle is −2.0% to −2.5% wall on every multi-tile t=8 cell that
+  files CDEF registrations**, with 9/10 to 12/12 signs, and **1.0038 (4/11) on
+  the cell that files none** — the other-side control doing its job.
+* **The prediction was conservative and directionally right.** §4 predicted
+  −0.92% / −1.59% / −1.39% on `c1024x576` / `c1024x384` / `c1024x192`; measured
+  −2.09% / −1.96% / −2.46% against the pad control (−1.28% / −1.37% / −1.98%
+  against `a0plain`). So `tau` computed from `fill` UNDER-predicts the CDEF
+  collapse by ~1.3–1.8x. A doubling is still not a forecast — but a doubling
+  discounted by a `fill`-calibrated `tau` was within a factor of two, which is
+  the first time this campaign could price an unbuilt collapse at all.
+* **`c256x2048` moves in the `a0` family and NOT in the `a4` one — so it is not
+  a result.** `a0rows` reads 0.9794 (12/12) against the pad and 0.9910 (11/12)
+  against `a0plain`, on the cell that has declined a count cut, a coarser shard,
+  a finer shard, the waiting policy and `fill`'s own rectangle. But the SAME
+  mechanism in the 16-byte-aligned family reads **`a4rows`/`a4plain` = 1.0007
+  (6/12)** — a coin flip. The 1024-family win replicates across both families
+  (below); this one does not, so `c256x2048` stays on the declined list and the
+  headline is the 1024 family only.
+* **The two mechanisms compose super-additively on the 1024 family**:
+  0.9754 × 0.9829 = 0.9587 predicted, 0.9559 measured (`c1024x192`);
+  0.9804 × 0.9850 = 0.9657 vs 0.9551 (`c1024x384`);
+  0.9791 × 0.9848 = 0.9641 vs 0.9608 (`c1024x576`). Composed, **−3.9% to −4.5%
+  wall at t=8** — the largest t=8 win in the campaign's record.
+
+### 4c. The win REPLICATES inside the aligned family — which is the point of §3
+
+The same 10-arm grid carries the mechanism in the 16-byte-aligned family, paired
+against `a4plain` (its own unpadded build) with `a4pad2` as that family's inert
+layout control:
+
+| cell t=8 | `a4rows`/`a4plain` | sign | `a4pad2`/`a4plain` | sign | `a0rows`/`a0pad2` (for comparison) |
+|---|---|---|---|---|---|
+| `c1024x192` | **0.9801** | **10/10** | 1.0000 | 4/10 | 0.9754 (9/10) |
+| `c1024x384` | **0.9734** | **11/11** | 0.9945 | 8/11 | 0.9804 (11/11) |
+| `c1024x576` | **0.9801** | **9/9** | 0.9924 | 6/9 | 0.9791 (9/9) |
+| `c256x2048` | 1.0007 | 6/12 | 0.9905 | 8/12 | 0.9794 (12/12) |
+| `text_q20` (zero CDEF regs) | 0.9925 | 7/11 | 0.9962 | 6/11 | 1.0038 (4/11) |
+
+**−2.0% to −2.7% on the 1024 family in a binary where a layout draw cannot hide
+in the number**, which is what §3 was for. And it is the aligned family that
+exposes `c256x2048` as a non-result.
+
+Note also that the aligned family's own layout control moves ±0.95% at t=8
+(`a4pad2` 0.9905–1.0000) against the unaligned family's ±1.13% (`a0pad2`
+0.9887–1.0091) — **alignment is NOT shown to stabilise t=8.** One rung per
+family is not a spread, and this round did not sweep the rungs at t=8; §3's
+finding is a t=1 finding.
+
+**Unexplained, and named as such:** why `c256x2048` responds to this collapse in
+one layout and not the other, and why it responds at all when it does not to
+`fill`'s. The two differ in the shard-set size of the record that
+replaces the rows (CDEF's hull is **1.000** blocks there, `fill`'s is 2.090, and
+79.6% of `fill`'s accepted rectangles are multi-shard) and in marginal price
+(3.27 vs 2.42–2.71 ns). But on the 1024-wide family CDEF's own rectangles are
+92.8% multi-shard and pay just as well, so "single-shard records are what pays"
+does not survive its own second cell. `--features __lf_rect1` exists to test the
+shard-set-size hypothesis directly and was NOT run here.
+
+**One arm was void in this grid**: `bench_a4B` did not exist when M8 launched, so
+the `a4B` rows are zeros and the aligned family has no byte-identical control in
+M8. It is present in M1. The other nine arms are unaffected (each is a separate
+process invocation), and `a0B` covers the floor.
+
+## 5. The rectangle default
+
+### 5a. Grid M1 — t=1, and why it needed re-running
+
+`v4k8tile` t=1 and `c1024x576` t=1, same 10 arms, n=9 keep-loaded. **This grid
+is degraded**: 6 of 9 rounds saw a foreign process above 25% CPU and one round
+saw TWELVE, so the drop-loaded reduction leaves n=3 and the keep-loaded one
+carries the load in its drift. Both are given; grid N (§5b) re-measures the
+decision cleanly.
+
+`v4k8tile` t=1, keep-loaded n=9, vs `a0plain` (= `main`'s binary):
+
+| arm | wall/`a0plain` | sign | vs `a0pad2` |
+|---|---|---|---|
+| `a0B` byte-identical | 1.0014 | 3/9 | 0.9897 |
+| **`a0rows`** CDEF rect | **0.9981** | 6/9 | 0.9871 |
+| **`a0both`** | **0.9992** | 5/9 | 0.9886 |
+| `a0pad2` dead text | **1.0123** | **0/9** | 1.0000 |
+| `a0rect` `fill` rect | **1.0152** | **0/9** | 1.0016 |
+| `a4plain` | 1.0121 | 0/9 | 1.0022 |
+| `a4rows` | 1.0093 | 0/9 | 0.9994 |
+
+Two things, and the first is a correction to #506:
+
+* **`main`'s binary is not uniquely lucky.** #506 saw nine perturbed binaries
+  all land +1.1%..+1.6% and read that as "`a0plain` is a local optimum any
+  change forfeits". Here two of four perturbed `a0` binaries — `a0rows` and
+  `a0both` — land ON `a0plain`'s level (0.9981 and 0.9992) while `a0pad2` and
+  `a0rect` land +1.2%/+1.5%. The lottery has at least two visible levels and a
+  new binary can draw either.
+* **The aligned family is tight again**: `a4{plain,B,pad2,rows}` span
+  1.0093–1.0142, a **0.49%** spread, against the six `a0` binaries' **1.71%**.
+
+`v4k8tile` **t=8 in this grid is NOT ESTABLISHED and is not used**: its own
+controls move ±2% (`a0B` 1.0046, `a0pad2` 1.0192) with per-round ranges from
+0.90 to 1.62. The t=8 evidence is grid M8's.
+
+
+## 6. Gates
+
+### 5b. Grid N — the ship decision, measured clean
+
+Grid M1 was too loaded to decide a default on, so the decision was re-measured:
+seven `a0` arms, `v4k8tile` t=1 and `c1024x576` t=1, 12 rounds, n=8–9 after
+dropping loaded rounds, `measlock`, un-`nice`d.
+
+| arm | `v4k8tile` t=1 | sign | `c1024x576` t=1 | sign |
+|---|---|---|---|---|
+| `a0B` byte-identical control | 0.9987 | 5/8 | 1.0024 | 4/9 |
+| **`a0both`** — what shipping BOTH rectangles produces | **1.0014** | **3/8** | **0.9992** | **5/9** |
+| `a0rows` — the CDEF rectangle alone | 0.9983 | 5/8 | 0.9980 | 6/9 |
+| `a0rect` — `fill`'s rectangle alone | **1.0115** | **0/8** | 1.0084 | 2/9 |
+| `a0pad2` — +9,692 B of dead text | **1.0110** | **0/8** | 1.0068 | 0/9 |
+| `a0pad4` — +19,420 B of dead text | **1.0159** | **0/8** | 1.0080 | 0/9 |
+
+All ratios are against **`a0plain`, which IS `main`'s binary** — the number a
+user of today's build would feel.
+
+**The binary that would ship costs nothing at t=1.** `a0both` reads 1.0014
+(3 of 8 rounds faster) at 4K and 0.9992 (5 of 9) at 1024x576, both inside the
+byte-identical control's own band (0.9987 / 1.0024) with coin-flip signs. It
+reproduces grid M1's independent reading (0.9992, 5/9). Meanwhile the two dead-
+text rungs and `fill`'s rectangle alone sit at +0.7% to +1.6% with 0/8 and 0/9
+signs — the lottery's other level, in the same grid, on the same rounds.
+
+So the t=1 question, which has gated this mechanism since #505, is answered: the
+composed default draws a NEUTRAL ticket, and that is measured against `main`'s
+own binary rather than argued from the arbitrariness of the draw.
+
+### 5c. The call
+
+**Both rectangles are flipped ON by default in this PR.** The case, entirely in
+same-source-controlled numbers:
+
+| question | answer |
+|---|---|
+| does it cost at t=1, in the binary that ships? | **No.** `a0both`/`a0plain` = 1.0014 (3/8) at 4K, 0.9992 (5/9) at 1024x576, against a byte-identical control at 0.9987/1.0024 |
+| does it pay at t=8? | **Yes.** −3.9% to −4.5% wall on the 1024-wide family (10/10, 11/11, 9/9) against a dead-text control of the same source |
+| is the win a layout draw? | **No.** It replicates in the 16-byte-aligned family, where §3 shows a draw cannot hide: `a4rows`/`a4plain` = 0.9801 / 0.9734 / 0.9801 with 10/10, 11/11, 9/9 |
+| is it correct? | 766 PASS + 2 SKIP at t=1 AND t=8, set-diffed BY NAME, in the flipped default; §6 |
+| does the shipped binary match the measured one? | **Yes** — `text_layout_diff.py` puts the flipped default's `__text` at exactly `bench_a0both`'s, 0 symbols resized, the only difference being two `drop_glue` symbols that swapped mangled names at identical sizes (§6) |
+
+**Alignment is NOT applied.** It is recommended as a MEASUREMENT flag and
+written into `docs/AGENT_BRIEF.md` §2, not into the build:
+
+* what it buys is a t=1 property (spread 1.37% → 0.18%), and this round did not
+  show it stabilises t=8 (§4c);
+* it costs ~+0.34% at 4K t=1 and ~+0.5% at t=8 against a typical binary, which
+  is real and is paid by every user;
+* and a **published crate's consumers do not inherit `RUSTFLAGS` anyway**, so
+  putting it in this repo's `.cargo/config.toml` would stabilise our benchmarks
+  and nobody else's. That is a legitimate thing to want — it is just not the
+  same thing as shipping it.
+
+If the project decides it wants a stable-layout shipped binary, the one-line
+change is `[build] rustflags = ["-C", "llvm-args=-align-all-functions=4"]` in
+`.cargo/config.toml`, and the price is the two numbers above.
+
+## 6. Gates
+
+Drivers `scripts/perf/layout_{gates,teeth}.sh`, records
+`benchmarks/layout_{gates,teeth}_2026-08-11.tsv`, logs `~/tmp/layout/{gates,teeth}`.
+Nothing here is timed, so everything is `nice`d and nothing takes the
+measurement lock.
+
+### 6a. Correctness — the flipped DEFAULT build
+
+| gate | result |
+|---|---|
+| **the DEFAULT build IS the arm that was timed** (`text_layout_diff.py` vs `bench_a0both`) | `__text` **1,887,580 → 1,887,580**, `resized_in_both` **0**, and the only difference is **2 `drop_glue` symbols that swapped mangled names at identical sizes** (336 B on each side, 1,629 symbols both) — a feature-set disambiguator artefact, not new code |
+| **corpus, DEFAULT (both rectangles), t=1**, no `--skip-group` | **766 PASS + 2 SKIP**, mismatch=0 error=0 |
+| **corpus, DEFAULT, t=8** | **766 PASS + 2 SKIP**, mismatch=0 error=0 |
+| corpus, 16-byte-aligned default, t=1 and t=8 | **766 PASS + 2 SKIP** each |
+| corpus, `__lf_rect1` (single-shard rectangles only), t=1 and t=8 | **766 PASS + 2 SKIP** each |
+| set-diff BY NAME (key `(group, name)`, value `(status, ACTUAL md5)`) vs `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst` | **CLEAN on all six** |
+| set-diff t=1 vs t=8 within each config | CLEAN, all three |
+| `cargo test --lib`, release AND debug | pass, both |
+| every measurement feature still builds: `__rows_rect`, `__probe_cdef_double`, `__pad_text`, `__pad_small`, `__pad2/3/4`, `__pad_far`, `__lf_rect`, `__lf_rect1`, `__probe_lf_hull`, `__probe_bounds` | rc=0, all 12 |
+| `decode_md5_verify`, `thread_cleanup_test`, `tile_threading_overlap`, `reproduce_overlap`, `mt_stress`, plain AND `-- --ignored`, DEFAULT arm | **pass, all 10 invocations** |
+| every timed arm's `CHECKSUM` before any timing | **ONE md5 per cell across 18 arms × 2 thread counts** (grid L) and **10 arms × 2** on 8 cells (grid M) |
+| `cargo fmt --all --check` | rc=0 |
+| clippy `-D warnings`: tracker `--all-targets`, tracker `--no-default-features --all-targets`, root `--lib`, `--lib --features {__lf_rect1, __probe_cdef_double, __rows_rect}` | rc=0, all 6 |
+| `cargo test -p rav1d-disjoint-mut` at CI's feature sets: default, `--no-default-features`, `--features __rect_1shard` | PASS, all three |
+| `cargo test -p rav1d-disjoint-mut --features std,__probe_count,__probe_sites` (CI matrix leg) | fails LOCALLY on a throughput floor, **identically at the base commit** — see below. **Passes on CI, twice** |
+
+**Three pre-existing failures, verified pre-existing rather than assumed:**
+
+* `cargo clippy --all-targets -- -D warnings` on the ROOT package fails with
+  **79 errors at the BASE commit** (3bed711, checked in a throwaway worktree):
+  dead code in `src/safe_simd/itx_arm*.rs` plus the `compile_error!` several
+  integration tests raise outside `--release`. The head tree fails the same way
+  (81 errors, the same set modulo which test target reports the release
+  requirement first). That leg is not part of CI and was removed from the gate
+  script.
+* `cargo test -p rav1d-disjoint-mut --features std,__probe_count,__probe_sites`
+  fails `guard_move_release::moving_a_mut_guard_into_drop_is_not_ub` **on this
+  box** — a THROUGHPUT floor, not UB: the test needs >350,000 grants in its
+  contended window and gets 147,435 (moved) / 166,360 (scoped). Its CONTROL arm
+  — identical work, guard destroyed by scope exit instead of by a move —
+  undershoots by the same amount, so it is not the move under test. **The BASE
+  commit fails it the same way** (94,555 / 203,924, checked in a throwaway
+  worktree at 3bed711), and **CI's two matching legs PASS**, so the floor is
+  `__probe_sites`' three atomic RMWs per registration meeting a macOS scheduler,
+  and it belongs to that feature rather than to this change.
+* `cargo test -p rav1d-disjoint-mut --all-features` does not compile and never
+  has: `__tracker_legacy` + `__probe_bounds` do not compose
+  (`bounds_probe.rs:1305` calls `BorrowTracker::probe_shard_of`, which the
+  legacy tracker has no counterpart for — absent at the base commit too), and
+  the CI workflow says "NOT `--all-features`" in a comment for this reason. The
+  gate now runs CI's feature sets. (The flip did add
+  `tracker_legacy::add_rect_mut`, which always DECLINES like its `add_rect_immut`
+  neighbour, so the legacy arm keeps measuring the tracker it names.)
+
+### 6b. Test teeth, proven by planting
+
+Every mutation restored from a backup COPY, never `git checkout --`, and
+verified byte-exact by sha256 AND `git diff --exit-code`.
+
+| planted mutation | result |
+|---|---|
+| (control) DEFAULT and `__lf_rect1` arms | one md5, `10aefc15…`, both |
+| `for_rows` reads `rect.row(h - 1 - row)` (rows reversed, always in range) | **CAUGHT** — md5 `f4a48384…` |
+| `for_rows_mut` writes `rect.row_mut(h - 1 - row)` | **CAUGHT** — md5 `4598c5f2…` |
+| **`add_rect_mut` registers `add_rect::<false>`** — a mutable rectangle silently recorded as immutable, which decodes correctly on an uncontended run and is exactly the silent-corruption shape this campaign keeps hitting | **CAUGHT** — the tracker's `rect_vs_rect_same_rows_overlapping_columns_is_caught` fails, because only a MUTABLE record can raise the panic it asserts. Restored: PASS |
+| `unsafe { core::mem::transmute(x) }` planted in `src/picture.rs` (no module-level forbid of its own) | **build FAILS at `lib.rs:13:12`** — `forbid(unsafe_code)` proven ACTIVE, not read. Restored, `git diff` clean |
+
+**Liveness and the refusal path, in the DEFAULT build** (`probe-wide`,
+`c1024x576`, t=8):
+
+| arm | `n_rect` accepted | `n_rect_declined` | `n_rect_multi` | `w_shards` | `w_blocks` | `w_full` |
+|---|---|---|---|---|---|---|
+| DEFAULT | **402,556** | **0** | 368,489 | 1,530 | 0 | 0 |
+| `__lf_rect1` (single-shard only) | 34,067 | **368,489** | 0 | 1,530 | 0 | 0 |
+
+`34,067 + 368,489 = 402,556` exactly: the single-shard arm declines precisely
+the multi-shard rectangles and **decodes to the same md5**, which is the
+mechanism's central claim — a refusal is never an approximation, the caller just
+runs its per-row loop. `w_shards` is identical to base in every arm and
+`w_blocks`/`w_full` are 0, so no rectangle ever promotes to the wide path.
+
+**No `unsafe` was added to `rav1d-safe`.** `crates/rav1d-disjoint-mut` gains
+`DisjointMutRectGuard::row_mut`'s `from_raw_parts_mut` — one `unsafe` block in
+the crate that is allowed to have them, mirroring the immutable guard's, and
+argued at the type level: `row_mut` takes `&mut self`, so at most one row
+reference exists at a time.
+
+### 6c. Miri
+
+`cargo +nightly miri test -p rav1d-disjoint-mut --no-fail-fast`, Stacked Borrows
+and Tree Borrows, DEFAULT features (the rectangle IS the default now), ONE
+TARGET AT A TIME. Record `benchmarks/layout_miri_2026-08-11.tsv`.
+
+| target | Stacked Borrows | Tree Borrows |
+|---|---|---|
+| `--lib` | **42 passed** | **42 passed** |
+| `soundness` | **25 passed** | **25 passed** |
+| `narrow_release` | 1 passed | 1 passed |
+| `wide_exclusion` | 1 passed | 1 passed |
+| `guard_move_release` | 2 passed | 2 passed |
+| `pic_buf_overflow` | **0 tests ran** | **0 tests ran** |
+| `aligned_miri` | **0 tests ran** | **0 tests ran** |
+| `shard_liveness` | **5 passed** | **TIMEOUT(1500s)** |
+
+**15 of 16 legs clean, no UB under either model**, on the branch that adds the
+mutable rectangle guard — the one piece of new `unsafe` in the change. The
+`shard_liveness` row is a NEW datum: `docs/AGENT_BRIEF.md` and #504/#505/#506 all
+record it as a timeout in every configuration at 900 s, and at **1500 s it
+completes under Stacked Borrows with 5 tests passing**. Tree Borrows still runs
+out. `pic_buf_overflow` and `aligned_miri` select **0 tests** under this feature
+set and are reported as 0, never as green.
+
+CI's Linux Miri legs — whole package, `--no-fail-fast`, both models, which DO
+cover `shard_liveness` — fire on this branch by path filter (§6d).
+
+### 6d. CI
+
+PR **#513**. This branch touches `crates/rav1d-disjoint-mut/**`, so the 13
+path-filtered legs in `disjoint-mut-ci.yml` — **including BOTH Miri models**,
+which run the whole package with `--no-fail-fast` on Linux and therefore cover
+`shard_liveness`, the target that times out locally — fire without
+`workflow_dispatch`. **49 distinct checks reported**, against #505/#506's 33–35;
+the surplus is exactly the disjoint-mut workflow firing on both the branch push
+and the pull request.
+
+Notably `Test (ubuntu-latest, --features std,__probe_count,__probe_sites)` —
+the leg that fails locally on a throughput floor (and fails identically at the
+base commit) — **passes on CI, twice**.
+
+One CI leg failed once on infrastructure, not code: `Wide-path exclusion gate`
+died in `actions/checkout` with `server certificate verification failed` before
+running anything. The same command passes locally
+(`a_wide_borrow_excludes_every_narrow_shard ... ok`). It is re-run rather than
+reported as a code failure — but it is reported.
+
+## 7. What the next round should do
+
+* **Sweep the pad rungs at t=8.** §3 is a t=1 finding; the one rung each family
+  carries at t=8 (`a0pad2` ±1.13%, `a4pad2` ±0.95%) is not a spread, so whether
+  alignment stabilises t=8 is OPEN and the t=8 numbers in this round are still
+  drawing from a lottery of unknown width.
+* **Explain `c256x2048`.** The CDEF collapse pays −2.1% there unaligned and
+  nothing aligned. Either the win or the null is a layout artefact and the
+  campaign should know which.
+* **`__lf_rect1`** (accept only single-shard rectangles) is the built, unrun
+  arm that tests whether the record's shard-set size is what decides. `fill`'s
+  rectangles are 79.6% multi-shard on `c256x2048`; CDEF's are 0%.
+* **Basic-block alignment** for the residual 0.18%.
+* **A linker order file** is the only remaining lever that could give a stable
+  layout *without* alignment's padding cost. It would have to beat +0.34% at
+  4K t=1 while being maintained per-platform; nobody has priced that.

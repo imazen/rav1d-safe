@@ -2512,12 +2512,11 @@ impl BorrowTracker {
 
     /// [`Self::add_rect_immut`] for a mutable rectangle.
     ///
-    /// **No shipping caller yet** — `#[cfg(test)]` says so rather than an
-    /// `allow(dead_code)` pretending otherwise. It exists because the exact
-    /// rectangle-vs-rectangle test can only be reached with a MUTABLE rectangle
-    /// (two immutable records never conflict), and that test is the one gate
-    /// that distinguishes an exact record from a hull.
-    #[cfg(test)]
+    /// Two callers: the exact rectangle-vs-rectangle test — reachable only with
+    /// a MUTABLE rectangle, since two immutable records never conflict, and the
+    /// one gate that distinguishes an exact record from a hull — and
+    /// [`super::DisjointMut::index_rect_mut`], which is how a WRITE site
+    /// (`for_rows_mut`) collapses its per-row records.
     #[inline]
     #[track_caller]
     pub fn add_rect_mut(

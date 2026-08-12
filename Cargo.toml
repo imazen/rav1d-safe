@@ -107,6 +107,10 @@ __probe_rect_hull = []
 # isolation `benchmarks/lf_vbatch_iso_2026-08-10_v1.tsv` had to be built after
 # the fact. Absent from `default`; deleted (and the path made unconditional) if
 # it wins. See src/loopfilter.rs `LfBlock::fill`.
+# RETAINED AS A NO-OP. The rectangle is now the DEFAULT path (2026-08-11), so
+# this feature selects nothing; it stays declared only so #505's and #506's
+# committed drivers (`scripts/perf/rect_gates.sh`, `rectship_{gates,teeth}.sh`)
+# still build. Delete it once those are retired.
 __lf_rect = []
 # `__lf_rect` restricted to ONE-SHARD rectangles — the only ones strictly cheaper
 # than the per-row guards they replace.
@@ -116,6 +120,17 @@ __lf_rect1 = ["__lf_rect", "rav1d-disjoint-mut/__rect_1shard"]
 # in ONE binary — the LF_DOUBLE shape, applied to the five sites
 # docs/RECT_RECORDS.md §7b named. See `picture::cdef_double_reads`.
 __probe_cdef_double = []
+# MEASUREMENT ARM for the strided-RECTANGLE record at the `for_rows` /
+# `for_rows_mut` seam: ONE exact `h x w` registration (immutable for the read
+# helper, MUTABLE for the write one) instead of `h` per-row ones, under tile
+# threading. On every cell this campaign times, the population at that seam is
+# the CDEF sites `docs/RECT_RECORDS.md` §7b named — priced at +3.9% to +7.4% of
+# WALL by `__probe_cdef_double` — so this is the collapse that pricing was for.
+# Absent from `default`. See `include/dav1d/picture.rs::for_rows{,_mut}` and
+# `docs/LAYOUT_CDEF.md`.
+# RETAINED AS A NO-OP, same reason as `__lf_rect`: the `for_rows` /
+# `for_rows_mut` rectangle is the DEFAULT path as of 2026-08-11.
+__rows_rect = []
 # LAYOUT-NOISE CONTROL (measurement only): never-executed `__text` emitted from
 # src/loopfilter.rs, so every hot symbol keeps a byte-identical instruction
 # stream and only its ADDRESS moves. This is the control the rectangle round did

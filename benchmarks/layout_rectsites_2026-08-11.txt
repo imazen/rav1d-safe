@@ -1,0 +1,42 @@
+=== c1024x576 t=8 ===
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	151040	81025	131635	0	0	0	0	0	8.00	8	1.928	1.928	1.928	2	0.00	0.00	0.00	0.00	0.00	100.00	13	src/safe_simd/cdef_arm.rs:625:9
+RECT	151040	76135	126237	0	0	0	0	0	8.00	8	1.929	1.929	1.929	2	0.00	0.00	0.00	0.00	0.00	99.28	13	src/safe_simd/cdef_arm.rs:193:9
+RECT	151040	80975	132753	0	0	0	0	0	8.00	8	1.928	1.928	1.928	2	0.00	0.00	0.00	0.00	0.00	100.00	13	src/safe_simd/cdef_arm.rs:1222:9
+RECT	854560	394279	745015	0	0	0	0	0	8.92	16	2.318	2.318	2.318	4	0.00	0.00	0.00	0.00	0.00	99.64	11,13	src/loopfilter.rs:944:17
+RECT	156160	84217	138251	0	0	0	0	0	8.00	8	1.928	1.928	1.928	2	0.00	0.00	0.00	0.00	0.00	100.00	13	src/cdef_apply.rs:107:32
+RECTMETA	rows_capped=0	gaps_sampled=0
+=== c1024x384 t=8 ===
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	94720	35545	43868	0	0	0	0	0	8.00	8	1.939	1.939	1.939	2	0.00	0.00	0.00	0.00	0.00	100.00	13	src/safe_simd/cdef_arm.rs:625:9
+RECT	94720	32910	41052	0	0	0	0	0	8.00	8	1.940	1.940	1.940	2	0.00	0.00	0.00	0.00	0.00	99.24	13	src/safe_simd/cdef_arm.rs:193:9
+RECT	94720	35481	44164	0	0	0	0	0	8.00	8	1.939	1.939	1.939	2	0.00	0.00	0.00	0.00	0.00	100.00	13	src/safe_simd/cdef_arm.rs:1222:9
+RECT	554760	261383	417946	0	0	0	0	0	9.01	16	2.332	2.332	2.332	4	0.00	0.00	0.00	0.00	0.00	99.63	11,13	src/loopfilter.rs:944:17
+RECT	98240	37618	46717	0	0	0	0	0	8.00	8	1.939	1.939	1.939	2	0.00	0.00	0.00	0.00	0.00	100.00	13	src/cdef_apply.rs:107:32
+RECTMETA	rows_capped=0	gaps_sampled=0
+=== c1024x192 t=8 ===
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	40960	4440	4440	0	0	0	0	0	8.00	8	1.914	1.914	1.914	2	0.00	0.00	0.00	0.00	0.00	100.00	13	src/safe_simd/cdef_arm.rs:625:9
+RECT	40960	2638	2638	0	0	0	0	0	8.00	8	1.915	1.915	1.915	2	0.00	0.00	0.00	0.00	0.00	99.12	13	src/safe_simd/cdef_arm.rs:193:9
+RECT	40960	3822	3822	0	0	0	0	0	8.00	8	1.914	1.914	1.914	2	0.00	0.00	0.00	0.00	0.00	100.00	13	src/safe_simd/cdef_arm.rs:1222:9
+RECT	270080	67176	74406	0	0	0	0	0	9.01	16	2.322	2.322	2.322	4	0.00	0.00	0.00	0.00	0.00	99.63	11,13	src/loopfilter.rs:944:17
+RECT	42880	4444	4444	0	0	0	0	0	8.00	8	1.913	1.913	1.913	2	0.00	0.00	0.00	0.00	0.00	100.00	13	src/cdef_apply.rs:107:32
+RECTMETA	rows_capped=0	gaps_sampled=0
+=== c256x2048 t=8 ===
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	225280	175277	356656	0	0	0	0	0	7.27	8	1.000	1.000	1.000	1	0.00	0.00	0.00	0.00	0.00	100.00	9,11	src/safe_simd/cdef_arm.rs:625:9
+RECT	225280	174084	354666	0	0	0	0	0	7.27	8	1.000	1.000	1.000	1	0.00	0.00	0.00	0.00	0.00	100.00	9,11	src/safe_simd/cdef_arm.rs:193:9
+RECT	184320	164364	346799	0	0	0	0	0	8.00	8	1.000	1.000	1.000	1	0.00	0.00	0.00	0.00	0.00	100.00	11	src/safe_simd/cdef_arm.rs:1222:9
+RECT	803720	457355	877408	0	0	0	0	0	8.98	16	2.090	2.090	2.090	4	0.00	0.00	0.00	0.00	0.00	100.00	9,11	src/loopfilter.rs:944:17
+RECT	40960	10392	11446	0	0	0	0	0	4.00	4	1.000	1.000	1.000	1	0.00	0.00	0.00	0.00	0.00	100.00	9	src/cdef_apply.rs:125:33
+RECT	182720	162377	340398	0	0	0	0	0	8.00	8	1.000	1.000	1.000	1	0.00	0.00	0.00	0.00	0.00	100.00	11	src/cdef_apply.rs:107:32
+RECTMETA	rows_capped=0	gaps_sampled=0
+=== v4k8tile t=8 ===
+#rectsite	n	n_conc	peers	hull_ovl	rect_ovl	gap	gap_mut	gap_xstride	rows_mean	rows_max	hull_blocks_mean	row_blocks_mean	row_shards_mean	row_shards_max	pct_hull_wide	pct_row_wide	pct_wide_c5	pct_wide_c8	pct_wide_c16	pct_perrow_narrow	shifts	where
+RECT	3234560	1718850	2343221	0	0	0	0	0	8.00	8	2.643	2.643	2.643	3	0.00	0.00	0.00	0.00	0.00	100.00	14	src/safe_simd/cdef_arm.rs:625:9
+RECT	3234560	1649170	2219751	0	0	0	0	0	8.00	8	2.643	2.643	2.643	3	0.00	0.00	0.00	0.00	0.00	99.69	14	src/safe_simd/cdef_arm.rs:193:9
+RECT	1235200	737052	1026327	0	0	0	0	0	8.00	8	2.641	2.641	2.641	3	0.00	0.00	0.00	0.00	0.00	100.00	14	src/safe_simd/cdef_arm.rs:1222:9
+RECT	14880680	7087666	9377153	0	0	0	0	0	10.31	16	3.174	3.174	3.174	5	20.21	20.21	0.00	0.00	0.00	99.62	14	src/loopfilter.rs:944:17
+RECT	2072960	923766	1181880	0	0	0	0	0	8.00	8	2.644	2.644	2.644	3	0.00	0.00	0.00	0.00	0.00	100.00	14	src/cdef_apply.rs:125:33
+RECT	1273920	754818	1045986	0	0	0	0	0	8.00	8	2.641	2.641	2.641	3	0.00	0.00	0.00	0.00	0.00	100.00	14	src/cdef_apply.rs:107:32
+RECTMETA	rows_capped=0	gaps_sampled=0

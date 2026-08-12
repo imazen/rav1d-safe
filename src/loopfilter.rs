@@ -916,17 +916,12 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
     /// hull spanning more than `MAX_SHARDS_PER_BORROW` blocks, or a full shard —
     /// and then the per-row loop below runs exactly as it did before rectangles
     /// existed.
-    /// `#[inline(never)]` ONLY in the rectangle arm. With the rectangle off this
-    /// function is the per-row loop and nothing else — exactly what `fill`
-    /// inlined before the split — so `inline(always)` there keeps the DEFAULT
-    /// build's codegen bit-for-bit what it was, which
-    /// `scripts/perf/text_layout_diff.py` checks (0 symbols resized, 0 symbols
-    /// added against the base commit's binary). That matters because
-    /// §3 of `docs/RECT_SHIP.md` measures this binary's t=1 layout sensitivity
-    /// at **+1.1% to +1.6% for ANY perturbation**, so a default build that is
-    /// not byte-identical to `main`'s pays that whether or not it does anything.
-    #[cfg_attr(feature = "__lf_rect", inline(never))]
-    #[cfg_attr(not(feature = "__lf_rect"), inline(always))]
+    /// `#[inline(never)]`, so `open` carries only the hull path plus a call and
+    /// the twelve `fill_rect` monomorphisations stay out of it. (Until the
+    /// default flip this was `inline(always)` whenever the rectangle was off,
+    /// to keep the default build's codegen bit-for-bit what `main`'s was; the
+    /// rectangle is now unconditional, so there is no such arm to preserve.)
+    #[inline(never)]
     fn fill_threaded<const W: usize>(
         scratch: &mut LfScratch<BD>,
         origin: PicOffset,
@@ -961,7 +956,6 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         // column of the same picture rows, which is the routine case — is not
         // reported. `fill_hull` cannot be used here for exactly that reason; see
         // its doc comment.
-        #[cfg(feature = "__lf_rect")]
         if Self::fill_rect::<W>(scratch, origin, stride, h) {
             return;
         }
@@ -1016,7 +1010,6 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
     /// `None` from `index_rect_as` is a REFUSAL, never an approximation — no
     /// declared stride, a stride mismatch, `W > stride`, `h > MAX_RECT_ROWS`, a
     /// hull spanning more than `MAX_SHARDS_PER_BORROW` blocks, or a full shard.
-    #[cfg(feature = "__lf_rect")]
     #[inline(always)]
     fn fill_rect<const W: usize>(
         scratch: &mut LfScratch<BD>,
