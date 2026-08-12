@@ -12,9 +12,24 @@ That leaves a **±1.5% layout lottery underneath every t=1 measurement in this
 repo**, with `main`'s current binary sitting on a lucky draw. This round asks
 the two questions that follow.
 
-*(§ numbers are filled in as each grid lands; the decision rule in §2 was
-written and committed BEFORE the grid that decides it finished — see the commit
-date on this file's first revision.)*
+**Three answers.**
+
+1. **The lottery is removable.** `-C llvm-args=-align-all-functions=4` cuts the
+   spread across four dead-text rungs from **1.37% to 0.18%** at 4K t=1 — and
+   more alignment is *worse* (64-byte: 0.75%, +2.66% of `__text`). It is
+   recommended as a MEASUREMENT flag and is NOT applied to the build (§5c).
+2. **The CDEF sites were worth collapsing.** One seam — `for_rows` /
+   `for_rows_mut`, which needed a MUTABLE rectangle guard the tracker did not
+   have — buys **−2.0% to −2.5% wall at t=8** on the 1024-wide family, 9/10 to
+   12/12, replicated inside the aligned family, null on the cell that files zero
+   CDEF registrations. Composed with `fill`'s rectangle: **−3.9% to −4.5%**.
+3. **Both rectangles are flipped ON by default here**, because the binary that
+   would ship measures **1.0014 (3/8)** at 4K t=1 and **0.9992 (5/9)** at
+   1024x576 t=1 against `main`'s own binary, inside a byte-identical control's
+   band.
+
+*(The decision rule in §2 was written and committed BEFORE the grid that decides
+it finished — see this file's first revision.)*
 
 ---
 
@@ -30,11 +45,16 @@ date on this file's first revision.)*
   aliasing. A negative here closes "can alignment fix it", not "what is it".
 * **A linker order file was NOT tried.** It is the remaining lever and it is
   platform-specific and maintenance-heavy; §5 prices what it would have to beat.
-* **`-C llvm-args=-align-all-nofallthru-blocks`** (basic-block alignment) is
-  reported only if whole-function alignment failed.
+* **`-C llvm-args=-align-all-nofallthru-blocks`** (basic-block alignment) was
+  NOT measured: whole-function alignment answered the question, and the block
+  flag would have needed its own four-family grid to say anything about spread.
+* **Alignment's effect at t=8 is NOT established** — each family carries one pad
+  rung there, and one rung is not a spread (§4c).
+* **`c256x2048`'s response to the CDEF collapse is contradictory** between the
+  two alignment families and is reported as a non-result (§4b).
 * No `unsafe` is added to `rav1d-safe`; `crates/rav1d-disjoint-mut` DOES change
   (the mutable rectangle guard), so it is Miri'd under both models and its CI
-  legs actually fire on this branch — see §8.
+  legs fire on this branch by path filter — see §6c.
 
 ## 2. The decision rule, pre-registered
 
@@ -468,7 +488,20 @@ measurement lock.
 | every timed arm's `CHECKSUM` before any timing | **ONE md5 per cell across 18 arms × 2 thread counts** (grid L) and **10 arms × 2** on 8 cells (grid M) |
 | `cargo fmt --all --check` | rc=0 |
 | clippy `-D warnings`: tracker `--all-targets`, tracker `--no-default-features --all-targets`, root `--lib`, `--lib --features {__lf_rect1, __probe_cdef_double, __rows_rect}` | rc=0, all 6 |
-| `cargo test -p rav1d-disjoint-mut` at CI's feature sets: default, `--no-default-features`, `--features __rect_1shard` | PASS |
+| `cargo test -p rav1d-disjoint-mut` at CI's feature sets: default, `--no-default-features`, `--features __rect_1shard` | PASS, all three |
+| `cargo test -p rav1d-disjoint-mut --features std,__probe_count,__probe_sites` (CI matrix leg) | see the note below |
+
+**One leg is UNRESOLVED at the time of writing.**
+`cargo test -p rav1d-disjoint-mut --features std,__probe_count,__probe_sites`
+failed `guard_move_release::moving_a_mut_guard_into_drop_is_not_ub` on a
+**throughput floor**, not on UB: the test requires >350,000 grants in its
+contended window and got 147,435 (moved) / 166,360 (scoped). The CONTROL arm —
+same work, guard destroyed by scope exit instead of by a move — undershot by the
+same amount, so it is a liveness floor the box did not reach, not the move. It
+was run with Miri and the teeth driver on the same box. It is re-run un-loaded
+at the end of §6c and reported there; if it still fails, the floor is
+`__probe_sites`' three atomic RMWs per registration and belongs to that feature,
+not to this change.
 
 **Two pre-existing failures, verified pre-existing rather than assumed:**
 
