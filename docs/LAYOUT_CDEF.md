@@ -262,6 +262,58 @@ mismatch=0 error=0`), set-diffed BY NAME against
 `benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst` — CLEAN at both — and
 all ten timed arms produce ONE md5 per cell at both thread counts.
 
+### 4b. Grid M8 — the collapse measured, and it beats its own prediction
+
+t=8, `measlock`, un-`nice`d, two-point fit, 10 arms rotating, n=9–12 after
+dropping loaded rounds. `a0pad2` (+9,692 B of dead text, same source, provably
+never executed) is the layout-matched base — the control #506 established is the
+right one — and the `vs a0plain` column is what a user of today's binary gets.
+
+| cell t=8 | **`a0rows`** CDEF rect | sign | `a0rect` `fill` rect | sign | **`a0both`** | sign | `a0B` byte-identical |
+|---|---|---|---|---|---|---|---|
+| `c1024x192` | **0.9754** | 9/10 | 0.9829 | 9/10 | **0.9559** | 10/10 | 0.9975 (5/10) |
+| `c1024x384` | **0.9804** | 11/11 | 0.9850 | 10/11 | **0.9551** | 11/11 | 1.0029 (5/11) |
+| `c1024x576` | **0.9791** | 9/9 | 0.9848 | 8/9 | **0.9608** | 9/9 | 0.9924 (6/9) |
+| `c256x2048` | **0.9794** | 12/12 | 1.0007 | 5/12 | **0.9787** | 12/12 | 1.0007 (5/12) |
+| `text_q20` (**zero** CDEF regs) | 1.0038 | 4/11 | 0.9962 | 6/11 | 0.9924 | 10/11 | 1.0114 (0/11) |
+
+CPU agrees (`a0rows`: 0.9867 / 0.9836 / 0.9794 / 0.9802 / 1.0000, signs
+10/10–12/12 on the four cells that move).
+
+* **The CDEF rectangle is −2.0% to −2.5% wall on every multi-tile t=8 cell that
+  files CDEF registrations**, with 9/10 to 12/12 signs, and **1.0038 (4/11) on
+  the cell that files none** — the other-side control doing its job.
+* **The prediction was conservative and directionally right.** §4 predicted
+  −0.92% / −1.59% / −1.39% on `c1024x576` / `c1024x384` / `c1024x192`; measured
+  −2.09% / −1.96% / −2.46% against the pad control (−1.28% / −1.37% / −1.98%
+  against `a0plain`). So `tau` computed from `fill` UNDER-predicts the CDEF
+  collapse by ~1.3–1.8x. A doubling is still not a forecast — but a doubling
+  discounted by a `fill`-calibrated `tau` was within a factor of two, which is
+  the first time this campaign could price an unbuilt collapse at all.
+* **`c256x2048` finally moves.** −2.06% wall, **12 of 12**, on the cell that has
+  declined a count cut, a coarser shard, a finer shard, the waiting policy and
+  `fill`'s own rectangle. That is the fifth lever tried there and the first that
+  pays.
+* **The two mechanisms compose super-additively on the 1024 family**:
+  0.9754 × 0.9829 = 0.9587 predicted, 0.9559 measured (`c1024x192`);
+  0.9804 × 0.9850 = 0.9657 vs 0.9551 (`c1024x384`);
+  0.9791 × 0.9848 = 0.9641 vs 0.9608 (`c1024x576`). Composed, **−3.9% to −4.5%
+  wall at t=8** — the largest t=8 win in the campaign's record.
+
+**Unexplained, and named as such:** why `c256x2048` responds to this collapse and
+not to `fill`'s. The two differ in the shard-set size of the record that
+replaces the rows (CDEF's hull is **1.000** blocks there, `fill`'s is 2.090, and
+79.6% of `fill`'s accepted rectangles are multi-shard) and in marginal price
+(3.27 vs 2.42–2.71 ns). But on the 1024-wide family CDEF's own rectangles are
+92.8% multi-shard and pay just as well, so "single-shard records are what pays"
+does not survive its own second cell. `--features __lf_rect1` exists to test the
+shard-set-size hypothesis directly and was NOT run here.
+
+**One arm was void in this grid**: `bench_a4B` did not exist when M8 launched, so
+the `a4B` rows are zeros and the aligned family has no byte-identical control in
+M8. It is present in M1. The other nine arms are unaffected (each is a separate
+process invocation), and `a0B` covers the floor.
+
 ## 5. The rectangle default
 
 ## 6. Gates
