@@ -9,6 +9,12 @@ on:
     paths:
       - 'crates/rav1d-disjoint-mut/**'
       - '.github/workflows/disjoint-mut-ci.yml'
+  # The path filter is right for the common case, but it also means a PR that
+  # changes only the DECODER can never run these legs — including the two Miri
+  # ones, which are the only aliasing-model gate the repo has. A campaign round
+  # that touches a tracker CALLER (a new registration site, a guard's lifetime)
+  # wants them on demand without editing this file to fake a path match.
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always

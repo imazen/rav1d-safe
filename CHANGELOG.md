@@ -5,6 +5,41 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Added
+- **The `+1%` at t=1 that kept the rectangle record default-off is CODE
+  PLACEMENT, measured — and two new static instruments that say so**
+  (`scripts/perf/text_layout_diff.py`, `scripts/perf/text_symbol_diff.sh`,
+  `loopfilter::text_pad`, `src/text_pad.rs`, `--features
+  __pad_text/__pad_small/__pad2/__pad3/__pad4/__pad_far`,
+  `docs/RECT_SHIP.md`). **Nothing about the shipped decoder changes**: the
+  default build's `__text` is verified byte-equivalent to the base commit's
+  (1,839,536 → 1,839,536, 0 symbols resized, 0 added), and the corpus is
+  766/766 by NAME at t=1 and t=8 in both the default and `__lf_rect` arms.
+  4,828 bytes of provably-dead `#[used]` text — a build in which no symbol
+  changes size, every hot loop-filter symbol keeps a byte-identical instruction
+  stream, and a planted `panic!` in the pad leaves the md5 unchanged so it
+  provably never executes — costs **+1.10% wall at t=1 on `v4k8tile`, 0 of 11
+  rounds**. Nine binaries differing from `main`'s by +1,132 B to +19,420 B
+  (dead code; a pure refactor that *shrinks* `LfBlock::open` by 17%; near and
+  far modules) all land in **+1.1% to +1.6%** with 9/9–0/11 signs and are
+  mutually within ±0.4%, while a byte-identical copy reads 1.0006 (4/11).
+  Against a same-source control **the rectangle costs nothing at t=1**: 0.9967
+  (7/9). The tax scales with working set — +1.4% at 4K, +0.7% at 1024×576,
+  **0** at 256×2048. Consequence for the campaign: "the same source built in a
+  second worktree" is NOT a layout control, and a t=1 claim must be judged
+  against a same-source arm. Re-measured at the shipped configuration, the
+  rectangle's t=8 win replicates on the 1024-wide family (−1.5% to −2.4% wall,
+  11/11 and 12/12 signs; `text_q20` −2.6% CPU 13/13) and is narrower than #505
+  reported (`c3840x256` is null here).
+- **`RAV1D_CDEF_DOUBLE`, the marginal-price arm `docs/RECT_RECORDS.md` §7b asked
+  for** (`--features __probe_cdef_double`, `picture::{dup_rows, dup_rows_mut}`).
+  Doubles the five CDEF registration sites in ONE binary, changing the count and
+  nothing else. A CDEF registration costs **3.27 ns on `c256x2048` t=8**
+  (+159,424 regs/frame = 28.0% of the population, +1.34% wall) and **5.27 ns on
+  `c1024x576` t=8** (+121,856, **+4.09% wall, 0 of 12 rounds**), against
+  `LfBlock::fill`'s 2.42–2.71 ns. Null control: `text_q20` files **zero** CDEF
+  registrations and the arm reads 1.0000 (5/12). §7b expected "under ~1%,
+  nothing to win"; on the 1024-wide family it is four times that, which makes a
+  CDEF rectangle the best-looking remaining target.
 - **Exact strided-rectangle borrow records in the tracker, and a
   `LfBlock::fill` arm that uses them — MEASURED, NOT SHIPPED as a default**
   (`crates/rav1d-disjoint-mut`, `src/loopfilter.rs`, `--features __lf_rect`,

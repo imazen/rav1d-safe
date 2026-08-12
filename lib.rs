@@ -126,6 +126,9 @@ pub mod src {
     #[cfg_attr(not(feature = "c-ffi"), deny(unsafe_code))]
     #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     mod picture;
+    // LAYOUT-NOISE CONTROL, measurement only: see src/text_pad.rs.
+    #[cfg(feature = "__pad_far")]
+    pub(crate) mod text_pad;
 
     // DSP dispatch modules (contain _erased functions and fn ptr dispatch)
     mod cdef;
