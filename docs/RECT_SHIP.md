@@ -393,8 +393,30 @@ silence reads as health), Stacked Borrows and Tree Borrows, default features and
 `__rect_1shard`. Driver `scripts/perf/rect_miri.sh`, record
 `benchmarks/rect_ship_miri_2026-08-11.tsv`.
 
-*(table filled from the run; `shard_liveness` is expected to time out on
-aarch64 and is reported AS a timeout, never as green.)*
+**Both models, both feature sets, CLEAN on every non-timeout target:**
+
+| target | SB default | SB `__rect_1shard` | TB default | TB `__rect_1shard` |
+|---|---|---|---|---|
+| `--lib` | **42 passed** | **40 passed** | **42 passed** | **40 passed** |
+| `narrow_release` | 1 | 1 | 1 | 1 |
+| `soundness` | 25 | 25 | 25 | 25 |
+| `wide_exclusion` | 1 | 1 | 1 | 1 |
+| `guard_move_release` | 2 | 2 | 2 | 2 |
+| `pic_buf_overflow` | **0 tests ran** | **0 tests ran** | **0 tests ran** | **0 tests ran** |
+| `aligned_miri` | **0 tests ran** | **0 tests ran** | **0 tests ran** | **0 tests ran** |
+| `shard_liveness` | **TIMEOUT(900s)** | **TIMEOUT(900s)** | **TIMEOUT(900s)** | **TIMEOUT(900s)** |
+
+`shard_liveness` times out (rc=124) in all four configurations exactly as
+`docs/AGENT_BRIEF.md` warns and as #504/#505 recorded; it is reported AS a
+timeout, never as green. **CI's Linux Miri legs — whole package,
+`--all-features`, which DO cover it — are green on this branch under both
+models** (`Miri (Stacked Borrows)` 53m37s and `Miri (Tree Borrows)` 1h21m42s on
+PR #506). `pic_buf_overflow` and `aligned_miri` select **0 tests** under these
+feature sets and are reported as 0, never as green.
+
+This is a formality rather than a discovery for this branch — it adds no
+`unsafe` and does not touch `crates/rav1d-disjoint-mut` — and it was run at the
+full #505 matrix anyway so the two rounds' tables are comparable.
 
 ## 9. The predicted mechanism for the t=8 win is REFUTED by its own instrument
 

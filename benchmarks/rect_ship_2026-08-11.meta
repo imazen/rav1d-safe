@@ -159,3 +159,17 @@ THE PREDICTION THE BRIEF ASKED FOR — REFUTED (docs/RECT_SHIP.md section 9)
 The cell with the MOST distinct shard-line touches removed per fill is the one
 cell that measures null. pct_row_wide == 0 is necessary and not sufficient. The
 ordering of the win across cells remains unexplained.
+
+MIRI (benchmarks/rect_ship_miri_2026-08-11.tsv)
+-----------------------------------------------
+Both aliasing models x {default, __rect_1shard}, one target at a time:
+7 of 8 targets CLEAN in all four columns (--lib 42/40, narrow_release 1,
+soundness 25, wide_exclusion 1, guard_move_release 2, pic_buf_overflow and
+aligned_miri select 0 tests and are reported as 0). shard_liveness TIMEOUT(900s)
+in all four and is reported AS a timeout. CI's Linux legs, which cover it, are
+GREEN under both models on PR #506 (SB 53m37s, TB 1h21m42s).
+
+CI on PR #506: 35 of 35 checks pass (the #505 count). `disjoint-mut CI` is
+path-filtered to crates/rav1d-disjoint-mut/**, which this branch does not touch,
+so its 13 legs — including the two Miri ones — needed `workflow_dispatch` adding
+to that workflow before they could run at all.

@@ -1,0 +1,33 @@
+model	features	target	rc	result
+sb	default	--lib	0	test result: ok. 42 passed
+sb	default	narrow_release	0	test result: ok. 1 passed
+sb	default	soundness	0	test result: ok. 25 passed
+sb	default	wide_exclusion	0	test result: ok. 1 passed
+sb	default	guard_move_release	0	test result: ok. 2 passed
+sb	default	pic_buf_overflow	0	test result: ok. 0 passed
+sb	default	aligned_miri	0	test result: ok. 0 passed
+sb	default	shard_liveness	124	TIMEOUT(900s)
+sb	__rect_1shard	--lib	0	test result: ok. 40 passed
+sb	__rect_1shard	narrow_release	0	test result: ok. 1 passed
+sb	__rect_1shard	soundness	0	test result: ok. 25 passed
+sb	__rect_1shard	wide_exclusion	0	test result: ok. 1 passed
+sb	__rect_1shard	guard_move_release	0	test result: ok. 2 passed
+sb	__rect_1shard	pic_buf_overflow	0	test result: ok. 0 passed
+sb	__rect_1shard	aligned_miri	0	test result: ok. 0 passed
+sb	__rect_1shard	shard_liveness	124	TIMEOUT(900s)
+tb	default	--lib	0	test result: ok. 42 passed
+tb	default	narrow_release	0	test result: ok. 1 passed
+tb	default	soundness	0	test result: ok. 25 passed
+tb	default	wide_exclusion	0	test result: ok. 1 passed
+tb	default	guard_move_release	0	test result: ok. 2 passed
+tb	default	pic_buf_overflow	0	test result: ok. 0 passed
+tb	default	aligned_miri	0	test result: ok. 0 passed
+tb	default	shard_liveness	124	TIMEOUT(900s)
+tb	__rect_1shard	--lib	0	test result: ok. 40 passed
+tb	__rect_1shard	narrow_release	0	test result: ok. 1 passed
+tb	__rect_1shard	soundness	0	test result: ok. 25 passed
+tb	__rect_1shard	wide_exclusion	0	test result: ok. 1 passed
+tb	__rect_1shard	guard_move_release	0	test result: ok. 2 passed
+tb	__rect_1shard	pic_buf_overflow	0	test result: ok. 0 passed
+tb	__rect_1shard	aligned_miri	0	test result: ok. 0 passed
+tb	__rect_1shard	shard_liveness	124	TIMEOUT(900s)
