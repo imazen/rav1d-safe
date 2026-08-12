@@ -1,0 +1,180 @@
+tiled_scaling_2026-08-10 -- ATTRIBUTION of the tiled t=8 scaling deficit.
+Narrative + verdict: docs/TILED_SCALING.md. This file is provenance only.
+
+WHAT WAS MISSING BEFORE THIS
+  The tiled scaling deficit had been measured three times (most recently
+  benchmarks/size_sweep_t8_gap_2026-08-10) and profiled ZERO times. Every
+  profile in the campaign's ~20 rounds was single-tile or t=1 -- the one shape
+  where no tile parallelism exists -- so nothing that appears only when several
+  tile workers and several superblock-row filter tasks are live at once could be
+  seen at all.
+
+HOST / BUILD
+  Apple M4 Pro (Mac16,11, 8P+4E, 24 GB), macOS 26.5.2.
+  rav1d-safe measure/tiled-t8-attribution, base main @ b700489, release,
+  default features except where an arm names a probe feature.
+  NO -C target-cpu=native. dav1d 1.5.4 (homebrew).
+  MEASURE-ONLY: `git diff b700489..HEAD -- src/ lib.rs include/ crates/
+  Cargo.toml Cargo.lock build.rs` is EMPTY. Only scripts/perf/, docs/ and
+  benchmarks/ changed.
+
+ARMS (all four are the same source tree; only cargo features differ)
+  rs / bench_plain / ivf_plain   default features -- what ships
+  untracked / ivf_untracked      + probe-untracked (borrow tracker compiled out)
+  tt                             + probe-tasktime  (stage/worker/occupancy census)
+  ttu                            + probe-tasktime-untracked
+  dav1d_fd1                      dav1d --framedelay 1  (matched threading model:
+                                 our checked build forces n_fc = 1, so frame
+                                 threading is not an axis we have)
+  dav1d_def                      dav1d default frame delay (frame threading ON;
+                                 included to show what that axis is worth, NOT
+                                 as the comparator)
+
+  `untracked` is bit-identical to `rs`: tiled_md5_arms_2026-08-10.tsv, 8 of 8
+  md5s equal over {plain, untracked} x {t=1, t=8} x both vectors.
+
+VECTORS
+  ~/tmp/t8gap/vec/L1024x576_420_8b__t8.avif   1024x576  YUV420 8bpc, 4x2 =  8 tiles,  9 sbrows
+  ~/tmp/t8gap/vec/L3840x2160_420_8b__t8.avif  3840x2160 YUV420 8bpc, 4x2 =  8 tiles, 34 sbrows
+  single-tile controls: L1024x576_420_8b.avif, L3840x2160_420_8b.avif
+  IVF twins in ~/tmp/t8gap/ivf/ (same OBU replicated: 200 frames at 1024x576,
+  16 at 4K -- `~/tmp/szsweep/mkivf.sh`). Provenance of the vectors themselves:
+  benchmarks/size_sweep_t8_gap_2026-08-10.meta + ~/tmp/t8gap/enc_tiles.sh.
+
+  ALL-INTRA. `bench_ab_decode` re-decodes one key-frame OBU, and the IVFs are
+  that same OBU repeated, so there is no inter prediction and no reference
+  management anywhere in this record. Loop restoration and super-resolution
+  execute ZERO blocks on both vectors (0.000 ms/frame in every stage table) --
+  a null from either here is not a result.
+
+INSTRUMENTS
+  1. src/probe_tasktime.rs via --features probe-tasktime: per-stage and
+     per-worker busy ns, a 50 us time-weighted concurrency histogram, the
+     tail-restricted histogram (no tile worker live, >=1 filter worker), and
+     check_tile deferral causes. 2 Instant::now() per stage execution against
+     ~45 stage executions/frame.
+  2. /usr/bin/sample, 1 ms, 30 s windows, on the SHIPPING binary.
+  3. bash `time` with TIMEFORMAT='%3R %3U %3S' (the child's getrusage), two
+     frame counts per cell, `total = a + b*frames` fitted separately for wall
+     and for user+sys so exec/mmap/decoder-construction/pool-spinup drop out.
+
+  TWO INSTRUMENT TRAPS, both load-bearing for reading the tables:
+  * At --threads 1 EVERY stage counter reads 0.000. n_tc == 1 creates no task
+    worker, so rav1d_task_run -- where all the stage instrumentation lives -- is
+    never entered. A per-stage t8/t1 ratio does not exist; the low arm is t=2 or
+    t=4, which is also the better comparison (same code path as t=8:
+    tile_threading_active() latched, narrow guards, adaptive block shift).
+  * `sample` samples PARKED threads. __psynch_cvwait is 37.3% of leaves at t=8
+    and 0.0% at t=1, so leaving it in the denominator deflates every busy
+    symbol by exactly the amount the pool sleeps. Every percentage in
+    tiled_selftime_* is normalised on BUSY samples, idle reported separately.
+
+MEASUREMENT HYGIENE
+  Every timed run under `measlock` (four separate holds: taskprobe, sample,
+  wallcpu, inloop). Rotating arm order inside every cell. Medians with min/max
+  bands printed per arm. Box essentially idle: foreign_max = 1 (taskprobe),
+  2 (wallcpu, inloop). Builds were niced; timed runs never.
+
+  ONE OUTLIER, NOT DROPPED: tiled_wallcpu_2026-08-10.tsv round 5, arm
+  `untracked`, L3840x2160_420_8b__t8, t=1 reports wall_hi = 2000 ms where the
+  other six rounds report 2996-3007, giving beta = 103.7 against a median of
+  175.0. Cause not established. It is the `min` of that cell's band and does not
+  move the median (6 of 7 rounds agree to 0.3%).
+
+A HARNESS BUG FOUND AND FIXED MID-ROUND -- read this before reusing the script
+  The first wallcpu pass used n_hi = 24 on the 4K cell. That IVF has 16 frames.
+  `bench_plain` re-decodes one OBU exactly n times whatever you ask, but
+  `dav1d --limit N` stops at end of stream -- so the two-point fit divided a
+  SHORT total by a LONG frame delta and dav1d read 94.1 ms/frame instead of
+  152.1 (a factor of 24/13 = 1.615x), which would have made dav1d look 1.96x
+  faster than us single-threaded instead of 1.21x. Caught by comparing against
+  the prior record's 156.071 and confirmed by counting the IVF's frames.
+  scripts/perf/tiled_wallcpu.sh now counts every cell's stream and refuses
+  n_hi > n_frames with a FATAL. All 4K rows in the committed TSV are from the
+  re-run at 2:16. The 1024x576 cell was never affected (n_hi = 200 = the
+  stream's exact length; verified linear: dav1d --limit {50,100,200} gives
+  11.000 / 10.900 / 10.900 ms/frame).
+
+FILES
+  tiled_taskprobe_2026-08-10.txt     Tables 1-4: per-stage/per-worker busy,
+                                     occupancy distribution, straggler check
+  tiled_stage_delta_t4_2026-08-10.txt  the per-stage t4->t8 inflation with bands
+                                     and the tracker's share of each (the table
+                                     docs/TILED_SCALING.md §1 quotes)
+  tiled_stage_delta_t2_2026-08-10.txt  same against t=2
+  tiled_selftime_2026-08-10.txt       bucketed self time + the t1/t2 -> t8
+                                     symbol-level movers
+  tiled_selftime_raw_2026-08-10.tar.zst  the seven full per-symbol tables
+  tiled_wallcpu_2026-08-10.tsv       raw rows, 224 (7 rounds x 8 cells x 4 arms)
+  tiled_wallcpu_2026-08-10.txt       per-cell wall/CPU, the
+                                     ideal+work+idle decomposition, ours/dav1d
+  tiled_inloop_2026-08-10.tsv/.txt   cross-decoder deblock price
+                                     (--inloopfilters all vs nodeblock)
+  tiled_inloop2_2026-08-10.tsv/.txt  the same with `nocdef` and `none` added --
+                                     the super-additivity test that shows a
+                                     stage's cost under a SPINNING lock is not a
+                                     stage's opportunity
+  tiled_probe_raw_2026-08-10.tar.zst the 96 raw probe dumps
+  tiled_md5_arms_2026-08-10.tsv      bit-identity of the untracked arm
+
+  NOT COMMITTED: the seven /usr/bin/sample call-graph files (2.8-16 MB each),
+  at ~/tmp/tiledprof/prof/*.sample. Regenerate with
+  scripts/perf/tiled_prof.sh.
+
+COMMANDS
+  scripts/perf/tiled_taskprobe.sh   ~/tmp/tiledprof/probe 3
+  scripts/perf/tiled_taskprobe_report.py <probedir>
+  scripts/perf/tiled_stage_delta.py  <probedir> [4|2]
+  scripts/perf/tiled_prof.sh        ~/tmp/tiledprof/prof 30
+                                    (MODE=profivf INLOOP=... TAG=... for the
+                                     spin test; MODE=ivf cannot outlive a window)
+  scripts/perf/tiled_prof_report.py <profdir>
+  scripts/perf/tiled_wallcpu.sh     <out.tsv> 7      (ARMS/CELLS via env)
+  scripts/perf/tiled_wallcpu_report.py <out.tsv>
+  scripts/perf/tiled_inloop_ab.sh   <out.tsv> 5   (INLOOPS via env)
+  scripts/perf/tiled_inloop_report.py <out.tsv>
+
+CORRECTNESS
+  tiled_md5_arms_2026-08-10.tsv                8/8 identical across arms/threads
+  benchmarks/tiled_corpus_t1_2026-08-10.tsv.zst  766-vector inventory, t=1
+  benchmarks/tiled_corpus_t8_2026-08-10.tsv.zst  766-vector inventory, t=8
+  set-diff BY NAME with the md5 as the value against
+  benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst
+
+CORRECTNESS RESULTS (run 2026-08-10 on this branch, base b700489)
+  766/766 PASS + 2 SKIP at threads=1 AND threads=8, no --skip-group.
+  Set-diff BY NAME, key=(group,name), value=(status, ACTUAL md5), against
+  benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst:
+      t1 vs base: only_run 0, only_base 0, differ 0
+      t8 vs base: only_run 0, only_base 0, differ 0
+      t1 vs t8:   only_t1  0, only_t8   0, differ 0
+  forbid(unsafe_code) proven ACTIVE, not read: an `unsafe { transmute }` planted
+  in src/loopfilter.rs made `cargo build --release --lib` fail with
+  "error: usage of an `unsafe` block" pointing at
+  `#![cfg_attr(not(asm_loopfilter), forbid(unsafe_code))]`. Restored from a
+  ~/tmp backup copy (never `git checkout --`, which would also have reverted
+  real edits) and verified byte-exact: sha256 over the tracked source tree
+  8c1ddc8543550edbe586f1ca10a460a2a9daef5f0931c2a0b3870340b55b86ed before and
+  after, plus `git diff --exit-code -- src lib.rs include crates` clean.
+
+A PROFILE ATTEMPT THAT FAILED, RECORDED SO IT IS NOT REPEATED
+  ~/tmp/tiledprof/prof_spin/: four `sample` runs of bench_ivf_limit under
+  RAV1D_INLOOP={all,nodeblock} at t=8, intended to show the spin
+  redistribution symbol by symbol. All four report outlived_window=0 and
+  produced NO .sample file: bench_ivf_limit stops at end of stream (200 frames
+  = 0.66 s at t=8, 16 frames = 0.5 s at 4K), far short of the 25 s window, and
+  it has no repeat loop. The aggregate test in tiled_inloop2_* answers the same
+  question; a symbol-level version needs a repeat loop in that driver.
+
+SYMBOL-LEVEL SPIN TEST (added after the first attempt failed)
+  tiled_spin_selftime_2026-08-10.txt -- examples/profile_ivf under
+  RAV1D_THREADS=8 + RAV1D_INLOOP={all,nodeblock}, 60 passes of the 200-frame
+  1024x576/8-tile IVF, 25 s `sample` window, outlived_window=1 both cells.
+  Removing the deblock work drives `TinyLock::lock_slow` from 1.45% to 7.03% of
+  busy self time (4.85x) and makes `add_contended::<false>` appear from zero,
+  while every loop-filter symbol goes to exactly 0.00 (so the ablation fired).
+  The contention is not deleted with the work; it is converted into spin.
+  `profile_ivf` is the tool docs/AGENT_BRIEF.md §7 already names for this --
+  the first attempt used bench_ivf_limit, which exits at end of stream and
+  produced outlived_window=0 with no .sample at all.
+  NOT COMMITTED: the two 40 MB .sample files, at ~/tmp/tiledprof/prof_spin/.
