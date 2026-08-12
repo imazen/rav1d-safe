@@ -167,6 +167,13 @@ whole campaign. Re-examined 2026-08-10 (`benchmarks/strided_2d_2026-08-10.meta`)
   registrations — not `h` — at a 17-91% wide-promotion rate. Plus machinery: a shard is exactly one
   128-byte line at `SLOTS = 7`, and `tracker_blockshift_2026-08-08.meta` §2 measured that the cost
   is a core waiting for that line, not the atomics on it.
+  **SUPERSEDED 2026-08-11: nothing stopped it — #505 built it and it wins at t=8.** −1.0% to −1.8%
+  wall on 5 of 6 multi-tile t=8 cells (10/10-11/11 signs, replicated), null on `c256x2048`. The
+  wide-promotion mechanism above is necessary but NOT sufficient to say which cells win, and the
+  follow-up model `rows_mean / row_shards_mean` is refuted (`c256x2048` has the highest ratio and is
+  the null). It is default-off only because of a t=1 cost that #506 then measured to be **code
+  placement**, not the mechanism — against a same-source control it costs 0.9967 (7/9).
+  `docs/RECT_RECORDS.md`, `docs/RECT_SHIP.md`.
 
 **Rule: "someone asserted it was unsound" is not "it is unsound", and a correct objection to one
 implementation is not an objection to the shape.** Both halves were settled here by instruments that

@@ -144,6 +144,20 @@ t=8** (`benchmarks/strided_2d_2026-08-10.meta`):
   rows map to, and >4 promotes to the all-shards wide path. Measured saving
   1.4-3.7x (not `h`), at 17-52% wide on 8-bit and 28-91% on 10-bit — 50.8% at
   the biggest site. That is the mechanism behind the 1.98x/2.65x hull arms.
+  > **THAT REFUTATION IS SUPERSEDED, 2026-08-11 — the record was BUILT and it
+  > WINS at t=8.** #505 (`docs/RECT_RECORDS.md`, merged `e351b1a`) implemented
+  > the exact record at `LfBlock::fill`: registrations 569,690 -> 409,349/frame
+  > on `c256x2048` t=8, **null there** (0.9908, 8/15) but **−1.0% to −1.8% wall
+  > and up to −3.3% CPU on 5 of 6 OTHER multi-tile t=8 cells**, replicated,
+  > 10/10-11/11 signs. The `pct_row_wide` mechanism above is real and is why the
+  > weak cells are weak — but it is **necessary, not sufficient**, and the
+  > proposed model `rows_mean / row_shards_mean` was then REFUTED too:
+  > `c256x2048` has the HIGHEST ratio (4.30 vs the winners' 3.85-3.88) and is the
+  > one null (`docs/RECT_SHIP.md` §3). **The ordering of the t=8 win is
+  > unexplained.** The t=1 cost that kept the record default-off was separately
+  > measured to be **code placement, not the mechanism** (#506): against a
+  > same-source control the rectangle costs 0.9967 (7/9) at t=1. So: cost
+  > refutes the *hull*; it does not refute the exact record.
 * **Both directions were falsified against a real decode**, not argued:
   `RAV1D_LF_HULL=1` at the site measured `hull_ovl = 0` gives 358/358 PASS;
   `RAV1D_RECT_HULL=1` (`--features __probe_rect_hull`) at the sites measured
