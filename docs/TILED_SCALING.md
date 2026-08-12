@@ -12,8 +12,12 @@ Provenance, arms, hygiene and the raw files: `benchmarks/tiled_scaling_2026-08-1
 > **Landed 2026-08-12 from PR #499, which was marked "measure-only, do not
 > merge".** The label was about the branch, not the record: its nine
 > `scripts/perf/tiled_*` tools reached `main` already (via #500, `54e90d8`) and
-> `docs/AGENT_BRIEF.md` §6 has cited **this file** by name in three separate rows
-> since — with the file itself absent from `main`. So the records land; nothing
+> `docs/AGENT_BRIEF.md` §6 has cited **this file** by name in **two** rows
+> since (*corrected 2026-08-12: the banner first said three, from memory rather
+> than a count —* `grep -o 'docs/TILED_SCALING\.md' docs/AGENT_BRIEF.md | wc -l`
+> *= 2, the dav1d-tiled-scheduler row and the filter-chain row. A third row, the
+> post-tile filter tail, states §4's finding but names only the* `TAIL_CONC`
+> *instrument.*) — with the file itself absent from `main`. So the records land; nothing
 > that made the branch un-mergeable comes with them (no `src/`, no `crates/`, no
 > `Cargo.toml`, and its `.gitignore` reversion of the `test-vectors` symlink line
 > is dropped — only the `__pycache__` addition is kept).
