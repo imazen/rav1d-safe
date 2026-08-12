@@ -257,6 +257,10 @@ reduction.
   `CpuLevel::Scalar` does NOT disable safe SIMD — use the `__ablate` feature.
   `md5_inventory --activity` only counts **itx, cdef, looprestoration** (the three `ablate::note()`
   sites); the other six columns are UNINSTRUMENTED and read 0 whatever ran.
+  **`shard_liveness` under Miri is a BUDGET problem, not a hang**: every prior
+  round recorded it as a timeout in all four configurations at 900 s, and at
+  **1500 s it completes under Stacked Borrows (5 passed)**; Tree Borrows still
+  runs out. Give it 1500 s before reporting a timeout (`docs/LAYOUT_CDEF.md` §6c).
   **To name the counterparty of an `overlapping DisjointMut` panic, build
   `--release -C debug-assertions=on` — NOT `--features probe-sites`.** Per-record `Loc`s
   (`ShardRecs::locs`) and the `track_caller` propagation through `picture.rs`'s `slice`/`slice_mut`

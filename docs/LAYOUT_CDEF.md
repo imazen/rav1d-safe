@@ -502,21 +502,9 @@ measurement lock.
 | `cargo fmt --all --check` | rc=0 |
 | clippy `-D warnings`: tracker `--all-targets`, tracker `--no-default-features --all-targets`, root `--lib`, `--lib --features {__lf_rect1, __probe_cdef_double, __rows_rect}` | rc=0, all 6 |
 | `cargo test -p rav1d-disjoint-mut` at CI's feature sets: default, `--no-default-features`, `--features __rect_1shard` | PASS, all three |
-| `cargo test -p rav1d-disjoint-mut --features std,__probe_count,__probe_sites` (CI matrix leg) | see the note below |
+| `cargo test -p rav1d-disjoint-mut --features std,__probe_count,__probe_sites` (CI matrix leg) | fails LOCALLY on a throughput floor, **identically at the base commit** — see below. **Passes on CI, twice** |
 
-**One leg is UNRESOLVED at the time of writing.**
-`cargo test -p rav1d-disjoint-mut --features std,__probe_count,__probe_sites`
-failed `guard_move_release::moving_a_mut_guard_into_drop_is_not_ub` on a
-**throughput floor**, not on UB: the test requires >350,000 grants in its
-contended window and got 147,435 (moved) / 166,360 (scoped). The CONTROL arm —
-same work, guard destroyed by scope exit instead of by a move — undershot by the
-same amount, so it is a liveness floor the box did not reach, not the move. It
-was run with Miri and the teeth driver on the same box. It is re-run un-loaded
-at the end of §6c and reported there; if it still fails, the floor is
-`__probe_sites`' three atomic RMWs per registration and belongs to that feature,
-not to this change.
-
-**Two pre-existing failures, verified pre-existing rather than assumed:**
+**Three pre-existing failures, verified pre-existing rather than assumed:**
 
 * `cargo clippy --all-targets -- -D warnings` on the ROOT package fails with
   **79 errors at the BASE commit** (3bed711, checked in a throwaway worktree):
@@ -525,6 +513,16 @@ not to this change.
   (81 errors, the same set modulo which test target reports the release
   requirement first). That leg is not part of CI and was removed from the gate
   script.
+* `cargo test -p rav1d-disjoint-mut --features std,__probe_count,__probe_sites`
+  fails `guard_move_release::moving_a_mut_guard_into_drop_is_not_ub` **on this
+  box** — a THROUGHPUT floor, not UB: the test needs >350,000 grants in its
+  contended window and gets 147,435 (moved) / 166,360 (scoped). Its CONTROL arm
+  — identical work, guard destroyed by scope exit instead of by a move —
+  undershoots by the same amount, so it is not the move under test. **The BASE
+  commit fails it the same way** (94,555 / 203,924, checked in a throwaway
+  worktree at 3bed711), and **CI's two matching legs PASS**, so the floor is
+  `__probe_sites`' three atomic RMWs per registration meeting a macOS scheduler,
+  and it belongs to that feature rather than to this change.
 * `cargo test -p rav1d-disjoint-mut --all-features` does not compile and never
   has: `__tracker_legacy` + `__probe_bounds` do not compose
   (`bounds_probe.rs:1305` calls `BorrowTracker::probe_shard_of`, which the
@@ -573,7 +571,27 @@ reference exists at a time.
 and Tree Borrows, DEFAULT features (the rectangle IS the default now), ONE
 TARGET AT A TIME. Record `benchmarks/layout_miri_2026-08-11.tsv`.
 
-*(table below)*
+| target | Stacked Borrows | Tree Borrows |
+|---|---|---|
+| `--lib` | **42 passed** | **42 passed** |
+| `soundness` | **25 passed** | **25 passed** |
+| `narrow_release` | 1 passed | 1 passed |
+| `wide_exclusion` | 1 passed | 1 passed |
+| `guard_move_release` | 2 passed | 2 passed |
+| `pic_buf_overflow` | **0 tests ran** | **0 tests ran** |
+| `aligned_miri` | **0 tests ran** | **0 tests ran** |
+| `shard_liveness` | **5 passed** | **TIMEOUT(1500s)** |
+
+**15 of 16 legs clean, no UB under either model**, on the branch that adds the
+mutable rectangle guard — the one piece of new `unsafe` in the change. The
+`shard_liveness` row is a NEW datum: `docs/AGENT_BRIEF.md` and #504/#505/#506 all
+record it as a timeout in every configuration at 900 s, and at **1500 s it
+completes under Stacked Borrows with 5 tests passing**. Tree Borrows still runs
+out. `pic_buf_overflow` and `aligned_miri` select **0 tests** under this feature
+set and are reported as 0, never as green.
+
+CI's Linux Miri legs — whole package, `--no-fail-fast`, both models, which DO
+cover `shard_liveness` — fire on this branch by path filter (§6d).
 
 ### 6d. CI
 
