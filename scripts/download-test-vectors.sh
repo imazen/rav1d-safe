@@ -55,7 +55,14 @@ done
 # Try to download from dav1d test data repo
 echo ""
 echo "Attempting to clone dav1d test data repository..."
-DAV1D_DATA_DIR="$VECTORS_DIR/dav1d-test-data"
+# NOT under $VECTORS_DIR. The conformance harness resolves this corpus as
+# `$CARGO_MANIFEST_DIR/test-vectors/dav1d-test-data` (tests/test_vectors.rs),
+# while $VECTORS_DIR is `${CARGO_TARGET_DIR:-target}/test-vectors`. Those have
+# never been the same directory, so every clone this script made was invisible
+# to the tests, which then re-cloned for themselves. Populate the path the
+# harness actually reads.
+DAV1D_DATA_DIR="$PROJECT_ROOT/test-vectors/dav1d-test-data"
+mkdir -p "$PROJECT_ROOT/test-vectors"
 
 # The 766-vector conformance corpus. This is NOT optional: it is the only
 # thing that checks decode output against dav1d's reference MD5s.
