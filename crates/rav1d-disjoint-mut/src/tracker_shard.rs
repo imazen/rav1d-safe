@@ -2517,7 +2517,6 @@ impl BorrowTracker {
     /// one gate that distinguishes an exact record from a hull — and
     /// [`super::DisjointMut::index_rect_mut`], which is how a WRITE site
     /// (`for_rows_mut`) collapses its per-row records.
-    #[cfg(any(test, feature = "__rect_mut"))]
     #[inline]
     #[track_caller]
     pub fn add_rect_mut(

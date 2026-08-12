@@ -68,15 +68,10 @@ __probe_lock_backoff = ["std"]
 __probe_lock_yield = ["std"]
 __probe_lock_relax = []
 __probe_lock_park = ["std", "dep:parking_lot"]
-# MEASUREMENT ARM: the MUTABLE strided-rectangle record (`add_rect_mut`,
-# `DisjointMut::index_rect_mut{,_as}`, `DisjointMutRectGuard`), which a WRITE
-# site needs to collapse its per-row registrations. Gated rather than always-on
-# for one measured reason: `docs/RECT_SHIP.md` §3 shows a binary that is not
-# byte-identical to `main`'s pays ~1.1% at t=1 on a 4K cell purely from code
-# placement, so a default build must not grow a public symbol it never calls.
-# Armed by rav1d-safe's `__rows_rect`; `cfg(test)` arms it too, because the
-# exact rectangle-vs-rectangle overlap test is only reachable with a mutable
-# rectangle.
+# RETAINED AS A NO-OP. The MUTABLE strided-rectangle record (`add_rect_mut`,
+# `DisjointMut::index_rect_mut{,_as}`, `DisjointMutRectGuard`) is unconditional
+# as of 2026-08-11: rav1d-safe's `for_rows_mut` takes it on the DEFAULT path.
+# The feature stays declared so a driver that passed it still builds.
 __rect_mut = []
 # Sharded-tracker A/B knobs (perf/shard-tracker). Compile-time only; the
 # defaults are the measured winners, see benchmarks/shard_tracker_*.meta.

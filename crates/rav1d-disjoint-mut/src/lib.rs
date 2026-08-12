@@ -1571,7 +1571,6 @@ impl<'a, T: ?Sized + AsMutPtr, V> Drop for DisjointImmutRectGuard<'a, T, V> {
 ///   `&mut [V]` wider than one row: the rows are pairwise disjoint (the
 ///   constructor requires `|stride| >= seg`), and borrowck serialises them
 ///   anyway.
-#[cfg(any(test, feature = "__rect_mut"))]
 pub struct DisjointMutRectGuard<'a, T: ?Sized + AsMutPtr, V> {
     /// Row 0's first element; for a NEGATIVE stride, the highest-address row.
     base: NonNull<V>,
@@ -1589,14 +1588,11 @@ pub struct DisjointMutRectGuard<'a, T: ?Sized + AsMutPtr, V> {
 // these mirror: the guard is a pointer plus `Option<&DisjointMut<T>>`, and the
 // bytes it points at are exclusively borrowed for its whole life, so sending it
 // needs what sending a `&'a mut [V]` needs.
-#[cfg(any(test, feature = "__rect_mut"))]
 unsafe impl<T: ?Sized + AsMutPtr + Sync, V: Send> Send for DisjointMutRectGuard<'_, T, V> {}
 // SAFETY: as above; sharing the guard hands out no `&mut` (that needs `&mut
 // self`), so sharing it shares only shared references.
-#[cfg(any(test, feature = "__rect_mut"))]
 unsafe impl<T: ?Sized + AsMutPtr + Sync, V: Sync> Sync for DisjointMutRectGuard<'_, T, V> {}
 
-#[cfg(any(test, feature = "__rect_mut"))]
 impl<'a, T: ?Sized + AsMutPtr, V> DisjointMutRectGuard<'a, T, V> {
     /// Elements per row.
     #[inline(always)]
@@ -1633,7 +1629,6 @@ impl<'a, T: ?Sized + AsMutPtr, V> DisjointMutRectGuard<'a, T, V> {
     }
 }
 
-#[cfg(any(test, feature = "__rect_mut"))]
 impl<'a, T: ?Sized + AsMutPtr, V> Drop for DisjointMutRectGuard<'a, T, V> {
     fn drop(&mut self) {
         if let Some(parent) = self.parent {
@@ -1718,7 +1713,6 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     /// PRIVATE for [`Self::index_rect_inner`]'s reason — it materialises
     /// `&mut [V]` over the buffer's bytes, which is only sound when every bit
     /// pattern is a valid `V`; the public entry points establish that.
-    #[cfg(any(test, feature = "__rect_mut"))]
     #[inline]
     #[track_caller]
     fn index_rect_mut_inner<'a, V>(
@@ -1807,7 +1801,6 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     ///
     /// `None` means the geometry is not representable as one record and the
     /// caller must take its own per-row path; nothing is approximated.
-    #[cfg(any(test, feature = "__rect_mut"))]
     #[inline]
     #[track_caller]
     pub fn index_rect_mut<'a>(
@@ -1847,7 +1840,6 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
     /// [`IntoBytes`] — writing through the guard writes `V`'s bytes back into
     /// the `u8` buffer, which is the same soundness class as
     /// [`Self::mut_slice_as`].
-    #[cfg(any(test, feature = "__rect_mut"))]
     #[inline]
     #[track_caller]
     pub fn index_rect_mut_as<'a, V>(

@@ -5,18 +5,20 @@
 #
 # Six subjects:
 #
-#   1. the `__rows_rect` READ path (`for_rows` -> `rect.row`)
-#   2. the `__rows_rect` WRITE path (`for_rows_mut` -> `rect.row_mut`)
+#   1. the rectangle READ path (`for_rows` -> `rect.row`), now DEFAULT
+#   2. the rectangle WRITE path (`for_rows_mut` -> `rect.row_mut`), now DEFAULT
 #   3. the new record's MUTABILITY. A mutable rectangle that silently registered
 #      as immutable would never conflict with a concurrent reader and would
 #      still decode correctly on an uncontended run — the exact silent-corruption
 #      shape this campaign keeps hitting. Making `add_rect_mut` call
 #      `add_rect::<false>` must make the tracker's rect-vs-rect overlap test
 #      FAIL (it asserts a panic that only a mutable record can raise).
-#   4. the rectangle must actually FIRE at both seams under tile threading:
-#      `probe-wide`'s `n_rect` must be nonzero, and `n_rect` must GROW when the
-#      write side is armed. A timed arm whose rectangle never fires measures
-#      nothing.
+#   4. the rectangle must actually FIRE at both seams under tile threading in
+#      the DEFAULT build: `probe-wide`'s `n_rect` must be nonzero with 0
+#      declined. A binary whose rectangle never fires measures nothing, and the
+#      `__lf_rect1` arm (accept ONLY single-shard rectangles) must decode to the
+#      same md5 while declining the multi-shard ones — a refusal is never an
+#      approximation.
 #   5. the wide path must stay unreached (`w_shards`/`w_blocks`/`w_full` = 0):
 #      a rectangle that promoted to the wide list would degrade to its hull.
 #   6. `forbid(unsafe_code)` proven ACTIVE, not read.
@@ -52,11 +54,11 @@ md5_of() {  # md5_of <features> <threads>
 }
 
 echo "== control ==" >&2
-REF=$(md5_of "" 8);            note control_default_t8 "$REF"
-REFR=$(md5_of "__rows_rect" 8); note control_rowsrect_t8 "$REFR"
+REF=$(md5_of "" 8);              note control_default_t8 "$REF"
+REFR=$(md5_of "__lf_rect1" 8);   note control_1shard_t8 "$REFR"
 [ "$REF" = "$REFR" ] && note control_arms_agree OK || { note control_arms_agree MISMATCH; }
 
-echo "== 1. __rows_rect READ path: rows reversed ==" >&2
+echo "== 1. rectangle READ path (DEFAULT): rows reversed ==" >&2
 backup include/dav1d/picture.rs > "$OUT/sha_pic_before.txt"
 python3 - <<'PY'
 p='include/dav1d/picture.rs'; s=open(p).read()
@@ -68,12 +70,12 @@ assert s.count(old) == 1, s.count(old)
 new = "                for row in 0..h {\n                    f(row, rect.row(h - 1 - row));\n                }"
 open(p,'w').write(s.replace(old, new, 1))
 PY
-M=$(md5_of "__rows_rect" 8)
-[ "$M" != "$REFR" ] && note mut_rows_rect_read_reversed "CAUGHT ($M)" \
+M=$(md5_of "" 8)
+[ "$M" != "$REF" ] && note mut_rows_rect_read_reversed "CAUGHT ($M)" \
                     || note mut_rows_rect_read_reversed "NOT CAUGHT"
 restore include/dav1d/picture.rs > "$OUT/sha_pic_after1.txt"
 
-echo "== 2. __rows_rect WRITE path: rows reversed ==" >&2
+echo "== 2. rectangle WRITE path (DEFAULT): rows reversed ==" >&2
 backup include/dav1d/picture.rs > /dev/null
 python3 - <<'PY'
 p='include/dav1d/picture.rs'; s=open(p).read()
@@ -82,8 +84,8 @@ assert s.count(old) == 1, s.count(old)
 new = "                for row in 0..h {\n                    f(row, rect.row_mut(h - 1 - row));\n                }"
 open(p,'w').write(s.replace(old, new, 1))
 PY
-M=$(md5_of "__rows_rect" 8)
-[ "$M" != "$REFR" ] && note mut_rows_rect_write_reversed "CAUGHT ($M)" \
+M=$(md5_of "" 8)
+[ "$M" != "$REF" ] && note mut_rows_rect_write_reversed "CAUGHT ($M)" \
                     || note mut_rows_rect_write_reversed "NOT CAUGHT"
 restore include/dav1d/picture.rs > "$OUT/sha_pic_after2.txt"
 
@@ -115,10 +117,10 @@ wide() { # wide <features>
   nice -n 19 "$OUT/tgtw/release/examples/probe_tracker" "$VEC" 8 10 2>&1 \
     | grep -E '^WIDE|^RECT|n_rect' | head -20
 }
-wide "probe-wide" > "$OUT/wide_base.txt";              note wide_base "$(tr '\n' ' ' < "$OUT/wide_base.txt")"
-wide "probe-wide,__rows_rect" > "$OUT/wide_rows.txt";  note wide_rows "$(tr '\n' ' ' < "$OUT/wide_rows.txt")"
-wide "probe-wide,__lf_rect,__rows_rect" > "$OUT/wide_both.txt"
-note wide_both "$(tr '\n' ' ' < "$OUT/wide_both.txt")"
+wide "probe-wide" > "$OUT/wide_default.txt"
+note wide_default "$(tr '\n' ' ' < "$OUT/wide_default.txt")"
+wide "probe-wide,__lf_rect1" > "$OUT/wide_1shard.txt"
+note wide_1shard "$(tr '\n' ' ' < "$OUT/wide_1shard.txt")"
 
 echo "== 6. forbid(unsafe_code) proven ACTIVE ==" >&2
 backup src/picture.rs > /dev/null

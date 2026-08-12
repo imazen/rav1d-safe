@@ -1115,7 +1115,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
                 h,
                 pxstride * ps as isize,
             );
-            // MEASUREMENT ARM (`__rows_rect`): ONE exact strided-rectangle
+            // ONE exact strided-rectangle
             // record instead of `h` per-row ones, the `LfBlock::fill_rect`
             // mechanism applied at this seam. `None` is a REFUSAL — no declared
             // stride, a stride mismatch, `w > stride`, `h > MAX_RECT_ROWS`, a
@@ -1130,7 +1130,6 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             // the same picture rows, the routine case) is neither reserved
             // against nor reported, and `DisjointImmutRectGuard` never
             // materialises a reference wider than one row.
-            #[cfg(feature = "__rows_rect")]
             if let Some(rect) =
                 self.data
                     .dm()
@@ -1235,13 +1234,12 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
                 h,
                 pxstride * ps as isize,
             );
-            // MEASUREMENT ARM (`__rows_rect`), the write side: ONE exact
+            // The write side: ONE exact
             // MUTABLE rectangle record instead of `h` per-row ones. Same
             // refusal list, same soundness argument as the read side above,
             // plus: `DisjointMutRectGuard::row_mut` takes `&mut self`, so at
             // most one row reference is live at a time and no `&mut [_]` wider
             // than one row is ever created.
-            #[cfg(feature = "__rows_rect")]
             if let Some(mut rect) =
                 self.data
                     .dm()

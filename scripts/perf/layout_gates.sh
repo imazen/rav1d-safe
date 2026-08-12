@@ -7,22 +7,24 @@
 #     source at all, so its correctness gate is that the corpus still passes and
 #     that every timed arm decodes to the SAME md5 — which is checked before any
 #     clock by `layout_checksums.sh`, and again here over the whole corpus.
-#  2. **`__rows_rect`** collapses `for_rows` / `for_rows_mut`'s per-row
-#     registrations into ONE exact strided-rectangle record, immutable and
-#     MUTABLE respectively. That is a live change to the borrow tracker's view
-#     of the decoder at t=8, so it needs the corpus at BOTH thread counts,
-#     set-diffed BY NAME, plus the concurrency tests.
+#  2. **Both rectangles are now the DEFAULT path**: `LfBlock::fill`'s and
+#     `for_rows`/`for_rows_mut`'s per-row registrations each collapse into ONE
+#     exact strided-rectangle record, immutable and MUTABLE respectively. That
+#     is a live change to the borrow tracker's view of the decoder at t=8, so it
+#     needs the corpus at BOTH thread counts, set-diffed BY NAME, plus the
+#     concurrency tests.
 #
-# And the round inherits #506's gate 1: the DEFAULT build's codegen must be
-# unchanged, because a default binary that is not byte-equivalent to `main`'s
-# pays ~1.1% at t=1 on `v4k8tile` from placement alone.
+# #506's gate 1 — "the DEFAULT build's codegen is unchanged" — is DELIBERATELY
+# void now: the default build changes on purpose. It is replaced by the gate
+# that makes the measurement transfer: the default build must be byte-equivalent
+# to the `a0both` arm grids M8/N actually timed.
 #
 # NICED throughout, and it takes NO measurement lock: nothing here is timed.
 #
 # Usage: layout_gates.sh [outdir] [base-binary]
 set -u
 OUT=${1:-$HOME/tmp/layout/gates}
-BASEBIN=${2:-$HOME/tmp/layout/bin/bench_a0plain}
+BASEBIN=${2:-$HOME/tmp/layout/bin/bench_a0both}
 mkdir -p "$OUT"
 cd "$(dirname "$0")/../.."
 BASELINE=benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst
@@ -30,7 +32,7 @@ rc_all=0
 note() { printf '%s\t%s\n' "$1" "$2" | tee -a "$OUT/summary.tsv"; }
 : > "$OUT/summary.tsv"
 
-echo "== 1. DEFAULT codegen unchanged vs the pre-change binary ==" >&2
+echo "== 1. the DEFAULT build IS the arm that was timed (a0both) ==" >&2
 nice -n 19 cargo build --release --example bench_ab_decode -j 6 \
   > "$OUT/build_default.log" 2>&1 || { note build_default FAIL; rc_all=1; }
 cp target/release/examples/bench_ab_decode "$OUT/bench_default"
@@ -52,7 +54,7 @@ nice -n 19 cargo test -p rav1d-disjoint-mut --all-features -j 6 \
   > "$OUT/tracker_tests.log" 2>&1 \
   && note tracker_tests PASS || { note tracker_tests FAIL; rc_all=1; }
 
-echo "== 3. corpus: default, __rows_rect, and the 32-byte-aligned default ==" >&2
+echo "== 3. corpus: the new default, the aligned default, and the 1-shard arm ==" >&2
 run_corpus() { # <tag> <rustflags> <features...>
   local tag=$1 rf=$2; shift 2
   local args=(build --release --example md5_inventory -j 6 --target-dir "$OUT/tgt_$tag")
@@ -84,11 +86,9 @@ run_corpus() { # <tag> <rustflags> <features...>
 # gated too, because recommending it means shipping it.
 ALIGN=${ALIGN:-4}
 AF="-C llvm-args=-align-all-functions=$ALIGN"
-run_corpus default            ""    ""
-run_corpus rowsrect           ""    "__rows_rect"
-run_corpus lfrect             ""    "__lf_rect"
-run_corpus "a${ALIGN}"        "$AF" ""
-run_corpus "a${ALIGN}rowsrect" "$AF" "__rows_rect"
+run_corpus default     ""    ""
+run_corpus "a${ALIGN}"  "$AF" ""
+run_corpus rect1shard  ""    "__lf_rect1"
 
 echo "== 4. every measurement arm still builds ==" >&2
 for feat in __rows_rect __probe_cdef_double __pad_text __pad_small __pad2 __pad3 \
@@ -101,13 +101,13 @@ for feat in __rows_rect __probe_cdef_double __pad_text __pad_small __pad2 __pad3
   fi
 done
 
-echo "== 5. concurrency + threading tests, __rows_rect arm ==" >&2
+echo "== 5. concurrency + threading tests, DEFAULT (both rectangles) ==" >&2
 for t in decode_md5_verify thread_cleanup_test tile_threading_overlap \
          reproduce_overlap mt_stress; do
-  nice -n 19 cargo test --release --features __rows_rect --test "$t" -j 6 \
+  nice -n 19 cargo test --release --test "$t" -j 6 \
     > "$OUT/test_$t.log" 2>&1 \
     && note "test_$t" PASS || { note "test_$t" FAIL; rc_all=1; }
-  nice -n 19 cargo test --release --features __rows_rect --test "$t" -j 6 -- --ignored \
+  nice -n 19 cargo test --release --test "$t" -j 6 -- --ignored \
     > "$OUT/test_${t}_ignored.log" 2>&1 \
     && note "test_${t}_ignored" PASS || note "test_${t}_ignored" "see log"
 done
@@ -118,12 +118,10 @@ run_clippy() { tag=$1; shift; if nice -n 19 cargo clippy "$@" -j 6 -- -D warning
   else note "clippy_$tag" 'rc!=0'; rc_all=1; fi; }
 run_clippy tracker             -p rav1d-disjoint-mut --all-targets
 run_clippy tracker_nodefault   -p rav1d-disjoint-mut --no-default-features --all-targets
-run_clippy tracker_rectmut     -p rav1d-disjoint-mut --features __rect_mut --all-targets
 run_clippy lib                 --lib
-run_clippy lib_rowsrect        --lib --features __rows_rect
-run_clippy lib_rect            --lib --features __lf_rect
+run_clippy lib_rect1shard      --lib --features __lf_rect1
 run_clippy lib_cdefdouble      --lib --features __probe_cdef_double
-run_clippy alltargets_rowsrect --all-targets --features __rows_rect
+run_clippy alltargets          --all-targets
 if nice -n 19 cargo fmt --all -- --check > "$OUT/fmt.log" 2>&1; then
   note fmt_check rc=0
 else

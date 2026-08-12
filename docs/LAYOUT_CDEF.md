@@ -124,9 +124,12 @@ Three readings:
 
 ### 3b. What the +1.5% actually is
 
-`a0plain` is the best binary in the whole grid, and #506 already showed it beats
-nine other `a0`-family binaries by 1.1–1.6%. Against the `a0` family's own
-perturbed rungs (mean 1.0119 on `v4k8tile` t=1) the aligned build costs
+`a0plain` beats every other binary in THIS grid, and #506 saw it beat nine more
+by 1.1–1.6%. (§5a corrects that picture: two of grid M1's perturbed `a0`
+binaries land ON `a0plain`'s level, so the lottery has at least two levels
+rather than one winner. It does not change the arithmetic here, which is about
+the level the pad rungs sit at.) Against the `a0` family's own perturbed rungs
+(mean 1.0119 on `v4k8tile` t=1) the aligned build costs
 
   `1.0153 / 1.0119 = 1.0034` — **+0.34%**,
 
@@ -344,5 +347,41 @@ M8. It is present in M1. The other nine arms are unaffected (each is a separate
 process invocation), and `a0B` covers the floor.
 
 ## 5. The rectangle default
+
+### 5a. Grid M1 — t=1, and why it needed re-running
+
+`v4k8tile` t=1 and `c1024x576` t=1, same 10 arms, n=9 keep-loaded. **This grid
+is degraded**: 6 of 9 rounds saw a foreign process above 25% CPU and one round
+saw TWELVE, so the drop-loaded reduction leaves n=3 and the keep-loaded one
+carries the load in its drift. Both are given; grid N (§5b) re-measures the
+decision cleanly.
+
+`v4k8tile` t=1, keep-loaded n=9, vs `a0plain` (= `main`'s binary):
+
+| arm | wall/`a0plain` | sign | vs `a0pad2` |
+|---|---|---|---|
+| `a0B` byte-identical | 1.0014 | 3/9 | 0.9897 |
+| **`a0rows`** CDEF rect | **0.9981** | 6/9 | 0.9871 |
+| **`a0both`** | **0.9992** | 5/9 | 0.9886 |
+| `a0pad2` dead text | **1.0123** | **0/9** | 1.0000 |
+| `a0rect` `fill` rect | **1.0152** | **0/9** | 1.0016 |
+| `a4plain` | 1.0121 | 0/9 | 1.0022 |
+| `a4rows` | 1.0093 | 0/9 | 0.9994 |
+
+Two things, and the first is a correction to #506:
+
+* **`main`'s binary is not uniquely lucky.** #506 saw nine perturbed binaries
+  all land +1.1%..+1.6% and read that as "`a0plain` is a local optimum any
+  change forfeits". Here two of four perturbed `a0` binaries — `a0rows` and
+  `a0both` — land ON `a0plain`'s level (0.9981 and 0.9992) while `a0pad2` and
+  `a0rect` land +1.2%/+1.5%. The lottery has at least two visible levels and a
+  new binary can draw either.
+* **The aligned family is tight again**: `a4{plain,B,pad2,rows}` span
+  1.0093–1.0142, a **0.49%** spread, against the six `a0` binaries' **1.71%**.
+
+`v4k8tile` **t=8 in this grid is NOT ESTABLISHED and is not used**: its own
+controls move ±2% (`a0B` 1.0046, `a0pad2` 1.0192) with per-round ranges from
+0.90 to 1.62. The t=8 evidence is grid M8's.
+
 
 ## 6. Gates
