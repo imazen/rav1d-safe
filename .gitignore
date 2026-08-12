@@ -33,3 +33,7 @@ Cargo.toml.original.txt
 rust_out
 wasmtime-guest-profile.json
 target-*/
+
+# Byte-compiled Python from running the perf reducers in-tree.
+__pycache__/
+*.pyc
