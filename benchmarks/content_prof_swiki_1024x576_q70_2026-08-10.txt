@@ -1,0 +1,13 @@
+== swiki_1024x576_q70   total self samples 38162
+   entropy         4339   11.37%
+   tracker        10258   26.88%
+   kernels         9662   25.32%
+   runtime         1508    3.95%
+   other          12395   32.48%
+      other>0.5%: 20.93%  rav1d_safe::src::decode::read_pal_indices
+      other>0.5%:  2.85%  <rav1d_safe::src::refmvs::splat_mv::Fn>::call
+      other>0.5%:  2.68%  rav1d_safe::src::recon::rav1d_read_pal_plane::<rav1d_safe::include::common::bitdepth::BitDepth8>
+      other>0.5%:  1.01%  <rav1d_safe::src::ctx::CaseSetter<16, true>>::set_disjoint::<aligned::Aligned<aligned::A8, [u8; 
+      other>0.5%:  1.01%  <rav1d_safe::src::ctx::CaseSetter<32, false>>::set_disjoint::<aligned::Aligned<aligned::A8, [u8;
+      other>0.5%:  0.76%  rav1d_safe::src::pal::pal_idx_finish_rust
+      other>0.5%:  0.56%  rav1d_safe::src::decode::decode_sb
