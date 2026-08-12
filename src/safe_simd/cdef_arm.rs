@@ -162,6 +162,42 @@ fn widen_row(dst: &mut [u16], src: &[u8], n: usize) {
     }
 }
 
+/// `dst[..N] = src[..N]`, with a compile-time trip count.
+///
+/// The 16bpc twin of [`widen_n`]. There is no widening to do, so the obvious
+/// spelling is `copy_from_slice` — but that takes a RUNTIME length and lowers
+/// to a `memmove` libc call, which for 4 to 12 `u16`s is all call and no copy.
+/// With `[u16; N]` the move is a pair of `ldr q`/`str q` inline.
+#[inline(always)]
+fn copy_n<const N: usize>(dst: &mut [u16], src: &[u16]) {
+    let a = <&[u16; N]>::try_from(&src[..N]).unwrap();
+    let d = <&mut [u16; N]>::try_from(&mut dst[..N]).unwrap();
+    *d = *a;
+}
+
+/// Dispatch [`copy_n`] over the same length set [`widen_row`] handles.
+///
+/// Why this exists: `padding_8bpc` went through `widen_row` and so had no libc
+/// traffic at all, while `padding_16bpc` spelled the same copies as
+/// `copy_from_slice`. `docs/SIZE_SWEEP.md` Q2 profiled the consequence —
+/// **381 of 549 `_platform_memmove` samples at 1024x576 came from
+/// `cdef_filter_block_16bpc_inner`, and 8bpc CDEF contributed zero** — and
+/// named it as a distinct item from any missing kernel. Up to `h + 4` of these
+/// calls happen per CDEF block (one per block row, two top, two bottom).
+///
+/// Byte-identical by construction: same bytes, same order, same destination.
+#[inline(always)]
+fn copy_row_u16(dst: &mut [u16], src: &[u16], n: usize) {
+    match n {
+        4 => copy_n::<4>(dst, src),
+        6 => copy_n::<6>(dst, src),
+        8 => copy_n::<8>(dst, src),
+        10 => copy_n::<10>(dst, src),
+        12 => copy_n::<12>(dst, src),
+        _ => dst[..n].copy_from_slice(&src[..n]),
+    }
+}
+
 /// Padding function for 8bpc — copies the block and its available context into
 /// the scratch window; everything else keeps the [`CDEF_VERY_LARGE`] sentinel.
 fn padding_8bpc(
@@ -308,7 +344,7 @@ fn padding_16bpc(
     dst.dup_rows::<BitDepth16>(read_w, h);
     dst.for_rows::<BitDepth16, _>(read_w, h, |y, src| {
         let row_offset = TMP_OFFSET + y * TMP_STRIDE;
-        tmp[row_offset..row_offset + read_w].copy_from_slice(&src[..read_w]);
+        copy_row_u16(&mut tmp[row_offset..], src, read_w);
     });
 
     // Handle left edge
@@ -338,8 +374,11 @@ fn padding_16bpc(
             let slice = top_row
                 .data
                 .slice_as::<_, u16>((top_row.offset + x_start.., ..x_end - x_start));
-            tmp[row_offset + x_start - 2..row_offset + x_end - 2]
-                .copy_from_slice(&slice[..x_end - x_start]);
+            copy_row_u16(
+                &mut tmp[row_offset + x_start - 2..],
+                &slice,
+                x_end - x_start,
+            );
         }
     }
 
@@ -360,12 +399,12 @@ fn padding_16bpc(
                 PicOrBuf::Pic(pic) => {
                     let guard = pic
                         .slice::<BitDepth16, _>((bottom_row.offset + x_start.., ..x_end - x_start));
-                    tmp[dst_range].copy_from_slice(&guard[..x_end - x_start]);
+                    copy_row_u16(&mut tmp[dst_range], &guard, x_end - x_start);
                 }
                 PicOrBuf::Buf(buf) => {
                     let slice =
                         buf.slice_as::<_, u16>((bottom_row.offset + x_start.., ..x_end - x_start));
-                    tmp[dst_range].copy_from_slice(&slice[..x_end - x_start]);
+                    copy_row_u16(&mut tmp[dst_range], &slice, x_end - x_start);
                 }
             }
         }
