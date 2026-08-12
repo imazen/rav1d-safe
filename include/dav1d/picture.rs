@@ -115,6 +115,270 @@ pub fn cdef_double_reads() -> bool {
     false
 }
 
+/// Per-FILE ceilings on ONE tracked **partial** picture-plane reservation taken
+/// while tile threading is active. See [`note_pic_extent`].
+///
+/// **Keyed by file, not by `file:line`, on purpose.** The bounds map's own
+/// reconciliation had to compare multisets rather than `file:line` keys because
+/// inserting two no-op declarations shifted every line number below them. A
+/// line-keyed table would go stale on the next unrelated edit and then either
+/// fail spuriously or, worse, stop matching and silently pass.
+///
+/// Only files whose reservation is bounded by a **constant** (a tap count, a
+/// block dimension, a scratch width) get a tight entry. Files whose reservation
+/// scales with the frame — `owned_recon.rs` (2,688 B observed),
+/// `looprestoration.rs` (~2,050 B), `picture.rs`'s `copy_pixels_to` (4,096 B) —
+/// would need a frame-size-relative bound, which this table cannot express, so
+/// they fall through to [`TILE_THREADED_PIC_EXTENT_MAX_BYTES`].
+///
+/// Provenance for every number: `benchmarks/bounds_verdicts_2026-08-10.meta`,
+/// measured by this module's own counters over the committed crash vectors plus
+/// `dav1d-test-data` `8-bit/data` + `10-bit/data` at t=1 and t=8. Each entry is
+/// the observed maximum; there is no slack, so the gate fails on the first byte
+/// of any widening.
+pub const PIC_EXTENT_CEILINGS: &[(&str, usize)] = &[
+    // `LfBlock::fill`'s per-row read guard and `write_back`'s per-row write.
+    // Both are bounded by the scratch width `LF_BW = 16` pixels, so 32 B at
+    // 16bpc. Measured max 32 B over 90,170,282 reservations. This is the
+    // decoder's largest guard site AND the one with the least measured headroom
+    // (60 B to a concurrent `loopfilter.rs:887:14` write-back), so it is the
+    // entry that matters most.
+    ("src/loopfilter.rs", 32),
+    // CDEF's per-row picture reads: <= 16 px, 32 B at 16bpc. Measured max 24 B
+    // over 192,238,382 reservations.
+    ("src/safe_simd/cdef_arm.rs", 32),
+    // Loop-restoration stripe row reads: 4 px. Measured max 8 B over 1,384,827.
+    ("src/lr_apply.rs", 32),
+];
+
+/// Fallback ceiling for picture-plane files with no [`PIC_EXTENT_CEILINGS`]
+/// entry. Set from the same measurement; catches gross widenings (a strided
+/// hull at 4K is 50-60 KB) without pretending to bound the frame-scaling sites
+/// tightly.
+pub const TILE_THREADED_PIC_EXTENT_MAX_BYTES: usize = 64;
+
+/// Observation counters for [`note_pic_extent`], so every ceiling above can be
+/// re-derived rather than trusted, and so the gate can prove it is not vacuous.
+///
+/// Interning is on the `&'static str` POINTER of `Location::file()` — one
+/// static per source file, so pointer identity is file identity and the compare
+/// is free. `site_probe` uses the same trick on the `Location` itself.
+#[cfg(feature = "probe-sites")]
+pub mod extent_budget {
+    use core::panic::Location;
+    use std::string::String;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed};
+    use std::vec::Vec;
+
+    /// Every partial picture-plane reservation that reached the check.
+    pub static CHECKS: AtomicU64 = AtomicU64::new(0);
+    /// ... of those, the ones taken while tile threading was active.
+    pub static CHECKS_TT: AtomicU64 = AtomicU64::new(0);
+    /// Largest partial reservation seen at all, and while tile threading was on.
+    pub static MAX_BYTES: AtomicUsize = AtomicUsize::new(0);
+    pub static MAX_BYTES_TT: AtomicUsize = AtomicUsize::new(0);
+    /// Whole-component reservations, which the invariant deliberately exempts.
+    pub static WHOLE: AtomicU64 = AtomicU64::new(0);
+
+    /// `(file, max_bytes_under_tile_threading, site_of_that_max, n)`.
+    #[allow(clippy::type_complexity)]
+    static PER_FILE: Mutex<Vec<(&'static str, usize, &'static Location<'static>, u64, usize)>> =
+        Mutex::new(Vec::new());
+    /// Largest number of picture ROWS one reservation spanned. A value above 1
+    /// means some reservation covered an inter-row gap, which is #469/#475's
+    /// defect and is what the one-row bound exists to forbid.
+    pub static MAX_ROWS_TT: AtomicUsize = AtomicUsize::new(0);
+
+    pub(super) fn record(bytes: usize, tt: bool, rows: usize, loc: &'static Location<'static>) {
+        CHECKS.fetch_add(1, Relaxed);
+        MAX_BYTES.fetch_max(bytes, Relaxed);
+        if !tt {
+            return;
+        }
+        CHECKS_TT.fetch_add(1, Relaxed);
+        MAX_BYTES_TT.fetch_max(bytes, Relaxed);
+        MAX_ROWS_TT.fetch_max(rows, Relaxed);
+        let Ok(mut v) = PER_FILE.lock() else { return };
+        let file = loc.file();
+        for e in v.iter_mut() {
+            if core::ptr::eq(e.0, file) || e.0 == file {
+                e.3 += 1;
+                e.4 = e.4.max(rows);
+                if bytes > e.1 {
+                    e.1 = bytes;
+                    e.2 = loc;
+                }
+                return;
+            }
+        }
+        v.push((file, bytes, loc, 1, rows));
+    }
+
+    pub(super) fn record_whole() {
+        WHOLE.fetch_add(1, Relaxed);
+    }
+
+    /// Per-file maxima under tile threading, sorted widest first:
+    /// `(file, max_bytes, "file:line:col" of that max, registrations, max_rows)`.
+    pub fn per_file() -> Vec<(String, usize, String, u64, usize)> {
+        let Ok(v) = PER_FILE.lock() else {
+            return Vec::new();
+        };
+        let mut out: Vec<_> = v
+            .iter()
+            .map(|(f, b, l, n, r)| {
+                (
+                    (*f).to_string(),
+                    *b,
+                    format!("{}:{}:{}", l.file(), l.line(), l.column()),
+                    *n,
+                    *r,
+                )
+            })
+            .collect();
+        out.sort_by_key(|e| core::cmp::Reverse(e.1));
+        out
+    }
+
+    /// `(checks, checks_under_tile_threading, max_bytes, max_bytes_tt,
+    /// whole_component_reservations)`.
+    pub fn report() -> (u64, u64, usize, usize, u64) {
+        (
+            CHECKS.load(Relaxed),
+            CHECKS_TT.load(Relaxed),
+            MAX_BYTES.load(Relaxed),
+            MAX_BYTES_TT.load(Relaxed),
+            WHOLE.load(Relaxed),
+        )
+    }
+}
+
+/// The tight [`PIC_EXTENT_CEILINGS`] entry for `file`, if it has one.
+///
+/// `None` means the file is held to one picture row instead, which
+/// [`pic_extent_ceiling`] cannot express without knowing the plane. The gate
+/// uses this to apply exactly the bound the decoder applies.
+#[inline]
+pub fn pic_extent_ceiling_const(file: &str) -> Option<usize> {
+    let mut i = 0;
+    while i < PIC_EXTENT_CEILINGS.len() {
+        let (f, c) = PIC_EXTENT_CEILINGS[i];
+        if file.ends_with(f) {
+            return Some(c);
+        }
+        i += 1;
+    }
+    None
+}
+
+/// The ceiling that applies to a reservation taken at `file`, on a plane whose
+/// row is `row_bytes` long.
+///
+/// A file with a [`PIC_EXTENT_CEILINGS`] entry is held to that constant. Every
+/// other file is held to **one picture row**, which is the coarsest extent that
+/// cannot contain an inter-row gap — the thing #469's rectangle and #475's hull
+/// reserved and that AV1's column-partitioned tiles make unsafe.
+#[inline]
+pub fn pic_extent_ceiling(file: &str, row_bytes: usize) -> usize {
+    let mut i = 0;
+    while i < PIC_EXTENT_CEILINGS.len() {
+        let (f, c) = PIC_EXTENT_CEILINGS[i];
+        // `Location::file()` is the path as written to rustc, so it already
+        // starts with `src/` / `include/` in this crate. `ends_with` also makes
+        // the entry survive a build that prefixes an absolute path.
+        if file.ends_with(f) {
+            return c;
+        }
+        i += 1;
+    }
+    row_bytes.max(TILE_THREADED_PIC_EXTENT_MAX_BYTES)
+}
+
+/// The bounds map's standing extent invariant, checked at the ONE funnel every
+/// tracked picture-plane reservation passes through.
+///
+/// > While tile threading is active, a **partial** reservation against a
+/// > picture plane may not exceed [`TILE_THREADED_PIC_EXTENT_MAX_BYTES`].
+///
+/// # Why this invariant and not "reserved <= footprint"
+///
+/// `docs/BOUNDS_MAP.md` measured both halves. At t=8 the ratio half is already
+/// 1.000 at every hot site — there is no over-reservation left to assert
+/// against — while the *absolute* extent is what decides whether a reservation
+/// collides with another worker's write. The three refuted attempts
+/// (#469 strided rectangle, #475 hull, #485 read band) all widened the absolute
+/// extent; two of them kept `reserved == footprint` while doing it, so a ratio
+/// assertion would have passed all three. The measured headroom at the decoder's
+/// largest site (`loopfilter.rs:710:14`) is **60 bytes** to a concurrent
+/// `loopfilter.rs:887:14` write-back, so a ceiling in that neighbourhood is the
+/// property that actually gates the failure.
+///
+/// # What is exempt, and why that is not a hole
+///
+/// * **Whole-component reservations** (`full_guard`, `full_guard_mut`,
+///   `copy_pixels_to`, `copy_from`). A reservation of the entire plane is
+///   unambiguous, greppable and deliberate; the map measured those sites
+///   (`mc.rs:121:61`, `mc.rs:1342:44`, `mc_arm.rs:5971:41`) as having **no
+///   concurrent foreign write at any distance**, because they read reference
+///   frames that are immutable for the whole decode. They are a tracker-COST
+///   question, not a conflict question.
+/// * **Single-element access** (`index`, `index_mut`). One element is the
+///   smallest reservation expressible; there is nothing to widen.
+/// * **Everything at t=1.** The hull paths deliberately over-reserve by
+///   153x-1680x there and it is correct: with no second worker there is nobody
+///   for the inter-row gaps to collide with, and the count reduction is worth
+///   2.6% (`docs/MUT_RECON_KERNELS.md` §11d).
+///
+/// # Cost
+///
+/// Compiled only under `debug_assertions` or `--features probe-sites`. The
+/// default release build has no counter, no atomic load and no branch here.
+#[cfg(any(debug_assertions, feature = "probe-sites"))]
+#[inline]
+#[track_caller]
+pub(crate) fn note_pic_extent(bytes: usize, whole_component: bool, row_bytes: usize) {
+    {
+        if whole_component {
+            #[cfg(feature = "probe-sites")]
+            extent_budget::record_whole();
+            return;
+        }
+        let tt = tile_threading_active();
+        let loc = core::panic::Location::caller();
+        let rows = if row_bytes == 0 {
+            1
+        } else {
+            bytes.div_ceil(row_bytes)
+        };
+        #[cfg(feature = "probe-sites")]
+        extent_budget::record(bytes, tt, rows, loc);
+        let ceiling = pic_extent_ceiling(loc.file(), row_bytes);
+        if tt && bytes > ceiling {
+            panic!(
+                "{}:{}:{} took a {bytes} B picture-plane reservation while tile \
+                 threading is active; the measured ceiling for that file is \
+                 {ceiling} B.\n\
+                 This is the bounds map's standing extent invariant \
+                 (docs/BOUNDS_MAP.md, PIC_EXTENT_CEILINGS). A wider reservation \
+                 collides with a concurrent foreign WRITE at the rate the map's \
+                 widening-budget column predicts — the decoder's largest guard \
+                 site has 60 bytes of measured headroom, and the three refuted \
+                 attempts (#469 rectangle, #475 hull, #485 band) all failed \
+                 exactly here.\n\
+                 If the widening is deliberate: price it against the budget \
+                 table FIRST (`--features __probe_bounds`), then raise the \
+                 ceiling WITH the measurement in the same commit. \
+                 (one picture row here is {row_bytes} B; this reservation spans \
+                 {rows} rows)",
+                loc.file(),
+                loc.line(),
+                loc.column()
+            );
+        }
+    }
+}
+
 thread_local! {
     /// Reusable scratch buffers backing [`WithOffset::compact_read_per_row`]
     /// (and the pristine copy kept by the loopfilter's diff write-back).
@@ -804,6 +1068,19 @@ impl Rav1dPictureDataComponent {
         BD: BitDepth,
         I: SliceBounds,
     {
+        #[cfg(any(debug_assertions, feature = "probe-sites"))]
+        {
+            let total = self.pixel_len::<BD>();
+            let r = index.clone().to_range(total);
+            note_pic_extent(
+                r.len() * mem::size_of::<BD::Pixel>(),
+                r.start == 0 && r.end == total,
+                {
+                    use crate::src::strided::Strided as _;
+                    self.pixel_stride::<BD>().unsigned_abs() * mem::size_of::<BD::Pixel>()
+                },
+            );
+        }
         self.dm().slice_as(index)
     }
 
@@ -817,6 +1094,19 @@ impl Rav1dPictureDataComponent {
         BD: BitDepth,
         I: SliceBounds,
     {
+        #[cfg(any(debug_assertions, feature = "probe-sites"))]
+        {
+            let total = self.pixel_len::<BD>();
+            let r = index.clone().to_range(total);
+            note_pic_extent(
+                r.len() * mem::size_of::<BD::Pixel>(),
+                r.start == 0 && r.end == total,
+                {
+                    use crate::src::strided::Strided as _;
+                    self.pixel_stride::<BD>().unsigned_abs() * mem::size_of::<BD::Pixel>()
+                },
+            );
+        }
         self.dm().mut_slice_as(index)
     }
 }

@@ -224,9 +224,6 @@ regenerates). Record: `benchmarks/bounds_verdicts_2026-08-10.{tsv,meta}`.
 >   dated note in "The map's own correctness gate".
 > * **The candidate list is ranked by registrations/frame, and that ordering is
 >   now known to be the wrong price.** See the dated note above candidate 1.
-> * **"The standing assertions" describes code that is NOT in this commit** — it
->   is split out for its own decision. See that section's banner.
->
 > Everything else — the verdict rules, the verdict table, the 60 B correction,
 > the #475 and #485 refutations, and the #488 V-batch contradiction — is
 > unchanged and uncontradicted.
@@ -583,18 +580,6 @@ all** — its prize is under the noise floor and its clearance is 60 bytes.
   cannot tell those apart from a 1-D byte range.
 
 ## The standing assertions
-
-> **NOT LANDED IN THIS COMMIT. 2026-08-12: this section describes code that is
-> not in the tree.** `note_pic_extent` / `PIC_EXTENT_CEILINGS` in
-> `include/dav1d/picture.rs`, `tests/guard_extent_budget.rs` and the CI
-> `extent-gate` job were split out of this records landing into their own PR,
-> because unlike everything else in Part 2 they are *live code* — dead in a
-> default release build, but active in every `debug_assertions` build and in CI —
-> and their `PIC_EXTENT_CEILINGS` constants were measured on `675a7ff`, twenty
-> commits before this landing. Re-validating them against current `main` needs a
-> corpus pass, which is what the follow-up PR's CI leg is for. The section is
-> kept here as written because it is the design record and the mutation table is
-> reusable; **delete this banner in the same commit that lands the gate.**
 
 The map's value decays the moment someone widens a guard without re-reading it.
 These turn its two load-bearing facts into checks that fail **at the moment of
