@@ -16,7 +16,7 @@
 #[cfg(debug_assertions)]
 compile_error!("decode_md5_committed tests require release mode: cargo test --release");
 
-use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
+use rav1d_safe::src::managed::{Decoder, Frame, PixelLayout, Planes, Settings};
 
 fn hash_frame(frame: &Frame, ctx: &mut md5::Context) {
     match frame.planes() {
@@ -263,6 +263,94 @@ fn lr_sgr_vectors_threaded_match_reference_md5() {
     assert!(
         failures.is_empty(),
         "threaded LR decode diverged from the reference (issue #14 regression):\n{}",
+        failures.join("\n")
+    );
+}
+
+// ----------------------------------------------------------------------------
+// Issue #446: aarch64 12bpc CDEF primary-tap selection.
+//
+// The aarch64 CDEF port (`src/safe_simd/cdef_arm.rs`) took over every CDEF
+// call on ARM and, in its 16bpc filter, selected `pri_tap` from bit 0 of
+// `pri_strength` instead of bit `bitdepth_min_8`. The caller has already
+// scaled the level (`y_pri_lvl = (y_lvl >> 2) << bitdepth_min_8`), so at 10/12
+// bits that read the wrong bit and filtered with tap 4 where dav1d/libaom use
+// tap 3 — wrong pixels on every high-bit-depth frame whose CDEF fired, intra
+// and inter alike. dav1d does the shift in the matching NEON path
+// (`src/arm/64/cdef_tmpl.S`, `lsr w9, w3, w9` under `.if \bpc == 16`).
+//
+// Vector: the color track of libavif's
+// `colors-animated-12bpc-keyframes-0-2-3.avif` (profile 2, 64x64, 12bpc,
+// 4:2:2, SB128, frames KEY/INTER/KEY/KEY/INTER). The per-shown-frame MD5s
+// below are the C oracle's, not ours: `aomdec 3.14.1 --rawvideo` and
+// `dav1d 1.5.4 --muxer yuv` both produce exactly these bytes.
+const CDEF_12BPC_OBU: &[u8] = include_bytes!("crash_vectors/arm_cdef_12bpc_422_pri_tap.obu");
+
+/// One MD5 per shown frame over Y,U,V at cropped dims, 16-bit little-endian.
+const CDEF_12BPC_FRAME_MD5S: &[&str] = &[
+    "ef8b977a24cd428ae6a7626968b694c4",
+    "9f2291bf3f75dd440bc1d64ae26e0ac8",
+    "d4c7026d6bf22d5b973d59adbe73043d",
+    "484033dc917f8c49aba051070733e3ce",
+    "af113a069ef6a383e80522ce50943a99",
+];
+
+#[test]
+fn cdef_12bpc_422_matches_c_oracle_per_frame() {
+    let mut settings = Settings::default();
+    settings.threads = 1;
+    settings.apply_grain = false;
+    let mut d = Decoder::with_settings(settings).expect("decoder");
+
+    // A multi-temporal-unit raw-OBU stream: send once, then drain every
+    // buffered shown frame (`flush()` would discard them).
+    let mut got = Vec::new();
+    // Liveness: the whole point of this vector is that it is HIGH bit depth
+    // (`bitdepth_min_8 != 0`, so bit 0 and bit `bitdepth_min_8` differ) and
+    // 4:2:2. If a future re-minimisation or container change turned it into an
+    // 8-bit or 4:2:0 stream the MD5s would still be checked but they would no
+    // longer gate #446 — 8-bit is immune to the bug by construction. Fail
+    // loudly rather than pass vacuously.
+    let mut shape = Vec::new();
+    let push = |f: &Frame, got: &mut Vec<String>, shape: &mut Vec<(u8, PixelLayout, u32, u32)>| {
+        shape.push((f.bit_depth(), f.pixel_layout(), f.width(), f.height()));
+        let mut ctx = md5::Context::new();
+        hash_frame(f, &mut ctx);
+        got.push(format!("{:x}", ctx.finalize()));
+    };
+    if let Some(f) = d.decode(CDEF_12BPC_OBU).expect("decode error") {
+        push(&f, &mut got, &mut shape);
+    }
+    while let Some(f) = d.get_frame().expect("drain error") {
+        push(&f, &mut got, &mut shape);
+    }
+
+    for (i, &(depth, layout, w, h)) in shape.iter().enumerate() {
+        assert_eq!(
+            (depth, layout, w, h),
+            (12, PixelLayout::I422, 64, 64),
+            "frame {i}: this vector must stay 12bpc 4:2:2 64x64 or it stops \
+             gating issue #446 (8-bit cannot reach the defect)"
+        );
+    }
+
+    assert_eq!(
+        got.len(),
+        CDEF_12BPC_FRAME_MD5S.len(),
+        "expected {} shown frames, decoded {}",
+        CDEF_12BPC_FRAME_MD5S.len(),
+        got.len()
+    );
+    let mut failures = Vec::new();
+    for (i, (a, e)) in got.iter().zip(CDEF_12BPC_FRAME_MD5S).enumerate() {
+        if a != e {
+            failures.push(format!("frame {i}: expected {e}, got {a}"));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "12bpc 4:2:2 decode diverged from the aomdec/dav1d oracle on {} (issue #446):\n{}",
+        std::env::consts::ARCH,
         failures.join("\n")
     );
 }
