@@ -1,0 +1,52 @@
+size_sweep_t8_gap_2026-08-10.tsv -- decode latency AND CPU across the size
+ladder x thread count. Companion raw rows: size_sweep_t8_raw_2026-08-10.tsv.zst
+
+WHAT WAS MISSING BEFORE THIS
+  docs/SIZE_SWEEP.md measured the whole ladder at t=1 only ("t=1 for the whole
+  ladder; only 1024x576 and 3840x2160 were also taken at t=8, and only at
+  4:2:0"), and measured wall clock only -- no CPU. Per-image latency under
+  threading, and the CPU price of it, were unmeasured.
+
+HOST / BUILD
+  Apple M4 Pro (Mac16,11, 8P+4E, 24 GB), macOS 26.5.2.
+  rav1d-safe main @ 0f6bf10, release, default features, no target-cpu=native.
+  dav1d 1.5.4 (homebrew), same interleaved sweep, rotating arm order.
+  Measure-only: `git diff 0f6bf10..HEAD -- src/ lib.rs include/ crates/
+  Cargo.toml Cargo.lock build.rs` is empty.
+
+GRID
+  6 sizes {64x36, 256x144, 512x288, 1024x576, 2048x1152, 3840x2160}
+    x 2 depths {8, 10} bpc, YUV420, single tile          = 12 ladder vectors
+  + 6 forced-multi-tile counterparts (2x2 and 4x2)       = 18 vectors
+  x threads {1, 2, 4, 8}
+  x arms {rs, dav1d_fd1 (--framedelay 1), dav1d_def (default frame delay)}
+  x 9 rounds.  Frame counts per cell: 2500/25000 at 64x36 .. 2/16 at 4K.
+
+INSTRUMENT
+  bash `time` keyword, TIMEFORMAT='%3R %3U %3S' -- the child's getrusage as the
+  kernel reports it. Two frame counts per cell; `total = a + b*frames` fitted
+  SEPARATELY for wall and for user+sys, so process startup (exec, mmap,
+  container parse, decoder construction, thread-pool spin-up) drops out of both.
+  cores busy = (cpu ms/frame) / (wall ms/frame).
+  Speedups, CPU multipliers and ours/dav1d ratios are paired within a round,
+  then median with the min/max band.
+
+CORRECTNESS BEFORE TIMING
+  size_sweep_t8_vector_md5_2026-08-10.tsv       30/30 bit-identical to dav1d
+  size_sweep_t8_thread_invariance_2026-08-10.tsv 18/18 identical across t=1..8
+  size_sweep_tile_layout_2026-08-10.tsv          tile counts, read from the
+                                                 frame header, not the recipe
+
+LOAD TAG -- READ THIS BEFORE QUOTING ANY ABSOLUTE
+  Every row carries foreign_max. The box was NOT idle: a second agent's miri run
+  plus its own timed gap sweep were live throughout. This happened partly
+  because measlock's EXIT trap deletes the lock directory unconditionally, even
+  when the lock has since been reclaimed by another holder -- see
+  docs/SIZE_SWEEP_T8.md. Absolutes are inflated; paired within-round ratios are
+  the usable statistics.
+
+COMMANDS
+  scripts/perf/tile_layout.py         ~/tmp/t8gap/ivf
+  scripts/perf/size_sweep_t8.sh       (BIN/AVIF/IVF/ARMS/CELLS via env)
+  scripts/perf/size_sweep_t8_report.py <raw.tsv> --tsv <this.tsv>
+  scripts/perf/size_sweep_t8_amdahl.py <this.tsv>

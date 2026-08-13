@@ -159,6 +159,33 @@ footprint (and, below 8, in straddles) than the separation is worth.
 `docs/AGENT_BRIEF.md` §6 records "TinyLock backoff: null, measured twice", and
 both were taken where contention is ~0.02% of registrations. This cell is a
 different regime and deserved its own row rather than an overwrite of that one.
+
+> **CORRECTED 2026-08-13 (PR-triage round), twice over.**
+>
+> 1. **The "~0.02%" is the wrong counter.** It is `wide_probe::N_SLOW` — a count
+>    of `BorrowTracker::add_slow`, the poisoned / live-wide-record / multi-block
+>    path — divided by the registration population and quoted as a contention
+>    rate. Counted directly on the vector those earlier nulls were taken on
+>    (`v4k_8tile` 8bpc t=8, `--features probe-lockstats`): 22,700,725
+>    registrations and 45,401,450 lock acquisitions per frame, ~27,800 of them
+>    contended = **0.061% of acquisitions / 0.122% of registrations**, six times
+>    the quoted figure and against a different denominator. Rows:
+>    `benchmarks/park_not_spin_lockstats_2026-08-09.tsv`; provenance of the bad
+>    number: `benchmarks/verify_compose2_2026-08-08.meta:278`. **§5's conclusion
+>    below is unaffected** — this cell's 0.264% contended figure was counted
+>    directly here and stands, and a six-fold correction to a rate that is still
+>    well under 1% does not move the "at most 10.7% is waiting" arithmetic.
+>
+> 2. **"CLOSED" is scoped to t <= 8.** The four arms below run at t=8 on this
+>    cell; `benchmarks/c256_contention_2026-08-11.meta:128` lists `t=16` in its
+>    own not-measured list. PR #471 measured the backoff arm on `v4k_8tile` at
+>    n=16 on an idle box and read null at t=1/2/4/8 (agreeing with §5) and
+>    **0.955 wall at t=16 8bpc / 0.960 at 10bpc**, p90 and max moving by the same
+>    factor — t=16 being the only cell on this host where threads (16) exceed
+>    cores (12 logical). So: refuted at t <= 8 on two cells, **open under
+>    oversubscription**. `benchmarks/park_not_spin_2026-08-09.meta` §"LANDED
+>    2026-08-13".
+
 Four arms, one ladder over what a waiter does:
 
 | arm | policy | `spins`/frame | liveness |

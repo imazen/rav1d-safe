@@ -1,0 +1,265 @@
+perf/park-not-spin — BOUNDED SPIN THEN YIELD, MEASURED — 2026-08-09
+====================================================================
+
+Host      Apple M4 Pro, 8 P-cores + 4 E-cores (12 logical), macOS 26.5.2,
+          rustc 1.97.1. THE CORE COUNT IS THE RESULT: t=8 fits the P-cores,
+          t=16 oversubscribes. No -C target-cpu=native. No `nice` on any
+          timed run (Darwin maps nice to E-cores, ~40x distortion).
+Arms      base = main @ ee07b00, head = perf/park-not-spin @ 407c156.
+          Two staged binaries, `bench_ab_decode`, one config per process.
+Method    scripts/perf/verify_gap.sh, two-point wall fit (2 and 20 frames,
+          total = alpha + beta*frames, so process startup drops out),
+          arms interleaved with a ROTATING order inside every cell, STRICT
+          idle gate. Every committed row has foreign_max = 0; the box was
+          shared with other agents and the gate discarded and re-ran the
+          affected cells rather than admitting them.
+n         16 rounds on v4k_8tile at every thread count; 14-16 on
+          v4k_8tile_10b (the box went busy indefinitely before the 10bpc
+          t=8/t=16 cells reached 16 — stated rather than padded).
+Records   park_not_spin_gap_2026-08-09.tsv (310 rows)
+          park_not_spin_bands_2026-08-09.txt (per-arm bands + ratios)
+          park_not_spin_lockstats_2026-08-09.tsv (contention probe, TAGGED
+          LOADED — see below)
+Harness   scripts/perf/tail_report.py (new), scripts/perf/tail_sweep.sh (new,
+          per-decode sampler; NOT used for the headline, see "not measured"),
+          --features probe-lockstats (new, crates/rav1d-disjoint-mut).
+
+
+HEADLINE — THE PREMISE IS WRONG AND THE CHANGE IS STILL WORTH HAVING
+---------------------------------------------------------------------
+
+The branch was written on the theory that an unbounded spinner produces a fat
+tail with a normal median, and asked to be judged on p90/max and band width.
+Measured on an idle box at n=16, that theory does not hold and a different,
+smaller, real effect does:
+
+| vec           | t  | n  | base med | head med | r_med | r_p90 | r_max | band base | band head |
+|---------------|----|----|----------|----------|-------|-------|-------|-----------|-----------|
+| v4k_8tile     | 1  | 16 |   318.39 |   319.69 | 1.004 | 1.000 | 0.998 |  25.50    |  19.00    |
+| v4k_8tile     | 2  | 16 |   198.25 |   198.42 | 1.001 | 1.005 | 0.999 |   3.61    |   3.00    |
+| v4k_8tile     | 4  | 16 |   107.39 |   106.97 | 0.996 | 0.994 | 0.979 |   5.44    |   2.78    |
+| v4k_8tile     | 8  | 16 |    67.44 |    67.86 | 1.006 | 0.998 | 1.003 |   5.17    |   5.94    |
+| **v4k_8tile** |**16**|16| **72.97**| **69.69**|**0.955**|**0.944**|**0.944**| 6.06 |   4.94    |
+| v4k_8tile_10b | 1  | 16 |   359.94 |   360.00 | 1.000 | 1.001 | 1.000 |   4.06    |   4.28    |
+| v4k_8tile_10b | 2  | 16 |   206.61 |   206.53 | 1.000 | 0.999 | 1.000 |   4.89    |   4.89    |
+| v4k_8tile_10b | 4  | 15 |   110.89 |   112.00 | 1.010 | 0.989 | 1.006 |   6.06    |   5.78    |
+| v4k_8tile_10b | 8  | 14 |    71.19 |    72.58 | 1.020 | 1.018 | 1.055 |   4.56    |   8.78    |
+|**v4k_8tile_10b**|**16**|14| **77.19**| **74.14**|**0.960**|**0.969**|**0.971**| 4.39 |   6.50    |
+
+1. **The win exists and it is at t=16 only: 0.955 (8bpc) and 0.960 (10bpc)
+   on the MEDIAN.** Bands at 8bpc t=16 are base [69.22..75.28] against head
+   [66.11..71.06] — they touch over 1.8 ms of a 6 ms span, and p90 and max
+   move by the same 0.944 as the median, i.e. the whole distribution shifted
+   rather than its tail being clipped.
+
+2. **t=1, 2, 4 and 8 are null on every statistic, both depths.** t=16 is the
+   only cell on this box where threads exceed cores, and it is the only cell
+   that moves. That is the mechanism stated as a measurement rather than an
+   argument.
+
+3. **THERE IS NO FAT TAIL TO COLLAPSE.** Base band widths are 7.7% of the
+   median at 8bpc t=8 and 6.4% at 10bpc t=8 — not the ~60% the branch's
+   rationale assumed. Head's bands are not systematically narrower; at 10bpc
+   t=8 head's band is nearly twice as wide (12.1% vs 6.4%) and at 8bpc t=8 it
+   is wider too (8.8% vs 7.7%). **Judged on the criterion the PR asked for —
+   p90, max, band width at t=4/8 — this change measures null.** It survives
+   on a different result than the one it predicted.
+
+4. **The band evidence the PR cites is not reproducible and has no source.**
+   The quoted 8bpc t=8 bands [67.8..114.6] and [73.2..112.8] appear in no
+   committed benchmark TSV in this repo (I recomputed per-cell bands over
+   every gap-shaped TSV in benchmarks/) and in no issue or PR body except
+   #471 itself. The fattest committed t=8 bands are in
+   scaling_gap_dav1d_2026-08-08.tsv — `plain` [72.33..97.89] (33%) — and that
+   file is one its own meta already tags as run with ALLOW_LOAD=1 under a
+   foreign qemu process in 36 of 60 rows. In the SAME file, **dav1d, which
+   contains none of our locking, has bands of [34.28..57.78] (64%) and
+   [32.11..43.06] (32%)**. Those fat t=8 bands are a property of a loaded
+   box, not of TinyLock.
+
+
+MECHANISM — probe-lockstats, and a correction to the campaign's numbers
+------------------------------------------------------------------------
+
+New throwaway probe `--features probe-lockstats`
+(`rav1d_disjoint_mut::lock_probe`): one `fetch_add` per CONTENDED acquisition
+(none on the fast path, none inside the spin loop — iterations accumulate in a
+local). It counts `TinyLock::lock_slow` entries, total `spin_loop()`
+iterations, `yield_now()` calls and the longest single acquisition.
+Perturbation check: this build runs v4k_8tile 8bpc t=8 at 71.9 ms/frame
+against 67.4 un-probed, so it is a usable counter — unlike `probe-count`,
+which runs the same cell at 6,537 ms/frame and whose own 19.7% contention
+figure is entirely self-inflicted.
+
+**The "~0.02% contention" in the PR body is the wrong counter.** The 23,009
+figure is `wide_probe::N_SLOW`, which counts `BorrowTracker::add_slow` — the
+poisoned / live-wide-record / multi-block path — and has nothing to do with
+lock contention. Measured directly (v4k_8tile 8bpc, 6 frames, t=8):
+
+  registrations/frame      22,700,725   (probe-count on base, measured here)
+  lock acquisitions/frame  45,401,450   (add + remove)
+  contended acquisitions   150,858 - 198,316 per 6-frame run
+                           => ~27,800/frame => 0.061% of acquisitions,
+                              0.122% of registrations — SIX TIMES the
+                              0.02% quoted.
+
+One `spin_loop()` costs **8.28 ns net** on this host (`isb`, not a nop;
+20 M-iteration loop, best of 5, minus an identical empty loop). That prices
+the counters:
+
+| arm  | t  | contended | spin iters | yields | max spins in one acquisition |
+|------|----|-----------|-----------|--------|------------------------------|
+| base | 4  |  191,445  | 1,688,666 |      0 | 1,083  (~9.0 us)             |
+| base | 8  |  150,858  | 1,322,714 |      0 | 1,387  (~11.5 us)            |
+| base | 16 |  192,249  | 2,033,586 |      0 | **13,262 (~110 us)**         |
+| head | 4  |  167,968  | 1,297,033 |  3,044 |   900                        |
+| head | 8  |  198,316  | 1,528,031 |  2,657 |   841                        |
+| head | 16 |  270,246  | 2,175,310 |  3,638 | 1,179                        |
+
+* **Liveness: the 64-spin bound IS reached** — 2,657-3,638 yields per 6-frame
+  run, i.e. ~1.4% of contended acquisitions. The change is not inert. 98.6%
+  of contended acquisitions still resolve inside 64 spins, which is why t<=8
+  cannot move.
+* **The unbounded spin is real but small.** The worst single acquisition
+  burned ~110 us at t=16 and ~11.5 us at t=8. That is two orders of magnitude
+  short of a preemption quantum, and it is why the predicted 45 ms tail was
+  never going to be there.
+* Aggregate spin work at t=16 falls ~23% (2.21 M -> 1.74 M iterations per
+  6 frames, interleaved n=5 medians) = 0.64 ms/frame of CPU, against a
+  3.3 ms/frame WALL win. **Most of the t=16 gain is therefore the holder
+  getting a core back, not the waiter's own burn being avoided.**
+* head's `max spins` at t=16 occasionally exceeds base's (7,616 and 14,848 in
+  the loaded series). This is a counter artifact, not a regression: the head
+  counter accumulates across yields, so a long head wait is 100+ yields with
+  at most 64 contiguous spins between them, whereas every base spin is
+  contiguous burn. Contiguous burn is bounded at 64 by construction on head.
+
+park_not_spin_lockstats_2026-08-09.tsv (n=5 interleaved rounds) is **TAGGED
+LOADED** — a foreign 100%-CPU process held one core throughout. Its counts and
+its base/head ratios are usable (0.949 at 8bpc t=16, matching the idle sweep's
+0.955); its absolute ms are not.
+
+
+CORRECTNESS
+-----------
+* Corpus **766/766**, `md5_inventory` set-diff BY NAME against
+  benchmarks/aarch64_md5_fixes_2026-08-07_final.tsv.zst with the actual md5 as
+  the value: only-in-baseline 0, only-in-head 0, **differing 0**.
+* Output byte-identical base vs head, 10/10 cells (v4k_8tile and
+  v4k_8tile_10b at t=1/2/4/8/16): a00c11f454328023c58af14d55544cff and
+  4f218411bc6ee4cc9c630fe827337fa2 on both arms at every thread count.
+* `cargo test --release -p rav1d-disjoint-mut` green (26 lib + 25 soundness +
+  5 shard_liveness + narrow_release + 1 rowmap); `wide_exclusion` green under
+  `--features __probe_wide`.
+* `mt_stress` 1/2/4/8/16 x5 PASS.
+* `scripts/perf/multi_decoder_pressure.sh` 12 procs x 3 iters x threads
+  1/2/4/8/16 PASS, every md5 matching the serial reference.
+* Instrument verified against the binary, not the source: `otool -tvV` on
+  `TinyLock::lock_slow` shows base as a frameless leaf looping on
+  `isb`/`ldrb` with no exit, and head with `cmp w8,#0x3e` + `bl _sched_yield`.
+  head's `lock_slow` gains an `stp x29,x30` frame; `lock`/`try_lock`/`unlock`
+  are unchanged single atomics in both, so the frameless leaf `add` is intact.
+
+
+NOT MEASURED — do not extrapolate
+----------------------------------
+* **x86_64.** Nothing here transfers: `spin_loop()` is `pause` there with a
+  completely different cost, and the scheduler is not heterogeneous.
+* **The oversubscription ladder.** t=12 (== logical cores), t=24 and t=32 were
+  queued and never got an idle window — two other agents held the box. Whether
+  the t=16 win grows, saturates or reverses past 16 is UNKNOWN, and the
+  "more threads than cores" mechanism is inferred from a single oversubscribed
+  cell plus the lock counters, not from a ladder.
+* **Any vector other than v4k_8tile / v4k_8tile_10b.** In particular nothing
+  with loop restoration live, which is the campaign's standing blind spot.
+* **A per-decode distribution.** scripts/perf/tail_sweep.sh was written to
+  sample every decode individually (the right instrument for a rare event,
+  since 16 two-point rounds is only 16 tail samples) and never ran, for the
+  same box-contention reason. The tail conclusion above therefore rests on 16
+  rounds per cell, which is enough to say the base band is ~8% and not ~60%,
+  and NOT enough to characterise a 1-in-1000 event.
+* **`--features unchecked`**, Miri, and any spin bound other than 64. The 64
+  was not swept; it is the value the deleted probe used.
+
+
+================================================================================
+LANDED 2026-08-13 BY THE PR-TRIAGE ROUND — SCOPE AGAINST #504, AND ONE CORRECTION
+================================================================================
+
+This record was written on 2026-08-09 and sat on `perf/park-not-spin` (PR #471)
+until the triage of the 15 open PRs. It is landed UNCHANGED above this line.
+Three things a later reader needs, none of which invalidate anything above:
+
+1. THE t=16 RESULT IS NOT CONTRADICTED BY #504, AND #504 SAYS SO ITSELF.
+
+   `docs/C256_CONTENTION.md` §5 and AGENT_BRIEF §6 record the waiting policy as
+   "CLOSED — null, 2026-08-11": four arms (backoff / yield / relax / park) on
+   `c256x2048` at t=8, n=15, every one inside a +/-1.8% floor. That is a
+   different cell AND a different thread count. #504's own "not measured" list
+   (`benchmarks/c256_contention_2026-08-11.meta:128`) ends with `t=16`.
+
+   This record's only win is at t=16 — 0.955 (8bpc) and 0.960 (10bpc) on the
+   median, with p90 and max moving by the same factor, on an idle box at n=16
+   — and t=16 is the only cell on this host where threads exceed cores (M4 Pro,
+   8 P + 4 E = 12 logical). t=1/2/4/8 are null here too, which AGREES with #504
+   rather than contradicting it.
+
+   So the honest joint statement is: the waiting policy is refuted at t <= 8 on
+   two cells, and UNMEASURED-BUT-PROMISING under oversubscription. It is an open
+   lever, not a duplicate. What would settle it is named in "NOT MEASURED"
+   above and is unchanged: the t=12 / t=24 / t=32 ladder that never got an idle
+   window, plus x86_64 (where `spin_loop()` is `pause` and the scheduler is not
+   heterogeneous, so nothing here transfers).
+
+2. THE "~0.02% CONTENTION" FIGURE ON `main` IS WRONG, AND THIS RECORD IS WHY.
+
+   Two places on `main` say the earlier TinyLock nulls "were taken where
+   contention is ~0.02% of registrations":
+
+       crates/rav1d-disjoint-mut/src/tracker_shard.rs:582   (doc comment)
+       docs/C256_CONTENTION.md:160                          (section 5 preamble)
+
+   That number is `wide_probe::N_SLOW` — a count of `BorrowTracker::add_slow`,
+   the poisoned / live-wide-record / multi-block path. It has nothing to do with
+   lock contention. Its provenance is traceable: 23,009 per 6-frame run appears
+   in `benchmarks/verify_compose2_2026-08-08.meta:278` as an `add_slow` count,
+   and was then divided by the registration population and quoted as a
+   contention rate.
+
+   Directly counted here with `--features probe-lockstats` on the same vector
+   (`v4k_8tile` 8bpc, 6 frames, t=8), and the raw rows are in
+   `park_not_spin_lockstats_2026-08-09.tsv`:
+
+       registrations/frame        22,700,725
+       lock acquisitions/frame    45,401,450   (add + remove)
+       contended acquisitions     150,858 - 198,316 per 6-frame run
+                                  => ~27,800/frame
+                                  => 0.061% of ACQUISITIONS
+                                  => 0.122% of REGISTRATIONS
+
+   Six times the quoted figure, and against a different denominator than the one
+   the quote implies. Both `main` sites get a dated note pointing here in the
+   same change that lands this file. NOTE this does NOT touch #504's 0.264%
+   contended-acquisition figure for `c256x2048` t=8
+   (`docs/TILED_SCALING.md:409`), which is a different cell, directly counted,
+   and stands.
+
+3. TWO INDEPENDENT PRICES FOR `spin_loop()`, KEPT BOTH.
+
+   This record: 8.28 ns net on this host (20 M-iteration loop, best of 5, minus
+   an identical empty loop). `benchmarks/c256_contention_2026-08-11.meta:80-81`
+   (#504, two days later): 7.6 ns per iteration on an idle core, 6.7 ns of it
+   the hint. Same host, same order, measured differently; neither is withdrawn.
+   Neither is the number that matters under real contention, which #504 settled
+   at ~627 ns per iteration (AGENT_BRIEF §2) — 75-80x the idle-core price, which
+   is the reconcile-in-one-binary lesson, not a disagreement between these two.
+
+Also worth carrying, because it is a self-refutation and those are rare: this
+record measured its OWN PR body's premise and found it false. #471's body asked
+to be judged on p90/max and band width, citing 8bpc t=8 bands of [67.8..114.6]
+and [73.2..112.8]. Section "HEADLINE" above reports those bands appear in NO
+committed benchmark TSV in this repo and in no issue or PR body except #471
+itself, and that base band widths are ~8% of the median, not the ~60% the
+rationale assumed. Judged on the criterion the PR asked for, the change is null;
+it survives on a different result than the one it predicted. That is the same
+unsourced-number class the campaign has now had to correct three times.
