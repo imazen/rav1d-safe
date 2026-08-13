@@ -1,10 +1,21 @@
 # The hump is not a size law — it is content, and screen content is our worst case
 
-Follow-on to `docs/SIZE_SWEEP.md` and issue #455. **`SIZE_SWEEP.md` is NOT on
-`main`** — as of 2026-08-12 it exists only on the unmerged branch
-`measure/size-sweep-intercept` (`git show measure/size-sweep-intercept:docs/SIZE_SWEEP.md`),
-which is why it is referenced by name below rather than linked. Every one of
-this file's eleven references to it is a citation of that branch's record.
+Follow-on to `docs/SIZE_SWEEP.md` and issue #455.
+
+> **SUPERSEDED 2026-08-13 — `SIZE_SWEEP.md` IS on `main` now.** This file used to
+> open with "**`SIZE_SWEEP.md` is NOT on `main`** — as of 2026-08-12 it exists
+> only on the unmerged branch `measure/size-sweep-intercept`
+> (`git show measure/size-sweep-intercept:docs/SIZE_SWEEP.md`), which is why it is
+> referenced by name below rather than linked." That was true when written and is
+> no longer: the PR-triage round landed it from PR #487, whose copy is
+> byte-identical to `30a7294`'s (`sha1 eaff7b70…`). References below are now
+> live in-tree paths.
+>
+> The count in the old wording ("eleven references") was also wrong, and this is
+> the third recall-not-count slip the campaign has had to fix (see #514). Counted
+> on the pre-change file: **13 occurrences of the string `SIZE_SWEEP.md` on 12
+> lines**, of which **10 are in the body** below the header note. Across all of
+> `main` it was **26 lines in 8 files**.
 
 Base SHA **`5606efe`** (`main`; the task named `0f6bf10`, which `main` had moved
 four docs-only commits past — `141e07f`, `02dda0f`, `f87b12c`, `5606efe`).
