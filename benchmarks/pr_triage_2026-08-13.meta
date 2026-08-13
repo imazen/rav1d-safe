@@ -1,0 +1,140 @@
+# PR triage, 2026-08-13 — the 15 PRs open from 2026-08-06 to 2026-08-10
+
+Companion to #514's round (which reconciled #489/#490/#493/#498/#499). Same
+rules: nothing merged as written, nothing closed whose data exists nowhere else,
+stale claims corrected in place with a date rather than deleted, every figure
+below counted or read out of committed data rather than recalled.
+
+Every "already on main" claim in the SUPERSEDED table was checked by reading the
+file on `origin/main`, and every ancestry claim with
+`git merge-base --is-ancestor <sha> origin/main`.
+
+## What this round landed
+
+| PR | landed here | why it could not just be closed |
+|---|---|---|
+| #448 | **#517, merged `fcf07c5`** | the FIX was on `main`, the regression VECTOR was not — a wrong-pixels bug shipping ungated |
+| #487 | `docs/SIZE_SWEEP{,_T8}.md` + 9 data files + 11 `scripts/perf/*` | `main` cited `SIZE_SWEEP.md` on **26 lines in 8 files** and did not contain it |
+| #488 | 6 `benchmarks/` files + `scripts/perf/paired_ab.py` | `AGENT_BRIEF.md` §6 cites `lf_vbatch_iso_2026-08-10_v1.tsv` by name |
+| #471 | 4 `benchmarks/park_not_spin_*` files | a t=16 result #504 never measured, plus a 6x correction to a figure on `main` |
+| #450 | `tile_threading_guard_2026-08-06.meta` + 3 `.tsv.zst` | three metas on `main` cite it by name, two of them for its VECTOR RECIPE |
+
+Corrections made in place, each dated 2026-08-13 and each quoting what it
+replaces:
+
+* `docs/CONTENT_CLASS.md` — its "`SIZE_SWEEP.md` is NOT on `main`" header, and
+  its recalled reference count ("eleven"; counted: **13 occurrences on 12 lines,
+  10 in the body**).
+* `crates/rav1d-disjoint-mut/src/tracker_shard.rs:582` and
+  `docs/C256_CONTENTION.md` §5 — the "~0.02% of registrations" contention figure.
+* `docs/AGENT_BRIEF.md` §6 — the waiting-policy row re-titled to its real scope
+  (t <= 8), plus a new row for oversubscription.
+* `benchmarks/tile_threading_guard_2026-08-06.meta` §"Result 3" — "recorded so
+  it is not retried" for the strided record, which #505/#513 retried correctly
+  and shipped by default on 2026-08-11.
+
+## The one still OPEN, and what would settle it
+
+**#471 — the shard lock's waiting policy under OVERSUBSCRIPTION.** Its records
+are landed; its code is not. It is NOT a duplicate of #504:
+
+  #504     4 arms, `c256x2048`, **t=8**, n=15 -> all inside a +/-1.8% floor.
+           Its own not-measured list ends with `t=16`
+           (`benchmarks/c256_contention_2026-08-11.meta:128`).
+  #471     spin-64-then-yield, `v4k_8tile{,_10b}`, t=1..16, n=16, IDLE box,
+           `foreign_max = 0` on every committed row
+           -> null at t=1/2/4/8 (agrees with #504)
+           -> **0.955 (8bpc) / 0.960 (10bpc) at t=16**, p90 and max moving by
+              the same factor.
+
+t=16 is the only cell on this host where threads (16) exceed cores (12 logical).
+The shipping build spins unbounded — `yield_now` lived only behind a probe
+feature that #504's arms have since replaced.
+
+Settles it: the **t=12 / t=24 / t=32 ladder** (queued on #471, never got an idle
+window) and **x86_64**, where `spin_loop()` is `pause` and the scheduler is not
+heterogeneous, so nothing here transfers. Do not re-litigate at t <= 8; that is
+now null on two cells and two vectors.
+
+## Closed as superseded — the SHA-verified table
+
+Read as: the finding is on `main`, in the named file, by a DIFFERENT mechanism
+in several cases. Branch heads stay reachable (`git fetch origin pull/N/head`).
+
+| PR | head | superseded by | where the finding is on `main` |
+|---|---|---|---|
+| #451 | `761366e8` | — it LANDED | `git merge-base --is-ancestor 761366e8 origin/main` passes; first PR merge containing it is **#454** (`490ed78`, `verify/compose-2`). `benchmarks/p3_inversion_2026-08-07.meta` is in-tree |
+| #450 | `b5211a03` | #505/#513 | records landed above; the batching CODE is moot — the rectangle record replaced the per-row population it batched |
+| #468 | `0596f525` | #482 | `OWNERSHIP_MODELS.md` §1 carries its blocker with the same file:line citations (`picture.rs:1287`, `thread_task.rs:1237/:1416/:1436/:1451`, `lib.rs:221`) AND its generalisable rule |
+| #469 | `c1355c42` | #482 + #505/#513 | see the correction below — its MECHANISM is not on `main` |
+| #472 | `b2b39e3f` | #505 + #513, and #497 | `DisjointMutRectGuard::row_mut(&mut self)` in `crates/rav1d-disjoint-mut/src/lib.rs:1615`, DEFAULT path since 2026-08-11; the x86 half is `X64_APPLICABILITY.md` §G, fixed |
+| #473 | `a2d4c822` | #482 | `OWNERSHIP_MODELS.md` §3 (keying unsound unless total), :120 (stitch 0.315 ms/frame), :127 (the cache-locality bonus does not exist, 2.567 vs 2.553) |
+| #474 | `df9c4dee` | #482 | `MUT_RECON_KERNELS.md` §1 and :64 (+96.3 / +191.0 MB), `OWNERSHIP_MODELS.md` :84 |
+| #475 | `639db7de` | #482, #497, #479, and the `RAV1D_MD5_THREADS` gate | `BOUNDS_MAP.md` :16 (hull over-reserves inter-row gaps); its dead-gate audit item 1 is FIXED — `tests/decode_md5_verify.rs::md5_threads()` + `ci.yml` running the corpus twice, once at `RAV1D_MD5_THREADS: 8` |
+| #480 | `ae0dd65f` | #506 | see the correction below — its ruled-out list is right, its residual attribution is wrong |
+| #481 | `8c0428f9` | #482 | `MUT_RECON_KERNELS.md` :5 ("PR #481 priced this change and did not write it. This writes it") and :151 (its ceiling 1.276/1.333/1.313/1.475 quoted as the target #482 landed ON); its 2.8-9.4 ns/registration band is cited in 3 places |
+| #485 | `d1582175` | #486/#489 + #505 | the band is refuted as a mechanism in `bounds_probe.rs` :328/:365/:891 (it is the counterfactual the instrument computes), `picture.rs` :310/:367, and `BOUNDS_MAP.md` |
+| #487 | `178e0704` | — records landed | above |
+| #488 | `419d2715` | — records landed | above; conclusions were already in 4 places |
+
+## Three claims in the triage brief that were WRONG, stated plainly
+
+The brief asserted these from titles and campaign memory. Two are wrong and one
+is imprecise; all three were checked against `origin/main` and committed data.
+
+1. **"#471 is one of the four waiting-policy arms #504 measured as NULL."**
+   WRONG — see the OPEN section above. Different cell, different thread count,
+   and the thread count that matters is on #504's own not-measured list.
+
+2. **"#469's column-sharding is the shape #482's column-compact `ReconBand`
+   landed."** IMPRECISE in a way that matters. #469's mechanism is a TRACKER
+   change — `RowMap`, per-record `c0`/`c1` column bands, `cols_meet`, `COL_ANY`,
+   `StridedRows` — and **none of those symbols exist anywhere on `main`.**
+   #482's `src/owned_recon.rs` is an OWNED BUFFER whose uniqueness is proved by
+   borrowck with no record at all, one band per WORKER rather than per tile, and
+   it removes recon's registrations instead of making them column-aware. The
+   thing that actually generalises #469's "one record for a rectangle" is
+   **#505/#513's exact strided-rectangle record**, and that covers the FILTER
+   CHAIN, a different population from #482's. So #469's goal was reached by two
+   later changes, neither of which is its mechanism. (#469 also shipped Miri UB
+   — an exact record behind a hull reference — which is what #470/#472 found.)
+
+3. **"#472 ... is what #505's exact strided-rectangle record actually
+   implements and #513 shipped by default."** CORRECT, and verified:
+   `DisjointMutRectGuard`/`DisjointImmutRectGuard` hand out one row at a time
+   via `row_mut(&mut self)` (`lib.rs:1615`), and `Cargo.toml` now declares
+   `__lf_rect` and `__rows_rect` as retained no-ops because "the rectangle is
+   now the DEFAULT path (2026-08-11)". #472's OTHER half — the `macos-15-intel`
+   `compact_read_per_row` overlap panic it analysed and could not fix without an
+   x86 box — was independently found, root-caused and FIXED as the #494 t=8
+   race, recorded at `X64_APPLICABILITY.md` §G. #472 was right that the defect
+   was on `main` and not an artefact of its own change.
+
+## Two stale conclusions on the closed branches, for anyone who reads them
+
+* **#480 concluded "the +0.71 ns is paid by EVERY registration"** and left
+  `add`'s two extra parameters as the only unexamined suspect. #506 refuted
+  that: the t=1 cost is **CODE PLACEMENT**. 4,828 bytes of provably-dead
+  `#[used]` text, 0 symbols resized, costs +1.10% at t=1 on `v4k8tile`, 0 of 11;
+  against a SAME-SOURCE control the rectangle costs **0.9967 (7/9)**. #480's
+  ruled-out list (the rectangle code path at 1.0005 with the path provably dead,
+  the column stores, the row map) stands and is useful; its residual
+  attribution does not. Judge any t=1 claim inside ~1.5% against a same-source
+  arm or a `__pad_text` rung, never against `main`'s binary.
+
+* **#485 and #488 both proposed reducing a registration COUNT**, and #505 has
+  since corrected the cost model they were priced against: cost tracks
+  **distinct shard lines a worker visits**, not records filed. `LfBlock::fill`
+  files 8.98 records per 2.09 shard lines and is 31.7% of the population for
+  3.9-4.4% of tracker CPU, so the DENSEST site is the least valuable count cut
+  available. Both PRs reached "not worth it" by measurement anyway, which is why
+  neither is contradicted — but a future reader should not take their framing
+  ("this site is 33.6% of registrations") as a priority ordering.
+
+## Scope
+
+Records only. No decoder code, no `crates/` behaviour, no feature flags landed
+by this round beyond the #448 test vector in #517. Every PR's code stays on its
+branch at the head SHA in the table above. Nothing was re-measured: another
+agent holds the box for timed work in a sibling repo, so every figure here is
+cited from a committed record, from a CI log, or counted from the tree.
