@@ -1,0 +1,207 @@
+# Tile-threading block-guard throughput: the #445 regression, and its fix
+
+date: 2026-08-06
+host: Apple M4 Pro (8 P-core + 4 E-core = 12 logical), macOS 26.5.2, aarch64
+rustc: 1.97.1 (8bab26f4f 2026-07-14), stable
+profile: release (lto = "fat", codegen-units = 1), default features
+         (bitdepth_8 + bitdepth_16 — i.e. the CHECKED DisjointMut build).
+         No `-C target-cpu=native`.
+
+## nice level — read this before reproducing
+
+NO `nice` WAS APPLIED TO ANY TIMED RUN. On Darwin a positive nice value maps the
+process to background QoS (efficiency cores) and distorts wall clock by well
+over an order of magnitude. `nice -n 19` was used for BUILDS only.
+
+Arms are interleaved back-to-back per (vector, threads) cell, and their order is
+ROTATED each round, so no arm systematically inherits the others' thermal wake.
+Reported numbers are MEDIANS over every rep of every round (9 reps for the A/B
+sweep, 6 for the three-arm sweeps), not single shots.
+
+The harness records the 1-minute load average with every cell and refuses to
+start while any process is above 25% CPU. Both guards exist because they were
+needed: an orphaned background sweep and an editor's `cargo check` (844% CPU)
+each silently invalidated an entire dataset during this session. Any cell whose
+LOAD column is above ~3 should be treated as suspect.
+
+## Commits compared
+
+  before   0d350d1  (immediately before #445)
+  after    a6a7e232 (#445 as merged on main)
+  batched  the fix in this branch, on top of a6a7e232
+  strided  a REJECTED intermediate attempt, kept only as evidence (see below)
+
+All arms are builds of `examples/bench_ab_decode.rs`, which is committed so both
+sides of a cross-commit comparison run identical harness code.
+
+## Exact commands
+
+  # vectors (from test-vectors/bench/photo_4k.avif, via avifdec + sips + avifenc)
+  avifdec test-vectors/bench/photo_4k.avif src4k.png
+  sips -Z 1024 src4k.png --out src1024.png ; sips -Z 256 src4k.png --out src256.png
+  avifenc -q 70 -s 6 -y 444 [-d 10] --tilecolslog2 {0,2} --tilerowslog2 {0,1} <src>.png <out>.avif
+
+  # build (nice is fine here — builds are not timed)
+  CARGO_TARGET_DIR=<per-arm> RUSTC_WRAPPER=sccache \
+    nice -n 19 cargo build --release --example bench_ab_decode -j 4
+
+  # sweep
+  caffeinate -i ./scripts/perf/ab_sweep.sh <vector_dir> <out.tsv> <rounds> \
+    before=<bin> after=<bin> batched=<bin>
+  python3 scripts/perf/ab_report.py <out.tsv>
+
+## Data files
+
+  tile_threading_guard_ab_2026-08-06.tsv.zst       before vs after, 3 rounds x 3 reps
+  tile_threading_guard_strided_2026-08-06.tsv.zst  before vs after vs the REJECTED attempt
+  tile_threading_guard_fix_2026-08-06.tsv.zst      before vs after vs the shipped fix
+
+Columns: round, kind, arm, vector, threads, [rep, iters, ms_total, ms_per_frame].
+`FAIL` rows record a cell whose decode failed rather than dropping it.
+
+## Result 1 — the #445 regression, measured (after / before, median)
+
+  vector           geom            t=1     t=2     t=4     t=8
+  v256             256x144  8bpc   1.022   1.073   1.065   1.062
+  v1024            1024x576 8bpc   1.007   1.076   1.082   1.078
+  v4k_1tile        3840x2160 8bpc  1.010   1.043   1.045   1.048
+  v1024_10b        1024x576 10bpc  1.001   1.008   1.002   1.008
+  v4k_1tile_10b    3840x2160 10bpc 0.997   1.004   1.003   1.008
+  v4k_8tile        3840x2160 8bpc  1.019   before PANICS at t>=2 (this is why #445 exists)
+  v4k_8tile_10b    3840x2160 10bpc 0.994   1.001   0.977   0.970
+
+* threads=1 is the control and is UNCHANGED (0.997-1.022). The compact path is
+  gated on `tile_threading_active()`, which is false at n_tc == 1, so this is
+  the expected result and it holds.
+* 8-bit at threads>=2 costs +4.3% to +8.2%. That is the regression.
+* 10-bit is unaffected (~1.00). #445 converted the aarch64 safe-SIMD sites whose
+  hot paths are 8bpc; the 16bpc kernels do not reach them in this content.
+* On genuinely multi-tile content the `before` arm cannot decode at all at
+  threads>=2 — it panics with the overlapping-DisjointMut report #445 fixed. So
+  for that column there is no baseline to regress against.
+
+## Result 2 — where the cost is: guard bookkeeping, NOT the copy
+
+A throwaway probe build kept both memcpys but took ONE contiguous guard instead
+of `h` per-row guards (incorrect under tile threading — it reserves the gaps
+again — but valid on the 1-tile vectors used to measure it):
+
+  v1024,     threads=4:  before 50.2   after 54.2   probe 50.0
+  v4k_1tile, threads=4:  before 562.7  after 586.0  probe 561.0
+
+The probe is indistinguishable from baseline. The two memcpys are free; the
+entire regression is the `2h` extra tracker lock round-trips per block.
+
+`sample`-based profiles agree: `BorrowTracker::add_mut` is ~13% of decode wall
+time in the baseline, and it is the second-hottest symbol in the binary after
+`decode_coefs`.
+
+## Result 3 — a REJECTED attempt, recorded so it is not retried
+
+> **PARTIALLY SUPERSEDED 2026-08-13 (PR-triage round). It WAS retried, five days
+> later, and it PAID — because the retry obeyed exactly the constraint this
+> section ends on.** #505 built an exact strided-rectangle record and #513 made it
+> the DEFAULT path on 2026-08-11 (`Cargo.toml` now carries `__lf_rect` and
+> `__rows_rect` as declared no-ops saying so). The section below is still correct
+> about ITS OWN two designs and about why they failed — do not put row geometry in
+> `Bounds`, and do not add an indirection to the dense scan. What is now known and
+> was not knowable here: a rectangle record whose scan cost is unchanged is worth
+> **−2.0% to −2.5% wall at t=8** on the 1024-wide family from the CDEF seam alone,
+> and −3.9% to −4.5% composed with `LfBlock::fill`'s (`docs/LAYOUT_CDEF.md` §4).
+> So read "recorded so it is not retried" as "recorded so it is not retried THIS
+> WAY". Two further corrections from later rounds bear on the numbers below:
+> `main` now prices a count cut by **distinct shard lines visited**, not records
+> filed (`docs/RECT_RECORDS.md`), and every t=1 figure within ~1.5% on a
+> large-working-set cell sits inside a measured **code-placement lottery**
+> (`docs/RECT_SHIP.md` §3, AGENT_BRIEF §6) — which the "+20% at threads=1" here is
+> far outside, but the "1.19-1.27" tail is not.
+
+
+Registering the block's 2-D shape as ONE strided tracker record (row_len +
+row_stride, with exact strided-vs-dense overlap math) removes both the gap
+reservation and the per-row lock traffic, and is the design the open #449 also
+wants. It measured WORSE than the thing it replaced, twice:
+
+  * v1: widening `Bounds` (16 -> 32 bytes) and the dense slot arrays with row
+    geometry cost 1.6x on `add_mut` and ~20% on whole-frame decode, at
+    threads=1, before the new code path was even reached.
+  * v2: moving the geometry to a side table consulted only when a strided
+    borrow is live still cost +19% (10-bit, threads>=2), because a strided
+    borrow is live almost continuously under tile threading and every dense
+    borrow then paid an out-of-line call. An inline containing-interval reject
+    recovered the tiny vector but not the rest: 1.19-1.27 vs before.
+
+The lesson is that the overlap scan is far too hot to carry 2-D math or an extra
+indirection. Any future strided-record design has to leave the dense scan
+byte-identical, which is the constraint the shipped fix satisfies by not
+changing the scan at all.
+
+## Result 4 — the shipped fix (batched / before, median)
+
+Same per-row reservations as #445, registered ROW_BATCH (4) at a time under one
+tracker lock instead of one lock round-trip per row. Every stored record is
+still a plain interval, so the overlap scan is untouched.
+
+  vector           geom            t=1     t=2     t=4     t=8
+  v256             256x144  8bpc   1.003   1.046   1.040   1.039
+  v1024            1024x576 8bpc   1.007   0.987   0.999   1.002
+  v4k_1tile        3840x2160 8bpc  1.008   1.010   1.005   1.004
+  v1024_10b        1024x576 10bpc  1.001   0.978   0.980   0.978
+  v4k_1tile_10b    3840x2160 10bpc 0.995   0.988   0.986   0.982
+  v4k_8tile_10b    3840x2160 10bpc 0.997   0.971   0.899   0.953
+
+  v4k_8tile 8bpc (before cannot decode at t>=2; batched vs AFTER):
+    t=2  471.0 vs 503.8  (0.94x)
+    t=4  578.4 vs 676.2  (0.86x)
+    t=8 1100.8 vs 1120.8 (0.98x)
+
+The 8-bit regression is gone (1.076-1.082 -> 0.987-1.010 on v1024). Several
+cells land BELOW the pre-#445 baseline, because the loopfilter and ipred compact
+paths — which used per-row guards long before #445 — are batched too.
+
+Residual: v256 at threads>=2 is still +4%. It is the smallest vector (1.2 ms per
+frame), where per-frame fixed cost dominates and blocks are short enough that
+batching four rows saves little. Not chased further.
+
+## Result 5 — tile threading anti-scales, and that PREDATES #445
+
+Independent of any of the above, and the more important number for anyone
+choosing a thread count. Decode time vs threads on the shipped fix, 3840x2160:
+
+  v4k_8tile   8bpc:  t=1 591  t=2 471 (1.25x)  t=4 578 (1.02x)  t=8 1101 (0.54x)
+  v4k_8tile  10bpc:  t=1 665  t=2 529 (1.26x)  t=4 633 (1.05x)  t=8 1205 (0.55x)
+  v4k_1tile   8bpc:  t=1 588  t=2 569        t=4 568          t=8 567
+
+The `before` arm shows the same shape on 10-bit (t=1 667, t=2 544, t=4 705,
+t=8 1265), so this is not caused by #445 or by the compact path.
+
+* Peak is 2 threads, at ~1.25x, and only on multi-tile content.
+* 4 threads is roughly a wash; 8 threads is nearly 2x SLOWER than 1 thread.
+* Single-tile content gets nothing from any thread count, as expected — but it
+  still pays the compact path, because `set_tile_threading` is a process-wide
+  flag keyed on `n_tc > 1`, not on the stream's actual tile count.
+
+The mechanism is the tracker's per-buffer spinlock: every borrow of a picture
+plane takes it, so all tile workers serialise on one lock per plane and trade
+its cache line. Fixing that means sharding or partitioning the tracker, which is
+a larger change than this pass.
+
+`managed::Settings::default()` already sets `threads: 1`, so the default
+configuration is unaffected. The doc comment on that field currently says users
+"can set threads=0 for better performance"; on this machine and this content
+that is false for tile threading, and it should be re-worded when someone
+touches it.
+
+## Correctness
+
+* Bit identity, full suite: `cargo test --release --no-fail-fast` on unmodified
+  main and on this branch. 4945 `MISMATCH [tier]: <id> expected=<hex>
+  actual=<hex>` triples extracted from each run; 4945 compared, 0 differed.
+* Failing-test set: 34 on main, 34 on this branch, IDENTICAL by name (the
+  pre-existing decode_cpu_levels / decode_md5_verify / decode_permutations /
+  test_vq_suite_standalone failures). The set did not grow.
+* `cargo test --release --test mt_stress` passes at threads 1/2/4/8/16, 5 trials
+  each — the gate #445 exists for.
+* Every sweep cell also carries a decoded-frame md5. Across all three arms, all
+  7 vectors, all 4 thread counts: all agree, and no arm's output varies with
+  thread count.
