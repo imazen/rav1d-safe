@@ -585,6 +585,26 @@ pub mod wide_probe {
 /// below re-open the question THERE rather than overwrite the earlier null.
 /// See `docs/C256_CONTENTION.md`.
 ///
+/// **CORRECTION 2026-08-13 — the "~0.02%" above is the WRONG COUNTER.** It is
+/// `wide_probe::N_SLOW`, i.e. a count of `BorrowTracker::add_slow` (the
+/// poisoned / live-wide-record / multi-block path), divided by the registration
+/// population and quoted as a contention rate; the 23,009-per-6-frame figure it
+/// came from is an `add_slow` count in
+/// `benchmarks/verify_compose2_2026-08-08.meta:278`. Counted directly on the
+/// same vector (`v4k_8tile` 8bpc t=8, `--features probe-lockstats`): 45,401,450
+/// lock acquisitions/frame, ~27,800 of them contended = **0.061% of
+/// acquisitions, 0.122% of registrations** — six times, against a different
+/// denominator. `benchmarks/park_not_spin_2026-08-09.{meta,lockstats*.tsv}`
+/// (PR #471, landed by the triage round). This does not disturb the 0.264%
+/// contended-acquisition figure for `c256x2048` t=8 in
+/// `docs/TILED_SCALING.md`, which is a different cell and was counted directly.
+///
+/// **And the axis is still not settled at every thread count.** The four arms
+/// below are null on `c256x2048` t=8 (#504) and #471 measured them null at
+/// t=1/2/4/8 on `v4k_8tile` too — but #471 measured **0.955 / 0.960 at t=16**,
+/// the one cell on that host where threads exceed cores, and #504's own
+/// not-measured list ends with `t=16`. Oversubscription is unrefuted.
+///
 /// | feature | waiting policy |
 /// |---|---|
 /// | (default) | pure relaxed-load spin, never yields |
