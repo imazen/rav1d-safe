@@ -77,15 +77,15 @@ const SEED_ROOTS: &[&str] = &["fuzz/regression", "tests/crash_vectors"];
 
 /// Floor on the total seed count across [`SEED_ROOTS`].
 ///
-/// 29 = the corpus as of 2026-08-14 (4 in `fuzz/regression`, 25 in
+/// 30 = the corpus as of 2026-08-14 (5 in `fuzz/regression`, 25 in
 /// `tests/crash_vectors`). Raise it when you add seeds. Its only job is to make a
 /// *deletion* loud: without it, `rm -r fuzz/regression` leaves a green suite.
-const MIN_SEEDS: usize = 29;
+const MIN_SEEDS: usize = 30;
 
 /// Floor on how many seeds decode to at least one frame under some entry point.
 ///
-/// Measured at 21 of 29 on 2026-08-14 (aarch64, release, default features). Of the
-/// other 8, six still reach reconstruction and loop restoration before the decoder
+/// Measured at 21 of 30 on 2026-08-14 (aarch64, release, default features). Of the
+/// other 9, seven still reach reconstruction and loop restoration before the decoder
 /// errors out (proved by the `__ablate` activity table in
 /// `benchmarks/fuzz_regression_2026-08-14.meta`) — "no frame" is not the same as
 /// "no kernel ran". This number is what makes a slide toward vacuity visible.
@@ -169,6 +169,11 @@ const GUARDED: &[(&str, &str, &str)] = &[
         "tests/crash_vectors/arm_mc16_w_mask_overshoot.obu",
         "#441",
         "mc_arm.rs:5465:61 16bpc w_mask dst slice overshoot",
+    ),
+    (
+        "fuzz/regression/parse_seq_header/crash-owned-recon-band-row-short",
+        "no issue (found and fixed on this branch)",
+        "owned_recon.rs:367:37 band row shorter than the block being splatted",
     ),
     (
         "fuzz/regression/differential_dav1d/crash-itx-16x64-dc-rect2",
