@@ -499,20 +499,35 @@ fn guarded_seeds_all_present() {
 /// the `mc_arm` seeds' liveness is not covered here (see the report in
 /// `benchmarks/fuzz_regression_2026-08-14.meta`).
 ///
-/// Requires `--features __ablate`; without it the counters are compile-time no-ops
-/// and the test says so and stops rather than asserting on zeros.
+/// Requires `--features __ablate` **on aarch64**; the counters are compile-time
+/// no-ops without the feature, and every `ablate::note()` call site lives in
+/// `src/safe_simd/{itx,cdef,looprestoration}_arm.rs`, so on any other target the
+/// feature compiles in counters that nothing increments. Neither case is a runtime
+/// self-skip of a gate: the instrument does not exist in those builds, and the test
+/// says which one it is instead of asserting on zeros it could never satisfy.
+/// (This is why CI runs this leg on the native-arm64 runner only — the x86_64 leg
+/// failed it exactly this way on the first push.)
 #[test]
 fn fuzz_regression_corpus_exercises_instrumented_kernels() {
     use rav1d_safe::src::ablate::{self, Family};
 
     if !ablate::ENABLED {
         eprintln!(
-            "SKIP-REPORT: activity counters are compiled out. This is not a runtime \
-             self-skip of a gate — the counters do not exist in this build. Run \
-             `cargo test --release --features __ablate --test fuzz_regression` for \
-             the liveness assertion."
+            "REPORT: activity counters are compiled out — the instrument does not \
+             exist in this build. Run `cargo test --release --features __ablate \
+             --test fuzz_regression` on aarch64 for the liveness assertion."
         );
         return;
+    }
+
+    let instrumented = cfg!(target_arch = "aarch64");
+    if !instrumented {
+        eprintln!(
+            "REPORT: `__ablate` is on but every `ablate::note()` site is in an \
+             `*_arm.rs` module, so nothing increments these counters on \
+             {}. The seeds are still run below; the assertion is aarch64-only.",
+            std::env::consts::ARCH
+        );
     }
 
     // Per-seed first (this is the table that says which seed guards which kernel),
@@ -546,6 +561,9 @@ fn fuzz_regression_corpus_exercises_instrumented_kernels() {
     for f in [Family::Itx, Family::Cdef, Family::LoopRestoration] {
         let units = snap[f as usize];
         eprintln!("activity {}: {units} units", f.name());
+        if !instrumented {
+            continue;
+        }
         assert!(
             units > 0,
             "the whole regression corpus performed 0 units of {} work — the seeds \

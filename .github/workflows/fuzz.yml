@@ -102,5 +102,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Regression seeds (every committed repro x every fuzz entry point)
         run: cargo test --release --test fuzz_regression -- --nocapture
-      - name: Regression seed liveness (__ablate activity counters)
-        run: cargo test --release --features __ablate --test fuzz_regression -- --nocapture
+
+      # The `__ablate` liveness half is NOT run here: this job is ubuntu-latest
+      # (x86_64) and every `ablate::note()` call site is in an `*_arm.rs` module,
+      # so the counters would be structurally zero. It runs on ci.yml's
+      # `ubuntu-24.04-arm` leg instead.
