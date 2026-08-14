@@ -328,6 +328,7 @@ the target, or actually restricting it — not done here.
     cargo test --release --test fuzz_regression                3 passed (124 runs, 0.08 s)
     cargo test --release --features __ablate --test fuzz_regression  3 passed
     cargo test --release --test tile_threading_parity          3 passed
+    cargo test --release --test decode_permutations            19 passed, 0 failed (686 s)
     cargo test --release --lib                                 80 passed, 8 ignored
     cargo clippy --no-default-features --features
         "bitdepth_8,bitdepth_16" -- -D warnings                clean
@@ -344,3 +345,33 @@ Could not run here, both pre-existing and unrelated to this branch:
     `--tests`, so it does not see them; neither does this branch introduce any.
   * `tests/reproduce_overlap.rs` (6) and `tests/tile_threading_overlap.rs` (3) are
     `#[ignore]`d in-tree and CI runs them with an explicit filter; not touched here.
+
+
+## 5. The liveness gate is aarch64-only — learned from CI, recorded here
+
+The first push wired the `__ablate` liveness leg to two CI legs, x86_64 Linux and
+native arm64. **The x86_64 leg failed**, and the cause is worth keeping because it is
+the same shape as the vacuity this whole branch is about: an assertion that could
+never be satisfied, rather than one that was not met.
+
+    $ rg -n 'ablate::note\(' src/ | sed 's/:.*//' | sort -u
+    src/safe_simd/cdef_arm.rs
+    src/safe_simd/itx_arm.rs
+    src/safe_simd/looprestoration_arm.rs
+
+Every `note(Family::..)` call site is in an `*_arm.rs` module. On x86_64,
+`--features __ablate` compiles the counters in and nothing increments them: the
+corpus does reach the kernels, the instrument simply is not wired to them on that
+target. `ablate::ENABLED` answers "is the feature on", not "does this build have call
+sites", and the test was reading the first as if it were the second.
+
+The `units > 0` assertion is now `cfg!(target_arch = "aarch64")`-gated, the test
+reports which of the two non-instrumented cases it is in, and CI runs the leg on
+`ubuntu-24.04-arm` only. The crash gate itself
+(`fuzz_regression_seeds_do_not_panic`) is unconditional and passed on `ubuntu-latest`
+in that same failing run.
+
+Consequence for anyone extending this: `md5_inventory --activity` and every other
+consumer of these counters carries the same arch restriction. AGENT_BRIEF's note that
+only itx, cdef and looprestoration are instrumented is true on aarch64 and an
+overstatement everywhere else — on x86_64, none of the nine are.
