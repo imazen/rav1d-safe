@@ -133,15 +133,43 @@ impl ReconBand {
 
     /// Size (growing only) and arm the band for one `(tile, superblock row)`.
     ///
-    /// `geom[pl]` is `(row0, col0, rows, cols, pixel_size)` in that plane's own
-    /// pixel coordinates. Returns `false` — leaving the band disarmed, i.e. the
-    /// shared picture in use — if any allocation fails.
-    pub(crate) fn arm(&mut self, n_planes: usize, geom: &[(usize, usize, usize, usize, usize); 3]) {
+    /// `geom[pl]` is `(row0, col0, rows, cols, sb_cols, pixel_size)` in that
+    /// plane's own pixel coordinates. `cols` is the LIVE width — what [`stitch`]
+    /// copies back to the picture — while `sb_cols` is the superblock width, which
+    /// the allocation is rounded up to.
+    ///
+    /// Those two differ, and the difference is load-bearing. A coded block may
+    /// extend past the tile's (and the frame's) last column: AV1 codes whole
+    /// blocks and crops on output, so a 32x32 frame can legally be one 64x64
+    /// block. The picture absorbs that overhang in its own padding; a
+    /// column-compact band has none, so it must reserve the whole superblock it
+    /// is reconstructing. The row direction already did (`rows` is
+    /// `sb_step * 4`, not the live row count — see [`set_live_rows`]); the column
+    /// direction did not, and rows 0..h-1 of an overhanging block wrote into the
+    /// NEXT band row (silently wrong pixels, since those rows are live and get
+    /// stitched out) while the last row ran off the allocation and panicked.
+    ///
+    /// [`set_live_rows`]: ReconBand::set_live_rows
+    ///
+    /// Returns `false` — leaving the band disarmed, i.e. the shared picture in
+    /// use — if any allocation fails.
+    pub(crate) fn arm(
+        &mut self,
+        n_planes: usize,
+        geom: &[(usize, usize, usize, usize, usize, usize); 3],
+    ) {
         self.armed = false;
         self.n_planes = n_planes;
         for pl in 0..n_planes {
-            let (row0, col0, rows, cols, pixel_size) = geom[pl];
-            let want_stride = (cols * pixel_size).next_multiple_of(CHUNK);
+            let (row0, col0, rows, cols, sb_cols, pixel_size) = geom[pl];
+            // Round the ALLOCATED width up to a whole superblock; `live` keeps
+            // `cols`, so what is copied out is unchanged.
+            let alloc_cols = if sb_cols == 0 {
+                cols
+            } else {
+                cols.next_multiple_of(sb_cols)
+            };
+            let want_stride = (alloc_cols * pixel_size).next_multiple_of(CHUNK);
             let want_chunks = rows * (want_stride / CHUNK);
             if self.planes[pl].len() < want_chunks {
                 // `try_reserve` + zeroed extend: a decoder must not abort the
@@ -848,11 +876,11 @@ pub(crate) fn frame_setup(c: &Rav1dContext, f: &mut Rav1dFrameData) {
 }
 
 /// Geometry of the band for one `(tile, superblock row)` task, in each plane's
-/// own pixel coordinates: `(row0, col0, rows, cols, pixel_size)`.
+/// own pixel coordinates: `(row0, col0, rows, cols, sb_cols, pixel_size)`.
 fn band_geometry(
     f: &Rav1dFrameData,
     t: &Rav1dTaskContext,
-) -> (usize, [(usize, usize, usize, usize, usize); 3]) {
+) -> (usize, [(usize, usize, usize, usize, usize, usize); 3]) {
     let ts = &f.ts[t.ts];
     let layout = f.cur.p.layout;
     let n_planes = if layout == Rav1dPixelLayout::I400 {
@@ -868,15 +896,22 @@ fn band_geometry(
     let col0 = (ts.tiling.col_start * 4) as usize;
     let rows = (f.sb_step * 4) as usize;
     let cols = ((ts.tiling.col_end - ts.tiling.col_start) * 4) as usize;
+    // One superblock, in pixels. The band's allocated width is rounded up to a
+    // multiple of this so a block that overhangs the tile's last column still
+    // lands inside the band -- see `ReconBand::arm`. Tile starts are superblock
+    // aligned, so only the last tile column of a frame whose width is not
+    // superblock aligned reserves anything extra.
+    let sb_cols = (f.sb_step * 4) as usize;
 
-    let mut geom = [(0, 0, 0, 0, pixel_size); 3];
-    geom[0] = (row0, col0, rows, cols, pixel_size);
+    let mut geom = [(0, 0, 0, 0, 0, pixel_size); 3];
+    geom[0] = (row0, col0, rows, cols, sb_cols, pixel_size);
     for pl in 1..n_planes {
         geom[pl] = (
             row0 >> ss_ver,
             col0 >> ss_hor,
             rows >> ss_ver,
             cols >> ss_hor,
+            sb_cols >> ss_hor,
             pixel_size,
         );
     }
@@ -948,9 +983,16 @@ mod tests {
 
     fn band_of(rows: usize, cols: usize) -> ReconBand {
         let mut b = ReconBand::default();
+        // `sb_cols = 0` opts out of the superblock rounding: these tests pin the
+        // translation and stride arithmetic against an exact, hand-written
+        // geometry, and rounding the width would change the strides they assert.
         b.arm(
             1,
-            &[(16, 32, rows, cols, 1), (0, 0, 0, 0, 1), (0, 0, 0, 0, 1)],
+            &[
+                (16, 32, rows, cols, 0, 1),
+                (0, 0, 0, 0, 0, 1),
+                (0, 0, 0, 0, 0, 1),
+            ],
         );
         b
     }
