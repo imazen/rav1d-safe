@@ -118,6 +118,29 @@ jobs:
       - name: Run committed-vector decode tests (cross-arch correctness)
         run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }}" --release --test decode_md5_committed --test safe_simd_crashes ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
+      # Fuzz-crash regression gate. Every committed repro (fuzz/regression/ +
+      # tests/crash_vectors/) through every fuzz target's entry point, on stable —
+      # 124 runs in ~0.1 s, so it belongs on every platform in the matrix rather
+      # than only where nightly + cargo-fuzz exist. This is the gate whose absence
+      # is why ~13 fuzz issues are titled "RECURRED after <link>".
+      - name: Run fuzz-crash regression gate
+        run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }}" --release --test fuzz_regression ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+
+      # Liveness half of the same gate: asserts the corpus actually reaches itx,
+      # CDEF and loop restoration (the three `ablate::note()`-instrumented
+      # families) instead of being rejected at the header. Without it, "the crash
+      # suite is green" can mean "every seed stopped parsing".
+      #
+      # Native arm64 only. Every `ablate::note()` call site lives in
+      # `src/safe_simd/{itx,cdef,looprestoration}_arm.rs`, so on x86_64 the feature
+      # compiles in counters that nothing increments and the assertion cannot be
+      # satisfied — the first push of this branch failed exactly that way on
+      # `ubuntu-latest`. `__ablate` is also a distinct feature set that forces a
+      # full extra rebuild, so one leg is the right number.
+      - name: Run fuzz-regression liveness gate (__ablate activity counters)
+        if: matrix.os == 'ubuntu-24.04-arm'
+        run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }},__ablate" --release --test fuzz_regression -E 'test(fuzz_regression_corpus_exercises_instrumented_kernels)'
+
       # SIMD-vs-spec bit-exactness gate (issue #400). The `__simd_test` feature makes
       # every inverse-transform call dual-compute SIMD and the generic scalar itx
       # and assert they're identical. Running it over the committed vectors guards

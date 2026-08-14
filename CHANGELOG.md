@@ -5,6 +5,33 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Added
+- **A fuzz-crash regression harness, and CI wiring that can actually fail**
+  (`tests/fuzz_regression.rs`, `.github/workflows/{ci,fuzz}.yml`,
+  `benchmarks/fuzz_regression_2026-08-14.meta`). The repo had ~22 open
+  fuzz-crash issues, 13 titled `RECURRED after <link>`, and no
+  `tests/fuzz_regression.rs`; the repros lived only in issue bodies and block
+  storage. The suite walks `fuzz/regression/` and `tests/crash_vectors/` and
+  runs every seed through all three fuzz targets' entry points plus the
+  production-default decoder, on **stable** — 30 seeds, 4 entry points, 124
+  runs, 0 panics, 0.08 s. Panics are collected with `catch_unwind`, so one run
+  names every failing (seed, entry point) pair. Four anti-vacuity guards
+  (missing/empty root, `MIN_SEEDS`, a `GUARDED` table mapping 10 farm repros to
+  the 17 issues they gate, and a floor on how many seeds still decode a frame)
+  plus a `--features __ablate` liveness test asserting the corpus reaches itx
+  (4,146,624 units), CDEF (2,981,696) and loop restoration (2,154,542). Teeth
+  proven by planting a `panic!` in all seven aarch64 MC dispatchers: the suite
+  went red naming 24 pairs, and that run doubles as the MC liveness map — each
+  `arm_mc16_*` seed reaches exactly the dispatcher it was filed against. Two
+  vacuity findings: `crash-cdef-tile-overlap.avif` is an AVIF container that
+  did 0 units of work when fed verbatim (the harness now unwraps AVIF seeds via
+  `zenavif-parse`), and the 4-byte `crash-edc01b37...` guards nothing. On the
+  CI side, `fuzz.yml`'s `regression` job ran `cargo test ... 2>/dev/null || echo
+  "No regression test found"` inside an `if [ -d ... ]` — it could not fail,
+  and reported green while no such test existed; its corpus seeding was a flat
+  `cp fuzz/regression/*` that silently skipped every per-target subdirectory.
+  Both fixed, and the suite added to the 9-leg `build-test` matrix so it runs
+  on pull requests at all.
+
 - **The `+1%` at t=1 that kept the rectangle record default-off is CODE
   PLACEMENT, measured — and two new static instruments that say so**
   (`scripts/perf/text_layout_diff.py`, `scripts/perf/text_symbol_diff.sh`,
@@ -66,6 +93,28 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   LINES visited, not records filed.
 
 ### Fixed
+- **The reconstruction band reserved the tile's exact WIDTH, so a block
+  overhanging the last column wrote into the next band row — silently wrong
+  pixels, and a panic on the block's last row** (`src/owned_recon.rs`,
+  `fuzz/regression/parse_seq_header/crash-owned-recon-band-row-short`). Found
+  by fuzzing `main` for 600 s on aarch64 with the new harness's corpus as the
+  seed: `owned_recon.rs:367:37: range end index 128 out of range for slice of
+  length 64`, minimised to 21 bytes, reproducing through the plain stable
+  harness on all four entry points at `threads = 1`. Measured at the overrun
+  site: a 32-pixel-wide band and a 64-pixel `splat_dc` block at 16bpc.
+  `band_geometry` sized the column extent as exactly `(col_end - col_start) *
+  4` while the ROW extent has always been a full `sb_step * 4` with live rows
+  clamped separately — but AV1 codes whole blocks and crops on output, so a
+  32x32 frame can legally be one 64x64 block. The picture absorbs the overhang
+  in its padding; a column-compact band has none. 8bpc was mostly shielded by
+  the 64-byte `CHUNK` rounding, which is 64 pixels of slack at one byte per
+  pixel and only 32 at two. `arm()` now rounds the ALLOCATED width up to a
+  whole superblock while `live` keeps the exact `cols`, so `stitch` copies what
+  it always did and output cannot change: `decode_md5_verify` is 766 passed / 0
+  failed / 2 skipped at **both** t=1 and t=8, with the widening instrumented
+  and confirmed live on that corpus (`cols=352 -> alloc_cols=384` luma,
+  `176 -> 192` chroma).
+
 - **x86_64 at `--threads 8`: the loop filter read 3 picture rows past its own
   superblock row and raced concurrent reconstruction** (#494,
   `src/safe_simd/loopfilter.rs`, `src/loopfilter.rs`). The x86-only

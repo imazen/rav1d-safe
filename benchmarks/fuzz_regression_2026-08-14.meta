@@ -1,0 +1,377 @@
+# Fuzz-crash regression harness + open-issue triage — 2026-08-14
+
+Host:      Apple M4 Pro (8P + 4E), macOS 25.5.0, aarch64-apple-darwin
+Base:      origin/main @ 71a0fbd (Merge pull request #518 from imazen/docs/records-triage)
+Branch:    test/fuzz-regression-harness
+Toolchains: stable (harness, gates) + nightly + cargo-fuzz 0.13 (re-fuzzing only)
+Corpus:    test-vectors/ symlinked to the already-downloaded dav1d-test-data
+
+Everything below is output from a command run on this box. Nothing is estimated.
+
+
+## 0. R2 was NOT reachable — say it first
+
+Every farm issue points its repro at `s3://zenfuzz/crashes/rav1d-safe/<target>/<arch>/<sig>/`
+with a `/mnt/v/fuzzes/_farm/...` mirror. **Neither is reachable from this machine**, so the
+farm's own artifacts were not obtained for ANY of the 22 issues:
+
+  * `~/.config/cloudflare/` does not exist (no `r2-credentials`, no `cf-token-mint`)
+  * `~/.aws/` does not exist; no `R2_*` / `AWS_*` in the environment; nothing in
+    `~/.zshrc`, `~/.zshenv`, `~/.zprofile`, `~/.profile`; `security find-generic-password
+    -s R2_ACCESS_KEY_ID` finds no keychain item
+  * `/mnt` does not exist on this macOS box, so the `/mnt/v/fuzzes` mirror is absent
+  * no public R2 domain: `https://zenfuzz.r2.imazen.org/...` and
+    `https://fuzz.r2.imazen.org/...` both return curl code `000` (DNS failure) on the
+    repro, metadata and prefix keys
+  * the issue bodies carry no inline repro — `grep -lis base64 issue_*.txt` over all 22
+    bodies matches nothing
+
+`aws` and `s5cmd` are installed; there is simply no credential to give them. Triage below
+therefore rests on in-repo repros, on the `__ablate` liveness counters, on git archaeology
+of the reported panic locations, and on re-fuzzing this tree — not on the farm artifacts.
+
+
+## 1. The harness, and proof it has teeth
+
+`tests/fuzz_regression.rs`, stable toolchain, no cargo-fuzz needed.
+
+    $ cargo test --release --test fuzz_regression
+    30 seeds, 4 entry points, 124 runs; 21 seeds reached reconstruction
+    test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;
+    finished in 0.08s
+
+Per-seed reach (F = decoded a frame, - = accepted but no frame, x = rejected;
+columns are decode_obu, parse_seq_header, differential_dav1d[rav1d-half],
+default_settings; a bracketed group per input form):
+
+    [----][FFFF]  fuzz/regression/cdef_tile_race/crash-cdef-tile-overlap.avif (7506 bytes)
+    xxxx  fuzz/regression/crash-edc01b37467dd0bd3b7194cfa9e8a3eb14db4e28 (4 bytes)
+    FFFF  fuzz/regression/differential_dav1d/crash-itx-16x64-dc-rect2 (37 bytes)
+    xxxx  fuzz/regression/parse_seq_header/crash-mv-add-overflow (20 bytes)
+    xxxx  fuzz/regression/parse_seq_header/crash-owned-recon-band-row-short (21 bytes)
+    FFFF  tests/crash_vectors/alpha_noispe.obu (692 bytes)
+    FFFF  tests/crash_vectors/arm_aa_base_underflow_16bpc.obu (33 bytes)
+    FFFF  tests/crash_vectors/arm_aa_base_underflow_8bpc.obu (57 bytes)
+    xxxx  tests/crash_vectors/arm_boxsum3_oob_16bpc.obu (48 bytes)
+    xxxx  tests/crash_vectors/arm_boxsum3_oob_8bpc.obu (49 bytes)
+    FFFF  tests/crash_vectors/arm_cdef_12bpc_422_pri_tap.obu (245 bytes)
+    FFFF  tests/crash_vectors/arm_itx_16x64_dc_rect2.obu (37 bytes)
+    xxxx  tests/crash_vectors/arm_mc16_avg_overshoot.obu (62 bytes)
+    xxxx  tests/crash_vectors/arm_mc16_blend_dir_overshoot.obu (60 bytes)
+    xxxx  tests/crash_vectors/arm_mc16_blend_overshoot.obu (57 bytes)
+    FFFF  tests/crash_vectors/arm_mc16_mask_overshoot.obu (62 bytes)
+    xxxx  tests/crash_vectors/arm_mc16_overshoot.obu (51 bytes)
+    FFFF  tests/crash_vectors/arm_mc16_w_mask_overshoot.obu (62 bytes)
+    FFFF  tests/crash_vectors/circle_custom_properties.obu (474 bytes)
+    FFFF  tests/crash_vectors/colors_hdr_rec2020.obu (5378 bytes)
+    xxxF  tests/crash_vectors/disjoint_mut_tile_overlap.obu (18152 bytes)
+    xxxF  tests/crash_vectors/kodim03_yuv420_8bpc.obu (25148 bytes)
+    FFFF  tests/crash_vectors/lr_sgr_10bpc_glyph_nocdef.obu (13857 bytes)
+    FFFF  tests/crash_vectors/lr_sgr_10bpc_noisy_nocdef.obu (20477 bytes)
+    xxxF  tests/crash_vectors/lr_sgr_10bpc_wide_nocdef.obu (29991 bytes)
+    FFFF  tests/crash_vectors/lr_sgr_444_8bpc_glyph_s2.obu (13028 bytes)
+    FFFF  tests/crash_vectors/lr_sgr_8bpc_glyph_s2.obu (11333 bytes)
+    FFFF  tests/crash_vectors/lr_wiener5_8bpc_intrabc_s2.obu (5926 bytes)
+    xxxF  tests/crash_vectors/picbuf_empty_vec.obu (2926 bytes)
+    xxxF  tests/crash_vectors/tile_threading_cdef_lpf_race.obu (8335 bytes)
+
+The three fuzz targets cap `frame_size_limit` at 256x256 = 65 536 pixels, which is why ten
+of the larger `tests/crash_vectors` read `xxx` on the first three columns and `F` only under
+production defaults. That fourth entry point is why they are not vacuous here.
+
+### 1a. Planted-panic proof (the harness fails when the decoder panics)
+
+A `panic!` was planted at the top of all seven aarch64 MC dispatchers, on the BPC16 branch
+only, and reverted afterwards. The harness went red and named every pair:
+
+    24 regression seed/entry-point pairs PANICKED — a previously-fixed crash is back: [
+      "tests/crash_vectors/arm_mc16_avg_overshoot.obu (raw) via decode_obu:
+         PLANTED avg 16bpc dispatcher reached",
+      ... (4 entry points x 6 seeds)
+    ]
+    test result: FAILED. 2 passed; 1 failed
+
+That run doubles as the **MC liveness map** the activity counters cannot provide (there is
+no `ablate::note()` site in `mc_arm.rs`). Each committed seed reaches exactly the dispatcher
+it was filed against:
+
+    arm_mc16_avg_overshoot.obu       -> avg 16bpc          (guards #442)
+    arm_mc16_mask_overshoot.obu      -> mask 16bpc         (guards #438)
+    arm_mc16_blend_dir_overshoot.obu -> blend_dir 16bpc    (guards #443)
+    arm_mc16_w_mask_overshoot.obu    -> w_mask 16bpc       (guards #441)
+    arm_mc16_overshoot.obu           -> mc_put 16bpc       (guards #430/#436/#439/#444)
+    arm_mc16_blend_overshoot.obu     -> mc_put 16bpc first
+
+The last row is why a second, isolated run was needed: with only the `blend` panic planted,
+`arm_mc16_blend_overshoot.obu` reaches `blend_dispatch_inner` 16bpc and is the only seed
+that does (guards #440). Six of six seeds, six of six dispatchers, individually proven.
+
+### 1b. Kernel liveness under `--features __ablate`
+
+    $ cargo test --release --features __ablate --test fuzz_regression
+    activity itx: 4146624 units
+    activity cdef: 2981696 units
+    activity looprestoration: 2154542 units
+
+Per-seed (itx / cdef / looprestoration units), the rows that matter:
+
+    fuzz/regression/cdef_tile_race/crash-cdef-tile-overlap.avif   4096      0        0
+    fuzz/regression/crash-edc01b37467dd0bd3b7194cfa9e8a3eb14db4e28   0      0        0
+    fuzz/regression/parse_seq_header/crash-mv-add-overflow       86848      0        0
+    tests/crash_vectors/arm_aa_base_underflow_16bpc.obu            192      0       30
+    tests/crash_vectors/arm_aa_base_underflow_8bpc.obu           18432      0     1152
+    tests/crash_vectors/arm_boxsum3_oob_16bpc.obu                22336      0     5184
+    tests/crash_vectors/arm_boxsum3_oob_8bpc.obu                 19456      0     2256
+    tests/crash_vectors/arm_mc16_avg_overshoot.obu                 640      0        0
+    tests/crash_vectors/arm_mc16_blend_dir_overshoot.obu          3328      0        0
+    tests/crash_vectors/arm_mc16_blend_overshoot.obu              3520      0        0
+    tests/crash_vectors/arm_mc16_mask_overshoot.obu                576      0        0
+    tests/crash_vectors/arm_mc16_overshoot.obu                  133696      0        0
+    tests/crash_vectors/arm_mc16_w_mask_overshoot.obu              512      0        0
+
+**"Rejected" is not "vacuous."** The four loop-restoration seeds return `Err` under every
+entry point AND still run 30-5 184 units of loop restoration first. Reading the `xxxx` row
+as "this seed no longer reaches anything" would have been wrong.
+
+Two seeds ARE vacuous, and the table is how they were caught:
+
+  * `crash-cdef-tile-overlap.avif` is an **AVIF container**, not a raw OBU stream — 0 units
+    in every family when fed verbatim. The harness now unwraps AVIF seeds through
+    `zenavif-parse` (already a dev-dependency) and runs both forms; the unwrapped payload
+    decodes a frame and does 4 096 itx units. That is the 0 -> 4 096 in the table.
+  * `crash-edc01b37467dd0bd3b7194cfa9e8a3eb14db4e28` is 4 bytes, rejected by all four entry
+    points, 0 units everywhere. It guards nothing today. Kept, not deleted.
+
+### 1c. `#![forbid(unsafe_code)]` proven actively
+
+    $ (planted `let _planted: f32 = unsafe { std::mem::transmute(0u32) };` in src/ablate.rs)
+    $ cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16"
+    error: usage of an `unsafe` block
+       --> src/ablate.rs:181:25
+       --> lib.rs:13:12
+     13 |     forbid(unsafe_code)
+    error: could not compile `rav1d-safe` (lib) due to 1 previous error
+
+Reverted; the tree builds clean. `git diff origin/main | grep '^+.*\bunsafe\b'` is empty.
+
+
+## 2. Re-fuzzing this tree found a LIVE bug that is not any of the 22
+
+600 s of `cargo +nightly fuzz run parse_seq_header` on aarch64, seeded with the whole
+regression corpus and `fuzz/av1.dict` (19 611 execs, 1 966 new units, peak RSS 673 MB):
+
+    src/owned_recon.rs:367:37: range end index 128 out of range for slice of length 64
+
+`cargo fuzz tmin` -> **21 bytes**. It reproduces through the plain stable harness on all
+four entry points, at `threads = 1`, so it is not a tile-threading-only path. A separate
+600 s `decode_obu` run found the same signature independently from a different input
+(89 bytes) — the same cross-target duplication the farm's own issue set shows.
+
+Backtrace: `splat_dc` (ipred.rs:552) -> `for_rows_mut` (owned_recon.rs:512) -> `px_mut`.
+
+Root cause, measured with a temporary instrument at the overrun site rather than inferred:
+
+    OOB-DIAG for_rows_mut: bytes.len=8192 px_size=2 stride_bytes=64 pxstride=32
+                           base_off_px=2048 row=63/64 off_px=4064 w=64 h=64
+                           need_end_bytes=8256
+
+The band is 32 pixels wide; the intra DC block is 64. `band_geometry` sized the column
+extent as exactly the tile's live width while the ROW extent has always been a full
+`sb_step * 4` with live rows clamped separately. AV1 codes whole blocks and crops on
+output, so a block may legally overhang the tile's last column; the picture absorbs that in
+its padding, a column-compact band has none. Only the LAST row panics — rows 0..h-2 land in
+the NEXT band row, which is live and gets stitched back to the picture: **silently wrong
+pixels**, not just a crash. 8bpc is mostly shielded by accident (the 64-byte CHUNK rounding
+is 64 pixels of slack at one byte per pixel, 32 at two).
+
+Fixed on this branch: the allocation rounds up to a whole superblock, `live` still records
+the exact `cols`, so `stitch` copies what it always did.
+
+    before fix: fuzz_regression FAILED, 4 pairs panicked
+    after fix:  fuzz_regression ok, 3 passed
+    decode_md5_verify t=1: TOTAL: 766 passed, 0 failed, 2 skipped
+    decode_md5_verify t=8: TOTAL: 766 passed, 0 failed, 2 skipped (RAV1D_MD5_THREADS=8)
+
+The widening is live on that corpus, not dead code — instrumented, it fires with
+`cols=352 -> alloc_cols=384` (luma, 128px superblocks) and `176 -> 192` on both chroma
+planes, and md5 stays 766 with it firing.
+
+Not verified: no valid-stream repro is committed. Producing one needs an encoder that emits
+a >=10-bit frame narrower than its superblock; the fuzz seed is the gate.
+
+
+## 3. Triage of the 22 open issues
+
+**0 of 22 farm artifacts obtained** (section 0). **0 issues closed** — see 3c for why.
+
+### 3a. The line numbers in 17 of the 22 predate the fix they claim recurred after
+
+Each farm issue reports `panic <file>:<line>:<col>`. Those lines were compared against the
+source as it stood (a) immediately before the relevant fix and (b) on `main` at the date the
+issue was filed. `git show <rev>:<file>` — commands reproducible from this file.
+
+`looprestoration_arm.rs`, fix `da53bfa` (2026-06-16, "ARM safe_simd SGR/MC decoder panics on
+malformed AV1 (#399-#410)"), all 8 issues filed 2026-07-12:
+
+    line   at da53bfa^ (pre-fix)                    at da53bfa    at main 2026-07-06
+    399    sum[out_idx] = (a + b + c) as i16;       (blank)       let mut sumsq_v = x;
+    465    let aa_base = base + row_start * ...     // Working    let step = if n == 25 ...
+    935    sum[out_idx] = (a + b + c) as i32;       b2 = c2;      sum_idx += REST_UNIT_STRIDE;
+    999    let aa_base = base + row_start * ...     sum[sum_idx.. a2 = b2;
+
+The pre-fix column is exactly the statement each issue describes (boxsum3 vertical-pass OOB
+write, `aa_base` underflow). The other two columns are unrelated code that cannot produce
+that panic.
+
+`mc_arm.rs`, fix `5a208de` (2026-06-25, "correct BPC16 dst slice length in 7 NEON MC blend
+dispatchers", `Refs #417 #418 #419 #420 #421`):
+
+    line   at 5a208de^ (pre-fix)                                   at main 2026-07-06
+    4772   FromBytes::mut_from_bytes(&mut dst_bytes[start..])       (a comment line)
+    5003   FromBytes::mut_from_bytes(&mut dst_bytes[start..])       );
+    5112   FromBytes::mut_from_bytes(&mut dst_bytes[start..])       let t = tmp_row[col]...
+    5235   FromBytes::mut_from_bytes(&mut dst_bytes[start..])       let dst_row = &mut ...
+    5465   FromBytes::mut_from_bytes(&mut dst_bytes[start..])       false,
+
+Post-fix those five statements sit at 4776 / 5015 / 5128 / 5255 / 5492. And for the mc_put
+pair the reported lines match a revision older still — `da53bfa^`:
+
+    line   at da53bfa^                                              at 5a208de^
+    5930   FromBytes::mut_from_bytes(&mut dst_bytes[dst_start..])    dst_u16,
+    5937   FromBytes::ref_from_bytes(&src_bytes[src_start..])        mx_u,
+
+**Conclusion.** 17 issues report a panic at a source position that, on the `main` they were
+filed against, holds a comment, a `);`, a `false,` or unrelated arithmetic — and holds
+exactly the described panicking statement in the source that the cited fix deleted. The
+most economical explanation is a **stale farm checkout or a stale build**, not a re-break.
+That is a hypothesis about the farm, which cannot be tested from here, and it is NOT proof
+the underlying crash is gone.
+
+### 3b. What each issue's repro-equivalent does on current main
+
+Ten farm-derived repros for these signatures are committed in `tests/crash_vectors/` (added
+by `da53bfa` and `5a208de`, which describe them as the fuzz-target repros). On
+`origin/main` @ 71a0fbd, aarch64, release:
+
+    signature (as filed)                          seed                                verdict
+    looprestoration_arm.rs:399:13  #427 #434       arm_boxsum3_oob_8bpc.obu            no panic; 2 256 LR units
+    looprestoration_arm.rs:935:13  #429 #432       arm_boxsum3_oob_16bpc.obu           no panic; 5 184 LR units
+    looprestoration_arm.rs:465:30  #428 #435       arm_aa_base_underflow_8bpc.obu      no panic; 1 152 LR units
+    looprestoration_arm.rs:999:30  #431 #437       arm_aa_base_underflow_16bpc.obu     no panic;    30 LR units
+    mc_arm.rs:4772:61              #442            arm_mc16_avg_overshoot.obu          no panic; reaches avg 16bpc
+    mc_arm.rs:5003:61              #438            arm_mc16_mask_overshoot.obu         no panic; reaches mask 16bpc
+    mc_arm.rs:5112:61              #440            arm_mc16_blend_overshoot.obu        no panic; reaches blend 16bpc
+    mc_arm.rs:5235:61              #443            arm_mc16_blend_dir_overshoot.obu    no panic; reaches blend_dir 16bpc
+    mc_arm.rs:5465:61              #441            arm_mc16_w_mask_overshoot.obu       no panic; reaches w_mask 16bpc
+    mc_arm.rs:5930:61              #430 #436 #439  arm_mc16_overshoot.obu              no panic; reaches mc_put 16bpc
+    mc_arm.rs:5937:61              #444            arm_mc16_overshoot.obu (same site)  no panic; reaches mc_put 16bpc
+
+17 issues, 10 seeds, all reaching the kernel they were filed against, none panicking. Those
+seeds are now in `GUARDED` in `tests/fuzz_regression.rs`, so the gate cannot lose them.
+
+The remaining 5:
+
+    #425  differential_dav1d.rs:130:17   DIVERGENCE panic in the harness's own 10/12-bit
+                                          plane compare, not a decoder crash. No repro
+                                          obtainable; see also #424, a hand-written report
+                                          of a deterministic 10-bit divergence.
+    #426  differential_dav1d.rs:99:13    same class (8-bit plane compare), RECURRED after #400.
+    #433  differential_dav1d.rs:192:13   same class, RECURRED after #415.
+    #424  (no farm signature)            deterministic 10-bit decode divergence vs dav1d 1.5.3;
+                                          hand-written, needs its own investigation.
+    #516  mc.rs:5337:56                  see 3c — the one that points at LIVE code.
+
+The three differential issues need a dav1d oracle to reproduce. `libdav1d 1.5.4` IS present
+on this box (`pkg-config --modversion dav1d`), so the `differential` feature builds here —
+but without the crashing inputs there is nothing to feed it. Not investigated further.
+
+### 3c. Why 0 issues were closed
+
+Closing on the evidence above would mean asserting "the artifact in R2 no longer crashes"
+from a repro that is not that artifact. The committed seed reproduces the *signature*; the
+July reports may or may not be the same input. Section 3a's stale-build hypothesis is
+strong, but it is a hypothesis. The honest state is: **17 issues have a live, proven,
+CI-enforced gate on their signature as of this branch, and 0 have been verified against
+their own repro.** Whoever can reach `s3://zenfuzz` should re-run those 17 artifacts against
+`main`; that is a five-minute job with credentials and impossible without them.
+
+### 3d. #516 is different, and it is NOT stale-line
+
+`#516` (2026-08-12, `parse_seq_header`, x86_64, `panic rav1d-safe/src/safe_simd/mc.rs:5337:56`).
+At `d26c404`, the `main` of that date, line 5337 is:
+
+    let a10 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 10..col + 18]).unwrap());
+
+Column 56 lands on that `try_from(...).unwrap()`. This is a real panicking construct in
+current code — a `TryFromSliceError` unwrap when the 16bpc horizontal-filter source window
+runs short — so unlike the 17 above, #516's signature is consistent with the source it was
+reported against. **Treat it as live.** It is an x86 path (`mc.rs`, not `mc_arm.rs`) and
+cannot be exercised on this aarch64 box; it was not reproduced here.
+
+The parent brief asked whether "a panic in motion compensation reached from a
+*sequence-header* target" means the target decodes further than its name suggests, or the
+signature is misattributed. **The former.** `fuzz/fuzz_targets/parse_seq_header.rs` is a
+full `decoder.decode(data)` + `flush()`; it differs from `decode_obu` only in
+`threads = 1`, `inloop_filters = none()` and an explicit `decode_frame_type = All`. Nothing
+stops at the sequence header. Its doc comment ("focuses on parser correctness rather than
+full reconstruction") describes an intent the code does not implement. That also explains
+why the farm files one panic site under two or three different target names. Worth renaming
+the target, or actually restricting it — not done here.
+
+
+## 4. Gates run on this branch
+
+    cargo test --release --test decode_md5_verify              766 passed, 0 failed, 2 skipped
+    RAV1D_MD5_THREADS=8 ... --test decode_md5_verify           766 passed, 0 failed, 2 skipped
+    cargo test --release --test decode_md5_committed           4 passed
+    cargo test --release --test safe_simd_crashes              15 passed
+    cargo test --release --test fuzz_regression                3 passed (124 runs, 0.08 s)
+    cargo test --release --features __ablate --test fuzz_regression  3 passed
+    cargo test --release --test tile_threading_parity          3 passed
+    cargo test --release --test decode_permutations            19 passed, 0 failed (686 s)
+    cargo test --release --lib                                 80 passed, 8 ignored
+    cargo clippy --no-default-features --features
+        "bitdepth_8,bitdepth_16" -- -D warnings                clean
+    cargo fmt --check                                          clean
+
+Could not run here, both pre-existing and unrelated to this branch:
+
+  * `cargo clippy --features c-ffi` — `src/error.rs:45` const-asserts
+    `Rav1dError::EAGAIN as u8 == libc::EAGAIN as u8`; Darwin's EAGAIN is 35, Linux's is 11,
+    so the assert fails at compile time on macOS. `git diff origin/main -- src/error.rs` is
+    empty. It is an ubuntu-latest CI job.
+  * `cargo clippy --tests` on the LIB test target reports 76 pre-existing dead-code errors
+    under `-D warnings` (unused itx constants and inner fns). CI's clippy job does not pass
+    `--tests`, so it does not see them; neither does this branch introduce any.
+  * `tests/reproduce_overlap.rs` (6) and `tests/tile_threading_overlap.rs` (3) are
+    `#[ignore]`d in-tree and CI runs them with an explicit filter; not touched here.
+
+
+## 5. The liveness gate is aarch64-only — learned from CI, recorded here
+
+The first push wired the `__ablate` liveness leg to two CI legs, x86_64 Linux and
+native arm64. **The x86_64 leg failed**, and the cause is worth keeping because it is
+the same shape as the vacuity this whole branch is about: an assertion that could
+never be satisfied, rather than one that was not met.
+
+    $ rg -n 'ablate::note\(' src/ | sed 's/:.*//' | sort -u
+    src/safe_simd/cdef_arm.rs
+    src/safe_simd/itx_arm.rs
+    src/safe_simd/looprestoration_arm.rs
+
+Every `note(Family::..)` call site is in an `*_arm.rs` module. On x86_64,
+`--features __ablate` compiles the counters in and nothing increments them: the
+corpus does reach the kernels, the instrument simply is not wired to them on that
+target. `ablate::ENABLED` answers "is the feature on", not "does this build have call
+sites", and the test was reading the first as if it were the second.
+
+The `units > 0` assertion is now `cfg!(target_arch = "aarch64")`-gated, the test
+reports which of the two non-instrumented cases it is in, and CI runs the leg on
+`ubuntu-24.04-arm` only. The crash gate itself
+(`fuzz_regression_seeds_do_not_panic`) is unconditional and passed on `ubuntu-latest`
+in that same failing run.
+
+Consequence for anyone extending this: `md5_inventory --activity` and every other
+consumer of these counters carries the same arch restriction. AGENT_BRIEF's note that
+only itx, cdef and looprestoration are instrumented is true on aarch64 and an
+overstatement everywhere else — on x86_64, none of the nine are.

@@ -50,11 +50,21 @@ jobs:
             echo "seconds=60" >> "$GITHUB_OUTPUT"
           fi
 
+      # `cp fuzz/regression/*` was a FLAT copy that silently skipped every
+      # per-target subdirectory (`fuzz/regression/parse_seq_header/`, ...) — with
+      # `2>/dev/null || true` hiding the "omitting directory" message, so the
+      # minimised crash inputs never entered the corpus they were meant to seed.
+      # `find -type f` takes them all; only the "no seed_corpus dir" case is
+      # allowed to be quiet.
       - name: Seed corpus
         run: |
+          set -euo pipefail
           mkdir -p fuzz/corpus/${{ matrix.target }}
-          cp fuzz/regression/* fuzz/corpus/${{ matrix.target }}/ 2>/dev/null || true
-          cp fuzz/seed_corpus/${{ matrix.target }}/* fuzz/corpus/${{ matrix.target }}/ 2>/dev/null || true
+          find fuzz/regression -type f -exec cp {} fuzz/corpus/${{ matrix.target }}/ \;
+          if [ -d "fuzz/seed_corpus/${{ matrix.target }}" ]; then
+            find "fuzz/seed_corpus/${{ matrix.target }}" -type f -exec cp {} fuzz/corpus/${{ matrix.target }}/ \;
+          fi
+          echo "corpus seeded with $(find fuzz/corpus/${{ matrix.target }} -type f | wc -l) files"
 
       - name: Fuzz ${{ matrix.target }}
         run: |
@@ -71,6 +81,18 @@ jobs:
           path: fuzz/artifacts/
           retention-days: 30
 
+  # Hard gate. Until 2026-08-14 this job read:
+  #
+  #   if [ -d fuzz/regression ] && [ "$(ls fuzz/regression/ | wc -l)" -gt 0 ]; then
+  #     cargo test --test fuzz_regression 2>/dev/null || echo "No regression test found..."
+  #   fi
+  #
+  # which could not fail: `|| echo` swallowed the exit status, `2>/dev/null` hid
+  # the reason, the `if` skipped the whole thing when the corpus was missing, and
+  # the missing `--release` would have tripped the suite's own release-only
+  # `compile_error!` into that same swallowed branch. It reported green for four
+  # months with no `tests/fuzz_regression.rs` in the repo at all. Do not
+  # reintroduce a fallback here: if the suite cannot run, this job must go red.
   regression:
     name: Fuzz regression
     runs-on: ubuntu-latest
@@ -78,10 +100,10 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Build
-        run: cargo build
-      - name: Regression seeds
-        run: |
-          if [ -d fuzz/regression ] && [ "$(ls fuzz/regression/ 2>/dev/null | wc -l)" -gt 0 ]; then
-            cargo test --test fuzz_regression 2>/dev/null || echo "No regression test found — seeds exist but no test harness"
-          fi
+      - name: Regression seeds (every committed repro x every fuzz entry point)
+        run: cargo test --release --test fuzz_regression -- --nocapture
+
+      # The `__ablate` liveness half is NOT run here: this job is ubuntu-latest
+      # (x86_64) and every `ablate::note()` call site is in an `*_arm.rs` module,
+      # so the counters would be structurally zero. It runs on ci.yml's
+      # `ubuntu-24.04-arm` leg instead.
