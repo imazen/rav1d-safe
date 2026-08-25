@@ -1553,7 +1553,12 @@ fn cfl_row_16bpc_neon(
     cfl_row_16bpc(dst, 0, ac, w, alpha, dc, bitdepth_max);
 }
 
-#[cfg(all(test, target_arch = "aarch64", not(feature = "asm")))]
+// Gated on `not(c-ffi)`, not `not(asm)`: the harness round-trips its scratch
+// through `Rav1dPictureDataComponent::copy_pixels_to`, which only exists in
+// safe (non-`c-ffi`) mode — in `c-ffi` mode `wrap_buf` is zero-copy and there
+// is nothing to copy back. `asm` implies `c-ffi`, so this still excludes every
+// configuration the old gate did, plus `--features c-ffi` on its own.
+#[cfg(all(test, target_arch = "aarch64", not(feature = "c-ffi")))]
 mod cfl_parity {
     //! Differential parity for `cfl_pred_dispatch` against the scalar
     //! `src/ipred.rs::cfl_pred` it replaces.

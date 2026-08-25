@@ -35,7 +35,12 @@
 //! exactly the 16x16 `H_DCT` defect (dav1d's `def_fn_16x16 dct, identity`
 //! uses `eob_half = 8`; the port hardcoded 36 for every type).
 
-#![cfg(all(test, target_arch = "aarch64", not(feature = "asm")))]
+// Gated on `not(c-ffi)`, not `not(asm)`: the harness round-trips its scratch
+// through `Rav1dPictureDataComponent::copy_pixels_to`, which only exists in
+// safe (non-`c-ffi`) mode — in `c-ffi` mode `wrap_buf` is zero-copy and there
+// is nothing to copy back. `asm` implies `c-ffi`, so this still excludes every
+// configuration the old gate did, plus `--features c-ffi` on its own.
+#![cfg(all(test, target_arch = "aarch64", not(feature = "c-ffi")))]
 
 use crate::include::common::bitdepth::{BitDepth, BitDepth8, BitDepth16};
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
