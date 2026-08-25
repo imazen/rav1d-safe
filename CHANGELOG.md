@@ -93,6 +93,18 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   LINES visited, not records filed.
 
 ### Fixed
+- **`--features c-ffi` without `asm` failed to build any test target**
+  (`src/safe_simd/ipred_arm.rs`, `src/safe_simd/itx_arm_parity.rs`, edfddee).
+  The `cfl_parity` and `itx_arm_parity` modules round-trip their scratch buffer
+  through `Rav1dPictureDataComponent::copy_pixels_to`, which is declared
+  `#[cfg(not(feature = "c-ffi"))]`, but both gated themselves on
+  `not(feature = "asm")`. `asm = ["c-ffi"]` and not the reverse, so plain
+  `--features c-ffi` compiled them against a method that does not exist (three
+  `E0599`s). CI's c-ffi leg is `cargo clippy --features c-ffi` with no
+  `--all-targets`, which never builds the test modules, so the breakage stayed
+  latent. Both gates are now `not(feature = "c-ffi")`, which excludes every
+  configuration the old gate did plus `--features c-ffi` alone.
+
 - **The reconstruction band reserved the tile's exact WIDTH, so a block
   overhanging the last column wrote into the next band row — silently wrong
   pixels, and a panic on the block's last row** (`src/owned_recon.rs`,
