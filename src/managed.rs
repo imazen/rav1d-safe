@@ -626,19 +626,41 @@ impl Decoder {
     /// Flush the decoder and return all remaining frames
     ///
     /// This should be called after all input data has been fed to the decoder
-    /// to retrieve any buffered frames.
+    /// to retrieve any buffered frames. It is a **drain, then a reset**: every
+    /// frame the decoder still owes for data already passed to
+    /// [`decode()`](Self::decode) — temporal units not yet parsed from the last
+    /// chunk, and frames in flight on frame-threading workers — is returned,
+    /// in output order, and only then is the decoder reset so it is ready for
+    /// a new stream.
+    ///
+    /// On an error the decoder is still reset, and the error is returned;
+    /// frames drained before it are dropped with it.
     pub fn flush(&mut self) -> Result<Vec<Frame>> {
-        crate::src::lib::rav1d_flush(&self.ctx);
-
+        // Drain BEFORE `rav1d_flush`. That function has dav1d's `dav1d_flush`
+        // reset semantics: it discards pending input (`state.in_0`), the
+        // ready-but-unreturned output picture (`state.out`) and, under frame
+        // threading, every `out_delayed` frame still in flight. Calling it
+        // first turned "flush" into "throw away whatever decode() had not
+        // returned yet" — with `threads >= 2` and `max_frame_delay != 1` the
+        // common `decode(); flush()` pump then lost its last frame(s) depending
+        // on scheduling (#423). `rav1d_get_picture` with no new input is the
+        // drain protocol: it parses any remaining temporal units, waits for
+        // in-flight frames (and fails, rather than wedging, if a worker
+        // panicked), and returns `EAGAIN` once nothing is left.
         let mut frames = Vec::new();
-        loop {
+        let drained = loop {
             let mut pic = Rav1dPicture::default();
             match crate::src::lib::rav1d_get_picture(&self.ctx, &mut pic) {
                 Ok(()) => frames.push(Frame { inner: pic }),
-                Err(Rav1dError::EAGAIN) => break,
-                Err(e) => return Err(self.classify_decode_error(e)),
+                Err(Rav1dError::EAGAIN) => break Ok(()),
+                Err(e) => break Err(self.classify_decode_error(e)),
             }
-        }
+        };
+
+        // Now reset, so the next decode() starts a fresh stream.
+        crate::src::lib::rav1d_flush(&self.ctx);
+
+        drained?;
         Ok(frames)
     }
 }

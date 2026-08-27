@@ -115,8 +115,10 @@ jobs:
       # cross-arch bit-exact decode (issue #400: aarch64 NEON itx must match the
       # x86 reference); safe_simd_crashes covers the arm SGR/itx fallback paths
       # (issue #14). These catch arch-specific decoder divergence in CI.
+      # flush_drains (#423) rides along because its frame-threading half only
+      # has teeth where n_fc > 1 exists — the `asm` legs of this matrix.
       - name: Run committed-vector decode tests (cross-arch correctness)
-        run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }}" --release --test decode_md5_committed --test safe_simd_crashes ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+        run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }}" --release --test decode_md5_committed --test safe_simd_crashes --test flush_drains ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
       # Fuzz-crash regression gate. Every committed repro (fuzz/regression/ +
       # tests/crash_vectors/) through every fuzz target's entry point, on stable —

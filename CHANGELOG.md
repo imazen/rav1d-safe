@@ -93,6 +93,29 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   LINES visited, not records filed.
 
 ### Fixed
+- **Managed `Decoder::flush()` discarded the frames it was documented to
+  return** (#423; `src/managed.rs`, `tests/flush_drains.rs`). It called
+  `rav1d_flush` — dav1d's reset: drop pending input, drop the ready output
+  picture, drop every frame-threading `out_delayed` slot — and only then looped
+  `rav1d_get_picture`, which by that point had nothing to give back. Two silent
+  losses: under frame threading (`threads >= 2`, `max_frame_delay != 1`; needs
+  `unchecked`/`asm`, the default build clamps `n_fc` to 1) `decode()` returns
+  `Ok(None)` with the frame in flight and the natural `decode(); flush()` pump
+  lost it depending on scheduling (the `asm` CI flavour hashed 0 frames in
+  `lr_sgr_vectors_threaded_match_reference_md5`); and at ANY thread count a
+  chunk holding several temporal units lost every unit after the first, because
+  the unparsed remainder is pending input and `rav1d_flush` drops it.
+  `flush()` now drains first (`rav1d_get_picture` until `EAGAIN` — the drain
+  protocol: parses queued temporal units, waits for in-flight frames, and fails
+  rather than wedges if a worker panicked) and resets after, so it is still the
+  "start a fresh stream" call. Gated by `tests/flush_drains.rs`: the vector fed
+  twice in one `decode()` must yield two frames (teeth in the default build:
+  reverting the order fails it at `threads = 1`, `1 != 2`), and one temporal
+  unit at `threads = 2/4/8, max_frame_delay = auto` must yield exactly one frame
+  (under `--features unchecked` the frame is deferred and the reverted order
+  returns `0`). Both mutations verified; the test is wired into the CI matrix's
+  committed-vector step so the `asm` legs run its frame-threaded half.
+
 - **x86_64 16bpc AVX2 horizontal 8-tap MC loaded 4 pixels past the last tap it
   uses, and panicked when the source row ended inside them** (#516;
   `src/safe_simd/mc.rs` `h_filter_8tap_16bpc_avx2_inner`,
