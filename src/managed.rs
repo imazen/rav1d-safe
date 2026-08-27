@@ -131,7 +131,9 @@ pub struct Settings {
     ///
     /// With frame threading enabled (threads >= 2 or threads == 0), `decode()` may return `None`
     /// even when complete frame data is provided, as frames are processed asynchronously.
-    /// Call `decode()` or `flush()` multiple times to drain buffered frames.
+    /// Poll [`get_frame()`](Decoder::get_frame) between chunks, and call
+    /// [`flush()`](Decoder::flush) once at end of input — it drains every frame still
+    /// owed (in flight or queued in the last chunk) before it resets.
     ///
     /// **Note:** Multithreading requires the `unchecked` feature. Without it,
     /// the decoder silently falls back to single-threaded to prevent runtime

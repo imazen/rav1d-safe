@@ -5,6 +5,16 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Added
+- **`examples/crash_sweep.rs` and the farm-artifact triage it produced**
+  (`benchmarks/fuzz_triage_2026-08-27.meta`). The 2026-08-14 record could not
+  reach `s3://zenfuzz`; this run could. Every artifact the farm holds for the
+  three "RECURRED after #399/#403/#407" issues (#430, #436, #439 — 1,960
+  inputs, all uploaded 2026-06-15, the day BEFORE the fix they cite) ran
+  through the four `fuzz_regression` entry points on unmodified `main`: 7,840
+  runs, 0 panics. They are the stale-build re-files that record hypothesised.
+  The same sweep is what found #444 live (2 of 2 artifacts panic) and is the
+  documented first step before committing any farm seed.
+
 - **A fuzz-crash regression harness, and CI wiring that can actually fail**
   (`tests/fuzz_regression.rs`, `.github/workflows/{ci,fuzz}.yml`,
   `benchmarks/fuzz_regression_2026-08-14.meta`). The repo had ~22 open

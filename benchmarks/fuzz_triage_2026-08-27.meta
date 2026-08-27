@@ -1,0 +1,141 @@
+# Fuzz-farm artifact triage — 2026-08-27
+
+Host:      Apple M4 Pro, macOS 26.5.2 (Darwin 25.5.0), aarch64-apple-darwin
+Base:      origin/main @ 91bf0e3 (docs: changelog entry for the c-ffi parity-module gate fix)
+Toolchain: stable (release, default features) + x86_64-apple-darwin target under Rosetta
+Tool:      examples/crash_sweep.rs (added on this branch) — every file in a synced
+           crash directory through the four tests/fuzz_regression.rs entry points
+           (decode_obu, parse_seq_header, differential_dav1d[rav1d-half],
+           default_settings), panics caught per pair and grouped by site.
+
+Everything below is output from a command run on this box. Nothing is estimated.
+
+This is the follow-up the 2026-08-14 record (fuzz_regression_2026-08-14.meta §0, §3c)
+asked for: "whoever can reach s3://zenfuzz should re-run those artifacts against main".
+R2 credentials were present this time (~/.config/cloudflare/r2-credentials), and the
+farm keys its crash directories by the LOCAL-MIRROR hash in the issue body
+(`/mnt/v/fuzzes/_farm/crashes/.../<hash>`), not by the `Signature` hash:
+
+    s3://zenfuzz/crashes/rav1d-safe/<target>/<arch>/<mirror-hash>/
+        crash-<sha1>      one file per artifact (hundreds per signature)
+        meta.json         signature, first artifact, trace tail
+        repro.txt         the farm's own `cargo fuzz run` transcript
+
+
+## 1. Artifact inventory per issue (aws s3 ls, upload dates)
+
+    issue  target             arch    mirror-hash        artifacts  upload dates
+    #430   decode_obu         arm64   93d59bc517d443c9        493   2026-06-15 (all)
+    #436   differential_dav1d arm64   d2445badc68f5027        728   2026-06-15 (all)
+    #439   parse_seq_header   arm64   3b83800d6a29f61c        739   2026-06-15 (all)
+    #444   parse_seq_header   arm64   dcb24addc2000c17          2   2026-07-22, 2026-08-02
+    #516   parse_seq_header   x86_64  c8d88423959f5a1f          1   2026-08-12
+
+The three "RECURRED after #399/#403/#407" issues (filed 2026-07-12) have NO artifact
+dated after 2026-06-15. The fix they claim recurred after is da53bfa, 2026-06-16. Every
+input the farm holds for those signatures predates the fix by a day.
+
+
+## 2. Sweep on unmodified main @ 91bf0e3, aarch64, release, default features
+
+    $ cargo run --release --example crash_sweep -- ~/tmp/rav1d-safe-crashes/<issue>
+
+    #430   493 files, 1972 runs,  0 decoded a frame,  0 panicked
+    #436   728 files, 2912 runs,  8 decoded a frame,  0 panicked
+    #439   739 files, 2956 runs, 32 decoded a frame,  0 panicked
+    #444     2 files,    8 runs,  0 decoded a frame,  8 panicked
+           4 pair(s) at src/safe_simd/mc_arm.rs:6034:61:
+             range end index 33088 out of range for slice of length 32768
+           4 pair(s) at src/safe_simd/mc_arm.rs:6034:61:
+             range end index 8226 out of range for slice of length 8192
+    #516     1 file,     4 runs,  0 decoded a frame,  0 panicked   (aarch64: the
+           AVX2 kernel is not compiled; see §4)
+
+### 2a. #430 / #436 / #439 — STALE, on the farm's own inputs
+
+1,960 artifacts, 7,840 (artifact, entry point) runs, 0 panics, on the tree the issues
+were still open against. Combined with §1 (no post-fix artifact exists) and the
+2026-08-14 record's line archaeology (`mc_arm.rs:5930` is the pre-da53bfa position of
+the dst-range statement), these three are the stale-build re-files that record
+hypothesised. The statement itself still exists (now `mc_arm.rs:6027`, sized
+`(h-1)*stride + w` since 5a208de) and is guarded by `tests/crash_vectors/
+arm_mc16_overshoot.obu` in `GUARDED`. Nothing in the code was touched for them.
+
+### 2b. #444 — LIVE, fixed on this branch
+
+Both artifacts panic on all four entry points at the 16bpc bilinear `mc_put` SOURCE
+range (`mc_arm.rs:6034:61`, the `src_bytes[src_start..src_start + src_byte_len]` in
+`mc_put_dispatch_inner`). Root cause, read off the two panic messages:
+
+    src_byte_len = ((h + 1) * stride + w + 1) * 2          (unconditional)
+
+but `put_bilin_16bpc_inner` reads h rows plus one only when my != 0, w columns plus
+one only when mx != 0, and on the last row only those columns. A 16bpc plane buffer
+ends exactly where its last row's w pixels end (8192 bytes = a 64x64 plane; 32768 =
+128x128), so a block in the bottom-right corner overshoots by up to two strides in the
+copy case. `mct_prep_dispatch`'s BPC16 Bilinear arm had the identical expression and
+the identical kernel read pattern (`prep_bilin_16bpc_inner`); both now use
+`bilin_16bpc_src_extent`. The 8bpc arms slice open-ended and were never affected.
+
+    after fix:  #444  2 files, 8 runs, 0 decoded a frame, 0 panicked
+    seeds:      fuzz/regression/parse_seq_header/crash-mc16-bilin-src-overshoot-{a,b}
+    mutation:   both call sites reverted -> fuzz_regression FAILS, 8 pairs named,
+                the two messages above; restored -> ok (3 passed)
+
+
+## 3. #516 — LIVE by construction, x86_64 only
+
+Signature `mc.rs:5337:56`, farm message (repro.txt):
+
+    range end index 18 out of range for slice of length 17
+
+Line 5337 on `main` is `let a10 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 10..
+col + 18]).unwrap())` in `h_filter_8tap_16bpc_put_avx2_inner`, byte-identical to
+d26c404 (main on the filing date). The caller hands the kernel an open-ended
+`&src[row - 3..]` of the whole plane; 17 pixels left means the row is the last of the
+buffer and w = 8 (w + 9). The filter needs pixels col..col+15 (8 outputs x 8 taps,
+last tap of output 7 at col + 14); the kernel loaded col+k..col+k+8 for k = 0..11
+and consumed only the low 4 u16 of each (lane insert + `_mm256_unpacklo_epi16`), so
+it demanded col + 18 for data it never used. Same shape in
+`h_filter_8tap_16bpc_avx2_inner` (H+V mid pass) and
+`h_filter_8tap_16bpc_prep_direct_avx2_inner`. The AVX-512 variants load exactly
+w + 7. Fix: all 36 loads are 64-bit (`loadu_64!`); furthest read col + 14.
+
+What could and could not be run here:
+
+    cargo test  --release --target x86_64-apple-darwin --test fuzz_regression   ok (3 passed)
+    cargo clippy --release --target x86_64-apple-darwin --lib ... -D warnings    clean
+    crash_sweep (x86_64-apple-darwin) over fuzz/regression + tests/crash_vectors
+        + the #516 artifact                                     34 files, 136 runs, 0 panicked
+
+    is_x86_feature_detected!("avx2") under Rosetta 2 on this host:   false
+    (sse4.2 true, avx512f false; docker --platform linux/amd64 likewise shows no avx2)
+
+So the AVX2 kernel itself did not execute on this box before or after the change.
+Before-evidence is the farm's own run of the artifact against d26c404 (repro.txt);
+after-evidence is CI's ubuntu-latest `fuzz_regression` leg, which has AVX2 and now
+carries `fuzz/regression/parse_seq_header/crash-mc16-h8tap-avx2-src-overread`.
+
+
+## 4. Gates run on this branch (aarch64 unless stated)
+
+    cargo test --release --test fuzz_regression                       3 passed (33 seeds)
+    cargo test --release --target x86_64-apple-darwin --test fuzz_regression   3 passed
+    cargo test --release --test flush_drains                          4 passed
+    cargo test --release --features unchecked --test flush_drains     4 passed (frame threading ACTIVE)
+    cargo clippy --release --lib --example crash_sweep --test fuzz_regression
+        --test flush_drains -- -D warnings -A clippy::chunks_exact_to_as_chunks   clean
+    cargo fmt -p rav1d-safe --check                                   clean
+
+`-A clippy::chunks_exact_to_as_chunks` is for two pre-existing hits in
+src/looprestoration.rs:581-582 under this box's newer clippy; `git diff origin/main --
+src/looprestoration.rs` is empty. `cargo clippy --all-targets` additionally trips the
+76 pre-existing dead-code errors in the lib test target that the 2026-08-14 record
+lists; neither is introduced here.
+
+Full default suite on the branch head (all three fixes in), aarch64:
+
+    cargo nextest run --no-default-features --features "bitdepth_8,bitdepth_16" --release
+        Summary [ 610.896s ] 169 tests run: 169 passed (1 slow), 26 skipped
+    cargo test  --no-default-features --features "bitdepth_8,bitdepth_16" --release --doc
+        8 passed; 0 failed; 3 ignored
