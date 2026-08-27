@@ -36,6 +36,11 @@
 //! global policy (`cargo fuzz tmin` first); anything larger stays in block storage
 //! and is referenced by path from the issue.
 //!
+//! To find out whether a farm signature is still live before committing anything,
+//! sync its artifact directory from `s3://zenfuzz/crashes/rav1d-safe/` and run
+//! `cargo run --release --example crash_sweep -- <dir>` — the same four entry
+//! points as this suite, over every artifact, panics grouped by site.
+//!
 //! # Anti-vacuity
 //!
 //! A regression suite that finds zero seeds, or whose seeds have quietly stopped
@@ -77,10 +82,10 @@ const SEED_ROOTS: &[&str] = &["fuzz/regression", "tests/crash_vectors"];
 
 /// Floor on the total seed count across [`SEED_ROOTS`].
 ///
-/// 30 = the corpus as of 2026-08-14 (5 in `fuzz/regression`, 25 in
+/// 32 = the corpus as of 2026-08-27 (7 in `fuzz/regression`, 25 in
 /// `tests/crash_vectors`). Raise it when you add seeds. Its only job is to make a
 /// *deletion* loud: without it, `rm -r fuzz/regression` leaves a green suite.
-const MIN_SEEDS: usize = 30;
+const MIN_SEEDS: usize = 32;
 
 /// Floor on how many seeds decode to at least one frame under some entry point.
 ///
@@ -142,8 +147,18 @@ const GUARDED: &[(&str, &str, &str)] = &[
     ),
     (
         "tests/crash_vectors/arm_mc16_overshoot.obu",
-        "#430, #436, #439, #444",
-        "mc_arm.rs:5930/5937:61 16bpc mc_put dst slice overshoot",
+        "#430, #436, #439",
+        "mc_arm.rs:5930:61 16bpc mc_put dst slice overshoot",
+    ),
+    (
+        "fuzz/regression/parse_seq_header/crash-mc16-bilin-src-overshoot-a",
+        "#444",
+        "mc_arm.rs:5937:61 16bpc bilinear mc_put src slice overshoot (2 strides past the plane end)",
+    ),
+    (
+        "fuzz/regression/parse_seq_header/crash-mc16-bilin-src-overshoot-b",
+        "#444",
+        "mc_arm.rs:5937:61 16bpc bilinear mc_put src slice overshoot (w+1 past the plane end)",
     ),
     (
         "tests/crash_vectors/arm_mc16_avg_overshoot.obu",

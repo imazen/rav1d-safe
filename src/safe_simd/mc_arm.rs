@@ -2530,6 +2530,23 @@ pub unsafe extern "C" fn put_bilin_16bpc_neon(
 
 const PREP_BIAS_16BPC: i32 = 8192;
 
+/// Source pixels the 16bpc bilinear kernels (`put_bilin_16bpc_inner`,
+/// `prep_bilin_16bpc_inner`) read, measured from the block's base offset.
+///
+/// The kernels read `h` rows plus one below when `my != 0`, and `w` columns
+/// plus one to the right when `mx != 0` — and on the LAST row only those
+/// columns, not the whole stride. The dispatchers used to slice
+/// `(h + 1) * stride + w + 1` unconditionally, which for a block in the
+/// bottom-right corner of a plane overshoots the guard by up to two strides
+/// (the plane buffer ends exactly where the last row's `w` pixels end) and
+/// panics on the range (#444). Size the slice to what is actually read.
+#[cfg(not(feature = "asm"))]
+fn bilin_16bpc_src_extent(w: usize, h: usize, mx: i32, my: i32, src_stride: usize) -> usize {
+    let rows = h + usize::from(my != 0);
+    let cols = w + usize::from(mx != 0);
+    rows.saturating_sub(1) * src_stride + cols
+}
+
 /// Bilinear prep for 16bpc
 #[cfg(target_arch = "aarch64")]
 #[arcane]
@@ -6029,7 +6046,7 @@ pub(crate) fn mc_put_dispatch_inner<BD: BitDepth>(
 
                 if filter == Bilinear {
                     let src_start = src_base * 2;
-                    let src_byte_len = ((h_u + 1) * src_stride_u16 + w_u + 1) * 2;
+                    let src_byte_len = bilin_16bpc_src_extent(w_u, h_u, mx, my, src_stride_u16) * 2;
                     let src_u16: &[u16] =
                         FromBytes::ref_from_bytes(&src_bytes[src_start..src_start + src_byte_len])
                             .unwrap();
@@ -6225,7 +6242,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
 
                 if filter == Bilinear {
                     let src_start = src_base * 2;
-                    let src_byte_len = ((h_u + 1) * src_stride_u16 + w_u + 1) * 2;
+                    let src_byte_len = bilin_16bpc_src_extent(w_u, h_u, mx, my, src_stride_u16) * 2;
                     let src_u16: &[u16] =
                         FromBytes::ref_from_bytes(&src_bytes[src_start..src_start + src_byte_len])
                             .unwrap();

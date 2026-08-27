@@ -93,6 +93,29 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   LINES visited, not records filed.
 
 ### Fixed
+- **aarch64 16bpc bilinear MC sliced two source rows the kernel never reads,
+  and panicked on the range for a block in the plane's bottom-right corner**
+  (#444; `src/safe_simd/mc_arm.rs`, `mc_put_dispatch_inner` and
+  `mct_prep_dispatch` BPC16 `Bilinear` arms). Both dispatchers took
+  `&src_bytes[start..start + ((h + 1) * stride + w + 1) * 2]` unconditionally,
+  but `put_bilin_16bpc_inner` / `prep_bilin_16bpc_inner` read `h` rows plus one
+  only when `my != 0`, `w` columns plus one only when `mx != 0`, and on the last
+  row only those columns — never the rest of its stride. A 16bpc plane buffer
+  ends exactly where its last row's `w` pixels end, so the copy case
+  (`mx = my = 0`) overshot the guard by two full strides and the range panicked
+  (`range end index 33088 out of range for slice of length 32768` and `8226 /
+  8192` on the farm's two artifacts). Reproduced from both `s3://zenfuzz`
+  artifacts for the signature on unmodified `main` (8 of 8 seed/entry-point
+  pairs panic at `mc_arm.rs:6034:61`), fixed by a shared `bilin_16bpc_src_extent`
+  that sizes the slice to the rows and columns actually read, and gated: the
+  two artifacts are committed as
+  `fuzz/regression/parse_seq_header/crash-mc16-bilin-src-overshoot-{a,b}` with
+  `GUARDED` rows; reverting the two call sites makes `fuzz_regression` fail on
+  all 8 pairs. The 8bpc arms were never affected (they slice open-ended).
+  `examples/crash_sweep.rs` is the tool that ran the farm's artifacts — every
+  file in a synced crash directory through the four `fuzz_regression` entry
+  points, panics grouped by site.
+
 - **`--features c-ffi` without `asm` failed to build any test target**
   (`src/safe_simd/ipred_arm.rs`, `src/safe_simd/itx_arm_parity.rs`, edfddee).
   The `cfl_parity` and `itx_arm_parity` modules round-trip their scratch buffer
