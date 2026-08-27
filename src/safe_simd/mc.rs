@@ -18,7 +18,7 @@ use core::arch::x86_64::*;
 use crate::src::safe_simd::pixel_access::Flex;
 #[cfg(target_arch = "x86_64")]
 use crate::src::safe_simd::pixel_access::{
-    loadi64, loadu_128, loadu_256, loadu_512, storeu_128, storeu_256, storeu_512,
+    loadi64, loadu_64, loadu_128, loadu_256, loadu_512, storeu_128, storeu_256, storeu_512,
 };
 #[cfg(target_arch = "x86_64")]
 use archmage::{Desktop64, Server64, arcane, rite};
@@ -4970,23 +4970,31 @@ fn h_filter_8tap_16bpc_avx2_inner(
     // contiguous u16 into a 256-bit register puts elements 0-7 in lane 0 and
     // 8-15 in lane 1. unpacklo then interleaves elements 0-3 from lane 0 and
     // 8-11 from lane 1, giving outputs {0,1,2,3,8,9,10,11} instead of {0..7}.
-    // Fix: construct each source register with lane 0 = [col+X..col+X+8] and
-    // lane 1 = [col+X+4..col+X+12], so unpacklo gives correct outputs 0-3
+    // Fix: construct each source register with lane 0 = [col+X..col+X+4] and
+    // lane 1 = [col+X+4..col+X+8], so unpacklo gives correct outputs 0-3
     // (lane 0) and 4-7 (lane 1).
+    //
+    // Each lane only ever consumes its low 4 u16, so the per-tap loads are
+    // 64-bit. They used to be 128-bit (`src[col+k..col+k+8]`), which touched
+    // 4 pixels past the last tap the filter uses: for w = 8 the caller hands
+    // over an open-ended `&src[row - 3..]` that can end at w + 9 = 17 pixels
+    // on the plane's last row, and `src[col+11..col+19]` panicked on it (#516).
+    // The furthest pixel this loop reads is now col + 14, the last tap of
+    // output 7 — exactly what the filter needs.
     while col + 8 <= w {
-        // Load 128-bit chunks: a[k] = src[col+k..col+k+8]
-        let a0 = loadu_128!(<&[u16; 8]>::try_from(&src[col..col + 8]).unwrap());
-        let a1 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 1..col + 9]).unwrap());
-        let a2 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 2..col + 10]).unwrap());
-        let a3 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 3..col + 11]).unwrap());
-        let a4 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 4..col + 12]).unwrap());
-        let a5 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 5..col + 13]).unwrap());
-        let a6 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 6..col + 14]).unwrap());
-        let a7 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 7..col + 15]).unwrap());
-        let a8 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 8..col + 16]).unwrap());
-        let a9 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 9..col + 17]).unwrap());
-        let a10 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 10..col + 18]).unwrap());
-        let a11 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 11..col + 19]).unwrap());
+        // Load the 4 pixels each lane consumes: a[k] = src[col+k..col+k+4]
+        let a0 = loadu_64!(<&[u16; 4]>::try_from(&src[col..col + 4]).unwrap());
+        let a1 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 1..col + 5]).unwrap());
+        let a2 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 2..col + 6]).unwrap());
+        let a3 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 3..col + 7]).unwrap());
+        let a4 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 4..col + 8]).unwrap());
+        let a5 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 5..col + 9]).unwrap());
+        let a6 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 6..col + 10]).unwrap());
+        let a7 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 7..col + 11]).unwrap());
+        let a8 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 8..col + 12]).unwrap());
+        let a9 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 9..col + 13]).unwrap());
+        let a10 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 10..col + 14]).unwrap());
+        let a11 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 11..col + 15]).unwrap());
 
         // Build 256-bit source regs: lane0 for outputs 0-3, lane1 for outputs 4-7
         let s0 = _mm256_inserti128_si256(_mm256_castsi128_si256(a0), a4, 1);
@@ -5323,19 +5331,19 @@ fn h_filter_8tap_16bpc_put_avx2_inner(
     // Source pointer is already offset by -3 (pointing to tap 0), matching 8bpc convention
     // LANE FIX: see h_filter_8tap_16bpc_avx2_inner for explanation
     while col + 8 <= w {
-        // Load 128-bit chunks: a[k] = src[col+k..col+k+8]
-        let a0 = loadu_128!(<&[u16; 8]>::try_from(&src[col..col + 8]).unwrap());
-        let a1 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 1..col + 9]).unwrap());
-        let a2 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 2..col + 10]).unwrap());
-        let a3 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 3..col + 11]).unwrap());
-        let a4 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 4..col + 12]).unwrap());
-        let a5 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 5..col + 13]).unwrap());
-        let a6 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 6..col + 14]).unwrap());
-        let a7 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 7..col + 15]).unwrap());
-        let a8 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 8..col + 16]).unwrap());
-        let a9 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 9..col + 17]).unwrap());
-        let a10 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 10..col + 18]).unwrap());
-        let a11 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 11..col + 19]).unwrap());
+        // Load the 4 pixels each lane consumes: a[k] = src[col+k..col+k+4]
+        let a0 = loadu_64!(<&[u16; 4]>::try_from(&src[col..col + 4]).unwrap());
+        let a1 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 1..col + 5]).unwrap());
+        let a2 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 2..col + 6]).unwrap());
+        let a3 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 3..col + 7]).unwrap());
+        let a4 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 4..col + 8]).unwrap());
+        let a5 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 5..col + 9]).unwrap());
+        let a6 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 6..col + 10]).unwrap());
+        let a7 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 7..col + 11]).unwrap());
+        let a8 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 8..col + 12]).unwrap());
+        let a9 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 9..col + 13]).unwrap());
+        let a10 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 10..col + 14]).unwrap());
+        let a11 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 11..col + 15]).unwrap());
 
         // Build 256-bit source regs: lane0 for outputs 0-3, lane1 for outputs 4-7
         let s0 = _mm256_inserti128_si256(_mm256_castsi128_si256(a0), a4, 1);
@@ -5572,19 +5580,19 @@ fn h_filter_8tap_16bpc_prep_direct_avx2_inner(
     // Source pointer is already offset by -3 (pointing to tap 0), matching 8bpc convention
     // LANE FIX: see h_filter_8tap_16bpc_avx2_inner for explanation
     while col + 8 <= w {
-        // Load 128-bit chunks: a[k] = src[col+k..col+k+8]
-        let a0 = loadu_128!(<&[u16; 8]>::try_from(&src[col..col + 8]).unwrap());
-        let a1 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 1..col + 9]).unwrap());
-        let a2 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 2..col + 10]).unwrap());
-        let a3 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 3..col + 11]).unwrap());
-        let a4 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 4..col + 12]).unwrap());
-        let a5 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 5..col + 13]).unwrap());
-        let a6 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 6..col + 14]).unwrap());
-        let a7 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 7..col + 15]).unwrap());
-        let a8 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 8..col + 16]).unwrap());
-        let a9 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 9..col + 17]).unwrap());
-        let a10 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 10..col + 18]).unwrap());
-        let a11 = loadu_128!(<&[u16; 8]>::try_from(&src[col + 11..col + 19]).unwrap());
+        // Load the 4 pixels each lane consumes: a[k] = src[col+k..col+k+4]
+        let a0 = loadu_64!(<&[u16; 4]>::try_from(&src[col..col + 4]).unwrap());
+        let a1 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 1..col + 5]).unwrap());
+        let a2 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 2..col + 6]).unwrap());
+        let a3 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 3..col + 7]).unwrap());
+        let a4 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 4..col + 8]).unwrap());
+        let a5 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 5..col + 9]).unwrap());
+        let a6 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 6..col + 10]).unwrap());
+        let a7 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 7..col + 11]).unwrap());
+        let a8 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 8..col + 12]).unwrap());
+        let a9 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 9..col + 13]).unwrap());
+        let a10 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 10..col + 14]).unwrap());
+        let a11 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 11..col + 15]).unwrap());
 
         // Build 256-bit source regs: lane0 for outputs 0-3, lane1 for outputs 4-7
         let s0 = _mm256_inserti128_si256(_mm256_castsi128_si256(a0), a4, 1);

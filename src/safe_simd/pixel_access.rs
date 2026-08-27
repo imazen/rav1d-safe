@@ -668,6 +668,36 @@ macro_rules! loadu_128 {
 #[cfg(target_arch = "x86_64")]
 pub(crate) use loadu_128;
 
+/// Load 64 bits into the low half of an `__m128i` (upper half zeroed) from a
+/// typed array reference — `&[u16; 4]`, `&[u8; 8]`, … (`Is64BitsUnaligned`).
+///
+/// For kernels that only consume the low 4 `u16` of each 128-bit register
+/// (a lane insert followed by `_mm256_unpacklo_epi16`): a 128-bit load there
+/// touches 4 pixels past the last tap the filter uses, which panics when the
+/// source row ends inside them (#516).
+///
+/// ```ignore
+/// let v = loadu_64!(<&[u16; 4]>::try_from(&src[off..off + 4]).unwrap());
+/// ```
+#[cfg(target_arch = "x86_64")]
+macro_rules! loadu_64 {
+    ($src:expr) => {{
+        #[cfg(not(feature = "unchecked"))]
+        {
+            safe_unaligned_simd::x86_64::_mm_loadu_si64($src)
+        }
+        #[cfg(feature = "unchecked")]
+        {
+            #[allow(unsafe_code)]
+            unsafe {
+                core::arch::x86_64::_mm_loadu_si64(core::ptr::from_ref($src).cast())
+            }
+        }
+    }};
+}
+#[cfg(target_arch = "x86_64")]
+pub(crate) use loadu_64;
+
 /// Store 128 bits to a typed array reference or a dynamic slice.
 ///
 /// **Array ref form:** `$dst` must be a mutable reference to a type implementing

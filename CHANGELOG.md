@@ -93,6 +93,31 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   LINES visited, not records filed.
 
 ### Fixed
+- **x86_64 16bpc AVX2 horizontal 8-tap MC loaded 4 pixels past the last tap it
+  uses, and panicked when the source row ended inside them** (#516;
+  `src/safe_simd/mc.rs` `h_filter_8tap_16bpc_avx2_inner`,
+  `h_filter_8tap_16bpc_put_avx2_inner`, `h_filter_8tap_16bpc_prep_direct_avx2_inner`;
+  `loadu_64!` in `src/safe_simd/pixel_access.rs`). The three kernels build each
+  256-bit source register from two 128-bit loads and then
+  `_mm256_unpacklo_epi16`, which only consumes the low 4 `u16` of each lane —
+  but the loads were 8 wide, so tap `k` read `src[col+k..col+k+8]` and the
+  loop's furthest read was `col + 18` for a filter whose last tap is at
+  `col + 14`. The callers pass an open-ended `&src[row - 3..]` slice of the
+  whole plane, so this only bites when the row is one of the last in the
+  buffer: the farm's artifact hit `range end index 18 out of range for slice
+  of length 17` on the H-only put path (w = 8, w + 9 pixels to the end of the
+  plane). All 36 loads are now 64-bit (`loadu_64!`, `_mm_loadu_si64` behind
+  it), reading exactly `col + 14` at most; the consumed lanes are unchanged,
+  so output is bit-identical. The AVX-512 variants already loaded exactly
+  `w + 7` and were never affected. Gated by
+  `fuzz/regression/parse_seq_header/crash-mc16-h8tap-avx2-src-overread` (the
+  farm artifact, 61 bytes). **Verified on this aarch64 box only as far as it
+  can be**: the x86_64 target compiles and passes `fuzz_regression` under
+  Rosetta, which does not expose AVX2, so the kernel itself ran only on the
+  farm — the before-evidence is the farm's own run of this artifact against
+  `d26c404` (whose line 5337 is byte-identical to `main` before this fix); the
+  after-evidence is CI's `ubuntu-latest` `fuzz_regression` leg.
+
 - **aarch64 16bpc bilinear MC sliced two source rows the kernel never reads,
   and panicked on the range for a block in the plane's bottom-right corner**
   (#444; `src/safe_simd/mc_arm.rs`, `mc_put_dispatch_inner` and

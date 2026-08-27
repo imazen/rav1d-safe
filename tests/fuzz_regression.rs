@@ -82,10 +82,10 @@ const SEED_ROOTS: &[&str] = &["fuzz/regression", "tests/crash_vectors"];
 
 /// Floor on the total seed count across [`SEED_ROOTS`].
 ///
-/// 32 = the corpus as of 2026-08-27 (7 in `fuzz/regression`, 25 in
+/// 33 = the corpus as of 2026-08-27 (8 in `fuzz/regression`, 25 in
 /// `tests/crash_vectors`). Raise it when you add seeds. Its only job is to make a
 /// *deletion* loud: without it, `rm -r fuzz/regression` leaves a green suite.
-const MIN_SEEDS: usize = 32;
+const MIN_SEEDS: usize = 33;
 
 /// Floor on how many seeds decode to at least one frame under some entry point.
 ///
@@ -184,6 +184,11 @@ const GUARDED: &[(&str, &str, &str)] = &[
         "tests/crash_vectors/arm_mc16_w_mask_overshoot.obu",
         "#441",
         "mc_arm.rs:5465:61 16bpc w_mask dst slice overshoot",
+    ),
+    (
+        "fuzz/regression/parse_seq_header/crash-mc16-h8tap-avx2-src-overread",
+        "#516 (x86_64 only: AVX2 kernel, scalar elsewhere)",
+        "mc.rs:5337:56 16bpc AVX2 h-only 8-tap put loads 4 pixels past its last tap",
     ),
     (
         "fuzz/regression/parse_seq_header/crash-owned-recon-band-row-short",
