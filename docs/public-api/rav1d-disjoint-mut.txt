@@ -6,30 +6,35 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: rav1d-disjoint-mut.txt 113 lines (supported surface) | rav1d-disjoint-mut.features.txt 79 added (features: aligned,instrument,pic-buf,std,zerocopy) | rav1d-disjoint-mut.internal.txt 16 lines (24 hidden + 0 excluded-feature)
+# files: rav1d-disjoint-mut.txt 138 lines (supported surface) | rav1d-disjoint-mut.features.txt 81 added (features: aligned,instrument,pic-buf,std,zerocopy) | rav1d-disjoint-mut.internal.txt 132 lines (26 hidden + 157 excluded-feature)
 
 ## summary
 #
 #   pub modules                                 1
-#   pub types (struct/enum/trait/alias)        23
-#   pub consts/statics                          2
-#   free functions                              8
-#   inherent methods                           31
+#   pub types (struct/enum/trait/alias)        25
+#   pub consts/statics                          1
+#   free functions                             10
+#   inherent methods                           45
 #   enum variants                              23
-#   trait roster entries (type × trait)        46
+#   trait roster entries (type × trait)        48
 #   conditional trait impls (verbatim)          1
 #   auto-trait-complete types                   1
-#   auto-trait exceptions                       4
+#   auto-trait exceptions                      10
 #
 # per-module pub lines:
-#   (root)                           84
+#   (root)                          101
 #   alloc                             4
 
-## items (88 lines)
+## items (105 lines)
 
 pub mod rav1d_disjoint_mut
 pub struct Bounds
 pub struct DisjointImmutGuard<'a, T: ?core::marker::Sized + AsMutPtr, V: ?core::marker::Sized>
+pub fn DisjointImmutGuard<'a, T, V>::probe_declare_rows(&self, usize, usize, usize, isize)
+pub struct DisjointImmutRectGuard<'a, T: ?core::marker::Sized + AsMutPtr, V>
+pub fn DisjointImmutRectGuard<'a, T, V>::row(&self, usize) -> &[V]
+pub fn DisjointImmutRectGuard<'a, T, V>::rows(&self) -> usize
+pub fn DisjointImmutRectGuard<'a, T, V>::seg(&self) -> usize
 pub struct DisjointMut<T: ?core::marker::Sized + AsMutPtr>
 pub fn DisjointMut<T>::as_mut_ptr(&self) -> *mut <T as AsMutPtr>::Target
 pub fn DisjointMut<T>::as_mut_slice(&self) -> *mut [<T as AsMutPtr>::Target]
@@ -38,6 +43,11 @@ pub fn DisjointMut<T>::index<'a, I>(&'a self, I) -> DisjointImmutGuard<'a, T, <I
 pub fn DisjointMut<T>::index_mut<'a, I>(&'a self, I) -> DisjointMutGuard<'a, T, <I as DisjointMutIndex>::Output> where I: core::convert::Into<Bounds> + core::clone::Clone + DisjointMutIndex<[<T as AsMutPtr>::Target]>
 pub fn DisjointMut<T>::is_empty(&self) -> bool
 pub fn DisjointMut<T>::len(&self) -> usize
+pub fn DisjointMut<T>::probe_declare_stride(&self, isize)
+pub fn DisjointMut<T>::probe_eval_rect(&self, &'static core::panic::location::Location<'static>, bool, usize, usize, usize, isize)
+pub fn DisjointMut<T>::declare_row_stride(&mut self, usize)
+pub fn DisjointMut<T>::index_rect<'a>(&'a self, usize, usize, usize, isize) -> core::option::Option<DisjointImmutRectGuard<'a, T, <T as AsMutPtr>::Target>>
+pub fn DisjointMut<T>::index_rect_mut<'a>(&'a self, usize, usize, usize, isize) -> core::option::Option<DisjointMutRectGuard<'a, T, <T as AsMutPtr>::Target>>
 pub const fn DisjointMut<T>::is_checked(&self) -> bool
 pub fn DisjointMut<T>::clear(&mut self)
 pub fn DisjointMut<T>::resize(&mut self, usize, <T as Resizable>::Value)
@@ -51,6 +61,11 @@ pub struct DisjointMutArcSlice<T: core::marker::Copy>
 pub fn DisjointMutArcSlice<T>::try_new(usize, T) -> core::result::Result<Self, alloc::collections::TryReserveError>
 pub unsafe fn DisjointMutArcSlice<T>::try_new_unchecked(usize, T) -> core::result::Result<Self, alloc::collections::TryReserveError>
 pub struct DisjointMutGuard<'a, T: ?core::marker::Sized + AsMutPtr, V: ?core::marker::Sized>
+pub fn DisjointMutGuard<'a, T, V>::probe_declare_rows(&self, usize, usize, usize, isize)
+pub struct DisjointMutRectGuard<'a, T: ?core::marker::Sized + AsMutPtr, V>
+pub fn DisjointMutRectGuard<'a, T, V>::row_mut(&mut self, usize) -> &mut [V]
+pub fn DisjointMutRectGuard<'a, T, V>::rows(&self) -> usize
+pub fn DisjointMutRectGuard<'a, T, V>::seg(&self) -> usize
 pub unsafe trait AsMutPtr: sealed::Sealed
 pub type AsMutPtr::Target: core::marker::Copy
 pub unsafe fn AsMutPtr::as_mut_ptr(*mut Self) -> *mut Self::Target
@@ -114,17 +129,21 @@ pub fn TryResizable::try_resize(&mut self, usize, Self::Value) -> core::result::
 pub trait TryResizableWith
 pub type TryResizableWith::Item
 pub fn TryResizableWith::try_resize_with<F: core::ops::function::FnMut() -> Self::Item>(&mut self, usize, F) -> core::result::Result<(), alloc::collections::TryReserveError>
+pub fn set_parallelism(usize)
+pub fn set_tile_concurrency(usize)
 pub type DisjointMutSlice<T> = DisjointMut<alloc::boxed::Box<[T]>>
 
-## trait impls (19 types)
+## trait impls (21 types)
 
 &mut [V]: AsMutPtr
 (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>): SliceBounds, TranslateRange
 Bounds: Clone, Debug, Default, Display, Eq, From<T>, From<usize>, PartialEq
 DisjointImmutGuard<'a, T, V>: Deref, Drop
+DisjointImmutRectGuard<'a, T, V>: Drop
 DisjointMut<T>: Debug, Default
 DisjointMutArcSlice<T>: Clone, Default, Deref, FromIterator<T>
 DisjointMutGuard<'a, T, V>: Deref, DerefMut, Drop
+DisjointMutRectGuard<'a, T, V>: Drop
 T: AsMutPtr
 [V; N]: AsMutPtr
 [V]: AsMutPtr
@@ -142,7 +161,13 @@ impl<T, I> DisjointMutIndex<[T]> for I where I: SliceBounds
 ## auto traits
 
 1 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
+DisjointImmutGuard<'_, T, V>: !Freeze !RefUnwindSafe !Unpin !UnwindSafe
 DisjointImmutGuard<'a, T, V>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
+DisjointImmutRectGuard<'_, T, V>: !Freeze !RefUnwindSafe !Unpin !UnwindSafe
+DisjointImmutRectGuard<'a, T, V>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 DisjointMut<T>: !Freeze !RefUnwindSafe !Unpin !UnwindSafe
 DisjointMutArcSlice<T>: !RefUnwindSafe !Send !Sync !UnwindSafe
+DisjointMutGuard<'_, T, V>: !Freeze !RefUnwindSafe !Unpin !UnwindSafe
 DisjointMutGuard<'a, T, V>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
+DisjointMutRectGuard<'_, T, V>: !Freeze !RefUnwindSafe !Unpin !UnwindSafe
+DisjointMutRectGuard<'a, T, V>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe

@@ -13,18 +13,18 @@
 #   pub types (struct/enum/trait/alias)         8
 #   pub consts/statics                          1
 #   free functions                              1
-#   inherent methods                           29
+#   inherent methods                           31
 #   enum variants                              20
 #   trait roster entries (type × trait)        30
 #   auto-trait exceptions                       2
 #
 # per-module pub lines:
-#   (root)                           27
+#   (root)                           29
 #   align                            21
 #   aligned                          10
 #   pic_buf                           2
 
-## items (60 lines)
+## items (62 lines)
 
 pub mod align
 pub struct align::AlignedVec32<T>(_)
@@ -54,6 +54,8 @@ pub fn DisjointMut<T>::element_as<'a, V>(&'a self, usize) -> DisjointImmutGuard<
 pub fn DisjointMut<T>::mut_element_as<'a, V>(&'a self, usize) -> DisjointMutGuard<'a, T, V> where V: zerocopy::IntoBytes + zerocopy::FromBytes + zerocopy::KnownLayout
 pub fn DisjointMut<T>::mut_slice_as<'a, I, V>(&'a self, I) -> DisjointMutGuard<'a, T, [V]> where I: SliceBounds, V: zerocopy::IntoBytes + zerocopy::FromBytes + zerocopy::KnownLayout
 pub fn DisjointMut<T>::slice_as<'a, I, V>(&'a self, I) -> DisjointImmutGuard<'a, T, [V]> where I: SliceBounds, V: zerocopy::FromBytes + zerocopy::KnownLayout + zerocopy::Immutable
+pub fn DisjointMut<T>::index_rect_as<'a, V>(&'a self, usize, usize, usize, isize) -> core::option::Option<DisjointImmutRectGuard<'a, T, V>> where V: zerocopy::FromBytes + zerocopy::KnownLayout + zerocopy::Immutable
+pub fn DisjointMut<T>::index_rect_mut_as<'a, V>(&'a self, usize, usize, usize, isize) -> core::option::Option<DisjointMutRectGuard<'a, T, V>> where V: zerocopy::FromBytes + zerocopy::IntoBytes + zerocopy::KnownLayout + zerocopy::Immutable
 pub unsafe fn pic_buf::PicBuf::as_mut_ptr(*mut Self) -> *mut u8
 pub unsafe fn pic_buf::PicBuf::as_mut_slice(*mut Self) -> *mut [u8]
 pub fn pic_buf::PicBuf::is_empty(&self) -> bool
