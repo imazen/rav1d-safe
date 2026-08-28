@@ -142,7 +142,7 @@ unsafe extern "C" fn dav1d_default_picture_alloc(
     let stride = [y_stride, uv_stride];
     let [y_sz, uv_sz] = match p.p.pic_len(stride) {
         Ok(v) => v,
-        Err(_) => return Dav1dResult(-(ENOMEM as c_int)),
+        Err(_) => return Dav1dResult(-ENOMEM.errno()),
     };
     let pic_size = y_sz + 2 * uv_sz;
 
@@ -153,7 +153,7 @@ unsafe extern "C" fn dav1d_default_picture_alloc(
     let pic_cap = pic_size + RAV1D_PICTURE_ALIGNMENT;
     let buf = match pool.pop_init(pic_cap, 0) {
         Ok(buf) => buf,
-        Err(_) => return Dav1dResult(-(ENOMEM as c_int)),
+        Err(_) => return Dav1dResult(-ENOMEM.errno()),
     };
     // We have to `Box` this because `Dav1dPicture::allocator_data` is only 8 bytes.
     let mut buf = Box::new(MemPoolBuf { pool, buf });

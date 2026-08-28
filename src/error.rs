@@ -18,8 +18,11 @@ pub enum Rav1dError {
     /// which is more optimal since `0` is no error for [`Dav1dResult`].
     EGeneric = 1,
 
-    // POSIX errno values. When c-ffi is enabled, a static assertion
-    // verifies these match the platform's libc constants.
+    // POSIX errno values as dav1d's Linux ABI numbers them. These are the
+    // crate's stable Rust-side identities; the C boundary maps each variant to
+    // the PLATFORM's errno via `errno()` / `from_errno()` (macOS `EAGAIN` is
+    // 35, Windows `ENOPROTOOPT` is 109, …), so a C caller comparing against its
+    // own `<errno.h>` sees the value dav1d would have returned on that platform.
     ENOENT = 2,
     EIO = 5,
     EAGAIN = 11,
@@ -37,16 +40,87 @@ pub enum Rav1dError {
     ECANCELED = 125,
 }
 
-// When c-ffi is enabled, verify our hardcoded values match the platform's errno.
-#[cfg(feature = "c-ffi")]
+impl Rav1dError {
+    /// The platform errno a C caller expects for this error (positive; the
+    /// `DAV1D_ERR` negation happens at the [`Dav1dResult`] boundary).
+    ///
+    /// With `c-ffi` this consults `libc`, so the value is correct on macOS,
+    /// Windows and the BSDs, not just Linux. Without `c-ffi` the discriminant
+    /// (dav1d's Linux numbering) is returned unchanged.
+    #[inline]
+    pub const fn errno(self) -> c_int {
+        #[cfg(feature = "c-ffi")]
+        {
+            match self {
+                Self::EGeneric => 1,
+                Self::ENOENT => libc::ENOENT,
+                Self::EIO => libc::EIO,
+                Self::EAGAIN => libc::EAGAIN,
+                Self::ENOMEM => libc::ENOMEM,
+                Self::EINVAL => libc::EINVAL,
+                Self::ERANGE => libc::ERANGE,
+                Self::ENOPROTOOPT => libc::ENOPROTOOPT,
+                Self::ECANCELED => libc::ECANCELED,
+            }
+        }
+        #[cfg(not(feature = "c-ffi"))]
+        {
+            self as c_int
+        }
+    }
+
+    /// Inverse of [`errno`](Self::errno): a positive platform errno back to the
+    /// variant, `None` for anything dav1d never returns.
+    #[inline]
+    pub const fn from_errno(errno: c_int) -> Option<Self> {
+        #[cfg(feature = "c-ffi")]
+        {
+            // `match` on non-literal consts is not allowed; a chain keeps this
+            // `const fn` and platform-correct.
+            if errno == 1 {
+                Some(Self::EGeneric)
+            } else if errno == libc::ENOENT {
+                Some(Self::ENOENT)
+            } else if errno == libc::EIO {
+                Some(Self::EIO)
+            } else if errno == libc::EAGAIN {
+                Some(Self::EAGAIN)
+            } else if errno == libc::ENOMEM {
+                Some(Self::ENOMEM)
+            } else if errno == libc::EINVAL {
+                Some(Self::EINVAL)
+            } else if errno == libc::ERANGE {
+                Some(Self::ERANGE)
+            } else if errno == libc::ENOPROTOOPT {
+                Some(Self::ENOPROTOOPT)
+            } else if errno == libc::ECANCELED {
+                Some(Self::ECANCELED)
+            } else {
+                None
+            }
+        }
+        #[cfg(not(feature = "c-ffi"))]
+        {
+            if errno < 0 || errno > u8::MAX as c_int {
+                return None;
+            }
+            Self::from_repr(errno as u8)
+        }
+    }
+}
+
+// The discriminants ARE the Linux errno values (dav1d's reference ABI). Pin
+// that where libc can confirm it; other platforms go through `errno()`.
+#[cfg(all(feature = "c-ffi", target_os = "linux"))]
 const _: () = {
-    assert!(Rav1dError::ENOENT as u8 == libc::ENOENT as u8);
-    assert!(Rav1dError::EIO as u8 == libc::EIO as u8);
-    assert!(Rav1dError::EAGAIN as u8 == libc::EAGAIN as u8);
-    assert!(Rav1dError::ENOMEM as u8 == libc::ENOMEM as u8);
-    assert!(Rav1dError::EINVAL as u8 == libc::EINVAL as u8);
-    assert!(Rav1dError::ERANGE as u8 == libc::ERANGE as u8);
-    assert!(Rav1dError::ENOPROTOOPT as u8 == libc::ENOPROTOOPT as u8);
+    assert!(Rav1dError::ENOENT as c_int == libc::ENOENT);
+    assert!(Rav1dError::EIO as c_int == libc::EIO);
+    assert!(Rav1dError::EAGAIN as c_int == libc::EAGAIN);
+    assert!(Rav1dError::ENOMEM as c_int == libc::ENOMEM);
+    assert!(Rav1dError::EINVAL as c_int == libc::EINVAL);
+    assert!(Rav1dError::ERANGE as c_int == libc::ERANGE);
+    assert!(Rav1dError::ENOPROTOOPT as c_int == libc::ENOPROTOOPT);
+    assert!(Rav1dError::ECANCELED as c_int == libc::ECANCELED);
 };
 
 pub type Rav1dResult<T = ()> = Result<T, Rav1dError>;
@@ -63,7 +137,7 @@ impl From<Rav1dResult> for Dav1dResult {
         Dav1dResult(
             -(match value {
                 Ok(()) => 0,
-                Err(e) => e as c_int,
+                Err(e) => e.errno(),
             }),
         )
     }
@@ -74,7 +148,7 @@ impl From<Rav1dResult<c_uint>> for Dav1dResult {
     fn from(value: Rav1dResult<c_uint>) -> Self {
         Dav1dResult(match value {
             Ok(value) => value as c_int,
-            Err(e) => e as c_int,
+            Err(e) => e.errno(),
         })
     }
 }
@@ -87,10 +161,57 @@ impl TryFrom<Dav1dResult> for Rav1dResult {
         match value.0 {
             0 => Ok(Ok(())),
             e => {
-                let e = (-e).try_into().map_err(|_| value)?;
-                let e = Rav1dError::from_repr(e).ok_or(value)?;
+                let e = Rav1dError::from_errno(-e).ok_or(value)?;
                 Ok(Err(e))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod errno_tests {
+    use super::*;
+
+    const ALL: [Rav1dError; 9] = [
+        Rav1dError::EGeneric,
+        Rav1dError::ENOENT,
+        Rav1dError::EIO,
+        Rav1dError::EAGAIN,
+        Rav1dError::ENOMEM,
+        Rav1dError::EINVAL,
+        Rav1dError::ERANGE,
+        Rav1dError::ENOPROTOOPT,
+        Rav1dError::ECANCELED,
+    ];
+
+    /// The C boundary must round-trip every variant on THIS platform.
+    #[test]
+    fn errno_round_trips_on_this_platform() {
+        for e in ALL {
+            assert!(e.errno() > 0, "{e:?} must map to a positive errno");
+            assert_eq!(Rav1dError::from_errno(e.errno()), Some(e), "{e:?}");
+            assert_eq!(
+                Rav1dResult::try_from(Dav1dResult::from(Err::<(), _>(e))),
+                Ok(Err(e)),
+                "{e:?} through Dav1dResult"
+            );
+        }
+        assert_eq!(Rav1dResult::try_from(Dav1dResult(0)), Ok(Ok(())));
+        assert_eq!(Rav1dError::from_errno(0), None);
+        assert_eq!(Rav1dError::from_errno(-1), None);
+    }
+
+    /// With `c-ffi` the boundary speaks the platform's errno, which is what a
+    /// C caller compares against (macOS EAGAIN is 35, Linux 11).
+    #[cfg(feature = "c-ffi")]
+    #[test]
+    fn errno_is_the_platform_value_under_c_ffi() {
+        assert_eq!(Rav1dError::EAGAIN.errno(), libc::EAGAIN);
+        assert_eq!(Rav1dError::ENOPROTOOPT.errno(), libc::ENOPROTOOPT);
+        assert_eq!(Rav1dError::ECANCELED.errno(), libc::ECANCELED);
+        assert_eq!(
+            Dav1dResult::from(Err::<(), _>(Rav1dError::EAGAIN)).0,
+            -libc::EAGAIN
+        );
     }
 }

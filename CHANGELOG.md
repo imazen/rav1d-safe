@@ -4,6 +4,17 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Fixed
+- `c-ffi`: errors crossing the C boundary now carry the PLATFORM's errno.
+  `Rav1dError`'s discriminants are dav1d's Linux numbers and were cast
+  straight to `c_int`, so on macOS a C caller comparing `dav1d_get_picture`'s
+  result against `<errno.h>` `EAGAIN` (35) never matched our `-11`, and the
+  `const` assertions that pinned the discriminants to `libc` refused to
+  compile the `c-ffi` feature on macOS/Windows at all. New
+  `Rav1dError::errno()` / `from_errno()` map through `libc` at the
+  `Dav1dResult` boundary; the Linux pin stays as a `target_os = "linux"`
+  assertion; round-trip tests run on every platform.
+
 ### Added
 - **`examples/crash_sweep.rs` and the farm-artifact triage it produced**
   (`benchmarks/fuzz_triage_2026-08-27.meta`). The 2026-08-14 record could not
