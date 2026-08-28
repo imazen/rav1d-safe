@@ -137,9 +137,9 @@ pub enum Strictness {
     /// dav1d's library default (`strict_std_compliance = 0`): conceal and continue.
     ///
     /// Non-conforming values are clamped or reset exactly as dav1d does, so output
-    /// stays bit-exact with dav1d even on corrupt input. Use this to compare
-    /// against dav1d (the differential fuzz target does) or when a best-effort
-    /// frame beats an error.
+    /// stays bit-exact with dav1d even on corrupt input. Use this when a
+    /// best-effort frame beats an error, or to reproduce dav1d's output on a
+    /// corrupt stream.
     Lenient,
     /// Reject what the AV1 reference decoder (libaom) rejects. **Default.**
     ///

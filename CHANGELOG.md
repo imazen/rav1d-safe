@@ -21,8 +21,13 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   gate is unchanged, and of 315 real AVIFs/OBUs that decode under `Lenient`
   the only one `Strict` rejects is `avif-conformance/invalid/corrupted_mdat.avif`
   (`benchmarks/strictness_2026-08-28.meta`, via the new
-  `examples/strictness_sweep.rs`). The three fuzz targets pin `Lenient`
-  (maximal reach; the differential target needs dav1d parity), and
+  `examples/strictness_sweep.rs`). `decode_obu` and `parse_seq_header` pin
+  `Lenient` (maximal reach); `differential_dav1d` now compares **strict against
+  strict** (dav1d's `strict_std_compliance` on), so the byte-exact compare covers
+  streams both decoders accept and an accept/reject asymmetry is a real
+  finding — every divergence the farm filed against the old lenient compare
+  (#425, #426, #433) was on a stream aomdec rejects outright
+  (`benchmarks/differential_triage_2026-08-28.meta`).
   `tests/fuzz_regression.rs` gained a fifth `default_lenient` entry point so
   every committed seed keeps reaching the kernel it guards.
   `strict_std_compliance` is deprecated in favour of the enum; `true` still

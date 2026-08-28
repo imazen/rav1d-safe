@@ -340,7 +340,7 @@ fn run_differential_rav1d_half(data: &[u8]) -> Reach {
     settings.max_frame_delay = 1;
     settings.frame_size_limit = FRAME_SIZE_LIMIT_PIXELS;
     settings.apply_grain = false;
-    settings.strictness = Strictness::Lenient;
+    settings.strictness = Strictness::Strict; // the target compares strict-vs-strict
     match Decoder::with_settings(settings) {
         Ok(d) => drive(d, data),
         Err(_) => Reach::Rejected,

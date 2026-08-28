@@ -103,9 +103,9 @@ trips any Strict check.
 
 ## 3. Fuzz plumbing consequences
 
-The three fuzz targets now pin Strictness::Lenient (maximal reach; the
-differential target must conceal like the libdav1d it links, which runs its
-library default). tests/fuzz_regression.rs mirrors them and gained a FIFTH
+decode_obu and parse_seq_header now pin Strictness::Lenient (maximal reach);
+differential_dav1d compares strict-vs-strict (see
+differential_triage_2026-08-28.meta). tests/fuzz_regression.rs mirrors them and gained a FIFTH
 entry point, `default_lenient`: production defaults are now Strict and reject
 7 mutated seeds before the kernel they guard (§2b) — with only the old four
 entry points the reach floor dropped 21 -> 20:
@@ -122,7 +122,15 @@ examples/crash_sweep.rs mirrors the same five.
     cargo test --release --test strictness                              5 passed
     cargo test --release --test fuzz_regression                         3 passed
     cargo test --release --test decode_md5_verify                       14 passed (766 vectors)
-    cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings   clean
-    cargo clippy --release --lib --tests --examples -- -D warnings      clean
+    cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16" -- -D warnings   (CI config)
+    cargo clippy --no-default-features --features "c-ffi,bitdepth_8,bitdepth_16" -- -D warnings
+    cargo clippy --release --lib --tests --examples -- -D warnings
+        No finding in any file this branch touches. This box's clippy (1.98)
+        flags two PRE-EXISTING sites the CI clippy does not —
+        src/looprestoration.rs:581-582 (chunks_exact_to_as_chunks, the same two
+        the 2026-08-27 record allowed with -A) — plus the pre-existing dead
+        `token_test_lock` in the lib test target. The first version of this
+        record (and the feat commit message) said "clean": the grep that
+        produced that verdict was defeated by ANSI colour codes; corrected here.
     cargo fmt --all -- --check                                          clean
     cargo test --manifest-path apidoc/Cargo.toml (api-doc regen)        1 passed; snapshots committed separately
