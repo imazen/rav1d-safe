@@ -16,7 +16,7 @@
 #[cfg(debug_assertions)]
 compile_error!("decode_md5_committed tests require release mode: cargo test --release");
 
-use rav1d_safe::src::managed::{Decoder, Frame, PixelLayout, Planes, Settings};
+use rav1d_safe::src::managed::{Decoder, Frame, PixelLayout, Planes, Settings, Strictness};
 
 fn hash_frame(frame: &Frame, ctx: &mut md5::Context) {
     match frame.planes() {
@@ -74,6 +74,13 @@ fn hash_frame(frame: &Frame, ctx: &mut md5::Context) {
 /// bug, never something to hash around.
 fn decode_md5_with_threads(data: &[u8], threads: u32) -> String {
     let mut settings = Settings::default();
+    // These MD5s pin what every architecture must produce for the *same*
+    // stream, conforming or not: `arm_itx_16x64_dc_rect2.obu` is a
+    // fuzz-derived 37-byte stream the reference decoder rejects, and its MD5
+    // documents dav1d-parity concealment through the 16x64 DC-only itx on
+    // every arch. The production default is `Strict` since 0.6.0, which
+    // refuses such streams up front; parity references need Lenient.
+    settings.strictness = Strictness::Lenient;
     settings.threads = threads;
     settings.max_frame_delay = 1;
     settings.frame_size_limit = 8192 * 8192;
@@ -298,6 +305,7 @@ const CDEF_12BPC_FRAME_MD5S: &[&str] = &[
 #[test]
 fn cdef_12bpc_422_matches_c_oracle_per_frame() {
     let mut settings = Settings::default();
+    settings.strictness = Strictness::Lenient; // parity reference, see decode_md5_with_threads
     settings.threads = 1;
     settings.apply_grain = false;
     let mut d = Decoder::with_settings(settings).expect("decoder");

@@ -8,7 +8,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use rav1d_safe::src::managed::{Decoder, Settings, InloopFilters, DecodeFrameType};
+use rav1d_safe::src::managed::{Decoder, Settings, InloopFilters, DecodeFrameType, Strictness};
 
 fuzz_target!(|data: &[u8]| {
     if data.is_empty() {
@@ -22,6 +22,9 @@ fuzz_target!(|data: &[u8]| {
     settings.frame_size_limit = 256 * 256;
     settings.inloop_filters = InloopFilters::none();
     settings.decode_frame_type = DecodeFrameType::All;
+    // Lenient = dav1d's conceal-and-continue: the most decoder code reached per
+    // input (see decode_obu.rs).
+    settings.strictness = Strictness::Lenient;
 
     let mut decoder = match Decoder::with_settings(settings) {
         Ok(d) => d,

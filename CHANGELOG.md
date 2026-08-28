@@ -25,6 +25,35 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   assertion; round-trip tests run on every platform.
 
 ### Added
+- **`Settings::strictness` — the decoder's conformance policy, defaulting to
+  `Strict`** (imazen/rav1d-safe#422, #424). `Strictness::Lenient` is dav1d's
+  library default: conceal and continue, bit-exact with dav1d on corrupt input.
+  `Strictness::Strict` rejects what the AV1 reference decoder (libaom) rejects:
+  dav1d's `strict_std_compliance` checks (OBU trailing bits, the padding after
+  each tile's symbol decoder, the forbidden bit, zero `timing_info`, …) plus the
+  AV1 §6.10.8 requirement that a decoded `segment_id` lies in
+  `0..=LastActiveSegId`, which dav1d only comments `// error?` on. Both real
+  streams behind the issues — the zenrav1e#35 desync that sailed through
+  zenavif's encode→decode round trip, and the 10-bit fuzz artifact dav1d and
+  rav1d-safe decode to different pixels — are `Error::InvalidData` by default
+  and still decode under `Lenient` (`tests/strictness.rs`,
+  `tests/strictness_vectors/`). Cost of the default: the 766-vector dav1d md5
+  gate is unchanged, and of 315 real AVIFs/OBUs that decode under `Lenient`
+  the only one `Strict` rejects is `avif-conformance/invalid/corrupted_mdat.avif`
+  (`benchmarks/strictness_2026-08-28.meta`, via the new
+  `examples/strictness_sweep.rs`). `decode_obu` and `parse_seq_header` pin
+  `Lenient` (maximal reach); `differential_dav1d` now compares **strict against
+  strict** (dav1d's `strict_std_compliance` on), so the byte-exact compare covers
+  streams both decoders accept and an accept/reject asymmetry is a real
+  finding — every divergence the farm filed against the old lenient compare
+  (#425, #426, #433) was on a stream aomdec rejects outright
+  (`benchmarks/differential_triage_2026-08-28.meta`).
+  `tests/fuzz_regression.rs` gained a fifth `default_lenient` entry point so
+  every committed seed keeps reaching the kernel it guards.
+  `strict_std_compliance` is deprecated in favour of the enum; `true` still
+  means `Strict`. The C API is unchanged: its boolean maps 0 → `Lenient`,
+  non-zero → `Strict`.
+
 - **`examples/crash_sweep.rs` and the farm-artifact triage it produced**
   (`benchmarks/fuzz_triage_2026-08-27.meta`). The 2026-08-14 record could not
   reach `s3://zenfuzz`; this run could. Every artifact the farm holds for the

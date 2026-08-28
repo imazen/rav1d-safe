@@ -10,7 +10,8 @@
 //! seeds; this tool answers the question for a directory you just synced.
 //!
 //! Entry points mirror `tests/fuzz_regression.rs` exactly (the three fuzz
-//! targets' settings plus production defaults). A panic is caught per
+//! targets' settings, production defaults, and production defaults with
+//! `Strictness::Lenient`). A panic is caught per
 //! (file, entry point) pair and reported with its location, so one run over a
 //! directory names every live crash and its panic site.
 //!
@@ -25,7 +26,7 @@ use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use rav1d_safe::src::managed::{DecodeFrameType, Decoder, InloopFilters, Settings};
+use rav1d_safe::src::managed::{DecodeFrameType, Decoder, InloopFilters, Settings, Strictness};
 
 /// Matches `frame_size_limit` in all three fuzz targets.
 const FRAME_SIZE_LIMIT_PIXELS: u32 = 256 * 256;
@@ -43,6 +44,7 @@ fn drive(mut decoder: Decoder, data: &[u8]) -> bool {
 fn run_decode_obu(data: &[u8]) -> bool {
     let mut settings = Settings::default();
     settings.frame_size_limit = FRAME_SIZE_LIMIT_PIXELS;
+    settings.strictness = Strictness::Lenient;
     Decoder::with_settings(settings).is_ok_and(|d| drive(d, data))
 }
 
@@ -52,6 +54,7 @@ fn run_parse_seq_header(data: &[u8]) -> bool {
     settings.frame_size_limit = FRAME_SIZE_LIMIT_PIXELS;
     settings.inloop_filters = InloopFilters::none();
     settings.decode_frame_type = DecodeFrameType::All;
+    settings.strictness = Strictness::Lenient;
     Decoder::with_settings(settings).is_ok_and(|d| drive(d, data))
 }
 
@@ -61,11 +64,19 @@ fn run_differential_rav1d_half(data: &[u8]) -> bool {
     settings.max_frame_delay = 1;
     settings.frame_size_limit = FRAME_SIZE_LIMIT_PIXELS;
     settings.apply_grain = false;
+    settings.strictness = Strictness::Strict; // the target compares strict-vs-strict
     Decoder::with_settings(settings).is_ok_and(|d| drive(d, data))
 }
 
 fn run_default_settings(data: &[u8]) -> bool {
     Decoder::new().is_ok_and(|d| drive(d, data))
+}
+
+/// Production defaults with `Strictness::Lenient` (see `tests/fuzz_regression.rs`).
+fn run_default_lenient(data: &[u8]) -> bool {
+    let mut settings = Settings::default();
+    settings.strictness = Strictness::Lenient;
+    Decoder::with_settings(settings).is_ok_and(|d| drive(d, data))
 }
 
 type EntryPoint = (&'static str, fn(&[u8]) -> bool);
@@ -78,6 +89,7 @@ const ENTRY_POINTS: &[EntryPoint] = &[
         run_differential_rav1d_half,
     ),
     ("default_settings", run_default_settings),
+    ("default_lenient", run_default_lenient),
 ];
 
 fn collect_files(path: &Path, out: &mut Vec<PathBuf>) {

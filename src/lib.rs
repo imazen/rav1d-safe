@@ -40,6 +40,7 @@ use crate::src::internal::TaskThreadData;
 use crate::src::iter::wrapping_iter;
 use crate::src::log::Rav1dLog as _;
 use crate::src::log::Rav1dLogger;
+use crate::src::managed::Strictness;
 use crate::src::mem::try_arc;
 use crate::src::obu::rav1d_parse_obus;
 use crate::src::picture::PictureFlags;
@@ -95,7 +96,9 @@ impl Default for Rav1dSettings {
             frame_size_limit: 120_000_000,
             allocator: Default::default(),
             logger: Some(Rav1dLogger::default()),
-            strict_std_compliance: false,
+            // dav1d's library default. The managed `Settings` default is
+            // `Strictness::Strict`; see `src/managed.rs`.
+            strictness: Strictness::Lenient,
             output_invisible_frames: false,
             inloop_filters: Rav1dInloopFilterType::all(),
             decode_frame_type: Rav1dDecodeFrameType::All,
@@ -242,7 +245,8 @@ pub(crate) fn rav1d_open(
         operating_point: s.operating_point,
         all_layers: s.all_layers,
         frame_size_limit,
-        strict_std_compliance: s.strict_std_compliance,
+        strict_std_compliance: s.strictness >= Strictness::Strict,
+        strictness: s.strictness,
         output_invisible_frames: s.output_invisible_frames,
         inloop_filters: s.inloop_filters,
         decode_frame_type: s.decode_frame_type,

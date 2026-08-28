@@ -6,29 +6,29 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: rav1d-safe.txt 1229 lines (supported surface) | rav1d-safe.features.txt 141 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,blockshift-10,blockshift-13,blockshift-14,blockshift-15,blockshift-16,blockshift-8,blockshift-adaptive,bps-1,bps-4,bps-8,bps-blocks,bps-half,bps-quarter,c-ffi,dav1d-compat,held-row-guards,libc,msb-5,partial_asm,probe-addnop,probe-count,probe-lock-backoff,probe-lock-park,probe-lock-relax,probe-lock-yield,probe-lockonly,probe-noscan,probe-shardsim,probe-shiftpin,probe-sites,probe-tasktime,probe-tasktime-untracked,probe-tinynop,probe-untracked,probe-wide,rpb-16,rpb-2,rpb-8,shard-ident,shards-1,shards-128,shards-16,shards-256,shards-32,shards-4,shards-64,shards-8,tracker-legacy,unchecked) | rav1d-safe.internal.txt 65 lines (66 hidden + 0 excluded-feature)
+# files: rav1d-safe.txt 1235 lines (supported surface) | rav1d-safe.features.txt 141 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,blockshift-10,blockshift-13,blockshift-14,blockshift-15,blockshift-16,blockshift-8,blockshift-adaptive,bps-1,bps-4,bps-8,bps-blocks,bps-half,bps-quarter,c-ffi,dav1d-compat,held-row-guards,libc,msb-5,partial_asm,probe-addnop,probe-count,probe-lock-backoff,probe-lock-park,probe-lock-relax,probe-lock-yield,probe-lockonly,probe-noscan,probe-shardsim,probe-shiftpin,probe-sites,probe-tasktime,probe-tasktime-untracked,probe-tinynop,probe-untracked,probe-wide,rpb-16,rpb-2,rpb-8,shard-ident,shards-1,shards-128,shards-16,shards-256,shards-32,shards-4,shards-64,shards-8,tracker-legacy,unchecked) | rav1d-safe.internal.txt 67 lines (68 hidden + 0 excluded-feature)
 
 ## summary
 #
 #   pub modules                                12
-#   pub types (struct/enum/trait/alias)       131
+#   pub types (struct/enum/trait/alias)       132
 #   pub consts/statics                        200
 #   free functions                             18
 #   inherent methods                          105
-#   struct fields                             464
-#   enum variants                             213
+#   struct fields                             466
+#   enum variants                             215
 #   re-exports                                  3
-#   trait roster entries (type × trait)       289
+#   trait roster entries (type × trait)       298
 #   conditional trait impls (verbatim)          7
-#   auto-trait-complete types                  75
+#   auto-trait-complete types                  76
 #   auto-trait exceptions                      13
 #
 # per-module pub lines:
-#   (root)                          153
+#   (root)                          154
 #   include                         763
-#   src                             230
+#   src                             234
 
-## items (1118 lines)
+## items (1123 lines)
 
 pub mod rav1d_safe
 pub mod include
@@ -901,6 +901,9 @@ pub src::managed::PixelLayout::I422
 pub src::managed::PixelLayout::I444
 pub src::managed::Planes::Depth16(src::managed::Planes16<'a>)
 pub src::managed::Planes::Depth8(src::managed::Planes8<'a>)
+#[non_exhaustive] pub enum src::managed::Strictness
+pub src::managed::Strictness::Lenient
+pub src::managed::Strictness::Strict
 pub src::managed::TransferCharacteristics::BT1361 = 12
 pub src::managed::TransferCharacteristics::BT2020_10bit = 14
 pub src::managed::TransferCharacteristics::BT2020_12bit = 15
@@ -986,6 +989,7 @@ pub src::managed::Settings::max_frame_delay: u32
 pub src::managed::Settings::operating_point: u8
 pub src::managed::Settings::output_invisible_frames: bool
 pub src::managed::Settings::strict_std_compliance: bool
+pub src::managed::Settings::strictness: src::managed::Strictness
 pub src::managed::Settings::threads: u32
 pub const fn src::managed::is_unchecked() -> bool
 #[repr(u8)] pub enum ColorPrimaries [also: src::managed]
@@ -1145,11 +1149,12 @@ pub Settings::max_frame_delay: u32
 pub Settings::operating_point: u8
 pub Settings::output_invisible_frames: bool
 pub Settings::strict_std_compliance: bool
+pub Settings::strictness: src::managed::Strictness
 pub Settings::threads: u32
 pub fn enabled_features() -> alloc::string::String [also: src::managed]
 pub type Result<T, E> = core::result::Result<T, E> [also: src::managed]
 
-## trait impls (90 types)
+## trait impls (91 types)
 
 include::dav1d::headers::DRav1d<R, D>: Deref
 include::dav1d::headers::Dav1dAdaptiveBoolean: From<include::dav1d::headers::Rav1dAdaptiveBoolean>
@@ -1239,6 +1244,7 @@ src::managed::MasteringDisplay: Clone, Copy, Debug
 src::managed::MatrixCoefficients: Clone, Copy, Debug, Eq, From<include::dav1d::headers::Rav1dMatrixCoefficients>, PartialEq
 src::managed::PixelLayout: Clone, Copy, Debug, Eq, From<include::dav1d::headers::Rav1dPixelLayout>, PartialEq
 src::managed::Settings: Clone, Debug, Default
+src::managed::Strictness: Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd
 src::managed::TransferCharacteristics: Clone, Copy, Debug, Eq, From<include::dav1d::headers::Rav1dTransferCharacteristics>, PartialEq
 u8: From<include::dav1d::headers::Rav1dProfile>
 impl<R, D> core::default::Default for include::dav1d::headers::DRav1d<R, D> where R: core::default::Default, D: core::default::Default
@@ -1251,7 +1257,7 @@ impl zerocopy::TryFromBytes for include::dav1d::picture::AlignedPixelChunk where
 
 ## auto traits
 
-75 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
+76 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
 include::dav1d::headers::DRav1d<R, D>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 include::dav1d::headers::Rav1dFrameHeader: !Freeze
 include::dav1d::headers::Rav1dWarpedMotionParams: !Freeze

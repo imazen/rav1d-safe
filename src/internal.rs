@@ -51,6 +51,7 @@ use crate::src::log::Rav1dLogger;
 use crate::src::loopfilter::Rav1dLoopFilterDSPContext;
 use crate::src::looprestoration::Rav1dLoopRestorationDSPContext;
 use crate::src::lr_apply::LrRestorePlanes;
+use crate::src::managed::Strictness;
 use crate::src::mc::Rav1dMCDSPContext;
 use crate::src::mem::MemPool;
 use crate::src::msac::MsacContext;
@@ -432,7 +433,12 @@ pub struct Rav1dContext {
     pub(crate) operating_point: u8,
     pub(crate) all_layers: bool,
     pub(crate) frame_size_limit: c_uint,
+    /// dav1d's flag, derived from `strictness` (`>= Strict`). The parse-level
+    /// checks in `obu.rs` and `decode.rs` still read this bool.
     pub(crate) strict_std_compliance: bool,
+    /// The conformance policy the checks that dav1d does *not* have consult
+    /// (`Strictness::Strict` ⇒ reject; `Lenient` ⇒ conceal like dav1d).
+    pub(crate) strictness: Strictness,
     pub(crate) output_invisible_frames: bool,
     pub(crate) inloop_filters: Rav1dInloopFilterType,
     pub(crate) decode_frame_type: Rav1dDecodeFrameType,

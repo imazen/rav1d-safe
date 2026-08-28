@@ -1,0 +1,83 @@
+# differential_dav1d farm artifacts — #425 / #426 / #433 — 2026-08-28
+
+Host:      dev (AMD Ryzen 9 9950X3D, 32 threads, 60 GiB), Ubuntu, x86_64
+Branch:    feat/strictness (this record's commit; base origin/main @ 00ad667)
+Toolchain: nightly 1.98 + cargo-fuzz 0.13.2 for the target
+           (`cargo +nightly fuzz build --target x86_64-unknown-linux-gnu
+           --features differential differential_dav1d`; without the explicit
+           target cargo-fuzz picked x86_64-unknown-linux-musl, which has no std
+           installed here), linked against the dav1d 1.5.3 reference build in
+           ~/work/dav1d-ref/build (PKG_CONFIG_PATH=…/meson-private,
+           LD_LIBRARY_PATH=…/src). Oracles: aomdec from libaom 632172a
+           (~/work/aom/build_dbg), the dav1d 1.5.3 CLI.
+Artifacts: every file the farm holds for the three signatures, from the local
+           mirror /mnt/v/fuzzes/_farm/crashes/rav1d-safe/differential_dav1d/:
+
+    issue  arch    mirror dir          artifacts  signature (harness line)
+    #425   arm64   3302a46a4cd70ab5      5,168    differential_dav1d.rs:130  10/12-bit plane compare
+    #426   x86_64  5464037781fd2a2a          1    differential_dav1d.rs:99   8-bit plane compare
+    #433   arm64   2271c8fb62186ea5          1    differential_dav1d.rs:192  rav1d decoded, dav1d errored
+
+Everything below is output from a command run on this box. Nothing is estimated.
+
+
+## 1. Conformance: aomdec rejects all 5,170
+
+Each artifact wrapped as a one-frame IVF (`~/tmp/ivfwrap.py`) and fed to aomdec
+(`--summary -o /dev/null`); the first diagnostic line tallied:
+
+    "Failed to decode frame 1: Bitstream not supported by this decoder"   4,198
+    "Failed to decode frame 1: Corrupt frame detected"                        972
+    decoded a frame                                                             0
+
+    #425 pile: 4,196 unsupported + 972 corrupt.   #426: unsupported.   #433: unsupported.
+
+dav1d 1.5.3 CLI on the three artifacts the issues name:
+
+    #426  --strict 0: Decoded 1/1 frames      --strict 1: No data decoded
+    #425  --strict 0: Decoded 1/1 frames      --strict 1: No data decoded
+    #433  --strict 0: No data decoded         --strict 1: No data decoded
+          (matches its signature: rav1d-safe decoded a frame, dav1d errored)
+
+So every one of the 5,170 inputs is a stream the reference decoder refuses, and
+everything the harness compared on them is concealment of data the spec does
+not define.
+
+
+## 2. What diverged, lenient against lenient (the target as it was)
+
+The x86_64 build of the old target (both decoders at their lenient defaults),
+one run per artifact, before the target was rebuilt strict (§3):
+
+    #426  x86_64 artifact:  panicked at differential_dav1d.rs:103
+          DIVERGENCE Y row 0 col 5: rav1d=54 dav1d=55
+          -> a genuine, arch-independent one-level difference in how the two
+             decoders conceal this 37-byte stream.
+    #433  arm64 artifact:   no divergence on x86_64 (rc 0)
+          -> the accept/reject asymmetry the farm saw is aarch64-specific.
+    #425  first 1,292 of 5,168 arm64 artifacts: no divergence on x86_64 (rc 0)
+          -> the 10-bit divergence class is aarch64-specific too (the rebuild in
+             §3 replaced the binary mid-sweep; the remaining 3,876 were not run
+             lenient on x86).
+
+No attempt was made to make the two concealments agree: the spec leaves the
+decode of these streams undefined, dav1d's lenient path is not a specification,
+and the production default is now Strict (strictness_2026-08-28.meta).
+
+
+## 3. Strict against strict (the target as it is now)
+
+`fuzz/fuzz_targets/differential_dav1d.rs` now sets `Strictness::Strict` on
+rav1d-safe and `set_strict_std_compliance(true)` on dav1d. Same 5,170 inputs,
+one run each:
+
+    #425  5,168 / 5,168   rc 0   (both reject; symmetric)
+    #426      1 / 1       rc 0
+    #433      1 / 1       rc 0
+
+An accept/reject asymmetry under this configuration would be a real finding —
+a conformance check one decoder lacks — and still panics the target. The three
+issues are closed against this record; the committed seed
+fuzz/regression/differential_dav1d/crash-itx-16x64-dc-rect2 (the #400 class)
+keeps its reach through the lenient decode_obu / parse_seq_header entry points
+of tests/fuzz_regression.rs.
