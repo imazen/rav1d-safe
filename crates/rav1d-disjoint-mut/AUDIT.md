@@ -85,6 +85,220 @@ Docs didn't warn about intermediate `&mut` references causing SB retagging confl
 
 **Fix:** Expanded safety docs with 4 explicit requirements including the `&mut` prohibition.
 
+## 2026-08-28 review — sharded tracker, exact strided-rectangle records, rect guards
+
+**Scope.** Every public item `docs/public-api/rav1d-disjoint-mut.txt` gained
+between 6f84a31 (2026-08-07) and 00ad667 (2026-08-27) — `index_rect{,_mut}`,
+`index_rect{,_mut}_as`, `DisjointImmutRectGuard`, `DisjointMutRectGuard`,
+`declare_row_stride`, `set_parallelism`, `set_tile_concurrency`, the
+`probe_*` hooks — and the tracker changes behind them (`tracker_shard.rs`:
+rectangle records 3353944 / d4e9222, the one-shard fast path 1a2c165 /
+d1d5408, `NonNull` guard fields 825df67 / e0187a3, the lock-free release, the
+derived block shift 318a4bc, `SHARDS_SERIAL = 1` #458). Read on `main` @
+00ad667. Method: state the invariant, prove each mechanism keeps it, and turn
+every gap into a test that fails on the code as found.
+
+**Verdict.** ONE soundness defect, fixed in this revision (Lemma U):
+`index_rect{,_mut}` registered the rectangle in BYTES while every other borrow
+of a buffer is registered in `T::Target` elements, so on a buffer whose element
+is wider than a byte a rectangle and a range over the same elements were
+compared in different coordinate systems and a real overlap went unreported —
+two live `&mut`, from safe code. Not reachable from rav1d-safe: its four call
+sites use `index_rect{,_mut}_as` over `u8` planes, where the two units
+coincide. Reachable from the crate's safe API. Everything else below is proved
+sound under the stated invariants.
+
+### Definitions
+
+* An instance `D` wraps `L` elements of `T::Target`. **Coordinates** are
+  element indices in `[0, L)`; Lemma U is what makes this the unit of every
+  registration path.
+* A **borrow** is `(F, m)`: a footprint `F ⊆ [0, L)` and a mutability bit.
+  Two live borrows **conflict** iff `F₁ ∩ F₂ ≠ ∅` and `m₁ ∨ m₂`.
+* **Records.** Interval `[a, b)`. Rectangle `(h0, rows, seg)` on the instance
+  stride `s = row_stride`: `F = ⋃_{r<rows} [h0 + r·s, h0 + r·s + seg)` with
+  `1 ≤ seg ≤ s`, `rows ≤ MAX_RECT_ROWS`, stored as its hull
+  `[h0, h0 + (rows−1)·s + seg)` plus one rect bit. Wide `[a, b)` in the wide
+  list.
+* **Property S (no missed conflict).** At every instant no two live
+  registrations conflict; equivalently, a registration whose footprint
+  conflicts with a live one panics before it publishes, and no reference is
+  created before registration (`index_mut`: register, then `get_mut`;
+  `BorrowCleanup` poisons if `get_mut` panics).
+* **Property R (reference ⊆ registration).** Every reference a guard hands out
+  lies inside the guard's registered footprint and inside the allocation, and
+  the registration is retired only in `Drop`.
+
+### Lemma 1 — block cover
+
+Let a registration have footprint `F` and hull `H = [a, b)`, `F ⊆ H`, and let
+`Σ(H) = { shard(blk) : blk ∈ [a >> k, (b−1) >> k] }` for the instance's shift
+`k`. If two footprints share an element `x`, then
+`a₁ >> k ≤ x >> k ≤ (b₁−1) >> k` and likewise for the second, so
+`σ = shard(x >> k) ∈ Σ(H₁) ∩ Σ(H₂)`. `add`, `add_multi` and `add_rect`
+register in every shard of `Σ(H)` (a rectangle's hull blocks are a superset of
+its row blocks, so this is conservative in the sound direction); `add_wide`
+registers in the wide list instead, which Lemma 5 covers. The argument needs
+only that `k`, `shard_of` and `mask` are fixed while any record is live: they
+move only in `reprovision` and `set_row_stride`, both `&mut self`, and every
+guard holds `&'a DisjointMut`, so no guard can be live then. On a `mask == 0`
+instance `Σ = {0}` for every borrow, which is why the one-shard fast path may
+skip the block arithmetic (#458) and register a multi-block span as one
+record. ∎
+
+### Lemma 2 — serialisation inside a shard
+
+In every registration path (`add`, `add_contended`, `add_slow`, `add_multi`,
+`add_rect`, `add_wide`) the registrant holds shard `σ`'s lock from before its
+scan until after `publish` (`live[slot].store(1, Release)`); the unlock comes
+after. So of two registrants both in `σ`, the second acquires `σ` after the
+first released it, and its `live_mask` (`load(Acquire)`) observes the first's
+slot. `allocated` is a superset of the live bits: a bit is set under the lock
+before `publish`, and the word is only ever narrowed under the lock against
+the flags. Hence `live_mask(allocated)` never omits a live slot, and the
+`allocated ≤ 1` straight-line case is exact because then no slot other than 0
+can be live. With Lemma 1, whichever of a conflicting pair registers second
+scans a shard containing the first's record. ∎
+
+### Lemma 3 — the overlap tests are exact
+
+(a) For half-open non-empty intervals, `s_i < end ∧ start < e_i` ⟺ they
+intersect.
+
+(b) `rect_decode` inverts the hull encoding. `span = (rows−1)·s + seg` with
+`1 ≤ seg ≤ s` gives `span − 1 = (rows−1)·s + (seg−1)` with
+`0 ≤ seg−1 < s`, so `⌊(span−1)/s⌋ = rows−1` and `seg` follows. Enforced at
+registration: `add_rect` declines `seg == 0`, `seg > s`, `rows == 0`,
+`rows > MAX_RECT_ROWS`, `s == 0` or `s ≠ stride`.
+
+(c) `rect_hit_range(h0, h1, s, a, b)` returns `Some` iff
+`F_rect ∩ [a, b) ≠ ∅`. Clip to `[lo, hi) = [max(a,h0), min(b,h1))`; because
+`F_rect ⊆ [h0, h1)` the intersection with `[a, b)` equals the intersection
+with `[lo, hi)`, empty if `lo ≥ hi`. Let `r₀ = ⌊(lo−h0)/s⌋`; `lo < h1 ≤ h0 +
+rows·s` gives `r₀ ≤ rows−1`. Every row `r < r₀` ends at
+`h0 + r·s + seg ≤ h0 + r₀·s ≤ lo` and misses. Row `r₀` starts at `rs ≤ lo`
+and meets `[lo, hi)` iff `lo < rs + seg`. Every row `r > r₀` starts at
+`rs > lo` and meets iff `rs < hi`, and rows start monotonically, so the first
+row with `rs ≥ hi` ends the search. The loop tests exactly these conditions in
+order. ∎
+
+(d) `find` is a hull prefilter and `refine` makes it exact: when the shard
+holds no rectangle the hull is the footprint; otherwise `find_exact` rescans
+every live record, with (a) for intervals and (c) for rectangles — a rescan,
+not a continuation, because the first hull hit may be a rectangle that does
+not really overlap while a later record does.
+
+(e) `find_from_rect`: against a stored interval it applies (c) with the probe
+rectangle and the interval; against a stored rectangle it applies (c) to each
+probe row segment `[rs, rs+seg)` and the stored rectangle, both on the one
+instance stride. `F_probe ∩ F_stored ≠ ∅` iff some probe row meets
+`F_stored`. ∎
+
+(f) Mutability: a mutable registrant scans every live record, an immutable one
+only the mutable records — exactly the conflict relation.
+
+### Lemma 4 — publication and release ordering
+
+A record becomes visible only through `publish`, after its fields are written
+under the lock; a scanner reads the live flag with `Acquire` under the same
+lock and therefore sees complete fields. Release is `live[i].store(0,
+Release)` by the guard's owner, after every access through the reference
+(`Deref`/`DerefMut` materialise the reference from the `NonNull` field for a
+region borrowck ends before `Drop`). The next allocator observes the zero with
+`Acquire` under the lock, so the previous owner's accesses happen-before the
+next owner's. Only those two parties ever write `live[i]`, never concurrently
+(the allocator only after observing zero under the lock). `remove_multi`
+retires under all its locks so a registrant holding several of those shards
+sees the set retire as one step; a partially retired record could only cause
+a spurious panic, never a miss — a stale live record is conservative. ∎
+
+### Lemma 5 — wide records
+
+`add_wide` writes the list and increments `state` while holding EVERY active
+shard lock; every narrow registrant of the instance locks inside `active()`
+(`Σ ⊆ [0, mask]`, Lemma 1). Each narrow path re-reads `state` under at least
+one shard lock — `add` (the in-lock re-read that closed the 4af62ae TOCTOU),
+`add_contended`, `add_slow` (which consults the list unconditionally),
+`add_multi` and `add_rect` under their locks — so the wide write
+happens-before that read. A registrant that sees `state ≠ 0` scans the wide
+list with (a), or, for a rectangle, DECLINES and its caller's per-row path
+scans it. Conversely `add_wide` scans every active shard with `find` +
+`refine` (exact, Lemma 3d) plus the list. ∎
+
+### Lemma 6 — the rect guards (Property R)
+
+`rect_geometry` refuses `seg == 0`, `rows == 0`, `|stride| < seg` (so the
+rows are pairwise disjoint), any arithmetic overflow, a base misaligned for
+`V`, and `end_asc > len_V` where `len_V = L · size_of::<Target>() /
+size_of::<V>()` — the bound is derived from the element count, not the count
+divided by `size_of::<V>()` (the second half of Lemma U's defect: harmless,
+it only over-refused). Row `r` is `[base + r·stride, +seg)` in `V` units; for
+`stride ≥ 0` the rows ascend from `lo_asc = lo`, for `stride < 0` they descend
+from row 0 to `lo_asc = lo − (rows−1)·|stride| ≥ 0` (checked_sub), and every
+row lies in `[lo_asc, end_asc) ⊆ [0, len_V)`. Each row is exactly one segment
+of the registered footprint (Lemma U for the unit). `row_mut` takes `&mut
+self`, so at most one `&mut [V]` is live at a time; `row` returns `&[V]` tied
+to `&self`; neither guard implements `Deref`, so no reference wider than one
+row exists (the March-2026 defect). The base is `NonNull`, so moving the
+guard into `drop` carries no protector (#477). `V` validity: `index_rect`
+uses `T::Target` (every bit pattern valid), `_as` requires `FromBytes`
+(`IntoBytes` too for mutation). ∎
+
+`set_parallelism`, `set_tile_concurrency`, `declare_row_stride` and the block
+shift they feed are locality knobs: Lemma 1 needs only per-instance
+constancy, which `&mut self` (or read-once-at-`new`) provides. The `probe_*`
+hooks are `__probe_bounds`-only and compile to nothing otherwise.
+
+### Lemma U — units, and the defect
+
+Lemmas 1–3 assume every record of an instance is in one coordinate system.
+`index`/`index_mut` register a `Bounds` in `T::Target` elements (clamped to
+`as_mut_slice().len()`, an element count); `slice_as`/`mut_slice_as` register
+`range.mul(size_of::<V>())` on a `u8` buffer, where bytes ARE elements.
+`index_rect_inner` registered `lo_asc · size_of::<V>()`, `seg ·
+size_of::<V>()`, `stride · size_of::<V>()`: for the `_as` entry points on a
+`u8` buffer that is the same unit; for `index_rect{,_mut}` on, say,
+`DisjointMut<Vec<u16>>` it is twice the element coordinate.
+
+Counterexample (`tests/rect_units.rs`, fails on 00ad667): `declare_row_stride
+(8)` (the tracker compares its stride against the caller's, so the old code
+needs `16` to accept — in either form the point stands),
+`index_rect_mut(0, seg 2, rows 2, stride 8)` = elements `{0,1} ∪ {8,9}` was
+recorded as the byte hull `[0, 20)` with `(rows 2, seg 4, stride 16)` =
+footprint `{0..4} ∪ {16..20}`; `index_mut(8..10)` registered `[8, 10)` in
+elements; the scan found no overlap; both `&mut` were live over elements
+8 and 9. On the same input the inter-row gap `index_mut(2..8)` was a FALSE
+positive against the byte-scaled first row `[0, 4)`.
+
+Fix: the rectangle path scales by `size_of::<V>() / size_of::<T::Target>()`
+(1 for `index_rect{,_mut}`, `size_of::<V>()` for `_as` over `u8` — exact, and
+asserted so no future entry point can break it), and the bound uses the
+element length. `declare_row_stride`'s unit is documented as `T::Target`
+elements (bytes for the byte planes it exists for). Eight tests: the two miss
+cases (either order), the immutable-rectangle/mutable-range mix, the negative
+stride, the gap control that writes through both guards, the upper-half
+bound, and two byte-buffer controls (`index_rect_mut_as::<u16>` against
+`mut_slice_as::<u16>`) that pass on both revisions — the decoder's path,
+unchanged by construction. On 00ad667: 6 of 8 fail (2 should-panic tests do
+not panic, the gap control panics, the bound refuses, the negative stride
+misses); on this revision 8 of 8 pass, under `cargo test` and under Miri with both Stacked Borrows and Tree Borrows (`cargo +nightly miri test --features zerocopy,aligned --test rect_units`, `MIRIFLAGS=-Zmiri-tree-borrows` likewise) — the two byte-buffer controls use `align::AlignedVec64<u8>` because a plain `Vec<u8>` is 1-byte aligned under Miri and the `u16` view is then, correctly, refused.
+
+### What this review does not establish
+
+* `dangerously_unchecked` instances have no tracker; S is the caller's
+  obligation under that `unsafe` contract. The rect path returns
+  `BorrowId::UNCHECKED` there and creates the same references.
+* The `__probe_tinynop` / `__probe_addnop` / `__probe_untracked` arms are
+  unsound by design (measurement only), `__`-gated and unpublished; the
+  legacy tracker (`__tracker_legacy`) was not re-reviewed.
+* Spurious panics (false positives) are a liveness matter, outside S; the
+  tracker's own `rect_*` tests cover the routine gap cases.
+* A caller that receives `None` from `index_rect*` must take a per-row path.
+  In rav1d-safe that is not a discipline but a type-system fact: with
+  `#![forbid(unsafe_code)]` the decoder cannot touch a byte without a guard,
+  and every guard registers. All four call sites (`picture.rs`
+  `for_rows{,_mut}`, `loopfilter.rs` `fill_rect`) do fall back.
+
 ## Architecture Assessment
 
 ### What's Sound

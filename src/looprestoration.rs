@@ -578,8 +578,10 @@ fn wiener_rust<BD: BitDepth>(
     let rounding_off_h = 1 << round_bits_h - 1;
     let clip_limit = 1 << bitdepth + 1 + 7 - round_bits_h;
     for (tmp, hor) in tmp
-        .chunks_exact(REST_UNIT_STRIDE)
-        .zip(hor.chunks_exact_mut(REST_UNIT_STRIDE))
+        .as_chunks::<REST_UNIT_STRIDE>()
+        .0
+        .iter()
+        .zip(hor.as_chunks_mut::<REST_UNIT_STRIDE>().0.iter_mut())
         .take(h + 6)
     {
         for i in 0..w {

@@ -1646,7 +1646,9 @@ impl<'a, T: ?Sized + AsMutPtr, V> Drop for DisjointMutRectGuard<'a, T, V> {
 
 impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     /// Borrow `rows` rows of `seg` elements, `stride` elements apart, starting
-    /// at element `lo`, as ONE exact strided-rectangle registration.
+    /// at element `lo`, as ONE exact strided-rectangle registration. All three
+    /// are in `T::Target` elements, the unit every other borrow of this buffer
+    /// is registered in (see `rect_unit`).
     ///
     /// `None` means the geometry is not representable as a single record here
     /// and **the caller must take its own per-row path** — nothing is
@@ -1687,11 +1689,14 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         stride: isize,
     ) -> Option<DisjointImmutRectGuard<'a, T, V>> {
         let (lo_asc, astride, base) = self.rect_geometry::<V>(lo, seg, rows, stride)?;
-        let esz = mem::size_of::<V>();
+        let unit = Self::rect_unit::<V>();
         let borrow_id = match &self.tracker {
-            Some(tracker) => {
-                tracker.add_rect_immut(lo_asc * esz, seg * esz, rows, astride.checked_mul(esz)?)?
-            }
+            Some(tracker) => tracker.add_rect_immut(
+                lo_asc * unit,
+                seg * unit,
+                rows,
+                astride.checked_mul(unit)?,
+            )?,
             None => checked::BorrowId::UNCHECKED,
         };
         let parent = self.tracker.as_ref().map(|_| self);
@@ -1723,10 +1728,10 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         stride: isize,
     ) -> Option<DisjointMutRectGuard<'a, T, V>> {
         let (lo_asc, astride, base) = self.rect_geometry::<V>(lo, seg, rows, stride)?;
-        let esz = mem::size_of::<V>();
+        let unit = Self::rect_unit::<V>();
         let borrow_id = match &self.tracker {
             Some(tracker) => {
-                tracker.add_rect_mut(lo_asc * esz, seg * esz, rows, astride.checked_mul(esz)?)?
+                tracker.add_rect_mut(lo_asc * unit, seg * unit, rows, astride.checked_mul(unit)?)?
             }
             None => checked::BorrowId::UNCHECKED,
         };
@@ -1781,7 +1786,14 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         let span = (rows - 1).checked_mul(astride)?.checked_add(seg)?;
         let end_asc = lo_asc.checked_add(span)?;
         let whole = self.as_mut_slice();
-        let len_v = whole.len() / esz;
+        // `whole.len()` counts `T::Target` elements, not bytes. `V` is either
+        // `T::Target` itself (`index_rect{,_mut}`) or a `zerocopy` type over a
+        // `u8` buffer (`index_rect{,_mut}_as`), so `size_of::<V>()` is a
+        // multiple of `size_of::<T::Target>()` and the conversion is exact.
+        let len_v = whole
+            .len()
+            .checked_mul(mem::size_of::<<T as AsMutPtr>::Target>())?
+            / esz;
         if end_asc > len_v {
             return None;
         }
@@ -1795,6 +1807,34 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         // allocation. No reference is created here — see the guard types.
         let base = unsafe { NonNull::new_unchecked((base_ptr as *mut V).add(lo)) };
         Some((lo_asc, astride, base))
+    }
+
+    /// `T::Target` elements per `V` element — the factor that converts a
+    /// rectangle's `V`-unit geometry into the tracker's coordinate system.
+    ///
+    /// **The tracker counts `T::Target` elements, never bytes.** `index` /
+    /// `index_mut` register a `Bounds` in `T::Target` elements (the `zerocopy`
+    /// entry points get there by multiplying their `V`-unit ranges by
+    /// `size_of::<V>()` over a `u8` buffer, where the two coincide). A
+    /// rectangle registered in any other unit is compared against those
+    /// records in the wrong coordinate system, and the tracker can then miss a
+    /// real overlap — two live `&mut` over the same elements, from safe code.
+    /// Before 2026-08-28 the rectangle path scaled by `size_of::<V>()`
+    /// unconditionally, i.e. registered BYTES, which is only right when
+    /// `T::Target = u8` (every decoder caller; the reason it never fired).
+    ///
+    /// Exact by construction: `V` is either `T::Target` itself (factor 1) or a
+    /// `zerocopy` type over a `u8` buffer (factor `size_of::<V>()`). The assert
+    /// pins that invariant for any future entry point.
+    #[inline(always)]
+    fn rect_unit<V>() -> usize {
+        let esz = mem::size_of::<V>();
+        let tsz = mem::size_of::<<T as AsMutPtr>::Target>();
+        assert!(
+            tsz != 0 && esz % tsz == 0,
+            "rectangle element type must be a whole number of buffer elements"
+        );
+        esz / tsz
     }
 
     /// [`Self::index_rect`], exclusively.
@@ -1896,8 +1936,11 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         }
     }
 
-    /// Declare this buffer's picture row stride in BYTES, so the tracker can
-    /// size its blocks in picture ROWS instead of in blocks-per-buffer.
+    /// Declare this buffer's picture row stride in `T::Target` ELEMENTS — bytes
+    /// for the `u8` picture buffers this exists for — so the tracker can size
+    /// its blocks in picture ROWS instead of in blocks-per-buffer, and so a
+    /// strided-rectangle borrow ([`Self::index_rect`] and friends, which
+    /// register in the same unit) has a stride to match against.
     ///
     /// `&mut self` is the safety argument, exactly as for the resize path: no
     /// borrow can be outstanding while the block boundaries move.

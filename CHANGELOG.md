@@ -4,6 +4,26 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Fixed
+- **`rav1d-disjoint-mut`: `index_rect{,_mut}` registered rectangles in bytes
+  while every other borrow is registered in `T::Target` elements** — a missed
+  overlap (two live `&mut`) from safe code on any buffer whose element is wider
+  than a byte. Not reachable from this decoder (all four call sites are
+  `index_rect{,_mut}_as` over `u8` planes), reachable from the crate's API.
+  Fixed, gated by `crates/rav1d-disjoint-mut/tests/rect_units.rs`, and
+  recorded with the deductive soundness proofs for the sharded tracker, the
+  exact rectangle records and the rect guards in
+  `crates/rav1d-disjoint-mut/AUDIT.md` (2026-08-28 review).
+- `c-ffi`: errors crossing the C boundary now carry the PLATFORM's errno.
+  `Rav1dError`'s discriminants are dav1d's Linux numbers and were cast
+  straight to `c_int`, so on macOS a C caller comparing `dav1d_get_picture`'s
+  result against `<errno.h>` `EAGAIN` (35) never matched our `-11`, and the
+  `const` assertions that pinned the discriminants to `libc` refused to
+  compile the `c-ffi` feature on macOS/Windows at all. New
+  `Rav1dError::errno()` / `from_errno()` map through `libc` at the
+  `Dav1dResult` boundary; the Linux pin stays as a `target_os = "linux"`
+  assertion; round-trip tests run on every platform.
+
 ### Added
 - **`Settings::strictness` — the decoder's conformance policy, defaulting to
   `Strict`** (imazen/rav1d-safe#422, #424). `Strictness::Lenient` is dav1d's

@@ -1,0 +1,75 @@
+### L1024x576_420_10b
+== L1024x576_420_10b   total self samples 38557
+   entropy        19977   51.81%
+   tracker         5469   14.18%
+   kernels        10163   26.36%
+   runtime         1518    3.94%
+   other           1430    3.71%
+      other>0.5%:  0.71%  rav1d_safe::src::lf_mask::rav1d_create_lf_mask_intra
+      other>0.5%:  0.57%  <rav1d_safe::src::ctx::CaseSetter<32, false>>::set_disjoint::<aligned::Aligned<aligned::A8, [u8;
+
+### L1024x576_420_8b
+== L1024x576_420_8b   total self samples 38450
+   entropy        22368   58.17%
+   tracker         4774   12.42%
+   kernels         8820   22.94%
+   runtime          854    2.22%
+   other           1634    4.25%
+      other>0.5%:  0.89%  rav1d_safe::src::lf_mask::rav1d_create_lf_mask_intra
+      other>0.5%:  0.57%  <rav1d_safe::src::ctx::CaseSetter<32, false>>::set_disjoint::<aligned::Aligned<aligned::A8, [u8;
+
+### L2048x1152_420_8b
+== L2048x1152_420_8b   total self samples 38679
+   entropy        20964   54.20%
+   tracker         5542   14.33%
+   kernels         9552   24.70%
+   runtime          817    2.11%
+   other           1804    4.66%
+      other>0.5%:  0.62%  rav1d_safe::src::lf_mask::rav1d_create_lf_mask_intra
+      other>0.5%:  0.53%  <rav1d_safe::src::ctx::CaseSetter<32, false>>::set_disjoint::<aligned::Aligned<aligned::A8, [u8;
+
+### L3840x2160_420_10b
+== L3840x2160_420_10b   total self samples 38642
+   entropy        23590   61.05%
+   tracker         4196   10.86%
+   kernels         8672   22.44%
+   runtime         1117    2.89%
+   other           1067    2.76%
+      other>0.5%:  0.54%  rav1d_safe::src::lf_mask::rav1d_create_lf_mask_intra
+
+### L3840x2160_420_8b
+== L3840x2160_420_8b   total self samples 38665
+   entropy        25973   67.17%
+   tracker         3822    9.88%
+   kernels         7024   18.17%
+   runtime          548    1.42%
+   other           1298    3.36%
+
+### L512x288_420_8b
+== L512x288_420_8b   total self samples 38424
+   entropy        29347   76.38%
+   tracker         2258    5.88%
+   kernels         5596   14.56%
+   runtime          347    0.90%
+   other            876    2.28%
+
+### L64x36_420_10b
+== L64x36_420_10b   total self samples 38495
+   entropy        16467   42.78%
+   tracker         3579    9.30%
+   kernels        13631   35.41%
+   runtime         3256    8.46%
+   other           1562    4.06%
+      other>0.5%:  0.71%  <rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponent>::from_parts
+      other>0.5%:  0.60%  rav1d_safe::src::lib::gen_picture
+
+### L64x36_420_8b
+== L64x36_420_8b   total self samples 38532
+   entropy        21778   56.52%
+   tracker         3295    8.55%
+   kernels         9445   24.51%
+   runtime         1981    5.14%
+   other           2033    5.28%
+      other>0.5%:  0.92%  <rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponent>::from_parts
+      other>0.5%:  0.74%  rav1d_safe::src::lib::gen_picture
+

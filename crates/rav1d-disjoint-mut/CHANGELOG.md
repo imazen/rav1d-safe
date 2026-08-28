@@ -4,6 +4,28 @@ All notable changes to `rav1d-disjoint-mut` are documented in this file. Format 
 
 ## [Unreleased]
 
+### Fixed
+- **`index_rect{,_mut}` registered the rectangle in bytes while every other
+  borrow is registered in `T::Target` elements** (soundness, safe API). On a
+  buffer whose element is wider than a byte — `DisjointMut<Vec<u16>>`, say —
+  a rectangle over elements `{0,1,8,9}` was recorded as bytes `{0..4,
+  16..20}`, so an `index_mut(8..10)` over the same elements was compared in the
+  wrong coordinate system, found no overlap, and a second live `&mut` was
+  handed out from safe code; the inter-row gap was a false positive for the
+  same reason, and the in-bounds check divided the element count by
+  `size_of::<V>()` and refused the upper part of the buffer. Not reachable
+  from rav1d-safe (every call site is `index_rect{,_mut}_as` over a `u8`
+  plane, where bytes are elements), reachable from the crate's public API. The
+  rectangle path now scales by `size_of::<V>() / size_of::<T::Target>()` —
+  asserted exact — and bounds against the element length;
+  `declare_row_stride`'s unit is documented as `T::Target` elements.
+  `tests/rect_units.rs` (8 tests: both miss orders, an immutable/mutable mix,
+  a negative stride, the gap control writing through both guards, the bound,
+  two byte-buffer controls) fails 6/8 on the previous revision and passes
+  under Miri (Stacked and Tree Borrows). Found by the 2026-08-28 deductive
+  review in `AUDIT.md`, which also carries the proofs for the sharded tracker,
+  the exact rectangle records and the rect guards.
+
 ### Added
 - **Exact strided-rectangle borrow records.** `BorrowTracker::add_rect_immut`
   registers `rows` segments of `seg` bytes, the instance's declared row stride
