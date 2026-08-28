@@ -1,0 +1,221 @@
+== 4K 4:2:0 8bpc -> 10bpc
+8bpc  leaves=38665  ms/frame=199.179
+10bpc leaves=38642  ms/frame=231.750
+delta ms/frame = +32.571   (+16.4%)
+
+    d_ms  8bpc_ms   10b_ms  family   (sum of all deltas = +32.571 ms, must equal the frame delta above)
+  +6.742  121.872  128.613  src::recon::decode_coefs::
+  +6.501    0.000    6.501  src::safe_simd::itx_arm_hbd::apply1d
+  +4.342    0.000    4.342  src::safe_simd::itx_arm::itxfm_add_dispatch::::{closure#0}
+  +4.016    3.019    7.035  ::call::
+  +3.952   15.047   19.000  ::add::
+  +2.039    0.222    2.261  _platform_memset
+  +1.356    0.551    1.907  _platform_memmove
+  +1.277    4.889    6.165  core::ptr::drop_glue::
+  +1.062    0.000    1.062  src::safe_simd::cdef_arm::cdef_filter_block_16bpc_inner
+  +1.001    1.896    2.897  ::close
+  +0.654    8.474    9.128  src::recon::rav1d_recon_b_intra::
+  +0.597    2.797    3.395  src::ipred_prepare::rav1d_prepare_intra_edges::
+  +0.520    0.901    1.421  src::ipred::splat_dc::
+  +0.451    3.699    4.150  src::loopfilter::loopfilter_sb_direct::
+  +0.428    3.410    3.838  src::msac::rav1d_msac_decode_symbol_adapt_rust
+  +0.324    2.704    3.029  src::decode::decode_b
+  +0.295    0.958    1.253  src::lf_mask::rav1d_create_lf_mask_intra
+  +0.257    1.381    1.637  src::ctx::small_memset::
+  +0.243    1.185    1.427  src::msac::ctx_refill
+  +0.224    1.216    1.439  src::ipred::intra_pred_direct::
+  +0.201    0.057    0.258  __bzero
+  +0.160    0.938    1.098  src::ipred::ipred_z1_rust::::{closure#0}
+  +0.129    0.093    0.222  src::safe_simd::cdef_arm::cdef_filter_row::
+  +0.128    0.046    0.174  DYLD-STUB$$memcpy
+  +0.083    0.469    0.552  src::recon::get_skip_ctx
+  +0.064    1.525    1.589  ::set_disjoint::
+  +0.064    0.350    0.414  ::narrow_guard::
+  +0.063    0.057    0.120  _platform_memset_pattern16
+  +0.060    0.510    0.570  src::cdef_apply::rav1d_cdef_brow::
+  +0.044    0.196    0.240  src::lf_mask::mask_edges_chroma
+  ...
+  -0.071    2.926    2.855  ::open
+  -0.134    0.134    0.000  src::safe_simd::itx_arm_neon_16x16::apply_tx16
+  -0.155    0.479    0.324  DYLD-STUB$$bzero
+  -0.386    0.386    0.000  src::safe_simd::cdef_arm::padding_8bpc::{closure#0}
+  -0.623    0.623    0.000  src::safe_simd::itx_arm_neon_8x8::apply_tx8
+  -0.644    0.644    0.000  ::block_mut::
+  -1.252    1.252    0.000  src::safe_simd::itx_arm_neon_16x16::idct_16_q
+  -1.272    1.272    0.000  src::safe_simd::cdef_arm::cdef_filter_block_8bpc_inner
+
+-- families present ONLY at 10bpc (ms/frame) --
+   6.501  src::safe_simd::itx_arm_hbd::apply1d
+   4.342  src::safe_simd::itx_arm::itxfm_add_dispatch::::{closure#0}
+   1.062  src::safe_simd::cdef_arm::cdef_filter_block_16bpc_inner
+   0.030  src::itx_1d::inv_dct32_1d_internal_c
+   0.006  src::recon::rav1d_filter_sbrow_cdef::
+   0.006  src::recon::rav1d_backup_ipred_edge::
+   0.006  src::mem::try_arc::
+   0.006  src::lib::output_picture_ready
+   0.006  src::lf_mask::calc_lf_value
+   0.006  src::lf_apply::backup_lpf::
+   0.006  src::itx_1d::inv_dct4_1d_internal_c
+   0.006  ::clone
+
+-- families present ONLY at 8bpc (ms/frame) --
+   1.272  src::safe_simd::cdef_arm::cdef_filter_block_8bpc_inner
+   1.252  src::safe_simd::itx_arm_neon_16x16::idct_16_q
+   0.644  ::block_mut::
+   0.623  src::safe_simd::itx_arm_neon_8x8::apply_tx8
+   0.386  src::safe_simd::cdef_arm::padding_8bpc::{closure#0}
+   0.134  src::safe_simd::itx_arm_neon_16x16::apply_tx16
+   0.031  src::decode::init_quant_tables
+   0.010  src::obu::parse_frame_hdr
+   0.005  src::safe_simd::itx_arm_neon_32::horz_dct_32x8
+   0.005  src::lib::gen_picture
+   0.005  src::decode::rav1d_decode_frame_init
+   0.005  DYLD-STUB$$memset
+
+== 1024x576 4:2:0 8bpc -> 10bpc
+8bpc  leaves=38450  ms/frame=16.175
+10bpc leaves=38557  ms/frame=18.364
+delta ms/frame = +2.189   (+13.5%)
+
+    d_ms  8bpc_ms   10b_ms  family   (sum of all deltas = +2.189 ms, must equal the frame delta above)
+  +0.487    0.000    0.487  src::safe_simd::itx_arm_hbd::apply1d
+  +0.396    1.571    1.967  ::add::
+  +0.334    0.000    0.334  src::safe_simd::itx_arm::itxfm_add_dispatch::::{closure#0}
+  +0.298    0.240    0.538  ::call::
+  +0.253    0.000    0.253  src::safe_simd::cdef_arm::cdef_filter_block_16bpc_inner
+  +0.208    0.053    0.261  _platform_memmove
+  +0.182    0.456    0.638  core::ptr::drop_glue::
+  +0.152    0.028    0.180  _platform_memset
+  +0.078    0.262    0.340  src::ipred_prepare::rav1d_prepare_intra_edges::
+  +0.070    8.420    8.490  src::recon::decode_coefs::
+  +0.064    0.907    0.970  src::recon::rav1d_recon_b_intra::
+  +0.060    0.143    0.202  ::close
+  +0.042    0.300    0.341  src::decode::decode_b
+  +0.036    0.291    0.327  src::loopfilter::loopfilter_sb_direct::
+  +0.024    0.196    0.220  ::open
+  +0.021    0.169    0.190  ::set_disjoint::
+  +0.019    0.077    0.096  src::ipred::upsample_edge::
+  +0.017    0.020    0.038  ::narrow_guard::
+  +0.017    0.062    0.079  src::recon::get_dc_sign_ctx
+  +0.017    0.158    0.175  src::ipred::ipred_z1_rust::::{closure#0}
+  +0.015    0.012    0.027  DYLD-STUB$$memcpy
+  +0.015    0.000    0.015  src::itx_1d::inv_dct32_1d_internal_c
+  +0.014    0.004    0.019  __bzero
+  +0.014    0.182    0.196  src::ctx::small_memset::
+  +0.010    0.070    0.080  src::recon::get_skip_ctx
+  +0.009    0.000    0.009  src::safe_simd::itx_arm_hbd::adst16_core
+  +0.008    0.451    0.459  src::msac::rav1d_msac_decode_symbol_adapt_rust
+  +0.007    0.039    0.046  src::ipred::splat_dc::
+  +0.007    0.119    0.126  src::ipred::intra_pred_direct::
+  +0.007    0.050    0.057  src::decode::decode_sb
+  ...
+  -0.028    0.048    0.019  DYLD-STUB$$bzero
+  -0.030    0.030    0.000  src::safe_simd::itx_arm_neon_16x16::idct_16_q
+  -0.037    0.038    0.001  src::itx_1d::inv_dct4_1d_internal_c
+  -0.045    0.048    0.003  src::itx::inv_txfm_add::
+  -0.050    0.050    0.000  src::safe_simd::itx_arm_neon_8x8::apply_tx8
+  -0.057    0.057    0.000  ::block_mut::
+  -0.063    0.063    0.000  src::safe_simd::cdef_arm::padding_8bpc::{closure#0}
+  -0.297    0.297    0.000  src::safe_simd::cdef_arm::cdef_filter_block_8bpc_inner
+
+-- families present ONLY at 10bpc (ms/frame) --
+   0.487  src::safe_simd::itx_arm_hbd::apply1d
+   0.334  src::safe_simd::itx_arm::itxfm_add_dispatch::::{closure#0}
+   0.253  src::safe_simd::cdef_arm::cdef_filter_block_16bpc_inner
+   0.015  src::itx_1d::inv_dct32_1d_internal_c
+   0.009  src::safe_simd::itx_arm_hbd::adst16_core
+   0.000  xzm_malloc_zone_malloc_type_malloc
+   0.000  src::decode::rav1d_decode_frame_init_cdf
+   0.000  src::decode::rav1d_decode_frame_init
+   0.000  src::decode::init_quant_tables
+   0.000  _xzm_xzone_malloc_freelist_outlined
+   0.000  _xzm_xzone_malloc
+   0.000  _posix_memalign
+
+-- families present ONLY at 8bpc (ms/frame) --
+   0.297  src::safe_simd::cdef_arm::cdef_filter_block_8bpc_inner
+   0.063  src::safe_simd::cdef_arm::padding_8bpc::{closure#0}
+   0.057  ::block_mut::
+   0.050  src::safe_simd::itx_arm_neon_8x8::apply_tx8
+   0.030  src::safe_simd::itx_arm_neon_16x16::idct_16_q
+   0.012  src::safe_simd::itx_arm_neon_16x16::iadst_16_q
+   0.009  src::itx_1d::inv_adst8_1d_internal_c
+   0.007  DYLD-STUB$$memset_pattern16
+   0.003  src::safe_simd::itx_arm_neon_16x16::apply_tx16
+   0.002  src::safe_simd::itx_arm_neon_32::idct32_odd_q
+   0.002  src::itx_1d::inv_adst16_1d_internal_c
+   0.001  src::itx::inv_txfm_add_rust::
+
+== 64x36 4:2:0 8bpc -> 10bpc
+8bpc  leaves=38532  ms/frame=0.045
+10bpc leaves=38495  ms/frame=0.060
+delta ms/frame = +0.014   (+31.6%)
+
+    d_ms  8bpc_ms   10b_ms  family   (sum of all deltas = +0.014 ms, must equal the frame delta above)
+  +0.004    0.000    0.004  src::itx_1d::inv_dct32_1d_internal_c
+  +0.002    0.000    0.002  src::safe_simd::cdef_arm::cdef_filter_block_16bpc_inner
+  +0.002    0.001    0.003  _platform_memmove
+  +0.002    0.000    0.002  src::itx_1d::inv_dct16_1d_internal_c
+  +0.001    0.003    0.005  ::add::
+  +0.001    0.000    0.001  src::itx::inv_txfm_add::
+  +0.001    0.000    0.001  src::safe_simd::itx_arm_hbd::apply1d
+  +0.001    0.000    0.001  src::itx_1d::inv_dct8_1d_internal_c
+  +0.001    0.000    0.001  src::safe_simd::itx_arm::itxfm_add_dispatch::::{closure#0}
+  +0.001    0.000    0.001  ::call::
+  +0.000    0.000    0.001  _platform_memset
+  +0.000    0.000    0.000  src::itx_1d::inv_dct4_1d_internal_c
+  +0.000    0.000    0.001  src::ipred_prepare::rav1d_prepare_intra_edges::
+  +0.000    0.000    0.000  ::for_rows::
+  +0.000    0.000    0.000  DYLD-STUB$$memcpy
+  +0.000    0.001    0.001  core::ptr::drop_glue::
+  +0.000    0.002    0.002  src::recon::rav1d_recon_b_intra::
+  +0.000    0.000    0.000  ::close
+  +0.000    0.000    0.000  src::ipred::intra_pred_direct::
+  +0.000    0.000    0.000  src::lf_mask::rav1d_create_lf_mask_intra
+  +0.000    0.000    0.000  _platform_memset_pattern16
+  +0.000    0.000    0.000  src::safe_simd::loopfilter_arm::lf_compact_run_neon
+  +0.000    0.000    0.000  ::open
+  +0.000    0.000    0.001  src::decode::decode_b
+  +0.000    0.000    0.000  ::narrow_guard::
+  +0.000    0.000    0.000  src::recon::get_skip_ctx
+  +0.000    0.000    0.000  src::recon::read_golomb
+  +0.000    0.000    0.000  src::ipred::splat_dc::
+  +0.000    0.000    0.000  src::env::get_tx_ctx
+  +0.000    0.000    0.000  src::msac::ctx_refill
+  ...
+  -0.000    0.002    0.002  src::safe_simd::cdef_arm::cdef_filter_row::
+  -0.000    0.000    0.000  src::safe_simd::itx_arm_neon_32::vert_dct_add_8x32_8bpc
+  -0.000    0.024    0.024  src::recon::decode_coefs::
+  -0.000    0.000    0.000  src::safe_simd::itx_arm_neon_32::horz_dct_32x8
+  -0.000    0.000    0.000  src::safe_simd::itx_arm_neon_16x16::idct_16_q
+  -0.000    0.000    0.000  src::safe_simd::itx_arm_neon_32::idct32_odd_q
+  -0.000    0.000    0.000  src::safe_simd::cdef_arm::padding_8bpc::{closure#0}
+  -0.001    0.001    0.000  src::safe_simd::cdef_arm::cdef_filter_block_8bpc_inner
+
+-- families present ONLY at 10bpc (ms/frame) --
+   0.004  src::itx_1d::inv_dct32_1d_internal_c
+   0.002  src::safe_simd::cdef_arm::cdef_filter_block_16bpc_inner
+   0.002  src::itx_1d::inv_dct16_1d_internal_c
+   0.001  src::itx::inv_txfm_add::
+   0.001  src::safe_simd::itx_arm_hbd::apply1d
+   0.001  src::itx_1d::inv_dct8_1d_internal_c
+   0.001  src::safe_simd::itx_arm::itxfm_add_dispatch::::{closure#0}
+   0.000  src::itx_1d::inv_dct4_1d_internal_c
+   0.000  src::env::get_tx_ctx
+   0.000  src::itx::itxfm_add_scalar_fallback::
+   0.000  src::decode::init_quant_tables
+   0.000  ::new
+
+-- families present ONLY at 8bpc (ms/frame) --
+   0.001  src::safe_simd::cdef_arm::cdef_filter_block_8bpc_inner
+   0.000  src::safe_simd::cdef_arm::padding_8bpc::{closure#0}
+   0.000  src::safe_simd::itx_arm_neon_32::idct32_odd_q
+   0.000  src::safe_simd::itx_arm_neon_16x16::idct_16_q
+   0.000  src::safe_simd::itx_arm_neon_32::horz_dct_32x8
+   0.000  src::safe_simd::itx_arm_neon_32::vert_dct_add_8x32_8bpc
+   0.000  ::block_mut::
+   0.000  src::safe_simd::itx_arm_neon_8x8::apply_tx8
+   0.000  src::safe_simd::itx_arm_neon_16x16::apply_tx16
+   0.000  ::fill_with::
+   0.000  src::safe_simd::itx_arm_neon_32::__arcane_inv_txfm_add_dct_dct_32x32_8bpc_neon_inner
+   0.000  src::lf_mask::rav1d_calc_lf_values

@@ -1,0 +1,140 @@
+rows=220  rows_under_foreign_load=0
+dropped incomplete rounds: [4]  (kept 4)
+
+=== YUV420  8bpc  t=1  (n=4 rounds) ===
+        size     Mpx |  ours ms/f         [min..max] | dav1d ms/f         [min..max] |  ratio       [min..max] band
+64x36       0.0023 |     0.0455 [  0.0450..  0.0459] |     0.0347 [  0.0346..  0.0348] |  1.312 [ 1.301.. 1.322] -
+256x144      0.0369 |     0.6096 [  0.6067..  0.6122] |     0.5323 [  0.5309..  0.5333] |  1.144 [ 1.140.. 1.153] vs-prev:disjoint
+512x288      0.1475 |     2.8478 [  2.8222..  2.8644] |     2.4528 [  2.4344..  2.4622] |  1.165 [ 1.147.. 1.168] vs-prev:OVERLAP
+1024x576      0.5898 |    16.1750 [ 15.8889.. 16.2167] |    10.9167 [ 10.8889.. 10.9778] |  1.479 [ 1.454.. 1.487] vs-prev:disjoint
+2048x1152     2.3593 |    62.1444 [ 61.5111.. 63.7556] |    39.7778 [ 39.7333.. 39.8889] |  1.562 [ 1.542.. 1.605] vs-prev:disjoint
+3840x2160     8.2944 |   199.1786 [198.8571..199.6429] |   151.9643 [151.5714..152.1429] |  1.311 [ 1.309.. 1.314] vs-prev:disjoint
+  -- ms per megapixel (the model check: a flat column means alpha ~ 0) --
+     2k:19.7/15.0  36k:16.5/14.4  147k:19.3/16.6  589k:27.4/18.5  2359k:26.3/16.9  8294k:24.0/18.3
+  -- two-point alpha (2304 and 36864 px only) --
+     ours : alpha =    7.90 us/frame   beta =  16.32 ms/MP   (alpha is 17.4% of the tiny frame)
+     dav1d: alpha =    1.49 us/frame   beta =  14.40 ms/MP   (alpha is  4.3% of the tiny frame)
+     alpha_ours - alpha_dav1d = +6.41 us/frame
+  -- small-end fit (3 smallest sizes only) --
+     ours : alpha =    -47.5 us/frame   beta =  19.533 ms/MP  R2=0.99852
+     dav1d: alpha =    -40.4 us/frame   beta =  16.831 ms/MP  R2=0.99886
+     alpha_ours - alpha_dav1d = -7.1 us/frame   alpha ratio = 1.175
+  -- fit vs luma px --
+     OLS       ours : alpha =   1029.4 us/frame   beta =   24.044 ms/MP   R2=0.99910
+     OLS       dav1d: alpha =   -587.1 us/frame   beta =   18.303 ms/MP   R2=0.99946
+     OLS       ratio: alpha_ours/alpha_dav1d = -1.753   beta_ours/beta_dav1d =  1.314
+     rel-err   ours : alpha =     -4.3 us/frame   beta =   21.204 ms/MP   R2=0.96074
+     rel-err   dav1d: alpha =     -4.3 us/frame   beta =   16.752 ms/MP   R2=0.99178
+     rel-err   ratio: alpha_ours/alpha_dav1d =  1.013   beta_ours/beta_dav1d =  1.266
+  -- fit vs total samples --
+     OLS       ours : alpha =   1029.4 us/frame   beta =   16.029 ms/Msample   R2=0.99910
+     OLS       dav1d: alpha =   -587.1 us/frame   beta =   12.202 ms/Msample   R2=0.99946
+     OLS       ratio: alpha_ours/alpha_dav1d = -1.753   beta_ours/beta_dav1d =  1.314
+     rel-err   ours : alpha =     -4.3 us/frame   beta =   14.136 ms/Msample   R2=0.96074
+     rel-err   dav1d: alpha =     -4.3 us/frame   beta =   11.168 ms/Msample   R2=0.99178
+     rel-err   ratio: alpha_ours/alpha_dav1d =  1.013   beta_ours/beta_dav1d =  1.266
+  -- tiny cell direct (no model): ours 45.5 us  dav1d 34.7 us  ratio 1.312 --
+
+=== YUV420  10bpc  t=1  (n=4 rounds) ===
+        size     Mpx |  ours ms/f         [min..max] | dav1d ms/f         [min..max] |  ratio       [min..max] band
+64x36       0.0023 |     0.0599 [  0.0596..  0.0601] |     0.0363 [  0.0362..  0.0364] |  1.648 [ 1.647.. 1.655] -
+256x144      0.0369 |     0.7020 [  0.6993..  0.7051] |     0.5447 [  0.5433..  0.5456] |  1.288 [ 1.284.. 1.298] vs-prev:disjoint
+512x288      0.1475 |     3.1767 [  3.1756..  3.1867] |     2.5100 [  2.5078..  2.5167] |  1.266 [ 1.262.. 1.269] vs-prev:disjoint
+1024x576      0.5898 |    18.3639 [ 18.1278.. 18.8722] |    11.3028 [ 11.2944.. 11.3111] |  1.625 [ 1.605.. 1.668] vs-prev:disjoint
+2048x1152     2.3593 |    72.5444 [ 71.3778.. 73.0667] |    41.7333 [ 41.6889.. 41.8222] |  1.739 [ 1.707.. 1.751] vs-prev:disjoint
+3840x2160     8.2944 |   231.7500 [229.1429..233.6429] |   158.8929 [157.8571..159.0000] |  1.459 [ 1.451.. 1.469] vs-prev:disjoint
+  -- ms per megapixel (the model check: a flat column means alpha ~ 0) --
+     2k:26.0/15.8  36k:19.0/14.8  147k:21.5/17.0  589k:31.1/19.2  2359k:30.7/17.7  8294k:27.9/19.2
+  -- two-point alpha (2304 and 36864 px only) --
+     ours : alpha =   17.08 us/frame   beta =  18.58 ms/MP   (alpha is 28.5% of the tiny frame)
+     dav1d: alpha =    2.40 us/frame   beta =  14.71 ms/MP   (alpha is  6.6% of the tiny frame)
+     alpha_ours - alpha_dav1d = +14.68 us/frame
+  -- small-end fit (3 smallest sizes only) --
+     ours : alpha =    -36.6 us/frame   beta =  21.693 ms/MP  R2=0.99887
+     dav1d: alpha =    -40.9 us/frame   beta =  17.220 ms/MP  R2=0.99884
+     alpha_ours - alpha_dav1d = +4.3 us/frame   alpha ratio = 0.895
+  -- fit vs luma px --
+     OLS       ours : alpha =   1104.3 us/frame   beta =   27.994 ms/MP   R2=0.99905
+     OLS       dav1d: alpha =   -631.7 us/frame   beta =   19.143 ms/MP   R2=0.99951
+     OLS       ratio: alpha_ours/alpha_dav1d = -1.748   beta_ours/beta_dav1d =  1.462
+     rel-err   ours : alpha =      2.8 us/frame   beta =   24.154 ms/MP   R2=0.95728
+     rel-err   dav1d: alpha =     -4.0 us/frame   beta =   17.309 ms/MP   R2=0.99037
+     rel-err   ratio: alpha_ours/alpha_dav1d = -0.694   beta_ours/beta_dav1d =  1.395
+  -- fit vs total samples --
+     OLS       ours : alpha =   1104.3 us/frame   beta =   18.662 ms/Msample   R2=0.99905
+     OLS       dav1d: alpha =   -631.7 us/frame   beta =   12.762 ms/Msample   R2=0.99951
+     OLS       ratio: alpha_ours/alpha_dav1d = -1.748   beta_ours/beta_dav1d =  1.462
+     rel-err   ours : alpha =      2.8 us/frame   beta =   16.103 ms/Msample   R2=0.95728
+     rel-err   dav1d: alpha =     -4.0 us/frame   beta =   11.539 ms/Msample   R2=0.99037
+     rel-err   ratio: alpha_ours/alpha_dav1d = -0.694   beta_ours/beta_dav1d =  1.395
+  -- tiny cell direct (no model): ours 59.9 us  dav1d 36.3 us  ratio 1.650 --
+
+=== YUV444  8bpc  t=1  (n=4 rounds) ===
+        size     Mpx |  ours ms/f         [min..max] | dav1d ms/f         [min..max] |  ratio       [min..max] band
+64x36       0.0023 |     0.0570 [  0.0569..  0.0572] |     0.0432 [  0.0431..  0.0434] |  1.319 [ 1.314.. 1.329] -
+256x144      0.0369 |     0.8646 [  0.8616..  0.8684] |     0.7646 [  0.7642..  0.7669] |  1.131 [ 1.127.. 1.133] vs-prev:disjoint
+512x288      0.1475 |     3.8928 [  3.8700..  3.8944] |     3.3861 [  3.3811..  3.4100] |  1.150 [ 1.135.. 1.151] vs-prev:disjoint
+1024x576      0.5898 |    23.7056 [ 23.5833.. 23.8278] |    15.3917 [ 15.3722.. 15.4167] |  1.542 [ 1.530.. 1.547] vs-prev:disjoint
+2048x1152     2.3593 |    84.3111 [ 84.1333.. 84.6000] |    57.8111 [ 57.7778.. 57.9556] |  1.459 [ 1.455.. 1.461] vs-prev:disjoint
+3840x2160     8.2944 |   319.3214 [317.8571..325.4286] |   246.1786 [245.5000..246.6429] |  1.298 [ 1.291.. 1.322] vs-prev:disjoint
+  -- ms per megapixel (the model check: a flat column means alpha ~ 0) --
+     2k:24.7/18.8  36k:23.5/20.7  147k:26.4/23.0  589k:40.2/26.1  2359k:35.7/24.5  8294k:38.5/29.7
+  -- two-point alpha (2304 and 36864 px only) --
+     ours : alpha =    3.15 us/frame   beta =  23.37 ms/MP   (alpha is  5.5% of the tiny frame)
+     dav1d: alpha =   -4.89 us/frame   beta =  20.87 ms/MP   (alpha is -11.3% of the tiny frame)
+     alpha_ours - alpha_dav1d = +8.04 us/frame
+  -- small-end fit (3 smallest sizes only) --
+     ours : alpha =    -53.6 us/frame   beta =  26.659 ms/MP  R2=0.99917
+     dav1d: alpha =    -44.9 us/frame   beta =  23.195 ms/MP  R2=0.99945
+     alpha_ours - alpha_dav1d = -8.7 us/frame   alpha ratio = 1.193
+  -- fit vs luma px --
+     OLS       ours : alpha =  -1313.5 us/frame   beta =   38.498 ms/MP   R2=0.99953
+     OLS       dav1d: alpha =  -2599.0 us/frame   beta =   29.673 ms/MP   R2=0.99757
+     OLS       ratio: alpha_ours/alpha_dav1d =  0.505   beta_ours/beta_dav1d =  1.297
+     rel-err   ours : alpha =    -13.7 us/frame   beta =   30.201 ms/MP   R2=0.95309
+     rel-err   dav1d: alpha =    -13.1 us/frame   beta =   24.276 ms/MP   R2=0.98667
+     rel-err   ratio: alpha_ours/alpha_dav1d =  1.043   beta_ours/beta_dav1d =  1.244
+  -- fit vs total samples --
+     OLS       ours : alpha =  -1313.5 us/frame   beta =   12.833 ms/Msample   R2=0.99953
+     OLS       dav1d: alpha =  -2599.0 us/frame   beta =    9.891 ms/Msample   R2=0.99757
+     OLS       ratio: alpha_ours/alpha_dav1d =  0.505   beta_ours/beta_dav1d =  1.297
+     rel-err   ours : alpha =    -13.7 us/frame   beta =   10.067 ms/Msample   R2=0.95309
+     rel-err   dav1d: alpha =    -13.1 us/frame   beta =    8.092 ms/Msample   R2=0.98667
+     rel-err   ratio: alpha_ours/alpha_dav1d =  1.043   beta_ours/beta_dav1d =  1.244
+  -- tiny cell direct (no model): ours 57.0 us  dav1d 43.2 us  ratio 1.319 --
+
+=== YUV444  10bpc  t=1  (n=4 rounds) ===
+        size     Mpx |  ours ms/f         [min..max] | dav1d ms/f         [min..max] |  ratio       [min..max] band
+64x36       0.0023 |     0.0761 [  0.0760..  0.0766] |     0.0441 [  0.0440..  0.0443] |  1.728 [ 1.716.. 1.736] -
+256x144      0.0369 |     1.0557 [  1.0547..  1.0573] |     0.7844 [  0.7831..  0.7853] |  1.347 [ 1.343.. 1.347] vs-prev:disjoint
+512x288      0.1475 |     4.4611 [  4.4489..  4.5067] |     3.4483 [  3.4389..  3.4611] |  1.296 [ 1.290.. 1.302] vs-prev:disjoint
+1024x576      0.5898 |    26.4833 [ 26.2278.. 26.9389] |    15.5639 [ 15.5500.. 15.5889] |  1.702 [ 1.682.. 1.731] vs-prev:disjoint
+2048x1152     2.3593 |    95.6222 [ 94.8222.. 97.0444] |    59.7000 [ 59.6667.. 59.8000] |  1.603 [ 1.586.. 1.625] vs-prev:disjoint
+3840x2160     8.2944 |   364.9286 [359.4286..365.7857] |   251.1786 [250.7143..252.0000] |  1.450 [ 1.434.. 1.457] vs-prev:disjoint
+  -- ms per megapixel (the model check: a flat column means alpha ~ 0) --
+     2k:33.0/19.1  36k:28.6/21.3  147k:30.3/23.4  589k:44.9/26.4  2359k:40.5/25.3  8294k:44.0/30.3
+  -- two-point alpha (2304 and 36864 px only) --
+     ours : alpha =   10.81 us/frame   beta =  28.34 ms/MP   (alpha is 14.2% of the tiny frame)
+     dav1d: alpha =   -5.28 us/frame   beta =  21.42 ms/MP   (alpha is -12.0% of the tiny frame)
+     alpha_ours - alpha_dav1d = +16.09 us/frame
+  -- small-end fit (3 smallest sizes only) --
+     ours : alpha =    -23.8 us/frame   beta =  30.352 ms/MP  R2=0.99976
+     dav1d: alpha =    -43.0 us/frame   beta =  23.608 ms/MP  R2=0.99953
+     alpha_ours - alpha_dav1d = +19.1 us/frame   alpha ratio = 0.555
+  -- fit vs luma px --
+     OLS       ours : alpha =  -1719.8 us/frame   beta =   44.002 ms/MP   R2=0.99947
+     OLS       dav1d: alpha =  -2574.9 us/frame   beta =   30.286 ms/MP   R2=0.99785
+     OLS       ratio: alpha_ours/alpha_dav1d =  0.668   beta_ours/beta_dav1d =  1.453
+     rel-err   ours : alpha =     -6.4 us/frame   beta =   35.202 ms/MP   R2=0.96250
+     rel-err   dav1d: alpha =    -13.5 us/frame   beta =   24.821 ms/MP   R2=0.98718
+     rel-err   ratio: alpha_ours/alpha_dav1d =  0.472   beta_ours/beta_dav1d =  1.418
+  -- fit vs total samples --
+     OLS       ours : alpha =  -1719.8 us/frame   beta =   14.667 ms/Msample   R2=0.99947
+     OLS       dav1d: alpha =  -2574.9 us/frame   beta =   10.095 ms/Msample   R2=0.99785
+     OLS       ratio: alpha_ours/alpha_dav1d =  0.668   beta_ours/beta_dav1d =  1.453
+     rel-err   ours : alpha =     -6.4 us/frame   beta =   11.734 ms/Msample   R2=0.96250
+     rel-err   dav1d: alpha =    -13.5 us/frame   beta =    8.274 ms/Msample   R2=0.98718
+     rel-err   ratio: alpha_ours/alpha_dav1d =  0.472   beta_ours/beta_dav1d =  1.418
+  -- tiny cell direct (no model): ours 76.1 us  dav1d 44.1 us  ratio 1.727 --
+
+wrote benchmarks/size_sweep_cells_2026-08-10.tsv

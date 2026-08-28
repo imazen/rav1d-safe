@@ -1,0 +1,19 @@
+vector                    Mpx  ms/frame   ms/MP  entropy  tracker  kernels  runtime    other
+L64x36_420_10b         0.0023    0.0599   26.00    11.12     2.42     9.21     2.20     1.06
+L1024x576_420_10b      0.5898   18.3639   31.13    16.13     4.41     8.21     1.23     1.16
+L3840x2160_420_10b     8.2944  231.7500   27.94    17.06     3.03     6.27     0.81     0.77
+L64x36_420_8b          0.0023    0.0455   19.75    11.16     1.69     4.84     1.02     1.04
+L512x288_420_8b        0.1475    2.8478   19.31    14.75     1.14     2.81     0.17     0.44
+L1024x576_420_8b       0.5898   16.1750   27.42    15.95     3.41     6.29     0.61     1.17
+L2048x1152_420_8b      2.3593   62.1444   26.34    14.28     3.77     6.51     0.56     1.23
+L3840x2160_420_8b      8.2944  199.1786   24.01    16.13     2.37     4.36     0.34     0.81
+
+# non-entropy ms/MP (everything the entropy decoder is not)
+L64x36_420_10b         entropy   11.12   non-entropy   14.88   non-entropy share  57.2%
+L1024x576_420_10b      entropy   16.13   non-entropy   15.00   non-entropy share  48.2%
+L3840x2160_420_10b     entropy   17.06   non-entropy   10.88   non-entropy share  39.0%
+L64x36_420_8b          entropy   11.16   non-entropy    8.59   non-entropy share  43.5%
+L512x288_420_8b        entropy   14.75   non-entropy    4.56   non-entropy share  23.6%
+L1024x576_420_8b       entropy   15.95   non-entropy   11.47   non-entropy share  41.8%
+L2048x1152_420_8b      entropy   14.28   non-entropy   12.06   non-entropy share  45.8%
+L3840x2160_420_8b      entropy   16.13   non-entropy    7.88   non-entropy share  32.8%

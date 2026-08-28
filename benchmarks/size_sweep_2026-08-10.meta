@@ -1,0 +1,49 @@
+# Decode size sweep + 10bpc attribution — 2026-08-10
+
+host              Apple M4 Pro (Mac16,11), 8P+4E, 24 GB, macOS 26.5.2 (25F84)
+repo              imazen/rav1d-safe
+base              main @ b0a00c3  (the task named b0f70ee; main had moved two
+                  commits on — cebb97f "Merge #478 miri-ub-narrow-release" and
+                  b0a00c3 "docs(brief): serialise timed runs through measlock".
+                  b0f70ee is an ancestor of b0a00c3. No library source differs
+                  from main in this branch: the diff is scripts/perf/*, one
+                  example, and docs.)
+branch            measure/size-sweep-intercept
+reference         dav1d 1.5.4 (homebrew), --framedelay 1, in the SAME
+                  interleaved sweep, arm order rotating per round
+build             cargo build --release, default features, no
+                  -C target-cpu=native, no `nice` on any timed run
+instrument        wall clock of the whole process at two frame counts per cell,
+                  total = a + b*frames fitted; b is ms/frame. Frame counts are
+                  per cell (5,000/50,000 at 64x36 down to 2/16 at 4K).
+serialisation     every timed run wrapped in `measlock`
+
+## Vectors (NOT in git — 1.1 GB of IVF)
+
+sources           ~/tmp/szsweep/src/src_<W>x<H>.png   (sips downscale of the
+                  campaign's own ~/tmp/rav1d-perf/vec/src4k.png, 3840x2160)
+avif              ~/tmp/szsweep/vec/L<W>x<H>_<fmt>_<d>b.avif
+ivf               ~/tmp/szsweep/ivf/L<W>x<H>_<fmt>_<d>b.ivf
+recipe            ~/tmp/szsweep/enc.sh  and  ~/tmp/szsweep/mkivf.sh
+encoder           avifenc 1.4.2 (aom 3.14.1) -s 6 -q 70 --tilerowslog2 0
+                  --tilecolslog2 0 --ignore-exif --ignore-xmp
+                  => SINGLE TILE at every size, one config for the whole ladder
+ladder            64x36, 256x144, 512x288, 1024x576, 2048x1152, 3840x2160
+                  x {YUV420, YUV444} x {8, 10} bpc  = 24 vectors
+ivf wrapper       examples/avif_to_ivf.rs — one IVF frame per copy of the AVIF's
+                  complete OBU stream (temporal delimiter + sequence header +
+                  key frame), so both decoders re-parse the sequence header once
+                  per frame and neither gets inter-frame amortisation
+
+## Correctness of the new vectors, taken BEFORE any timing
+
+24/24 decode bit-identically to dav1d 1.5.4 (`decode_md5` vs
+`dav1d --muxer md5`). Table: size_sweep_vector_md5_2026-08-10.tsv.
+
+## Files
+
+size_sweep_gap_2026-08-10.tsv       raw rows: round arm vec threads nlo ms_lo
+                                    nhi ms_hi foreign_max
+size_sweep_cells_2026-08-10.tsv     per-cell medians, bands, ratio, fits
+size_sweep_report_2026-08-10.txt    the full printed report
+size_sweep_vector_md5_2026-08-10.tsv
