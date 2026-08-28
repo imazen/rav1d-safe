@@ -5,6 +5,15 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- **`rav1d-disjoint-mut`: `index_rect{,_mut}` registered rectangles in bytes
+  while every other borrow is registered in `T::Target` elements** — a missed
+  overlap (two live `&mut`) from safe code on any buffer whose element is wider
+  than a byte. Not reachable from this decoder (all four call sites are
+  `index_rect{,_mut}_as` over `u8` planes), reachable from the crate's API.
+  Fixed, gated by `crates/rav1d-disjoint-mut/tests/rect_units.rs`, and
+  recorded with the deductive soundness proofs for the sharded tracker, the
+  exact rectangle records and the rect guards in
+  `crates/rav1d-disjoint-mut/AUDIT.md` (2026-08-28 review).
 - `c-ffi`: errors crossing the C boundary now carry the PLATFORM's errno.
   `Rav1dError`'s discriminants are dav1d's Linux numbers and were cast
   straight to `c_int`, so on macOS a C caller comparing `dav1d_get_picture`'s
