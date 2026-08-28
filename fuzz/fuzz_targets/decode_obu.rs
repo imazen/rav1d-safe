@@ -7,7 +7,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::src::managed::{Decoder, Settings, Strictness};
 
 fuzz_target!(|data: &[u8]| {
     // Skip empty inputs — nothing to decode.
@@ -20,6 +20,10 @@ fuzz_target!(|data: &[u8]| {
     // without triggering OOM from adversarial frame dimensions.
     let mut settings = Settings::default();
     settings.frame_size_limit = 256 * 256;
+    // Lenient = dav1d's conceal-and-continue: the most decoder code reached per
+    // input. `Strict` (the production default) only adds early error returns,
+    // which `tests/fuzz_regression.rs`'s default_settings entry point covers.
+    settings.strictness = Strictness::Lenient;
     let mut decoder = match Decoder::with_settings(settings) {
         Ok(d) => d,
         Err(_) => return,

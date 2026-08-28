@@ -126,6 +126,7 @@ use crate::src::lf_mask::rav1d_create_lf_mask_inter;
 use crate::src::lf_mask::rav1d_create_lf_mask_intra;
 use crate::src::log::Rav1dLog as _;
 use crate::src::lr_apply::LrRestorePlanes;
+use crate::src::managed::Strictness;
 use crate::src::msac::MsacContext;
 use crate::src::msac::rav1d_msac_decode_bool;
 use crate::src::msac::rav1d_msac_decode_bool_adapt;
@@ -1391,6 +1392,17 @@ fn decode_b(
                 let last_active_seg_id_plus1 = (last_active_segid + 1) as u8;
                 let mut seg_id =
                     neg_deinterleave(diff as u8, pred_seg_id, last_active_seg_id_plus1);
+                // AV1 §6.10.8: it is a requirement of bitstream conformance that
+                // the post-processed `segment_id` lies in `0..=LastActiveSegId`.
+                // An id past that bound means the symbol stream has already
+                // desynchronised — every block from here on is garbage. libaom
+                // rejects the frame ("Corrupted segment_ids"); under
+                // `Strictness::Strict` so do we. The spec initialises
+                // LastActiveSegId to 0 where dav1d uses -1 for "no active
+                // feature", hence `max(last_active_segid, 0)` for the bound.
+                if c.strictness >= Strictness::Strict && seg_id > last_active_segid.max(0) as u8 {
+                    return Err(());
+                }
                 // See the matching note in the post-skip path below: dav1d widens
                 // `last_active_segid` to `unsigned`, so `-1` (no active segment)
                 // never clamps. For `last_active_segid >= 0` this is identical to
@@ -1483,6 +1495,12 @@ fn decode_b(
                 let last_active_seg_id_plus1 = (last_active_segid + 1) as u8;
                 let mut seg_id =
                     neg_deinterleave(diff as u8, pred_seg_id, last_active_seg_id_plus1);
+                // AV1 §6.10.8 conformance bound, as in the pre-skip path above:
+                // `Strict` rejects (libaom: "Corrupted segment_ids"), `Lenient`
+                // conceals exactly like dav1d below.
+                if c.strictness >= Strictness::Strict && seg_id > last_active_segid.max(0) as u8 {
+                    return Err(());
+                }
                 // dav1d compares the decoded id against `last_active_segid` widened
                 // to `unsigned`, so the `last_active_segid == -1` case (segmentation
                 // enabled but no segment carries an active feature) wraps to a huge

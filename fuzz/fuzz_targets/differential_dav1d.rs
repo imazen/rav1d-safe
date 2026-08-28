@@ -18,7 +18,7 @@
 
 use dav1d::{Decoder as Dav1dDecoder, PixelLayout as Dav1dPixelLayout, PlanarImageComponent, Settings as Dav1dSettings};
 use libfuzzer_sys::fuzz_target;
-use rav1d_safe::src::managed::{Decoder, PixelLayout, Planes, Settings};
+use rav1d_safe::src::managed::{Decoder, PixelLayout, Planes, Settings, Strictness};
 
 const FRAME_SIZE_LIMIT_PIXELS: u32 = 256 * 256;
 
@@ -29,6 +29,10 @@ fn decode_rav1d(data: &[u8]) -> Result<Option<rav1d_safe::src::managed::Frame>, 
     settings.max_frame_delay = 1;
     settings.frame_size_limit = FRAME_SIZE_LIMIT_PIXELS;
     settings.apply_grain = false; // film-grain RNG is stochastic; disable for byte-exact compare
+    // dav1d parity: the libdav1d we link runs its library default
+    // (strict_std_compliance = 0) and conceals corrupt tile data; the byte-exact
+    // compare only holds if rav1d-safe conceals the same way.
+    settings.strictness = Strictness::Lenient;
 
     let mut decoder = Decoder::with_settings(settings).map_err(|e| format!("rav1d init: {e:?}"))?;
     let result = decoder.decode(data).map_err(|e| format!("rav1d decode: {e:?}"))?;

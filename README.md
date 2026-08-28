@@ -156,6 +156,15 @@ rav1d-safe = { version = "0.5", features = ["bitdepth_8", "bitdepth_16"] }
 
 With 2 threads, expect ~2x speedup on photo decode. Frame threading (`max_frame_delay > 1`) still requires the `unchecked` feature.
 
+#### `strictness` — what to do with a stream that breaks the spec
+
+AV1 leaves the handling of non-conforming streams to the decoder. dav1d's library default conceals and keeps going (a player would rather show a damaged frame than stop); the AV1 reference decoder `aomdec` rejects the frame. `Settings::strictness` picks between the two:
+
+- `Strictness::Strict` (**default**) rejects what libaom rejects: dav1d's `strict_std_compliance` checks (OBU trailing bits, the padding after each tile's symbol decoder, the OBU forbidden bit, zero `timing_info`, …) plus the spec's requirement that every decoded `segment_id` stays within `LastActiveSegId`. A desynchronised symbol stream is an `Error::InvalidData` instead of garbage pixels. These are compares at points the decoder already evaluates; none is in a per-pixel loop.
+- `Strictness::Lenient` is dav1d's behaviour, bit-exact with dav1d even on corrupt input. Use it for differential testing against dav1d, or when a best-effort frame beats an error.
+
+Why `Strict` is the default: this decoder's main job is decoding still images and verifying encoder output. An encoder bug that desynchronised the symbol stream (zenrav1e#35) passed every encode→decode round trip for weeks because the decoder concealed it (#422). The 766-vector dav1d md5 gate decodes identically under both settings, and across the AVIF corpora in `benchmarks/strictness_2026-08-28.meta` the only file `Strict` rejects that `Lenient` accepts is a deliberately corrupted conformance-suite sample. `cargo run --release --example strictness_sweep -- <dir>` reports the two verdicts side by side for your own corpus.
+
 ### HDR Metadata
 
 ```rust

@@ -116,6 +116,51 @@ impl From<Rav1dError> for Error {
 /// inner error with `err.error()` (borrow) or `err.decompose().0` (owned).
 pub type Result<T, E = whereat::At<Error>> = std::result::Result<T, E>;
 
+/// How much the decoder tolerates from a stream that violates the AV1 specification.
+///
+/// AV1 leaves the handling of non-conforming streams to the decoder. dav1d conceals
+/// what it can and keeps going — a video player would rather show a damaged frame
+/// than stop — and that is what this port did unconditionally before 0.6.0. A
+/// still-image pipeline usually wants the opposite: a corrupt AVIF should fail
+/// instead of yielding garbage pixels, and an encoder bug that desynchronises the
+/// symbol stream must not sail through an encode→decode round trip
+/// (imazen/rav1d-safe#422 was exactly that).
+///
+/// Every check behind [`Strict`](Self::Strict) is a comparison at a point the
+/// decoder already evaluates, or a once-per-OBU / once-per-tile header check.
+/// None of them is in a per-pixel loop.
+///
+/// The variants are ordered: `Lenient < Strict`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum Strictness {
+    /// dav1d's library default (`strict_std_compliance = 0`): conceal and continue.
+    ///
+    /// Non-conforming values are clamped or reset exactly as dav1d does, so output
+    /// stays bit-exact with dav1d even on corrupt input. Use this to compare
+    /// against dav1d (the differential fuzz target does) or when a best-effort
+    /// frame beats an error.
+    Lenient,
+    /// Reject what the AV1 reference decoder (libaom) rejects. **Default.**
+    ///
+    /// On top of `Lenient`:
+    /// * dav1d's `strict_std_compliance` checks — OBU trailing bits after
+    ///   sequence and frame headers, the padding after each tile's symbol decoder
+    ///   (AV1 §8.2.4), the OBU forbidden bit, zero `timing_info` fields, an
+    ///   `intra_only` frame refreshing every reference slot, `show_existing_frame`
+    ///   of a non-showable frame, identity matrix coefficients with subsampled
+    ///   chroma, and — under frame threading — an error in a reference frame
+    ///   failing the frames that depend on it instead of concealing;
+    /// * the AV1 §6.10.8 requirement that a decoded `segment_id` lies in
+    ///   `0..=LastActiveSegId` (libaom: "Corrupted segment_ids"). dav1d resets an
+    ///   out-of-range id to 0 and keeps parsing a symbol stream that has already
+    ///   desynchronised, so every block after it is garbage.
+    ///
+    /// A rejected frame surfaces as [`Error::InvalidData`].
+    #[default]
+    Strict,
+}
+
 /// Decoder configuration settings
 ///
 /// Use `Settings::default()` or struct update syntax (`Settings { threads: 4, ..Default::default() }`)
@@ -174,8 +219,21 @@ pub struct Settings {
     /// parallelism without frame threading overhead or async decode behavior.
     pub max_frame_delay: u32,
 
-    /// Enforce strict standard compliance
+    /// Enforce strict standard compliance.
+    ///
+    /// Deprecated alias for [`strictness`](Self::strictness): `true` behaves as
+    /// [`Strictness::Strict`]. When both are set, the stricter one applies. Kept
+    /// so `Settings { strict_std_compliance: true, ..Default::default() }` keeps
+    /// compiling; it will be removed in a later 0.x release.
+    #[deprecated(since = "0.6.0", note = "use `strictness`")]
     pub strict_std_compliance: bool,
+
+    /// How the decoder treats a stream that violates the AV1 specification.
+    ///
+    /// Default: [`Strictness::Strict`] — corrupt or non-conforming tile data is an
+    /// [`Error::InvalidData`] instead of garbage pixels. Set
+    /// [`Strictness::Lenient`] for dav1d's conceal-and-continue behaviour.
+    pub strictness: Strictness,
 
     /// CPU feature level for SIMD dispatch.
     ///
@@ -187,6 +245,21 @@ pub struct Settings {
     pub cpu_level: CpuLevel,
 }
 
+impl Settings {
+    /// The strictness that actually applies, honouring the deprecated
+    /// `strict_std_compliance` flag (the stricter of the two wins).
+    #[allow(deprecated)]
+    pub(crate) fn effective_strictness(&self) -> Strictness {
+        let legacy = if self.strict_std_compliance {
+            Strictness::Strict
+        } else {
+            Strictness::Lenient
+        };
+        self.strictness.max(legacy)
+    }
+}
+
+#[allow(deprecated)]
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -205,6 +278,7 @@ impl Default for Settings {
             inloop_filters: InloopFilters::all(),
             decode_frame_type: DecodeFrameType::All,
             strict_std_compliance: false,
+            strictness: Strictness::default(),
             cpu_level: CpuLevel::Native,
         }
     }
@@ -212,6 +286,7 @@ impl Default for Settings {
 
 impl From<Settings> for Rav1dSettings {
     fn from(settings: Settings) -> Self {
+        let strictness = settings.effective_strictness();
         Self {
             n_threads: settings.threads as i32,
             max_frame_delay: settings.max_frame_delay as i32,
@@ -221,7 +296,7 @@ impl From<Settings> for Rav1dSettings {
             frame_size_limit: settings.frame_size_limit,
             allocator: Default::default(),
             logger: None,
-            strict_std_compliance: settings.strict_std_compliance,
+            strictness,
             output_invisible_frames: settings.output_invisible_frames,
             inloop_filters: settings.inloop_filters.into(),
             decode_frame_type: settings.decode_frame_type.into(),

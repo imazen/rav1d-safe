@@ -1,0 +1,128 @@
+# Settings::strictness — the evidence behind the Strict default — 2026-08-28
+
+Host:      dev (AMD Ryzen 9 9950X3D, 32 threads, 60 GiB), Ubuntu, x86_64-unknown-linux-gnu
+Base:      origin/main @ 00ad667 (docs: farm-artifact triage record — #430/#436/#439 …)
+Branch:    feat/strictness (this record's commit)
+Toolchain: stable (release, default features) for everything below
+Oracles:   aomdec from libaom 632172a (~/work/aom/build_dbg), dav1d 1.5.3 CLI
+           (~/work/dav1d-ref/build, `--strict 0` = library default, `--strict 1`)
+
+Everything below is output from a command run on this box. Nothing is estimated.
+
+
+## 1. The two streams behind the issues
+
+Both are raw OBU streams; aomdec needs an IVF wrapper (one frame = the whole
+stream, `python3 ivfwrap.py`), dav1d's CLI likewise.
+
+    stream                                        bytes  aomdec                          dav1d --strict 0   dav1d --strict 1
+    tests/strictness_vectors/
+      segment_id_desync_zenrav1e35.obu   (#422)   4267   "Corrupted segment_ids"         decodes 1/1        rejects (EINVAL)
+      tile_padding_desync_fuzz424.obu    (#424)  13213   "Failed to decode tile data"    decodes 1/1        rejects (EINVAL)
+
+#424's farm artifact (sha256 d204fcaa…, 13278 bytes, block storage
+/mnt/v/fuzzes/rav1d-safe/differential/) carries a fourth OBU of garbage after
+the frame OBU that even lenient dav1d rejects (EINVAL after emitting the frame);
+the committed vector is cut at the frame OBU's end (offset 13213) and keeps every
+verdict above.
+
+rav1d-safe on unmodified main (examples/crash_sweep, 4 entry points incl.
+production defaults): both streams "decoded a frame", 0 panics — i.e. the
+pre-change decoder concealed both, exactly like dav1d --strict 0.
+
+With this branch (tests/strictness.rs, 5 tests, 0.02 s):
+
+    Strictness::Lenient   #422 -> Ok(192x256 frame)     #424 -> Ok(10-bit frame)
+    Strictness::Strict    #422 -> Err(InvalidData)      #424 -> Err(InvalidData)
+    Settings::default()   == Strict
+    strict_std_compliance = true (deprecated)  -> behaves as Strict
+    kodim03_yuv420_8bpc.obu (conforming control): identical luma under both
+
+What each level is, mechanically:
+
+    Lenient  dav1d library default (strict_std_compliance = 0).
+    Strict   Rav1dContext.strict_std_compliance = true (every check dav1d gates on
+             it: OBU trailing bits, tile symbol-decoder padding
+             (check_trailing_bits_after_symbol_coder), forbidden bit, zero
+             timing_info, intra_only + refresh 0xff, show_existing of a
+             non-showable frame, identity MC with subsampled chroma, frame-thread
+             reference-error propagation) PLUS the AV1 §6.10.8 segment_id bound in
+             decode_b (both the pre-skip and post-skip read_segment_id sites).
+             Spec text (5.11.9 / 6.10.8, extracted from the spec PDF):
+               "It is a requirement of bitstream conformance that the postprocessed
+                value of segment_id (i.e. the value returned by neg_deinterleave) is
+                in the range 0 to LastActiveSegId (inclusive of endpoints)."
+             libaom decodemv.c read_segment_id(): aom_internal_error(…,
+             "Corrupted segment_ids"). dav1d decode.c: `b->seg_id = 0; // error?`.
+             The spec initialises LastActiveSegId = 0; dav1d keeps -1 for "no
+             active feature", so the strict bound is max(last_active_segid, 0).
+
+The symbol-decoder over-read check (msac.cnt <= -15 at the end of every tile
+sbrow) was ALREADY unconditional in dav1d/rav1d-safe and is exactly libaom's
+aom_reader_has_overflowed() (spec 8.2.4: SymbolMaxBits >= -14). It is not
+part of this change; #424's stream trips the tile-padding check, not this one.
+
+
+## 2. Cost of the Strict default on conforming / real content
+
+### 2a. dav1d md5 conformance gate, Settings::default() (now Strict)
+
+    $ cargo test --release --test decode_md5_verify
+    test result: ok. 14 passed; 0 failed; 0 ignored   (25.77 s)
+    (766 vectors across 8-bit data/intra/features/issues/quantizer/vq, 10-bit, 12-bit)
+
+Unchanged from main. No dav1d test vector — including the 8-bit/issues set —
+trips any Strict check.
+
+### 2b. Real AVIF/OBU corpora, examples/strictness_sweep.rs (Lenient vs Strict)
+
+    $ strictness_sweep --jobs 4 --quiet ~/work/codec-corpus ~/work/zen/zenavif/tests \
+        test-vectors/bench tests/crash_vectors fuzz/regression
+    389 files (34 unreadable: non-AV1 primary items / non-AVIF), 8 disagreements
+             lenient |   frame   nofrm   error  <- strict
+               frame |     315       0       8
+               nofrm |       0      19       0
+               error |       0       0      13
+
+    The 8: codec-corpus/avif-conformance/invalid/corrupted_mdat.avif (a
+    deliberately corrupted conformance-suite sample — the one real file, and the
+    right verdict) + 7 fuzz-derived crash repros from tests/crash_vectors and
+    fuzz/regression (mutated streams; see §3 for what that means for the gate).
+    Every other real file: identical verdict.
+
+    $ run-heavy --mem 16G --jobs 4 -- strictness_sweep --jobs 4 --quiet /mnt/v/input/zensim
+    53484 files (0 unreadable), 0 disagreements
+             lenient |   frame   nofrm   error  <- strict
+               frame |   53484       0       0
+    run-heavy: done rc=0 448s | peak-RSS 0.13GiB | min-avail 40829MiB | peak-load 7.85
+
+    /mnt/v/input/zensim = the zensim synthetic-v2 AVIF encodes (images/,
+    scale-pyramid/, spike-{lanczos3,mitchell,triangle}/, text-ui/, sources*/;
+    59 GB, 706 files over 1 MB). 106,968 decodes, every one a frame under both.
+
+
+## 3. Fuzz plumbing consequences
+
+The three fuzz targets now pin Strictness::Lenient (maximal reach; the
+differential target must conceal like the libdav1d it links, which runs its
+library default). tests/fuzz_regression.rs mirrors them and gained a FIFTH
+entry point, `default_lenient`: production defaults are now Strict and reject
+7 mutated seeds before the kernel they guard (§2b) — with only the old four
+entry points the reach floor dropped 21 -> 20:
+
+    only 20 of 33 seeds decoded a frame, expected at least 21   (before the 5th entry point)
+    $ cargo test --release --test fuzz_regression
+    test result: ok. 3 passed   (with it; MIN_SEEDS_REACHING_RECON unchanged at 21)
+
+examples/crash_sweep.rs mirrors the same five.
+
+
+## 4. Gates run on this branch
+
+    cargo test --release --test strictness                              5 passed
+    cargo test --release --test fuzz_regression                         3 passed
+    cargo test --release --test decode_md5_verify                       14 passed (766 vectors)
+    cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings   clean
+    cargo clippy --release --lib --tests --examples -- -D warnings      clean
+    cargo fmt --all -- --check                                          clean
+    cargo test --manifest-path apidoc/Cargo.toml (api-doc regen)        1 passed; snapshots committed separately

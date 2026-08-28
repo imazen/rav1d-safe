@@ -10,6 +10,7 @@ use crate::src::internal::Rav1dContext;
 #[cfg(feature = "c-ffi")]
 pub use crate::src::log::Dav1dLogger;
 use crate::src::log::Rav1dLogger;
+use crate::src::managed::Strictness;
 use bitflags::bitflags;
 use std::ffi::c_int;
 use std::ffi::c_uint;
@@ -158,7 +159,9 @@ pub(crate) struct Rav1dSettings {
     pub frame_size_limit: c_uint,
     pub allocator: Rav1dPicAllocator,
     pub logger: Option<Rav1dLogger>,
-    pub strict_std_compliance: bool,
+    /// The C API only has dav1d's boolean; `strict_std_compliance != 0` maps to
+    /// [`Strictness::Strict`], `0` to [`Strictness::Lenient`] (dav1d's default).
+    pub strictness: Strictness,
     pub output_invisible_frames: bool,
     pub inloop_filters: Rav1dInloopFilterType,
     pub decode_frame_type: Rav1dDecodeFrameType,
@@ -193,7 +196,11 @@ impl TryFrom<Dav1dSettings> for Rav1dSettings {
             frame_size_limit,
             allocator: allocator.try_into()?,
             logger: logger.into(),
-            strict_std_compliance: strict_std_compliance != 0,
+            strictness: if strict_std_compliance != 0 {
+                Strictness::Strict
+            } else {
+                Strictness::Lenient
+            },
             output_invisible_frames: output_invisible_frames != 0,
             inloop_filters: inloop_filters.into(),
             decode_frame_type: decode_frame_type.try_into()?,
@@ -213,7 +220,7 @@ impl From<Rav1dSettings> for Dav1dSettings {
             frame_size_limit,
             allocator,
             logger,
-            strict_std_compliance,
+            strictness,
             output_invisible_frames,
             inloop_filters,
             decode_frame_type,
@@ -227,7 +234,7 @@ impl From<Rav1dSettings> for Dav1dSettings {
             frame_size_limit,
             allocator: allocator.into(),
             logger: logger.into(),
-            strict_std_compliance: strict_std_compliance as c_int,
+            strict_std_compliance: (strictness >= Strictness::Strict) as c_int,
             output_invisible_frames: output_invisible_frames as c_int,
             inloop_filters: inloop_filters.into(),
             decode_frame_type: decode_frame_type.into(),

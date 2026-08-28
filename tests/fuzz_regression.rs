@@ -38,7 +38,7 @@
 //!
 //! To find out whether a farm signature is still live before committing anything,
 //! sync its artifact directory from `s3://zenfuzz/crashes/rav1d-safe/` and run
-//! `cargo run --release --example crash_sweep -- <dir>` — the same four entry
+//! `cargo run --release --example crash_sweep -- <dir>` — the same five entry
 //! points as this suite, over every artifact, panics grouped by site.
 //!
 //! # Anti-vacuity
@@ -72,7 +72,7 @@ compile_error!(
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rav1d_safe::src::managed::{DecodeFrameType, Decoder, InloopFilters, Settings};
+use rav1d_safe::src::managed::{DecodeFrameType, Decoder, InloopFilters, Settings, Strictness};
 
 /// Matches `frame_size_limit` in all three fuzz targets.
 const FRAME_SIZE_LIMIT_PIXELS: u32 = 256 * 256;
@@ -307,6 +307,7 @@ fn drive(mut decoder: Decoder, data: &[u8]) -> Reach {
 fn run_decode_obu(data: &[u8]) -> Reach {
     let mut settings = Settings::default();
     settings.frame_size_limit = FRAME_SIZE_LIMIT_PIXELS;
+    settings.strictness = Strictness::Lenient;
     match Decoder::with_settings(settings) {
         Ok(d) => drive(d, data),
         Err(_) => Reach::Rejected,
@@ -320,6 +321,7 @@ fn run_parse_seq_header(data: &[u8]) -> Reach {
     settings.frame_size_limit = FRAME_SIZE_LIMIT_PIXELS;
     settings.inloop_filters = InloopFilters::none();
     settings.decode_frame_type = DecodeFrameType::All;
+    settings.strictness = Strictness::Lenient;
     match Decoder::with_settings(settings) {
         Ok(d) => drive(d, data),
         Err(_) => Reach::Rejected,
@@ -338,6 +340,7 @@ fn run_differential_rav1d_half(data: &[u8]) -> Reach {
     settings.max_frame_delay = 1;
     settings.frame_size_limit = FRAME_SIZE_LIMIT_PIXELS;
     settings.apply_grain = false;
+    settings.strictness = Strictness::Lenient;
     match Decoder::with_settings(settings) {
         Ok(d) => drive(d, data),
         Err(_) => Reach::Rejected,
@@ -353,6 +356,20 @@ fn run_differential_rav1d_half(data: &[u8]) -> Reach {
 /// suite would run them vacuously.
 fn run_default_settings(data: &[u8]) -> Reach {
     match Decoder::new() {
+        Ok(d) => drive(d, data),
+        Err(_) => Reach::Rejected,
+    }
+}
+
+/// Production defaults with `Strictness::Lenient` — dav1d's conceal-and-continue,
+/// which is what every seed here was found under. The default has been `Strict`
+/// since 0.6.0, and it rejects a mutated stream before the kernel a seed guards is
+/// reached (`disjoint_mut_tile_overlap.obu` is one). This entry point keeps that
+/// reach; `default_settings` above keeps testing what production actually runs.
+fn run_default_lenient(data: &[u8]) -> Reach {
+    let mut settings = Settings::default();
+    settings.strictness = Strictness::Lenient;
+    match Decoder::with_settings(settings) {
         Ok(d) => drive(d, data),
         Err(_) => Reach::Rejected,
     }
@@ -382,6 +399,7 @@ const ENTRY_POINTS: &[EntryPoint] = &[
         run_differential_rav1d_half,
     ),
     ("default_settings", run_default_settings),
+    ("default_lenient", run_default_lenient),
 ];
 
 /// The suite: every seed through every entry point, no panics.
