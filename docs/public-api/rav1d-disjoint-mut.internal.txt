@@ -1,5 +1,5 @@
 # rav1d-disjoint-mut public API — doc(hidden) items and excluded-feature surface
-# excluded features: (none)
+# excluded features: __blockshift_10,__blockshift_13,__blockshift_14,__blockshift_15,__blockshift_16,__blockshift_8,__blockshift_adaptive,__bps_1,__bps_4,__bps_8,__bps_blocks,__bps_half,__bps_quarter,__msb_5,__probe_addnop,__probe_bounds,__probe_count,__probe_lock_backoff,__probe_lock_park,__probe_lock_relax,__probe_lock_yield,__probe_lockonly,__probe_noscan,__probe_shardsim,__probe_shiftpin,__probe_sites,__probe_tinynop,__probe_untracked,__probe_wide,__rect_1shard,__rect_mut,__rpb_16,__rpb_2,__rpb_8,__shard_ident,__shards_1,__shards_128,__shards_16,__shards_256,__shards_32,__shards_4,__shards_64,__shards_8,__tracker_legacy
 # (regenerated on every `cargo test` by zenutils-apidoc; ZEN_API_DOC=check verifies, =off skips).
 # Encodings: crate-name prefix stripped; auto traits collapse to a
 # count + exceptions; trait impls collapse to one roster line per
@@ -9,20 +9,58 @@
 
 ## summary
 #
-#   pub types (struct/enum/trait/alias)         2
-#   pub consts/statics                          1
-#   inherent methods                            8
-#   struct fields                               1
+#   pub modules                                 4
+#   pub types (struct/enum/trait/alias)         7
+#   pub consts/statics                         59
+#   free functions                             20
+#   inherent methods                           14
+#   struct fields                              23
 #   enum variants                               2
-#   trait roster entries (type × trait)         2
-#   auto-trait-complete types                   1
+#   trait roster entries (type × trait)         8
+#   auto-trait-complete types                   3
+#   auto-trait exceptions                       3
 #
 # per-module pub lines:
-#   (root)                           14
+#   (root)                           19
+#   bounds_probe                     58
+#   probe                            46
+#   site_probe                        6
 
-## items (14 lines)
+## items (125 lines)
 
 pub const fn DisjointMut<T>::inner(&self) -> *mut T
+pub const fn probe::Slot::new() -> Self
+pub const fn probe::ThreadSlot::new() -> Self
+pub const bounds_probe::GAP_LABELS: [&str; 12]
+pub const bounds_probe::MAX_TH: usize
+pub const bounds_probe::NGAP: usize
+pub const bounds_probe::Ticket::NONE: Self
+pub const bounds_probe::r::HULL_BLOCKS_SUM: usize
+pub const bounds_probe::r::N: usize
+pub const bounds_probe::r::NCTR: usize
+pub const bounds_probe::r::N_CONC: usize
+pub const bounds_probe::r::N_GAP: usize
+pub const bounds_probe::r::N_GAP_MUT: usize
+pub const bounds_probe::r::N_GAP_XSTRIDE: usize
+pub const bounds_probe::r::N_HULL: usize
+pub const bounds_probe::r::N_HULL_WIDE: usize
+pub const bounds_probe::r::N_PEERS: usize
+pub const bounds_probe::r::N_PERROW_NARROW: usize
+pub const bounds_probe::r::N_RECT: usize
+pub const bounds_probe::r::N_ROW_WIDE: usize
+pub const bounds_probe::r::N_ROW_WIDE_16: usize
+pub const bounds_probe::r::N_ROW_WIDE_5: usize
+pub const bounds_probe::r::N_ROW_WIDE_8: usize
+pub const bounds_probe::r::ROWS_MAX: usize
+pub const bounds_probe::r::ROWS_SUM: usize
+pub const bounds_probe::r::ROW_BLOCKS_SUM: usize
+pub const bounds_probe::r::ROW_SHARDS_MAX: usize
+pub const bounds_probe::r::ROW_SHARDS_SUM: usize
+pub const bounds_probe::r::SHIFT_SEEN: usize
+pub const probe::MAX_SLOTS: usize
+pub const probe::MAX_THREADS: usize
+pub const probe::N_CFG: usize
+pub const probe::SHARD_CFGS: [(u32, u32, bool); 8]
 pub fn Bounds::assert_fields_are_eq(&self)
 pub fn PicBuf::as_usable_bytes(&self) -> &[u8]
 pub fn PicBuf::default() -> PicBuf
@@ -31,16 +69,100 @@ pub fn PicBuf::from_vec_aligned(alloc::vec::Vec<u8>, usize, usize) -> Self
 pub fn PicBuf::is_empty(&self) -> bool
 pub fn PicBuf::len(&self) -> usize
 pub fn PicBuf::take_buf(&mut self) -> core::option::Option<alloc::vec::Vec<u8>>
+pub fn bounds_probe::ShardGeom::clone(&self) -> bounds_probe::ShardGeom
+pub fn bounds_probe::Ticket::clone(&self) -> bounds_probe::Ticket
+pub fn bounds_probe::Ticket::declare_rows(&self, usize, usize, usize, isize)
+pub fn bounds_probe::Ticket::is_none(&self) -> bool
+pub fn bounds_probe::Ticket::mark_read(&self)
+pub fn bounds_probe::Ticket::mark_write(&self)
+pub fn bounds_probe::acquire(&'static core::panic::location::Location<'static>, usize, bool, usize, usize) -> bounds_probe::Ticket
+pub fn bounds_probe::declare_stride(usize, usize, isize)
+pub fn bounds_probe::eval_rect(&'static core::panic::location::Location<'static>, usize, bool, usize, usize, usize, isize, bounds_probe::ShardGeom)
+pub fn bounds_probe::regs_matching(&str) -> (u64, u64)
+pub fn bounds_probe::release(bounds_probe::Ticket)
+pub fn bounds_probe::report_rect() -> alloc::string::String
+pub fn probe::assign_slot(&core::sync::atomic::AtomicU32) -> usize
+pub fn probe::record_add(usize, bool, usize, u32, bool, u64, bool, &'static core::panic::location::Location<'static>)
+pub fn probe::record_remove(usize, u64, bool)
+pub fn probe::record_shard(usize, usize, usize, usize)
+pub fn probe::report(u64) -> alloc::string::String [also: bounds_probe, site_probe]
+pub fn probe::reset() [also: bounds_probe, site_probe]
+pub fn probe::shard_report() -> alloc::string::String
+pub fn probe::shard_reset()
+pub fn probe::thread_index() -> usize
+pub fn site_probe::record(&'static core::panic::location::Location<'static>, bool, usize)
+pub mod bounds_probe
+pub mod bounds_probe::r
+pub mod probe
+pub mod site_probe
 pub DisjointMutArcSlice::inner: alloc::sync::Arc<DisjointMutSlice<T>>
+pub bounds_probe::ShardGeom::mask: usize
+pub bounds_probe::ShardGeom::max_blocks: usize
+pub bounds_probe::ShardGeom::max_shards: usize
+pub bounds_probe::ShardGeom::shift: u32
+pub probe::Slot::cont_add: core::sync::atomic::AtomicU64
+pub probe::Slot::cont_remove: core::sync::atomic::AtomicU64
+pub probe::Slot::loc: core::sync::atomic::AtomicUsize
+pub probe::Slot::max_end: core::sync::atomic::AtomicUsize
+pub probe::Slot::n_immut: core::sync::atomic::AtomicU64
+pub probe::Slot::n_mut: core::sync::atomic::AtomicU64
+pub probe::Slot::n_remove: core::sync::atomic::AtomicU64
+pub probe::Slot::occ_max: core::sync::atomic::AtomicU64
+pub probe::Slot::occ_sum: core::sync::atomic::AtomicU64
+pub probe::Slot::overflow: core::sync::atomic::AtomicU64
+pub probe::Slot::thread_mask: core::sync::atomic::AtomicU64
+pub probe::Slot::wait_ns_add: core::sync::atomic::AtomicU64
+pub probe::Slot::wait_ns_remove: core::sync::atomic::AtomicU64
+pub probe::ThreadSlot::contended: core::sync::atomic::AtomicU64
+pub probe::ThreadSlot::n_immut: core::sync::atomic::AtomicU64
+pub probe::ThreadSlot::n_mut: core::sync::atomic::AtomicU64
+pub probe::ThreadSlot::n_remove: core::sync::atomic::AtomicU64
+pub probe::ThreadSlot::wait_ns: core::sync::atomic::AtomicU64
+pub static bounds_probe::INST_LATE_STRIDE: core::sync::atomic::AtomicU64
+pub static bounds_probe::LOST_INST: core::sync::atomic::AtomicU64
+pub static bounds_probe::LOST_PAIR: core::sync::atomic::AtomicU64
+pub static bounds_probe::LOST_SCAN: core::sync::atomic::AtomicU64
+pub static bounds_probe::LOST_SITE: core::sync::atomic::AtomicU64
+pub static bounds_probe::LOST_SLOT: core::sync::atomic::AtomicU64
+pub static bounds_probe::LOST_TH: core::sync::atomic::AtomicU64
+pub static bounds_probe::LOST_TID: core::sync::atomic::AtomicU64
+pub static bounds_probe::OVL_MUT: core::sync::atomic::AtomicU64
+pub static bounds_probe::RECT_ROWS_CAPPED: core::sync::atomic::AtomicU64
+pub static bounds_probe::SKIP_DEAD: core::sync::atomic::AtomicU64
+pub static probe::COLLIDE_ANY: [core::sync::atomic::AtomicU64; 8]
+pub static probe::COLLIDE_SUM: [core::sync::atomic::AtomicU64; 8]
+pub static probe::K_HIST: [[core::sync::atomic::AtomicU64; 8]; 8]
+pub static probe::K_SUM: [core::sync::atomic::AtomicU64; 8]
+pub static probe::LAST: [[core::sync::atomic::AtomicU64; 64]; 8]
+pub static probe::LEN_HIST: [core::sync::atomic::AtomicU64; 24]
+pub static probe::NEXT_SLOT: core::sync::atomic::AtomicU32
+pub static probe::NEXT_THREAD: core::sync::atomic::AtomicU32
+pub static probe::SHARD_ADDS: core::sync::atomic::AtomicU64
+pub static probe::SHARD_SPREAD: [core::sync::atomic::AtomicU64; 64]
+pub static probe::SLOTS: [probe::Slot; 16384]
+pub static probe::SLOT_EXHAUSTED: core::sync::atomic::AtomicU64
+pub static probe::THREADS: [probe::ThreadSlot; 64]
+pub static site_probe::LOST: core::sync::atomic::AtomicU64
+pub static site_probe::SITES: [site_probe::Site; 4096]
 pub struct PicBuf
+pub struct bounds_probe::ShardGeom
+pub struct bounds_probe::Ticket
+pub struct probe::Slot
+pub struct probe::ThreadSlot
+pub struct site_probe::Site
 pub type PicBuf::Target = u8
 pub unsafe fn PicBuf::as_mut_ptr(*mut Self) -> *mut u8
 pub unsafe fn PicBuf::as_mut_slice(*mut Self) -> *mut [u8]
 
-## trait impls (1 types)
+## trait impls (3 types)
 
 PicBuf: AsMutPtr, Default
+bounds_probe::ShardGeom: Clone, Copy, TrivialClone
+bounds_probe::Ticket: Clone, Copy, TrivialClone
 
 ## auto traits
 
-1 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
+3 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
+probe::Slot: !Freeze
+probe::ThreadSlot: !Freeze
+site_probe::Site: !Freeze

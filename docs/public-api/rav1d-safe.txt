@@ -6,29 +6,29 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: rav1d-safe.txt 1193 lines (supported surface) | rav1d-safe.features.txt 116 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,c-ffi,dav1d-compat,libc,partial_asm,unchecked) | rav1d-safe.internal.txt 96 lines (66 hidden + 57 excluded-feature)
+# files: rav1d-safe.txt 1235 lines (supported surface) | rav1d-safe.features.txt 141 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,blockshift-10,blockshift-13,blockshift-14,blockshift-15,blockshift-16,blockshift-8,blockshift-adaptive,bps-1,bps-4,bps-8,bps-blocks,bps-half,bps-quarter,c-ffi,dav1d-compat,held-row-guards,libc,msb-5,partial_asm,probe-addnop,probe-count,probe-lock-backoff,probe-lock-park,probe-lock-relax,probe-lock-yield,probe-lockonly,probe-noscan,probe-shardsim,probe-shiftpin,probe-sites,probe-tasktime,probe-tasktime-untracked,probe-tinynop,probe-untracked,probe-wide,rpb-16,rpb-2,rpb-8,shard-ident,shards-1,shards-128,shards-16,shards-256,shards-32,shards-4,shards-64,shards-8,tracker-legacy,unchecked) | rav1d-safe.internal.txt 67 lines (68 hidden + 0 excluded-feature)
 
 ## summary
 #
-#   pub modules                                11
-#   pub types (struct/enum/trait/alias)       129
-#   pub consts/statics                        195
-#   free functions                              6
-#   inherent methods                          101
-#   struct fields                             464
-#   enum variants                             204
+#   pub modules                                12
+#   pub types (struct/enum/trait/alias)       132
+#   pub consts/statics                        200
+#   free functions                             18
+#   inherent methods                          105
+#   struct fields                             466
+#   enum variants                             215
 #   re-exports                                  3
-#   trait roster entries (type × trait)       283
+#   trait roster entries (type × trait)       298
 #   conditional trait impls (verbatim)          7
-#   auto-trait-complete types                  74
-#   auto-trait exceptions                      12
+#   auto-trait-complete types                  76
+#   auto-trait exceptions                      13
 #
 # per-module pub lines:
-#   (root)                          152
-#   include                         753
-#   src                             208
+#   (root)                          154
+#   include                         763
+#   src                             234
 
-## items (1085 lines)
+## items (1123 lines)
 
 pub mod rav1d_safe
 pub mod include
@@ -777,6 +777,10 @@ pub type include::dav1d::headers::Dav1dTxfmMode = core::ffi::primitives::c_uint
 pub type include::dav1d::headers::Dav1dWarpedMotionType = core::ffi::primitives::c_uint
 pub mod include::dav1d::picture
 #[repr(C, align(64))] pub struct include::dav1d::picture::AlignedPixelChunk(_)
+pub struct include::dav1d::picture::BlockMut<'a, BD: include::common::bitdepth::BitDepth>
+pub fn include::dav1d::picture::BlockMut<'a, BD>::as_mut_bytes(&mut self) -> &mut [u8]
+pub fn include::dav1d::picture::BlockMut<'a, BD>::base(&self) -> usize
+pub fn include::dav1d::picture::BlockMut<'a, BD>::byte_stride(&self) -> isize
 #[repr(C)] pub struct include::dav1d::picture::Dav1dPictureParameters
 pub include::dav1d::picture::Dav1dPictureParameters::bpc: core::ffi::primitives::c_int
 pub include::dav1d::picture::Dav1dPictureParameters::h: core::ffi::primitives::c_int
@@ -798,6 +802,12 @@ pub fn include::dav1d::picture::Rav1dPictureDataComponent::with_offset<BD: inclu
 pub fn include::dav1d::picture::Rav1dPictureDataComponent::copy_pixels_to<BD: include::common::bitdepth::BitDepth>(&self, &mut [<BD as include::common::bitdepth::BitDepth>::Pixel])
 pub fn include::dav1d::picture::Rav1dPictureDataComponent::wrap_buf<BD: include::common::bitdepth::BitDepth>(&mut [<BD as include::common::bitdepth::BitDepth>::Pixel], usize) -> Self
 pub const include::dav1d::picture::DAV1D_PICTURE_ALIGNMENT: usize
+pub const include::dav1d::picture::PIC_EXTENT_CEILINGS: &[(&str, usize)]
+pub const include::dav1d::picture::TILE_THREADED_PIC_EXTENT_MAX_BYTES: usize
+pub fn include::dav1d::picture::cdef_double_reads() -> bool
+pub fn include::dav1d::picture::pic_extent_ceiling(&str, usize) -> usize
+pub fn include::dav1d::picture::pic_extent_ceiling_const(&str) -> core::option::Option<usize>
+pub fn include::dav1d::picture::rect_hull_arm() -> bool
 pub fn include::dav1d::picture::set_tile_threading(bool)
 pub fn include::dav1d::picture::tile_threading_active() -> bool
 pub fn include::dav1d::picture::with_pixel_guard_immut<BD: include::common::bitdepth::BitDepth, R>(&src::with_offset::WithOffset<&include::dav1d::picture::Rav1dPictureDataComponent>, usize, usize, impl core::ops::function::FnOnce(&[u8], usize, isize) -> R) -> R
@@ -806,6 +816,29 @@ pub type include::dav1d::picture::PicOffset<'a> = include::dav1d::picture::Rav1d
 pub type include::dav1d::picture::Rav1dPictureDataComponentInner = rav1d_disjoint_mut::pic_buf::PicBuf
 pub type include::dav1d::picture::Rav1dPictureDataComponentOffset<'a> = src::with_offset::WithOffset<&'a include::dav1d::picture::Rav1dPictureDataComponent>
 pub mod src
+pub mod src::ablate
+#[repr(u32)] pub enum src::ablate::Family
+pub src::ablate::Family::Cdef = 4
+pub src::ablate::Family::FilmGrain = 8
+pub src::ablate::Family::IntraPred = 7
+pub src::ablate::Family::Itx = 0
+pub src::ablate::Family::LoopFilter = 5
+pub src::ablate::Family::LoopRestoration = 6
+pub src::ablate::Family::McOther = 3
+pub src::ablate::Family::McPrep = 2
+pub src::ablate::Family::McPut = 1
+pub const src::ablate::Family::ALL: &'static [src::ablate::Family]
+pub fn src::ablate::Family::from_name(&str) -> core::option::Option<src::ablate::Family>
+pub const fn src::ablate::Family::name(self) -> &'static str
+pub const src::ablate::ENABLED: bool
+pub fn src::ablate::activity_reset()
+pub fn src::ablate::activity_snapshot() -> [u64; 9]
+pub fn src::ablate::is_off(src::ablate::Family) -> bool
+pub fn src::ablate::itx_shape_report() -> alloc::string::String
+pub fn src::ablate::itx_shape_reset()
+pub fn src::ablate::note(src::ablate::Family, u64)
+pub fn src::ablate::note_itx_shape(usize, u8, bool)
+pub fn src::ablate::set_disabled(&[src::ablate::Family])
 pub mod src::managed
 pub use src::managed::Stop
 pub use src::managed::StopReason
@@ -868,6 +901,9 @@ pub src::managed::PixelLayout::I422
 pub src::managed::PixelLayout::I444
 pub src::managed::Planes::Depth16(src::managed::Planes16<'a>)
 pub src::managed::Planes::Depth8(src::managed::Planes8<'a>)
+#[non_exhaustive] pub enum src::managed::Strictness
+pub src::managed::Strictness::Lenient
+pub src::managed::Strictness::Strict
 pub src::managed::TransferCharacteristics::BT1361 = 12
 pub src::managed::TransferCharacteristics::BT2020_10bit = 14
 pub src::managed::TransferCharacteristics::BT2020_12bit = 15
@@ -953,6 +989,7 @@ pub src::managed::Settings::max_frame_delay: u32
 pub src::managed::Settings::operating_point: u8
 pub src::managed::Settings::output_invisible_frames: bool
 pub src::managed::Settings::strict_std_compliance: bool
+pub src::managed::Settings::strictness: src::managed::Strictness
 pub src::managed::Settings::threads: u32
 pub const fn src::managed::is_unchecked() -> bool
 #[repr(u8)] pub enum ColorPrimaries [also: src::managed]
@@ -1112,11 +1149,12 @@ pub Settings::max_frame_delay: u32
 pub Settings::operating_point: u8
 pub Settings::output_invisible_frames: bool
 pub Settings::strict_std_compliance: bool
+pub Settings::strictness: src::managed::Strictness
 pub Settings::threads: u32
 pub fn enabled_features() -> alloc::string::String [also: src::managed]
 pub type Result<T, E> = core::result::Result<T, E> [also: src::managed]
 
-## trait impls (88 types)
+## trait impls (91 types)
 
 include::dav1d::headers::DRav1d<R, D>: Deref
 include::dav1d::headers::Dav1dAdaptiveBoolean: From<include::dav1d::headers::Rav1dAdaptiveBoolean>
@@ -1188,8 +1226,10 @@ include::dav1d::headers::Rav1dWarpedMotionParams: Clone, Default, TryFrom<includ
 include::dav1d::headers::Rav1dWarpedMotionType: Clone, Copy, Eq, Ord, PartialEq, PartialOrd
 include::dav1d::headers::SgrIdx: Clone, Copy, Debug, Display, Eq, PartialEq
 include::dav1d::picture::AlignedPixelChunk: Clone
+include::dav1d::picture::BlockMut<'_, BD>: Drop
 include::dav1d::picture::Dav1dPictureParameters: Default
 include::dav1d::picture::Rav1dPictureData: Drop
+src::ablate::Family: Clone, Copy, Debug, Eq, PartialEq
 src::managed::ColorInfo: Clone, Copy, Debug
 src::managed::ColorPrimaries: Clone, Copy, Debug, Eq, From<include::dav1d::headers::Rav1dColorPrimaries>, PartialEq
 src::managed::ColorRange: Clone, Copy, Debug, Eq, PartialEq
@@ -1204,6 +1244,7 @@ src::managed::MasteringDisplay: Clone, Copy, Debug
 src::managed::MatrixCoefficients: Clone, Copy, Debug, Eq, From<include::dav1d::headers::Rav1dMatrixCoefficients>, PartialEq
 src::managed::PixelLayout: Clone, Copy, Debug, Eq, From<include::dav1d::headers::Rav1dPixelLayout>, PartialEq
 src::managed::Settings: Clone, Debug, Default
+src::managed::Strictness: Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd
 src::managed::TransferCharacteristics: Clone, Copy, Debug, Eq, From<include::dav1d::headers::Rav1dTransferCharacteristics>, PartialEq
 u8: From<include::dav1d::headers::Rav1dProfile>
 impl<R, D> core::default::Default for include::dav1d::headers::DRav1d<R, D> where R: core::default::Default, D: core::default::Default
@@ -1216,10 +1257,11 @@ impl zerocopy::TryFromBytes for include::dav1d::picture::AlignedPixelChunk where
 
 ## auto traits
 
-74 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
+76 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
 include::dav1d::headers::DRav1d<R, D>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 include::dav1d::headers::Rav1dFrameHeader: !Freeze
 include::dav1d::headers::Rav1dWarpedMotionParams: !Freeze
+include::dav1d::picture::BlockMut<'a, BD>: !RefUnwindSafe !Send !Sync !UnwindSafe
 include::dav1d::picture::Rav1dPictureData: !Freeze !RefUnwindSafe !UnwindSafe
 include::dav1d::picture::Rav1dPictureDataComponent: !Freeze !RefUnwindSafe
 src::managed::Decoder: !RefUnwindSafe !UnwindSafe

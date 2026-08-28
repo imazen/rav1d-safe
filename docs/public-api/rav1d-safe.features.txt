@@ -1,5 +1,5 @@
 # rav1d-safe public API — additions from non-default features
-# features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,c-ffi,dav1d-compat,libc,partial_asm,unchecked
+# features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,blockshift-10,blockshift-13,blockshift-14,blockshift-15,blockshift-16,blockshift-8,blockshift-adaptive,bps-1,bps-4,bps-8,bps-blocks,bps-half,bps-quarter,c-ffi,dav1d-compat,held-row-guards,libc,msb-5,partial_asm,probe-addnop,probe-count,probe-lock-backoff,probe-lock-park,probe-lock-relax,probe-lock-yield,probe-lockonly,probe-noscan,probe-shardsim,probe-shiftpin,probe-sites,probe-tasktime,probe-tasktime-untracked,probe-tinynop,probe-untracked,probe-wide,rpb-16,rpb-2,rpb-8,shard-ident,shards-1,shards-128,shards-16,shards-256,shards-32,shards-4,shards-64,shards-8,tracker-legacy,unchecked
 # (regenerated on every `cargo test` by zenutils-apidoc; ZEN_API_DOC=check verifies, =off skips).
 # Encodings: crate-name prefix stripped; auto traits collapse to a
 # count + exceptions; trait impls collapse to one roster line per
@@ -9,9 +9,10 @@
 
 ## summary
 #
-#   pub modules                                 2
+#   pub modules                                 4
 #   pub types (struct/enum/trait/alias)        13
-#   pub consts/statics                          2
+#   pub consts/statics                         14
+#   free functions                             11
 #   inherent methods                            6
 #   struct fields                              50
 #   enum variants                              25
@@ -21,10 +22,10 @@
 #
 # per-module pub lines:
 #   (root)                           27
-#   include                          66
-#   src                               5
+#   include                          75
+#   src                              21
 
-## items (98 lines)
+## items (123 lines)
 
 #[repr(C)] pub struct include::dav1d::common::Dav1dDataProps
 pub include::dav1d::common::Dav1dDataProps::duration: i64
@@ -64,6 +65,15 @@ pub include::dav1d::headers::Dav1dITUTT35::country_code_extension_byte: u8
 pub include::dav1d::headers::Dav1dITUTT35::payload: include::dav1d::headers::ITUTT35PayloadPtr
 pub include::dav1d::headers::Dav1dITUTT35::payload_size: usize
 #[repr(transparent)] pub struct include::dav1d::headers::ITUTT35PayloadPtr(_)
+pub mod include::dav1d::picture::extent_budget
+pub static include::dav1d::picture::extent_budget::CHECKS: core::sync::atomic::AtomicU64
+pub static include::dav1d::picture::extent_budget::CHECKS_TT: core::sync::atomic::AtomicU64
+pub static include::dav1d::picture::extent_budget::MAX_BYTES: core::sync::atomic::AtomicUsize
+pub static include::dav1d::picture::extent_budget::MAX_BYTES_TT: core::sync::atomic::AtomicUsize
+pub static include::dav1d::picture::extent_budget::MAX_ROWS_TT: core::sync::atomic::AtomicUsize
+pub static include::dav1d::picture::extent_budget::WHOLE: core::sync::atomic::AtomicU64
+pub fn include::dav1d::picture::extent_budget::per_file() -> alloc::vec::Vec<(alloc::string::String, usize, alloc::string::String, u64, usize)>
+pub fn include::dav1d::picture::extent_budget::report() -> (u64, u64, usize, usize, u64)
 #[repr(C)] pub struct include::dav1d::picture::Dav1dPicAllocator
 pub include::dav1d::picture::Dav1dPicAllocator::alloc_picture_callback: core::option::Option<fn(*mut include::dav1d::picture::Dav1dPicture, core::option::Option<src::send_sync_non_null::SendSyncNonNull<core::ffi::c_void>>) -> src::error::Dav1dResult>
 pub include::dav1d::picture::Dav1dPicAllocator::cookie: core::option::Option<src::send_sync_non_null::SendSyncNonNull<core::ffi::c_void>>
@@ -115,6 +125,22 @@ pub mod src::dav1d_api
 #[export_name = "dav1d_send_data"] pub unsafe c fn src::dav1d_api::dav1d_send_data(core::option::Option<include::dav1d::dav1d::Dav1dContext>, core::option::Option<core::ptr::non_null::NonNull<include::dav1d::data::Dav1dData>>) -> src::error::Dav1dResult
 #[export_name = "dav1d_version"] pub c fn src::dav1d_api::dav1d_version() -> *const core::ffi::primitives::c_char
 #[export_name = "dav1d_version_api"] pub c fn src::dav1d_api::dav1d_version_api() -> core::ffi::primitives::c_uint
+pub mod src::probe_tasktime
+pub const src::probe_tasktime::DEFER_NAMES: [&str; 5]
+pub const src::probe_tasktime::FILTER_STAGES: [usize; 5]
+pub const src::probe_tasktime::MAX_WORKERS: usize
+pub const src::probe_tasktime::N_DEFER: usize
+pub const src::probe_tasktime::N_STAGE: usize
+pub const src::probe_tasktime::STAGE_NAMES: [&str; 8]
+pub fn src::probe_tasktime::defer(usize)
+pub fn src::probe_tasktime::park_begin() -> std::time::Instant
+pub fn src::probe_tasktime::park_end(std::time::Instant)
+pub fn src::probe_tasktime::report(u64)
+pub fn src::probe_tasktime::reset()
+pub fn src::probe_tasktime::slot() -> usize
+pub fn src::probe_tasktime::stage_begin_of(usize) -> std::time::Instant
+pub fn src::probe_tasktime::stage_end(std::time::Instant, usize)
+pub fn src::probe_tasktime::start_monitor()
 pub mod src::send_sync_non_null
 #[repr(transparent)] pub struct src::send_sync_non_null::SendSyncNonNull<T: ?core::marker::Sized>(_)
 pub const fn src::send_sync_non_null::SendSyncNonNull<T>::as_ptr(&self) -> core::ptr::non_null::NonNull<T>
