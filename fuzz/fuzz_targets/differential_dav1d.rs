@@ -6,7 +6,15 @@
 //!   - Both decode a frame but disagree on any pixel value
 //!
 //! Both decoders are run single-threaded with `max_frame_delay = 1` for
-//! determinism (tile parallelism only — no frame threading).
+//! determinism (tile parallelism only — no frame threading), and BOTH in
+//! strict conformance mode (`Strictness::Strict` here, `strict_std_compliance`
+//! in dav1d). The byte-exact compare therefore covers streams both decoders
+//! accept as conforming, and an accept/reject asymmetry is a real finding — a
+//! conformance check one of them lacks. It deliberately does NOT compare how
+//! the two conceal a stream they both consider corrupt: the spec leaves that
+//! undefined, dav1d's lenient concealment is not a specification, and every
+//! divergence the farm filed against the lenient compare (#425, #426, #433, and
+//! #424 by hand) was on a stream aomdec rejects outright.
 //!
 //! Licenses are compatible: rav1d-safe is BSD-2-Clause (port of rav1d),
 //! dav1d is BSD-2-Clause.
@@ -29,10 +37,10 @@ fn decode_rav1d(data: &[u8]) -> Result<Option<rav1d_safe::src::managed::Frame>, 
     settings.max_frame_delay = 1;
     settings.frame_size_limit = FRAME_SIZE_LIMIT_PIXELS;
     settings.apply_grain = false; // film-grain RNG is stochastic; disable for byte-exact compare
-    // dav1d parity: the libdav1d we link runs its library default
-    // (strict_std_compliance = 0) and conceals corrupt tile data; the byte-exact
-    // compare only holds if rav1d-safe conceals the same way.
-    settings.strictness = Strictness::Lenient;
+    // Strict on both sides — see the module docs. dav1d's strict_std_compliance
+    // is exactly the check set `Strictness::Strict` turns on (plus the §6.10.8
+    // segment_id bound, which libaom also enforces and dav1d conceals).
+    settings.strictness = Strictness::Strict;
 
     let mut decoder = Decoder::with_settings(settings).map_err(|e| format!("rav1d init: {e:?}"))?;
     let result = decoder.decode(data).map_err(|e| format!("rav1d decode: {e:?}"))?;
@@ -46,6 +54,7 @@ fn decode_dav1d(data: &[u8]) -> Result<Option<dav1d::Picture>, String> {
     settings.set_max_frame_delay(1);
     settings.set_frame_size_limit(FRAME_SIZE_LIMIT_PIXELS);
     settings.set_apply_grain(false);
+    settings.set_strict_std_compliance(true); // strict on both sides — see module docs
 
     let mut decoder =
         Dav1dDecoder::with_settings(&settings).map_err(|e| format!("dav1d init: {e:?}"))?;
