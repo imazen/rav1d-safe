@@ -101,7 +101,14 @@ fn loopfilter_sb_direct<BD: BitDepth>(
     //
     // Negative strides are skipped: the row index would need the plane's
     // bottom-up base, and no filter path constructs one.
-    #[cfg(debug_assertions)]
+    //
+    // Compiled under `debug_assertions` OR `--features probe-sites`, the same
+    // arrangement `note_pic_extent` uses and for the same reason: every decode
+    // test in this repo is release-only, so a `debug_assertions`-only check runs
+    // in no CI job at all. Under `probe-sites` the `guard-extent-gate` job
+    // evaluates both of these over the committed vectors and the dav1d corpus,
+    // at release speed. The default release build has neither branch.
+    #[cfg(any(debug_assertions, feature = "probe-sites"))]
     if is_v && (mask[0] | mask[1] | mask[2]) != 0 {
         use crate::include::dav1d::headers::Rav1dPixelLayout;
         let pxstride = dst.pixel_stride::<BD>();
@@ -112,7 +119,7 @@ fn loopfilter_sb_direct<BD: BitDepth>(
             let ss_ver = (!is_y && f.cur.p.layout == Rav1dPixelLayout::I420) as u8;
             let sb_h = ((f.sb_step as usize) * 4) >> ss_ver;
             let reach = lf_run_reach(is_y, mask);
-            debug_assert!(
+            assert!(
                 row % sb_h + reach <= sb_h,
                 "V-run window leaves the superblock row: row {row} (+{reach}) \
                  in a {sb_h}-row superblock row, is_y={is_y}, mask={mask:08x?}"
@@ -134,7 +141,7 @@ fn loopfilter_sb_direct<BD: BitDepth>(
     // Trailing side only: the leading side is already covered by each
     // dispatcher's `dst.offset < reach_before` fallback, which uses the plane's
     // worst case and so is a superset of `reach`.
-    #[cfg(debug_assertions)]
+    #[cfg(any(debug_assertions, feature = "probe-sites"))]
     if !is_v && (mask[0] | mask[1] | mask[2]) != 0 {
         let pxstride = dst.pixel_stride::<BD>();
         if pxstride > 0 {
@@ -142,7 +149,7 @@ fn loopfilter_sb_direct<BD: BitDepth>(
             let base = dst.data.with_offset::<BD>().offset;
             let col = (dst.offset - base) % pxstride;
             let reach = lf_run_reach(is_y, mask);
-            debug_assert!(
+            assert!(
                 col + reach <= pxstride,
                 "H-run window leaves the picture row: column {col} (+{reach}) \
                  in a {pxstride}-pixel row, is_y={is_y}, mask={mask:08x?}"
