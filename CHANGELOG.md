@@ -5,6 +5,30 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- **Two configurations CI compiled but never ran had been failing on `main`.**
+  Neither is a decoder defect; both are gates that could not report.
+  - `cargo test --features "bitdepth_8,bitdepth_16,c-ffi" --lib` failed 5 tests
+    on aarch64 — `ipred_arm::cfl_ac_parity` x3 and `mc_arm_prep_parity` x2 — all
+    at `assertion failed: ptr.is_chunk_aligned()`. A test defect: both harnesses
+    handed `Rav1dPictureDataComponent::wrap_buf` a plain `Vec<BD::Pixel>`
+    (alignment 1 or 2), and the c-ffi path is zero-copy, so it keeps that
+    pointer where the type invariant — the one
+    `ExternalAsMutPtr::as_mut_ptr` `assume`s, and the one
+    `Dav1dPicAllocator::alloc_picture_callback`'s ABI already requires of C
+    allocators — demands `DAV1D_PICTURE_ALIGNMENT`. Nothing NEON-specific about
+    it; it surfaced only on aarch64 because those are the only two `wrap_buf`
+    harnesses that survive the `c-ffi` cfg gates. Every production caller
+    satisfies the rule as a TYPE property (`ScratchEmuEdge`, `ScratchLapInter`,
+    `ScratchInterIntraBuf` are all `#[repr(C, align(64))]`), which is now pinned
+    by `const` assertions in `src/internal.rs` and written down in `wrap_buf`'s
+    docs instead of living only in the assert. Harnesses allocate through a new
+    `safe_simd::aligned_plane`. The assert is unchanged — a copy fallback would
+    be wrong, since c-ffi callers read their results back out of the buffer
+    (`aafbdde`, `dea41fe`).
+  - `cargo clippy --features probe-sites -- -D warnings` failed on
+    `crates/rav1d-disjoint-mut/src/site_probe.rs` (`unnecessary_cast`,
+    `unnecessary_sort_by`); no clippy leg covered that feature. Both fixed
+    behaviour-identically (`77b6be4`).
 - **The x86_64 loop filter's H window ran off the end of its picture row**
   (#524). The vertical-edge (`is_v == false`) compact read window was sized
   from the plane's worst case — 3 columns before the edge and 5 after for
@@ -384,6 +408,17 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   Record: `benchmarks/verify_compose4_2026-08-08.meta` §6.
 
 ### Changed
+- **CI runs the two configurations it previously only built or linted**
+  (`a5cf282`). `build-test` gains an `ubuntu-24.04-arm` leg on
+  `bitdepth_8,bitdepth_16,c-ffi` — the only configuration in which `wrap_buf`
+  keeps the caller's pointer instead of copying, and the only one that compiles
+  both aarch64 parity harnesses with `c-ffi` on (the `asm` leg cfg's them out).
+  `clippy` gains a `probe-sites` leg, which is also the feature that carries the
+  #524 loop-filter window invariants. Both were mutation-verified against the
+  defects they would have caught. The `__ablate` liveness step's condition is
+  narrowed to `matrix.os == 'ubuntu-24.04-arm' && matrix.label ==
+  'safe-simd-arm64'` so the new row does not duplicate that rebuild — it selects
+  the same single leg as before. No action versions changed.
 - **A picture plane's borrow-tracker block shift is now DERIVED FROM ITS ROW
   STRIDE, not from a target block count** (#455, `docs/BPS_ROWS_DEFAULT.md`,
   `benchmarks/bps_rows_default_2026-08-11.*`). The block-count rule targets

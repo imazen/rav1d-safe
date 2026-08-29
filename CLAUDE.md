@@ -879,6 +879,41 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+### `c-ffi` + aarch64 unit tests were UNRUN (2026-08-29) — FIXED
+Same class as the `decode_permutations` entry below: a configuration CI compiled
+but never executed. `cargo test --features "bitdepth_8,bitdepth_16,c-ffi" --lib`
+failed 5 tests on aarch64 on unmodified `main` — `ipred_arm::cfl_ac_parity` ×3
+and `mc_arm_prep_parity` ×2 — all at `assertion failed: ptr.is_chunk_aligned()`
+in `Rav1dPictureDataComponentInner::wrap_buf`.
+
+**Rule that was undocumented, and is the durable takeaway:** under `c-ffi`,
+`Rav1dPictureDataComponent::wrap_buf` is ZERO-COPY. It keeps the caller's
+pointer, so the buffer must START on a 64-byte (`DAV1D_PICTURE_ALIGNMENT`)
+boundary as well as have a 64-byte-multiple length. That is a type invariant of
+`Rav1dPictureDataComponentInner` — `ExternalAsMutPtr::as_mut_ptr` `assume`s it,
+so violating it is unsound, not merely wrong — and it is the same alignment
+`Dav1dPicAllocator::alloc_picture_callback` already requires of C allocators.
+**The default build COPIES into a 64-byte-aligned `PicBuf` and checks neither
+the caller's alignment nor its length**, which is exactly how two harnesses came
+to violate it while passing everywhere anyone looked. A `Vec<BD::Pixel>` has
+alignment 1 (8bpc) or 2 (16bpc) — use `crate::src::safe_simd::aligned_plane`.
+
+Not a NEON or aarch64 property: it surfaced there only because those two are the
+only `wrap_buf` harnesses that survive the `c-ffi` cfg gates (the rest are
+`not(c-ffi)`, needing `copy_pixels_to`, or `not(unchecked)`, which `c-ffi`
+implies). Production callers were never at risk — recon.rs's three `wrap_buf`
+sites take `ScratchEmuEdge` / `ScratchLapInter` / `ScratchInterIntraBuf`, all
+`#[repr(C, align(64))]`, now pinned by `const` assertions in `src/internal.rs`.
+
+**Do NOT "fix" this by copying in `wrap_buf`.** The c-ffi path is zero-copy on
+purpose and its callers read results back out of the buffer — that is why the
+safe-mode `copy_pixels_to` call sites are `cfg(not(feature = "c-ffi"))`. A copy
+would silently drop the OBMC `lap` and interintra `tmp` writes.
+
+CI now has an `ubuntu-24.04-arm` × `c-ffi` leg in `build-test`, and a
+`probe-sites` clippy leg (that feature had two `-D warnings` failures in
+`rav1d-disjoint-mut`'s `site_probe.rs` that nothing linted).
+
 ### `decode_permutations` was a DEAD GATE on aarch64 (2026-08-08) — FIXED
 The only gate on "every archmage token permutation decodes bit-identically"
 **failed 16 of its 19 tests on aarch64**, on unmodified `main`, under the exact
