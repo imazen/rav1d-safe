@@ -879,6 +879,30 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+### `just clippy` / `just check` cannot pass, on any host (2026-08-29) — OPEN
+`just clippy` runs `cargo clippy ... --all-targets`, which lints the **test**
+targets under the **dev** profile. Two of those tests open with
+
+```rust
+#[cfg(debug_assertions)]
+compile_error!("... tests require release mode: cargo test --release");
+```
+
+(`tests/decode_cpu_levels.rs`, `tests/decode_md5_committed.rs`), so
+`--all-targets` in a debug profile is unsatisfiable by construction — the recipe
+has never been able to succeed, and `just check` (which depends on it) inherits
+the failure. On aarch64 it additionally reports ~76 `dead_code` errors from
+`src/safe_simd/itx_arm.rs` in the `lib test` target.
+
+**CI is unaffected and is the gate that counts:** the `clippy` job runs
+`cargo clippy --no-default-features --features … -- -D warnings` (no
+`--all-targets`) on `ubuntu-latest`, across three feature legs (safe-simd,
+c-ffi, probe-sites). All three pass. Use those commands locally; do not read a
+`just clippy` failure as a regression. Fixing the recipe means either dropping
+`--all-targets` or teaching it `--release`, plus deciding whether the aarch64
+`itx_arm.rs` dead code should be `cfg`-gated or `expect`-annotated — neither was
+in scope for the dependency refresh that found this.
+
 ### `c-ffi` + aarch64 unit tests were UNRUN (2026-08-29) — FIXED
 Same class as the `decode_permutations` entry below: a configuration CI compiled
 but never executed. `cargo test --features "bitdepth_8,bitdepth_16,c-ffi" --lib`

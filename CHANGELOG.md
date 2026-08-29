@@ -4,6 +4,19 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Changed
+- **Third-party lockfile refreshed within the existing requirements** — no
+  manifest requirement changed, so this is a `Cargo.lock` move only and every
+  version stays inside the range the manifests already declared (`5b5cbfb`).
+  31 crates advanced, notably `md5` 0.8.0 → 0.8.1 (the hasher behind the
+  committed-vector MD5 gate), `libc` 0.2.186 → 0.2.189 (the `c-ffi` errno
+  mapping), `cc` 1.2.64 → 1.4.4, `zerocopy` 0.8.52 → 0.8.56 and `bitflags`
+  2.13.0 → 2.13.1. `getrandom` 0.4.2 → 0.4.3 drops its `wit-bindgen` / `wasm-*`
+  backend subtree, removing 20 packages from the graph. The zen-family
+  packages (`archmage`, `archmage-macros`, `zenbench`, `zenavif-parse`) were
+  deliberately held so this refresh does not move that graph.
+  `decode_md5_committed` passes unchanged — no committed MD5 moved.
+
 ### Fixed
 - **Two configurations CI compiled but never ran had been failing on `main`.**
   Neither is a decoder defect; both are gates that could not report.
