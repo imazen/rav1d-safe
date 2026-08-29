@@ -1198,6 +1198,37 @@ const _: () = assert!(mem::align_of::<TaskContextScratch>() >= mem::align_of::<S
 const _: () =
     assert!(mem::align_of::<TaskContextScratch>() >= mem::align_of::<ScratchInterIntra>());
 
+/// The three scratch buffers `src/recon.rs` hands to
+/// [`Rav1dPictureDataComponent::wrap_buf`], which requires a
+/// [`RAV1D_PICTURE_ALIGNMENT`]-aligned start.
+///
+/// Under `c-ffi` that path is zero-copy: it keeps this pointer and
+/// `ExternalAsMutPtr::as_mut_ptr` `assume`s the alignment, so losing an
+/// `align(64)` here would be unsound, not merely slow. It is a `#[repr]`
+/// attribute on a private type, one edit away from silently disappearing — so
+/// pin it at compile time rather than leaving it to the runtime `assert!` in
+/// `wrap_buf`, which only fires in a build that has `c-ffi` on AND reaches the
+/// call.
+///
+/// Every accessor (`ScratchEmuEdge::buf_mut`, `ScratchLapInter::lap_mut`,
+/// `ScratchInterIntraBuf::buf_mut`) returns a `mut_from_prefix` of the type's
+/// own bytes, i.e. offset 0, so the type's alignment IS the buffer's.
+///
+/// [`Rav1dPictureDataComponent::wrap_buf`]: crate::include::dav1d::picture::Rav1dPictureDataComponent::wrap_buf
+/// [`RAV1D_PICTURE_ALIGNMENT`]: crate::include::dav1d::picture::DAV1D_PICTURE_ALIGNMENT
+const _: () = {
+    use crate::include::dav1d::picture::DAV1D_PICTURE_ALIGNMENT as PIC_ALIGN;
+    assert!(mem::align_of::<ScratchEmuEdge>() >= PIC_ALIGN);
+    assert!(mem::align_of::<ScratchLapInter>() >= PIC_ALIGN);
+    assert!(mem::align_of::<ScratchInterIntraBuf>() >= PIC_ALIGN);
+    // …and the containers that place them, since `repr(C)` field offsets are
+    // only 64-aligned while the enclosing type is.
+    assert!(mem::align_of::<ScratchInter>() >= PIC_ALIGN);
+    assert!(mem::align_of::<ScratchInterIntraEdgePal>() >= PIC_ALIGN);
+    assert!(mem::align_of::<ScratchInterIntra>() >= PIC_ALIGN);
+    assert!(mem::align_of::<TaskContextScratch>() >= PIC_ALIGN);
+};
+
 impl TaskContextScratch {
     pub fn inter_mut(&mut self) -> &mut ScratchInter {
         FromBytes::mut_from_prefix(&mut self.0).unwrap().0

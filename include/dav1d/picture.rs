@@ -786,6 +786,27 @@ impl Rav1dPictureDataComponentInner {
     ///
     /// As opposed to [`Self::new`], this is safe because `buf` is a `&mut` and thus unique,
     /// so it is sound to further subdivide it into disjoint `&mut`s.
+    ///
+    /// # Panics
+    ///
+    /// `buf` must satisfy the same two invariants [`Self::new`] enforces on the
+    /// C allocator's buffers, because this constructs the same type and the
+    /// same [`ExternalAsMutPtr`] impl [`assume`]s both of them:
+    ///
+    /// 1. it must START on a [`RAV1D_PICTURE_ALIGNMENT`]-byte boundary, and
+    /// 2. its BYTE length must be a multiple of
+    ///    [`RAV1D_PICTURE_GUARANTEED_MULTIPLE`].
+    ///
+    /// Neither can be relaxed into a copy here: this path is zero-copy on
+    /// purpose, and its callers (`recon.rs`'s OBMC `lap` and interintra `tmp`)
+    /// read their results back out of `buf` afterwards — which is why the
+    /// safe-mode twin's `copy_pixels_to` call sites are
+    /// `cfg(not(feature = "c-ffi"))`.
+    ///
+    /// A plain `Vec<BD::Pixel>` satisfies (1) only by luck. Every production
+    /// caller satisfies it as a TYPE property: the scratch buffers in
+    /// `src/internal.rs` are `#[repr(C, align(64))]`, pinned by the
+    /// `scratch_alignment` assertions there.
     pub fn wrap_buf<BD: BitDepth>(buf: &mut [BD::Pixel], stride: usize) -> Self {
         let buf = IntoBytes::as_mut_bytes(buf);
         let ptr = PicDataPtr::new(buf.as_mut_ptr()).unwrap();
@@ -906,6 +927,21 @@ impl Rav1dPictureDataComponent {
     /// In safe mode: copies the data into an owned `Vec<u8>` (no raw pointers,
     /// auto `Send + Sync`). For dst-scratch usage, call [`copy_pixels_to`] after
     /// writing to retrieve the results.
+    ///
+    /// # Panics
+    ///
+    /// `buf`'s BYTE length must be a multiple of
+    /// `RAV1D_PICTURE_GUARANTEED_MULTIPLE` (64) in every configuration, and
+    /// under `c-ffi` it must additionally START on a
+    /// `RAV1D_PICTURE_ALIGNMENT`-byte (64) boundary — the zero-copy path keeps
+    /// the caller's pointer, and that
+    /// alignment is a type invariant of `Rav1dPictureDataComponentInner`. See
+    /// that type's `wrap_buf` (c-ffi only) for the full rationale.
+    ///
+    /// The default build copies, so it does NOT check the alignment rule. A
+    /// caller that only ever runs without `c-ffi` can therefore violate it
+    /// undetected; test harnesses should allocate through
+    /// `crate::src::safe_simd::aligned_plane`.
     ///
     /// [`copy_pixels_to`]: Self::copy_pixels_to
     pub fn wrap_buf<BD: BitDepth>(buf: &mut [BD::Pixel], stride: usize) -> Self {
