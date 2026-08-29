@@ -5,6 +5,19 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- **Negative-stride block guards covered the wrong pixels** (#520). `narrow_guard`,
+  `narrow_guard_mut`, `compact_read_fast` and `compact_write_back_fast` started a
+  `w x h` block's hull at `offset + 1 - total` on a negative stride — `w-1` pixels
+  below the last row — and returned base `total - 1`, so every row-0 pixel but the
+  first fell outside the guard (an index panic for any caller touching `base + x`,
+  `x >= 1`) while `w-1` pixels the block never touches were reserved. The hull now
+  comes from one helper (`block_hull`: start `offset - (h-1)*|stride|`, base
+  `(h-1)*|stride|`) shared with `for_rows{,_mut}`, and `compact_read` /
+  `compact_write_back` route negative strides to the compact row-0-first path,
+  whose layout a caller can address without a base. Only reachable through a c-ffi
+  `Dav1dPicAllocator` that returns a negative stride; the safe allocator never does.
+  Pinned by five bottom-up-plane tests in `row_guard_policy_tests` (geometry,
+  tracker extent, dispatcher layout), four of which fail on the old code.
 - **`rav1d-disjoint-mut`: `index_rect{,_mut}` registered rectangles in bytes
   while every other borrow is registered in `T::Target` elements** — a missed
   overlap (two live `&mut`) from safe code on any buffer whose element is wider

@@ -464,8 +464,9 @@ pub fn with_pixel_guard_mut<BD: BitDepth, R>(
     f: impl FnOnce(&mut [u8], usize, isize) -> R,
 ) -> R {
     let mut block = pic.block_mut::<BD>(w, h);
-    // `BlockMut::base()` is a PIXEL index — 0 for a compact block, and the
-    // last row's index for a direct block on a negative-stride picture. This
+    // `BlockMut::base()` is a PIXEL index — 0 for a compact block, and row 0's
+    // index inside the hull, `(h-1)*|stride|`, for a direct block on a
+    // negative-stride picture (whose hull starts at the last row). This
     // closure's contract is a BYTE offset, so the scaling happens here rather
     // than inside `BlockMut`, whose own users index the byte slice directly.
     let offset = block.base() * core::mem::size_of::<BD::Pixel>();
@@ -1319,7 +1320,44 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         self.narrow_guard::<BD>(w, h)
     }
 
+    /// The contiguous hull of a `w x h` pixel block whose row 0 starts at
+    /// `self.offset`, as `(start, total, base, pxstride)`: the block lies
+    /// within `[start, start + total)` of the component, and row `r`, column
+    /// `x` is at `base + x + r * pxstride` inside that hull.
+    ///
+    /// Rows run *forward* `w` pixels from their own start whatever the sign of
+    /// the stride (see `for_rows`'s per-row branch and `with_pixel_guard_mut`).
+    /// On a negative stride the hull therefore starts `(h-1)*|stride|` below
+    /// `self.offset` — at the LAST row — and ends at `self.offset + w`, the end
+    /// of row 0, with `base = (h-1)*|stride|`. This is the one place that
+    /// geometry lives: #520 was four copies of it that started the hull `w-1`
+    /// pixels lower (`offset + 1 - total`, base `total - 1`), so every row-0
+    /// pixel but the first fell outside the guard while `w-1` pixels below the
+    /// block were reserved for nothing.
+    #[inline(always)]
+    fn block_hull<BD: BitDepth>(&self, w: usize, h: usize) -> (usize, usize, usize, isize) {
+        use crate::src::strided::Strided as _;
+        let pxstride = self.data.pixel_stride::<BD>();
+        if w == 0 || h == 0 {
+            return (self.offset, 0, 0, pxstride);
+        }
+        let span = (h - 1) * pxstride.unsigned_abs();
+        let total = span + w;
+        if pxstride >= 0 {
+            (self.offset, total, 0, pxstride)
+        } else {
+            let start = self
+                .offset
+                .checked_sub(span)
+                .expect("block extends below the start of a negative-stride picture");
+            (start, total, span, pxstride)
+        }
+    }
+
     /// Create a tracked immutable guard covering exactly a w×h pixel block.
+    ///
+    /// Returns `(guard, base)`: `base` is 0 for a positive stride and
+    /// `(h-1)*|stride|` for a negative one — see [`Self::block_hull`].
     #[inline]
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn narrow_guard<BD: BitDepth>(
@@ -1330,25 +1368,11 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         DisjointImmutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]>,
         usize,
     ) {
-        use crate::src::strided::Strided as _;
-        let pxstride = self.data.pixel_stride::<BD>();
-        let abs_stride = pxstride.unsigned_abs();
-        let total = if h == 0 || w == 0 {
-            0
-        } else {
-            (h - 1) * abs_stride + w
-        };
+        let (start, total, base, pxstride) = self.block_hull::<BD>(w, h);
         let ps = mem::size_of::<BD::Pixel>();
-        if pxstride >= 0 {
-            let guard = self.data.slice::<BD, _>((self.offset.., ..total));
-            guard.probe_declare_rows(self.offset * ps, w * ps, h, pxstride * ps as isize);
-            (guard, 0)
-        } else {
-            let start = self.offset + 1 - total;
-            let guard = self.data.slice::<BD, _>((start.., ..total));
-            guard.probe_declare_rows(start * ps, w * ps, h, pxstride * ps as isize);
-            (guard, total - 1)
-        }
+        let guard = self.data.slice::<BD, _>((start.., ..total));
+        guard.probe_declare_rows(start * ps, w * ps, h, pxstride * ps as isize);
+        (guard, base)
     }
 
     /// Visit `h` consecutive picture rows of `w` pixels each, IMMUTABLY, taking
@@ -1437,24 +1461,14 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             }
             return;
         }
-        let abs_stride = pxstride.unsigned_abs();
-        let total = (h - 1) * abs_stride + w;
-        let lo = if pxstride >= 0 {
-            self.offset
-        } else {
-            self.offset - (h - 1) * abs_stride
-        };
+        let (lo, total, base, _) = self.block_hull::<BD>(w, h);
         let guard = self.data.slice::<BD, _>((lo.., ..total));
         {
             let ps = mem::size_of::<BD::Pixel>();
             guard.probe_declare_rows(lo * ps, w * ps, h, pxstride * ps as isize);
         }
         for row in 0..h {
-            let idx = if pxstride >= 0 {
-                row * abs_stride
-            } else {
-                (h - 1 - row) * abs_stride
-            };
+            let idx = base.wrapping_add_signed(row as isize * pxstride);
             f(row, &guard[idx..][..w]);
         }
     }
@@ -1547,24 +1561,14 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             }
             return;
         }
-        let abs_stride = pxstride.unsigned_abs();
-        let total = (h - 1) * abs_stride + w;
-        let lo = if pxstride >= 0 {
-            self.offset
-        } else {
-            self.offset - (h - 1) * abs_stride
-        };
+        let (lo, total, base, _) = self.block_hull::<BD>(w, h);
         let mut guard = self.data.slice_mut::<BD, _>((lo.., ..total));
         {
             let ps = mem::size_of::<BD::Pixel>();
             guard.probe_declare_rows(lo * ps, w * ps, h, pxstride * ps as isize);
         }
         for row in 0..h {
-            let idx = if pxstride >= 0 {
-                row * abs_stride
-            } else {
-                (h - 1 - row) * abs_stride
-            };
+            let idx = base.wrapping_add_signed(row as isize * pxstride);
             f(row, &mut guard[idx..][..w]);
         }
     }
@@ -1579,31 +1583,27 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// threading (compact layout) or the original stride when single-threaded.
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn compact_read<BD: BitDepth>(&self, w: usize, h: usize) -> (Vec<u8>, usize) {
-        if tile_threading_active() {
+        use crate::src::strided::Strided as _;
+        // The fast path hands back the hull in MEMORY order with an unsigned
+        // stride, which a caller can only address when row 0 comes first — a
+        // positive stride. A negative stride takes the compact, row-0-first
+        // path whatever the threading mode (#520).
+        if tile_threading_active() || self.data.pixel_stride::<BD>() < 0 {
             self.compact_read_per_row::<BD>(w, h)
         } else {
             self.compact_read_fast::<BD>(w, h)
         }
     }
 
-    /// Fast path: single guard for the whole block, returns original stride layout.
+    /// Fast path: single guard for the whole block, returns the hull in memory
+    /// order with the original (unsigned) stride — row 0 first only when the
+    /// stride is positive, which is the only case `compact_read` sends here.
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     fn compact_read_fast<BD: BitDepth>(&self, w: usize, h: usize) -> (Vec<u8>, usize) {
-        use crate::src::strided::Strided as _;
         use zerocopy::IntoBytes;
         let pixel_size = core::mem::size_of::<BD::Pixel>();
-        let pxstride = self.data.pixel_stride::<BD>();
+        let (start, total, _base, pxstride) = self.block_hull::<BD>(w, h);
         let abs_stride = pxstride.unsigned_abs();
-        let total = if h == 0 || w == 0 {
-            0
-        } else {
-            (h - 1) * abs_stride + w
-        };
-        let start = if pxstride >= 0 {
-            self.offset
-        } else {
-            self.offset + 1 - total
-        };
         let guard = self.data.slice::<BD, _>((start.., ..total));
         guard.probe_declare_rows(
             start * pixel_size,
@@ -1661,7 +1661,10 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// Matches the layout produced by [`compact_read`].
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn compact_write_back<BD: BitDepth>(&self, w: usize, h: usize, buf: &[u8]) {
-        if tile_threading_active() {
+        use crate::src::strided::Strided as _;
+        // Mirrors `compact_read`: a negative stride's buffer is compact and
+        // row-0-first, so it must be written back per row (#520).
+        if tile_threading_active() || self.data.pixel_stride::<BD>() < 0 {
             self.compact_write_back_per_row::<BD>(w, h, buf);
         } else {
             self.compact_write_back_fast::<BD>(w, h, buf);
@@ -1671,20 +1674,8 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// Fast path write-back: single guard, original stride layout.
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     fn compact_write_back_fast<BD: BitDepth>(&self, w: usize, h: usize, buf: &[u8]) {
-        use crate::src::strided::Strided as _;
         use zerocopy::IntoBytes;
-        let pxstride = self.data.pixel_stride::<BD>();
-        let abs_stride = pxstride.unsigned_abs();
-        let total = if h == 0 || w == 0 {
-            0
-        } else {
-            (h - 1) * abs_stride + w
-        };
-        let start = if pxstride >= 0 {
-            self.offset
-        } else {
-            self.offset + 1 - total
-        };
+        let (start, total, _base, pxstride) = self.block_hull::<BD>(w, h);
         let mut guard = self.data.slice_mut::<BD, _>((start.., ..total));
         {
             let ps = mem::size_of::<BD::Pixel>();
@@ -1806,12 +1797,12 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     }
 
     /// Create a tracked mutable guard covering exactly a w×h pixel block
-    /// starting at this offset. Returns `(guard, 0)` since the guard starts
-    /// at self.offset.
+    /// whose row 0 starts at this offset.
     ///
-    /// For positive strides, covers `(h-1)*stride + w` pixels from self.offset.
-    /// For negative strides, covers the same span but starting `(h-1)*stride`
-    /// pixels before self.offset.
+    /// Returns `(guard, base)`: the guard is the block's hull,
+    /// `(h-1)*|stride| + w` pixels, and `base` is row 0's index inside it — 0
+    /// for a positive stride, `(h-1)*|stride|` for a negative one, where the
+    /// hull starts at the last row. See [`Self::block_hull`].
     #[inline]
     #[cfg_attr(any(debug_assertions, feature = "probe-sites"), track_caller)]
     pub fn narrow_guard_mut<BD: BitDepth>(
@@ -1822,27 +1813,11 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         DisjointMutGuard<'a, Rav1dPictureDataComponentInner, [BD::Pixel]>,
         usize,
     ) {
-        use crate::src::strided::Strided as _;
-        let pxstride = self.data.pixel_stride::<BD>();
-        let abs_stride = pxstride.unsigned_abs();
-        let total = if h == 0 || w == 0 {
-            0
-        } else {
-            (h - 1) * abs_stride + w
-        };
+        let (start, total, base, pxstride) = self.block_hull::<BD>(w, h);
         let ps = mem::size_of::<BD::Pixel>();
-        if pxstride >= 0 {
-            let guard = self.data.slice_mut::<BD, _>((self.offset.., ..total));
-            guard.probe_declare_rows(self.offset * ps, w * ps, h, pxstride * ps as isize);
-            (guard, 0)
-        } else {
-            // Negative stride: rows go upward, so the first pixel row
-            // is at the highest address and the last row is at the lowest.
-            let start = self.offset + 1 - total;
-            let guard = self.data.slice_mut::<BD, _>((start.., ..total));
-            guard.probe_declare_rows(start * ps, w * ps, h, pxstride * ps as isize);
-            (guard, total - 1)
-        }
+        let guard = self.data.slice_mut::<BD, _>((start.., ..total));
+        guard.probe_declare_rows(start * ps, w * ps, h, pxstride * ps as isize);
+        (guard, base)
     }
 
     /// Create a tracked immutable guard covering the entire picture component.
@@ -2584,7 +2559,10 @@ mod tile_threading_latch_tests {
 // src/disjoint_mut.rs:29 and src/safe_simd/pixel_access.rs:451.
 #[cfg(all(test, not(feature = "unchecked")))]
 mod row_guard_policy_tests {
-    use super::{Rav1dPictureDataComponent, set_tile_threading, tile_threading_active};
+    use super::{
+        Rav1dPictureDataComponent, Rav1dPictureDataComponentInner, set_tile_threading,
+        tile_threading_active,
+    };
     use crate::include::common::bitdepth::BitDepth8;
     use crate::src::with_offset::WithOffset;
     use std::panic::{self, AssertUnwindSafe};
@@ -2682,6 +2660,290 @@ mod row_guard_policy_tests {
             String::from_utf8_lossy(&out.stderr),
         );
         assert!(out.status.success(), "child failed:\n{stdout}");
+    }
+
+    // ---- Negative strides (#520) --------------------------------------------
+    //
+    // The safe allocator never produces a negative stride, so these build one
+    // by hand through the private constructor: a plane whose picture rows run
+    // BOTTOM-UP in memory, exactly what a c-ffi `Dav1dPicAllocator` hands in
+    // when it returns a negative stride. Picture row `r` occupies memory row
+    // `BU_TOP_ROW - r`; row 0 starts at pixel `ROW0`. The first 16 bytes of
+    // every memory row are stamped `row * 16 + column` so a read-back names the
+    // pixel it came from.
+    //
+    // The hull guards under test are only taken with tile threading OFF (with
+    // it on, the bounds map's extent ceiling rejects any hull-sized
+    // reservation), and `TILE_THREADING` is a monotone process-global that
+    // other tests in this binary latch, so each of these runs its body in a
+    // child process — see `in_child_process`.
+
+    /// Memory rows in the bottom-up plane: one slack row below the block's last
+    /// row and one above row 0, so probes just outside the block stay inside
+    /// the buffer.
+    const BU_MEM_ROWS: usize = ROWS + 2;
+    /// Memory row holding picture row 0.
+    const BU_TOP_ROW: usize = BU_MEM_ROWS - 2;
+    /// Pixel offset of picture row 0.
+    const ROW0: usize = BU_TOP_ROW * STRIDE;
+    /// `(ROWS-1) * STRIDE`: how far below `ROW0` the block's last row starts,
+    /// and row 0's index inside the block's hull.
+    const SPAN: usize = (ROWS - 1) * STRIDE;
+
+    fn stamp(row: usize, x: usize) -> u8 {
+        (row * 16 + x) as u8
+    }
+
+    fn bottom_up_plane() -> Rav1dPictureDataComponent {
+        let mut buf = vec![0u8; STRIDE * BU_MEM_ROWS];
+        for mem_row in 0..BU_MEM_ROWS {
+            for x in 0..16 {
+                // The slack row above row 0 has no picture row; mark it with a
+                // value no block row can produce.
+                buf[mem_row * STRIDE + x] = if mem_row <= BU_TOP_ROW {
+                    stamp(BU_TOP_ROW - mem_row, x)
+                } else {
+                    0xEE
+                };
+            }
+        }
+        let inner = Rav1dPictureDataComponentInner::from_slice_copy(&buf);
+        Rav1dPictureDataComponent::from_parts(inner, -(STRIDE as isize))
+    }
+
+    /// Run `body` in a CHILD PROCESS where no decoder has latched tile
+    /// threading, and check that it reached its end. `name` is the calling
+    /// test's full path (for `--exact`); `marker` is a line only the body
+    /// prints, checked instead of the bare exit status because libtest exits
+    /// 0 when a filter matches nothing. Same idiom as
+    /// `for_rows_mut_reserves_the_strided_hull_when_tile_threading_is_off`.
+    fn in_child_process(name: &str, marker: &str, body: impl FnOnce()) {
+        if std::env::var_os("RAV1D_ROW_GUARD_CHILD").is_some() {
+            assert!(
+                !tile_threading_active(),
+                "precondition: a fresh process, or this tests the other branch"
+            );
+            body();
+            println!("{marker}");
+            return;
+        }
+        let exe = std::env::current_exe().expect("test binary path");
+        let out = std::process::Command::new(exe)
+            .args(["--exact", name, "--nocapture"])
+            .env("RAV1D_ROW_GUARD_CHILD", "1")
+            .output()
+            .expect("re-exec the test binary");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains(marker),
+            "the child process did not reach the assertions (renamed test? \
+             libtest exits 0 on an empty filter). status={:?}\nstdout:\n{}\nstderr:\n{}",
+            out.status,
+            stdout,
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(out.status.success(), "child failed:\n{stdout}");
+    }
+
+    const TESTS: &str = "include::dav1d::picture::row_guard_policy_tests::";
+
+    /// `narrow_guard{,_mut}` on a bottom-up plane: the guard is the block's
+    /// hull, `(h-1)*|stride| + w` pixels from the LAST row's first pixel to
+    /// the end of row 0, and `base + x + r * stride` (stride negative) lands
+    /// on picture row `r`, column `x`. #520 returned a hull shifted `w-1`
+    /// pixels down with base `total - 1`, so `base + x` for any `x >= 1` was
+    /// past the guard.
+    #[test]
+    fn narrow_guards_cover_the_block_on_a_negative_stride() {
+        in_child_process(
+            &format!("{TESTS}narrow_guards_cover_the_block_on_a_negative_stride"),
+            "NEG_STRIDE_NARROW_GUARDS_CHILD_RAN",
+            || {
+                let pic = bottom_up_plane();
+                let at = WithOffset {
+                    data: &pic,
+                    offset: ROW0,
+                };
+                {
+                    let (guard, base) = at.narrow_guard::<BitDepth8>(W, ROWS);
+                    assert_eq!(guard.len(), HULL, "hull is (h-1)*|stride| + w pixels");
+                    assert_eq!(
+                        base, SPAN,
+                        "row 0 sits (h-1)*|stride| into a bottom-up hull"
+                    );
+                    for r in 0..ROWS {
+                        for x in 0..W {
+                            assert_eq!(
+                                guard[base + x - r * STRIDE],
+                                stamp(r, x),
+                                "row {r} col {x}"
+                            );
+                        }
+                    }
+                }
+                let (guard, base) = at.narrow_guard_mut::<BitDepth8>(W, ROWS);
+                assert_eq!(guard.len(), HULL);
+                assert_eq!(base, SPAN);
+                for r in 0..ROWS {
+                    for x in 0..W {
+                        assert_eq!(guard[base + x - r * STRIDE], stamp(r, x), "row {r} col {x}");
+                    }
+                }
+            },
+        );
+    }
+
+    /// `for_rows` / `for_rows_mut` hand out picture rows top-down with the
+    /// right bytes on a bottom-up plane, and writes land where they should.
+    /// Both of their branches were already right; this pins them through the
+    /// shared hull helper. Runs in the parent (per-row branch when threading is
+    /// latched) AND in a child (hull branch).
+    #[test]
+    fn for_rows_visits_picture_rows_top_down_on_a_negative_stride() {
+        fn check() {
+            let pic = bottom_up_plane();
+            let at = WithOffset {
+                data: &pic,
+                offset: ROW0,
+            };
+            let mut seen = 0;
+            at.for_rows::<BitDepth8, _>(W, ROWS, |r, row| {
+                assert_eq!(row.len(), W);
+                for (x, &px) in row.iter().enumerate() {
+                    assert_eq!(px, stamp(r, x), "row {r} col {x}");
+                }
+                seen += 1;
+            });
+            assert_eq!(seen, ROWS);
+            at.for_rows_mut::<BitDepth8, _>(W, ROWS, |r, row| {
+                for (x, px) in row.iter_mut().enumerate() {
+                    assert_eq!(*px, stamp(r, x), "row {r} col {x}");
+                    *px ^= 0x80;
+                }
+            });
+            at.for_rows::<BitDepth8, _>(W, ROWS, |r, row| {
+                for (x, &px) in row.iter().enumerate() {
+                    assert_eq!(px, stamp(r, x) ^ 0x80, "row {r} col {x} after write");
+                }
+            });
+        }
+        if std::env::var_os("RAV1D_ROW_GUARD_CHILD").is_none() {
+            check();
+        }
+        in_child_process(
+            &format!("{TESTS}for_rows_visits_picture_rows_top_down_on_a_negative_stride"),
+            "NEG_STRIDE_FOR_ROWS_CHILD_RAN",
+            check,
+        );
+    }
+
+    /// The fast compact read returns the hull in MEMORY order: on a bottom-up
+    /// plane the block's last picture row comes first and row 0 last, with
+    /// the original (unsigned) stride. #520 started the copy `w-1` pixels too
+    /// low, so row 0 was cut to its first pixel. `compact_read` itself never
+    /// sends a negative stride here (next test); this pins the geometry.
+    #[test]
+    fn compact_read_fast_hull_starts_at_the_last_row_on_a_negative_stride() {
+        in_child_process(
+            &format!("{TESTS}compact_read_fast_hull_starts_at_the_last_row_on_a_negative_stride"),
+            "NEG_STRIDE_COMPACT_READ_FAST_CHILD_RAN",
+            || {
+                let pic = bottom_up_plane();
+                let at = WithOffset {
+                    data: &pic,
+                    offset: ROW0,
+                };
+                let (buf, byte_stride) = at.compact_read_fast::<BitDepth8>(W, ROWS);
+                assert_eq!(byte_stride, STRIDE);
+                assert_eq!(buf.len(), HULL);
+                for r in 0..ROWS {
+                    for x in 0..W {
+                        assert_eq!(buf[SPAN + x - r * STRIDE], stamp(r, x), "row {r} col {x}");
+                    }
+                }
+            },
+        );
+    }
+
+    /// `compact_read` (the dispatcher) on a negative stride must return the
+    /// compact, row-0-first layout whatever the threading mode: the fast
+    /// path's memory-order hull carries no base, so a caller cannot find row
+    /// 0 in it when the stride is negative. Threading is off in the child, so
+    /// this is the branch that used to pick the fast path.
+    #[test]
+    fn compact_read_returns_picture_rows_top_down_on_a_negative_stride() {
+        in_child_process(
+            &format!("{TESTS}compact_read_returns_picture_rows_top_down_on_a_negative_stride"),
+            "NEG_STRIDE_COMPACT_READ_CHILD_RAN",
+            || {
+                let pic = bottom_up_plane();
+                let at = WithOffset {
+                    data: &pic,
+                    offset: ROW0,
+                };
+                let (buf, byte_stride) = at.compact_read::<BitDepth8>(W, ROWS);
+                assert_eq!(byte_stride, W, "compact layout, not the memory-order hull");
+                for r in 0..ROWS {
+                    for x in 0..W {
+                        assert_eq!(buf[r * byte_stride + x], stamp(r, x), "row {r} col {x}");
+                    }
+                }
+            },
+        );
+    }
+
+    /// Does a live mutable borrow of the single pixel `probe` make
+    /// `narrow_guard_mut` over the `W x ROWS` block at `ROW0` of a bottom-up
+    /// plane conflict?
+    fn bottom_up_block_conflicts_with(probe: usize) -> bool {
+        let pic = bottom_up_plane();
+        let held = pic.slice_mut::<BitDepth8, _>((probe.., ..1));
+        let at = WithOffset {
+            data: &pic,
+            offset: ROW0,
+        };
+        let prev = panic::take_hook();
+        panic::set_hook(Box::new(|_| {}));
+        let r = panic::catch_unwind(AssertUnwindSafe(|| {
+            let (guard, base) = at.narrow_guard_mut::<BitDepth8>(W, ROWS);
+            std::hint::black_box((guard.len(), base));
+        }));
+        panic::set_hook(prev);
+        drop(held);
+        r.is_err()
+    }
+
+    /// What the TRACKER reserves for a block on a negative stride: exactly the
+    /// hull, from the last row's first pixel to the end of row 0. #520's
+    /// hull ended at `offset + 1` (every row-0 pixel but the first
+    /// unreserved) and began `w-1` pixels below the last row (reserved for
+    /// nothing).
+    #[test]
+    fn narrow_guard_mut_reserves_exactly_the_block_hull_on_a_negative_stride() {
+        in_child_process(
+            &format!(
+                "{TESTS}narrow_guard_mut_reserves_exactly_the_block_hull_on_a_negative_stride"
+            ),
+            "NEG_STRIDE_RESERVATION_CHILD_RAN",
+            || {
+                assert!(
+                    bottom_up_block_conflicts_with(ROW0 + W - 1),
+                    "row 0's last column is inside the block and must be reserved"
+                );
+                assert!(
+                    bottom_up_block_conflicts_with(ROW0 - SPAN),
+                    "the last row's first column is inside the block and must be reserved"
+                );
+                assert!(
+                    !bottom_up_block_conflicts_with(ROW0 + W),
+                    "the pixel past the end of row 0 must not be reserved"
+                );
+                assert!(
+                    !bottom_up_block_conflicts_with(ROW0 - SPAN - 1),
+                    "the pixel below the last row's start must not be reserved"
+                );
+            },
+        );
     }
 
     /// The threading-ON half. Latches the flag itself, so it is independent of
