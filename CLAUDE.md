@@ -674,6 +674,26 @@ cd /home/lilith/work/zenavif
 **Status:** Tile threading (n_fc=1, n_tc>1) works in checked mode. Frame threading (n_fc>1)
 requires `unchecked`.
 
+**Loop-filter H window ran past the end of a picture row (FIXED, #524, commit 3426ebf):**
+The x86_64 vertical-edge (`is_v == false`) compact read window was sized from the
+plane's worst case, `(3, 5)` chroma / `(7, 9)` luma, not from the run's mask — and
+those after-edge extents were the discarded tails of 4-byte chunk loads in
+`loop_filter_4_8bpc_wd6_simd_h` (`+1..+4`, only lanes 0/1 bound) and
+`..._wd16_simd_h` (`+5..+8`, `c3[2]`/`c3[3]` unused). A plane gets right-hand
+padding only when its stride is a multiple of 1024, so a 768-wide 4:2:0 frame's
+chroma plane (stride 384 = its width) has none, and at the last 4-column group
+`edge + 5` is the NEXT ROW's first pixel — which `owned_recon::stitch_sbrow`
+writes for the next superblock row. Intermittent `overlapping DisjointMut` worker
+panic at `t > 1`. Fix: both kernels load only the bytes they consume (dead lanes
+zero-filled, bit-identical), so every 8bpc H kernel's load extent is exactly
+`±lf_reach(wd)`; both dispatchers size the H window from `lf_run_reach` via
+`lf_compact_window`. **Rule for the next window written here: size from the mask,
+and remember an H window has a picture ROW to stay inside, not just a superblock
+row.** Both window invariants are asserted in `loopfilter_sb_direct` under
+`debug_assertions` OR `--features probe-sites` — the latter because every decode
+test in this repo is release-only, so a `debug_assertions`-only check runs in no
+CI job at all.
+
 **CDEF tile race (FIXED, commit b948270):** The `padding_8bpc`/`padding_16bpc` functions in
 `cdef.rs` locked 2 extra bytes (left-border context) even when `HAVE_LEFT` was false and those
 bytes were never read. The overly-wide guard overlapped with `backup2lines` writing to the

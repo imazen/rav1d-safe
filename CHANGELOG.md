@@ -22,10 +22,15 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   by construction), so every 8bpc H kernel's load extent is exactly
   `+/- lf_reach(wd)`; both dispatchers size the H window from `lf_run_reach`
   like the V window; and `loopfilter_sb_direct` gained the H counterpart of the
-  V "window leaves the superblock row" `debug_assert`. Gated by
+  V "window leaves the superblock row" assertion. Both window assertions now
+  compile under `debug_assertions` **or** `--features probe-sites` — as
+  `debug_assertions`-only checks neither ran in any CI job, since every decode
+  test here is release-only — so the `guard-extent-gate` job evaluates them over
+  the dav1d corpus (measured: 1734 frames, neither tripped). Gated by
   `src/loopfilter.rs::compact_window`, four tests including a `DisjointMut`
   reproduction of the reported panic and a liveness case proving the harness can
-  see a lapping window.
+  see a lapping window; the two guard-backed ones are not built under
+  `unchecked`, which compiles the borrow tracker away.
 - **Negative-stride block guards covered the wrong pixels** (#520). `narrow_guard`,
   `narrow_guard_mut`, `compact_read_fast` and `compact_write_back_fast` started a
   `w x h` block's hull at `offset + 1 - total` on a negative stride — `w-1` pixels
