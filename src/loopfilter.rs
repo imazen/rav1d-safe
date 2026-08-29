@@ -1861,6 +1861,9 @@ mod compact_window {
     /// (`picture.rs` pads only strides that are a multiple of 1024, and
     /// 384 is not, so this plane's rows are exactly its width), 256 rows.
     const STRIDE: usize = 384;
+    /// Only the two guard-backed tests allocate a whole plane, and those are
+    /// not built under `unchecked` (no borrow tracker to observe).
+    #[cfg(not(feature = "unchecked"))]
     const ROWS: usize = 256;
     /// The last 4-column group of the row.
     const COL: usize = STRIDE - 4;
@@ -1941,6 +1944,14 @@ mod compact_window {
     /// the NEXT superblock row, then take the loop filter's compact read window
     /// over the rows above it. Before the fix this is the reported
     /// `overlapping DisjointMut` panic, verbatim.
+    ///
+    /// Not built under `unchecked`, which compiles the borrow tracker out of
+    /// `rav1d-disjoint-mut` entirely: with no tracker there is no overlap to
+    /// observe, so this pair would report a vacuous pass and its liveness twin
+    /// would fail outright. The window geometry itself is covered
+    /// unconditionally by the two tests above. `asm` implies `c-ffi` implies
+    /// `unchecked`, so the CI `asm` leg takes this branch.
+    #[cfg(not(feature = "unchecked"))]
     #[test]
     fn issue_524_h_window_does_not_collide_with_the_next_rows_stitch() {
         use crate::include::common::bitdepth::BitDepth8;
@@ -1981,6 +1992,9 @@ mod compact_window {
     /// the window is contained rather than that the check is inert. Uses a
     /// deliberately over-wide window — the plane worst case the H direction
     /// used before #524 — and requires it to panic.
+    ///
+    /// Gated with its twin: `unchecked` removes the tracker this asserts on.
+    #[cfg(not(feature = "unchecked"))]
     #[test]
     fn issue_524_harness_detects_a_window_that_does_lap() {
         use crate::include::common::bitdepth::BitDepth8;
