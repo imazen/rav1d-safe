@@ -57,8 +57,10 @@ static NAMES: std::sync::Mutex<Vec<(usize, &'static Location<'static>)>> =
 #[inline]
 fn slot_for(key: usize, loc: &'static Location<'static>) -> Option<usize> {
     // Fibonacci hash of the pointer; `Location`s are statics so the low bits
-    // are not uniformly distributed.
-    let mut h = (key.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 40) as usize & (CAP - 1);
+    // are not uniformly distributed. `key` is already `usize`, so no cast: if it
+    // ever stops being one, the `&` against `CAP - 1` fails to compile rather
+    // than silently truncating.
+    let mut h = (key.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 40) & (CAP - 1);
     for _ in 0..64 {
         let cur = SITES[h].key.load(Relaxed);
         if cur == key {
@@ -136,7 +138,9 @@ pub fn report(frames: u64) -> String {
             .unwrap_or_else(|| std::format!("?{key:#x}"));
         rows.push((m + i, m, s.bytes.load(Relaxed), where_));
     }
-    rows.sort_by(|a, b| b.0.cmp(&a.0));
+    // Descending by call count. `sort_by_key` + `Reverse` is the same stable
+    // sort as the reversed comparator it replaces, ties included.
+    rows.sort_by_key(|r| core::cmp::Reverse(r.0));
     let mut out = String::new();
     let _ = writeln!(
         out,
