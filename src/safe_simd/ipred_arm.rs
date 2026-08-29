@@ -2125,7 +2125,9 @@ mod cfl_ac_parity {
         BD::Pixel: Copy + Default,
     {
         let go = |simd: bool| -> (Vec<i16>, bool) {
-            let mut px = pixels.to_vec();
+            // `aligned_plane`, not `to_vec`: `wrap_buf` also requires the
+            // buffer to START 64-byte aligned, which a `Vec<BD::Pixel>` is not.
+            let mut px = crate::src::safe_simd::aligned_plane(pixels);
             let comp = Rav1dPictureDataComponent::wrap_buf::<BD>(&mut px, stride);
             let dst = comp.with_offset::<BD>();
             // Prefilled with a recognisable pattern so a kernel that fails to

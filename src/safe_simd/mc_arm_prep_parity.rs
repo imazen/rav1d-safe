@@ -106,6 +106,10 @@ const PAD: usize = 8;
 
 /// `Rav1dPictureDataComponent::wrap_buf` asserts the buffer is a multiple of
 /// 64 BYTES, so round the pixel count up to keep the harness legal.
+///
+/// The other half of that contract is ALIGNMENT: the buffer must also START on
+/// a 64-byte boundary, which a `Vec<BD::Pixel>` does not. `aligned_plane`
+/// supplies the storage; see its doc comment.
 fn plane_len<T>(stride: usize, rows: usize) -> usize {
     let px = stride * rows;
     let per = 64 / core::mem::size_of::<T>();
@@ -129,7 +133,7 @@ fn prep_cell(
     let base = PAD * stride + PAD;
 
     let mut neon = vec![0i16; w * h];
-    let mut px = src_plane.to_vec();
+    let mut px = crate::src::safe_simd::aligned_plane(src_plane);
     let live = {
         let comp = Rav1dPictureDataComponent::wrap_buf::<BitDepth16>(&mut px, stride);
         let src = comp.with_offset::<BitDepth16>() + base;
@@ -139,7 +143,7 @@ fn prep_cell(
     };
 
     let mut scalar = vec![0i16; w * h];
-    let mut px2 = src_plane.to_vec();
+    let mut px2 = crate::src::safe_simd::aligned_plane(src_plane);
     {
         let comp = Rav1dPictureDataComponent::wrap_buf::<BitDepth16>(&mut px2, stride);
         let src = comp.with_offset::<BitDepth16>() + base;
@@ -272,7 +276,7 @@ fn prep_8bpc_matches_scalar_control() {
 
             for &(mx, my) in SUBPEL {
                 let mut neon = vec![0i16; w * h];
-                let mut px = plane.clone();
+                let mut px = crate::src::safe_simd::aligned_plane(&plane);
                 let live = {
                     let comp = Rav1dPictureDataComponent::wrap_buf::<BitDepth8>(&mut px, stride);
                     let src = comp.with_offset::<BitDepth8>() + base;
@@ -281,7 +285,7 @@ fn prep_8bpc_matches_scalar_control() {
                     )
                 };
                 let mut scalar = vec![0i16; w * h];
-                let mut px2 = plane.clone();
+                let mut px2 = crate::src::safe_simd::aligned_plane(&plane);
                 {
                     let comp = Rav1dPictureDataComponent::wrap_buf::<BitDepth8>(&mut px2, stride);
                     let src = comp.with_offset::<BitDepth8>() + base;

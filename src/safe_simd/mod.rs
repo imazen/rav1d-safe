@@ -35,6 +35,34 @@ pub(crate) fn token_test_lock() -> std::sync::MutexGuard<'static, ()> {
     LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// Backing store for a test plane that is about to be handed to
+/// [`Rav1dPictureDataComponent::wrap_buf`].
+///
+/// `wrap_buf` requires its buffer to start on a
+/// [`RAV1D_PICTURE_ALIGNMENT`]-byte boundary — that alignment is a type
+/// invariant of the c-ffi `Rav1dPictureDataComponentInner`, and
+/// `ExternalAsMutPtr::as_mut_ptr` `assume`s it. A plain `Vec<BD::Pixel>` has
+/// alignment 1 (8bpc) or 2 (16bpc) and does not satisfy it. Every production
+/// caller does, by construction: the scratch types in `src/internal.rs` are
+/// `#[repr(C, align(64))]`.
+///
+/// This is invisible in the default build, where `wrap_buf` COPIES into a
+/// 64-byte-aligned `PicBuf` and the caller's alignment is irrelevant — which
+/// is exactly how two aarch64 parity harnesses came to violate it and only
+/// fail under `--features c-ffi`.
+///
+/// [`Rav1dPictureDataComponent::wrap_buf`]: crate::include::dav1d::picture::Rav1dPictureDataComponent::wrap_buf
+/// [`RAV1D_PICTURE_ALIGNMENT`]: crate::include::dav1d::picture::DAV1D_PICTURE_ALIGNMENT
+#[cfg(test)]
+pub(crate) fn aligned_plane<T: Copy + Default>(
+    src: &[T],
+) -> rav1d_disjoint_mut::align::AlignedVec64<T> {
+    let mut v = rav1d_disjoint_mut::align::AlignedVec64::<T>::new();
+    v.resize(src.len(), T::default());
+    v.copy_from_slice(src);
+    v
+}
+
 pub mod mc;
 
 #[cfg(target_arch = "aarch64")]
