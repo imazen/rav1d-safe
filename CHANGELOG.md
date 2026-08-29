@@ -5,6 +5,27 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- **The x86_64 loop filter's H window ran off the end of its picture row**
+  (#524). The vertical-edge (`is_v == false`) compact read window was sized
+  from the plane's worst case — 3 columns before the edge and 5 after for
+  chroma, 7/9 for luma — instead of from the run's mask, and those after-edge
+  extents were not tap reach at all: they were the discarded tails of 4-byte
+  chunk loads in `loop_filter_4_8bpc_wd6_simd_h` (`+1..+4`, lanes 2-3 never
+  bound) and `loop_filter_4_8bpc_wd16_simd_h` (`+5..+8`, `c3[2]`/`c3[3]`
+  already commented "unused"). At the last 4-column group of a plane whose
+  stride equals its width — a 768-wide 4:2:0 frame's chroma plane, stride 384,
+  which `default_picture_alloc` pads only when the stride is a multiple of 1024
+  — `edge + 5` is the next row's first pixel, which `owned_recon::stitch_sbrow`
+  writes for the next superblock row. At `t > 1` that is an intermittent
+  `overlapping DisjointMut` worker panic and a failed frame. The two kernels now
+  load only the bytes they consume (zero-filling the dead lanes, bit-identical
+  by construction), so every 8bpc H kernel's load extent is exactly
+  `+/- lf_reach(wd)`; both dispatchers size the H window from `lf_run_reach`
+  like the V window; and `loopfilter_sb_direct` gained the H counterpart of the
+  V "window leaves the superblock row" `debug_assert`. Gated by
+  `src/loopfilter.rs::compact_window`, four tests including a `DisjointMut`
+  reproduction of the reported panic and a liveness case proving the harness can
+  see a lapping window.
 - **Negative-stride block guards covered the wrong pixels** (#520). `narrow_guard`,
   `narrow_guard_mut`, `compact_read_fast` and `compact_write_back_fast` started a
   `w x h` block's hull at `offset + 1 - total` on a negative stride — `w-1` pixels

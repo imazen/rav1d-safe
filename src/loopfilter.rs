@@ -120,6 +120,36 @@ fn loopfilter_sb_direct<BD: BitDepth>(
         }
     }
 
+    // The H-direction counterpart (#524), and for the same reason.
+    //
+    // An H run's taps run ALONG x, so its window is columns of rows that are
+    // already inside this superblock row — which was taken to mean it had no
+    // cross-row ordering to violate. It does: a picture row is only `pxstride`
+    // pixels long, and a window that runs past the end of one row runs into
+    // the START of the next, which `src/owned_recon.rs::stitch_sbrow` may be
+    // writing for the next superblock row. Pictures get right-hand padding only
+    // when the stride is a multiple of 1024 (`src/picture.rs`), so a 768-wide
+    // 4:2:0 frame's chroma plane (stride 384 = its width) has none.
+    //
+    // Trailing side only: the leading side is already covered by each
+    // dispatcher's `dst.offset < reach_before` fallback, which uses the plane's
+    // worst case and so is a superset of `reach`.
+    #[cfg(debug_assertions)]
+    if !is_v && (mask[0] | mask[1] | mask[2]) != 0 {
+        let pxstride = dst.pixel_stride::<BD>();
+        if pxstride > 0 {
+            let pxstride = pxstride as usize;
+            let base = dst.data.with_offset::<BD>().offset;
+            let col = (dst.offset - base) % pxstride;
+            let reach = lf_run_reach(is_y, mask);
+            debug_assert!(
+                col + reach <= pxstride,
+                "H-run window leaves the picture row: column {col} (+{reach}) \
+                 in a {pxstride}-pixel row, is_y={is_y}, mask={mask:08x?}"
+            );
+        }
+    }
+
     let stride = dst.stride();
     let b4_stride = f.b4_stride;
     let lut = &f.lf.lim_lut;
@@ -749,6 +779,63 @@ pub(crate) fn lf_run_reach(is_y: bool, vmask: &[u32; 3]) -> usize {
         4
     };
     lf_reach(wd) as usize
+}
+
+/// The compact 2-D window ONE `loopfilter_sb` run copies out of the plane.
+///
+/// Returns `(w, h, start, base)`: a `w`x`h` pixel block read from `offset`
+/// `start` at the plane's `pxstride`, in which the run's first edge sits at
+/// compact index `base`. This is the geometry the SIMD dispatchers hand to
+/// [`WithOffset::compact_read_per_row`](crate::src::with_offset::WithOffset::compact_read_per_row),
+/// i.e. exactly what the per-row `DisjointMut` guards reserve.
+///
+/// Both directions are sized from [`lf_run_reach`], never from the plane's
+/// worst case, and the window is SYMMETRIC because every kernel's load extent
+/// is: `lf_reach(wd)` before the edge and `lf_reach(wd)` after it, for each of
+/// the four widths and both bit depths. The perpendicular extent is the run's
+/// `max_iter * 4` groups either way.
+///
+/// # Why symmetric, and why the H direction is not exempt (#524)
+///
+/// The V direction has always been mask-derived — a window sized from the
+/// plane reads past the bottom of its own superblock row (#494). The H
+/// direction was left on the plane's worst case, `(7, 9)` luma / `(3, 5)`
+/// chroma, on the reasoning that its perpendicular extent is COLUMNS of rows
+/// already inside this superblock row and so has no cross-row ordering to
+/// violate. That reasoning is false at the last 4-column group of a plane
+/// whose stride equals its width: `+5` past a chroma edge at column
+/// `width - 4` is column `width + 1`, which is the SECOND pixel of the next
+/// row, and the next row belongs to whoever is stitching the next superblock
+/// row (`src/owned_recon.rs::stitch_sbrow`). A picture only gets right-hand
+/// padding when its stride is a multiple of 1024 (`src/picture.rs`), so a
+/// 768-wide 4:2:0 frame — chroma stride 384 — has none at all.
+///
+/// The `after` extents of `9` and `5` were never tap reach: they were the
+/// discarded tails of 4-byte chunk loads in the 8bpc H kernels. Those loads
+/// now stop at the taps they use, so `after == before == lf_reach(wd)` holds
+/// for every kernel and this window can be symmetric.
+#[cfg_attr(
+    not(any(target_arch = "x86_64", target_arch = "wasm32", test)),
+    allow(dead_code)
+)]
+#[inline]
+pub(crate) fn lf_compact_window(
+    is_v: bool,
+    is_y: bool,
+    vmask: &[u32; 3],
+    max_iter: usize,
+    offset: usize,
+    pxstride: usize,
+) -> (usize, usize, usize, usize) {
+    let r = lf_run_reach(is_y, vmask);
+    if is_v {
+        // Taps run down the picture; the run's groups run along x.
+        let w = max_iter * 4;
+        (w, 2 * r, offset.saturating_sub(r * pxstride), r * w)
+    } else {
+        // Taps run along x; the run's groups run down the picture.
+        (2 * r, max_iter * 4, offset.saturating_sub(r), r)
+    }
 }
 
 impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
@@ -1755,6 +1842,174 @@ mod run_reach {
                 lf_reach(wd)
             );
         }
+    }
+}
+
+/// [`lf_compact_window`] stays inside the picture row and the superblock row
+/// (#524).
+///
+/// The V half of this was already load-bearing (#494). The H half was not
+/// checked at all, and that is the hole #524 fell through: an H window sized
+/// from the plane's worst case runs off the END of its own picture row at the
+/// last 4-column group, and the byte past the end of row `R` is the first byte
+/// of row `R+1` whenever the plane has no right-hand padding.
+#[cfg(test)]
+mod compact_window {
+    use super::*;
+
+    /// Chroma plane of the 768x512 4:2:0 8bpc frame in the report: stride 384
+    /// (`picture.rs` pads only strides that are a multiple of 1024, and
+    /// 384 is not, so this plane's rows are exactly its width), 256 rows.
+    const STRIDE: usize = 384;
+    const ROWS: usize = 256;
+    /// The last 4-column group of the row.
+    const COL: usize = STRIDE - 4;
+    /// First chroma row of a superblock row (64 luma rows -> 32 chroma rows).
+    const ROW0: usize = 160;
+    /// 32 chroma rows = 8 groups of 4.
+    const MAX_ITER: usize = 8;
+
+    /// Chroma masks that select wd4 (`vmask[1]` clear) and wd6 (`vmask[1]`
+    /// set) on every group of the run.
+    const CHROMA_MASKS: [[u32; 3]; 2] = [[0xffff_ffff, 0, 0], [0xffff_ffff, 0xffff_ffff, 0]];
+
+    /// The column analogue of [`run_reach::run_reach_fits_the_transform_that_selected_it`]:
+    /// a run's reach never exceeds the columns the transform that selected it
+    /// leaves to the right of the edge. That transform lies inside the coded
+    /// frame, so a window bounded by it lies inside the picture row.
+    ///
+    /// This is the invariant the H window broke: chroma's after-the-edge
+    /// extent was 5 against a wd6 transform's 4 columns.
+    #[test]
+    fn h_window_fits_the_transform_that_selected_it() {
+        for (label, is_y, vmask, cols_right) in [
+            ("luma wd4", true, [1u32, 0, 0], 4usize),
+            ("luma wd8", true, [1, 1, 0], 8),
+            ("luma wd16", true, [1, 1, 1], 16),
+            ("chroma wd4", false, [1, 0, 0], 4),
+            ("chroma wd6", false, [1, 1, 0], 4),
+        ] {
+            // Far from either plane edge, so only the window's shape is under
+            // test here and not any clamping.
+            let offset = 64 * STRIDE + 64;
+            let (w, h, start, base) = lf_compact_window(false, is_y, &vmask, 1, offset, STRIDE);
+            assert_eq!(h, 4, "{label}: one group is 4 rows");
+            assert_eq!(start + base, offset, "{label}: the edge sits at `base`");
+            assert!(
+                base <= cols_right,
+                "{label}: reads {base} columns before the edge, transform leaves {cols_right}"
+            );
+            assert!(
+                w - base <= cols_right,
+                "{label}: reads {} columns after the edge, transform leaves {cols_right}",
+                w - base
+            );
+        }
+    }
+
+    /// The exact geometry of the reported panic: every row of the window must
+    /// lie inside ONE picture row.
+    ///
+    /// Before the fix this window was 8 columns wide starting 3 before the
+    /// edge, so row 31 of the run reserved `[73721..73729)` — seven bytes of
+    /// row 191 plus the first byte of row 192, which is where the report's
+    /// `&mut _[73728..74112]` from `owned_recon.rs::stitch_sbrow` begins.
+    #[test]
+    fn issue_524_h_window_stays_inside_its_picture_row() {
+        for vmask in CHROMA_MASKS {
+            let offset = ROW0 * STRIDE + COL;
+            let (w, h, start, _base) =
+                lf_compact_window(false, false, &vmask, MAX_ITER, offset, STRIDE);
+            assert_eq!(h, MAX_ITER * 4);
+            for row in 0..h {
+                let row_start = start + row * STRIDE;
+                let col = row_start % STRIDE;
+                assert!(
+                    col + w <= STRIDE,
+                    "mask={vmask:08x?} row {row}: guard [{row_start}..{}) laps {} bytes \
+                     into picture row {}",
+                    row_start + w,
+                    col + w - STRIDE,
+                    row_start / STRIDE + 1
+                );
+            }
+        }
+    }
+
+    /// The same geometry against the real `DisjointMut` guards: hold the
+    /// mutable row borrow `owned_recon::stitch_sbrow` takes on the first row of
+    /// the NEXT superblock row, then take the loop filter's compact read window
+    /// over the rows above it. Before the fix this is the reported
+    /// `overlapping DisjointMut` panic, verbatim.
+    #[test]
+    fn issue_524_h_window_does_not_collide_with_the_next_rows_stitch() {
+        use crate::include::common::bitdepth::BitDepth8;
+        use crate::include::dav1d::picture::Rav1dPictureDataComponent;
+        use crate::src::with_offset::WithOffset;
+        use std::panic::{self, AssertUnwindSafe};
+
+        // The row the next superblock row's stitch writes.
+        let next_sbrow = ROW0 + MAX_ITER * 4;
+        assert!(next_sbrow < ROWS);
+
+        for vmask in CHROMA_MASKS {
+            let mut px = vec![0u8; STRIDE * ROWS];
+            let pic = Rav1dPictureDataComponent::wrap_buf::<BitDepth8>(&mut px, STRIDE);
+            let (w, h, start, _base) =
+                lf_compact_window(false, false, &vmask, MAX_ITER, ROW0 * STRIDE + COL, STRIDE);
+            let held = pic.slice_mut::<BitDepth8, _>((next_sbrow * STRIDE.., ..STRIDE));
+            let at = WithOffset {
+                data: &pic,
+                offset: start,
+            };
+            let prev = panic::take_hook();
+            panic::set_hook(Box::new(|_| {}));
+            let read = panic::catch_unwind(AssertUnwindSafe(|| {
+                at.compact_read_per_row::<BitDepth8>(w, h);
+            }));
+            panic::set_hook(prev);
+            drop(held);
+            assert!(
+                read.is_ok(),
+                "mask={vmask:08x?}: the H compact read window [{start}..) {w}x{h} \
+                 overlaps the mutable borrow of picture row {next_sbrow}"
+            );
+        }
+    }
+
+    /// Liveness: the harness above CAN see an overlap, so a passing run means
+    /// the window is contained rather than that the check is inert. Uses a
+    /// deliberately over-wide window — the plane worst case the H direction
+    /// used before #524 — and requires it to panic.
+    #[test]
+    fn issue_524_harness_detects_a_window_that_does_lap() {
+        use crate::include::common::bitdepth::BitDepth8;
+        use crate::include::dav1d::picture::Rav1dPictureDataComponent;
+        use crate::src::with_offset::WithOffset;
+        use std::panic::{self, AssertUnwindSafe};
+
+        let next_sbrow = ROW0 + MAX_ITER * 4;
+        let mut px = vec![0u8; STRIDE * ROWS];
+        let pic = Rav1dPictureDataComponent::wrap_buf::<BitDepth8>(&mut px, STRIDE);
+        // The pre-fix chroma H window: 3 before the edge, 5 after.
+        let (w, h, start) = (3 + 5, MAX_ITER * 4, ROW0 * STRIDE + COL - 3);
+        let held = pic.slice_mut::<BitDepth8, _>((next_sbrow * STRIDE.., ..STRIDE));
+        let at = WithOffset {
+            data: &pic,
+            offset: start,
+        };
+        let prev = panic::take_hook();
+        panic::set_hook(Box::new(|_| {}));
+        let read = panic::catch_unwind(AssertUnwindSafe(|| {
+            at.compact_read_per_row::<BitDepth8>(w, h);
+        }));
+        panic::set_hook(prev);
+        drop(held);
+        assert!(
+            read.is_err(),
+            "the pre-#524 window [{start}..) {w}x{h} laps into picture row \
+             {next_sbrow} but the guards did not report it"
+        );
     }
 }
 

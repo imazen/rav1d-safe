@@ -2197,9 +2197,17 @@ fn loop_filter_4_8bpc_wd6_simd_h(
         _mm_cvtepu8_epi32(_mm_cvtsi32_si128(as_i32))
     };
     let load_row_hi = |row: isize| -> __m128i {
-        // 4 bytes at row*stridea + 1 = [q1, q2, ?, ?]  (we only use lanes 0,1)
+        // 2 bytes at row*stridea + 1 = [q1, q2, 0, 0].
+        //
+        // Only lanes 0 and 1 survive the transpose below (`hi[2]`/`hi[3]` are
+        // never bound), so the two bytes at +3/+4 this used to pull in as the
+        // tail of a 4-byte chunk were loaded and discarded. Loading them was
+        // not free: at the last 4-column group of a plane whose stride equals
+        // its width, +4 is the first pixel of the NEXT row, which a concurrent
+        // tile worker is legitimately writing (#524). Zero-filling the dead
+        // lanes is bit-identical by construction.
         let start = signed_idx(base, row * stridea + 1);
-        let bytes = [buf[start], buf[start + 1], buf[start + 2], buf[start + 3]];
+        let bytes = [buf[start], buf[start + 1], 0, 0];
         let as_i32 = i32::from_le_bytes(bytes);
         _mm_cvtepu8_epi32(_mm_cvtsi32_si128(as_i32))
     };
@@ -2996,7 +3004,19 @@ fn loop_filter_4_8bpc_wd16_simd_h(
         _mm_cvtepu8_epi32(_mm_cvtsi32_si128(as_i32))
     };
 
-    // chunk_off values: -7 (p6..p3), -3 (p2..q0), 1 (q1..q4), 5 (q5..q6+pad)
+    // The last chunk needs only q5 and q6: `c3[2]`/`c3[3]` are never bound, so
+    // the +7/+8 tail of a 4-byte load was read and discarded. At the last
+    // 4-column group of a plane whose stride equals its width that tail is the
+    // next row, which a concurrent tile worker is writing (#524). Zero-filling
+    // the dead lanes is bit-identical by construction.
+    let load_chunk2 = |row: isize, chunk_off: isize| -> __m128i {
+        let start = signed_idx(base, row * stridea + chunk_off);
+        let bytes = [buf[start], buf[start + 1], 0, 0];
+        let as_i32 = i32::from_le_bytes(bytes);
+        _mm_cvtepu8_epi32(_mm_cvtsi32_si128(as_i32))
+    };
+
+    // chunk_off values: -7 (p6..p3), -3 (p2..q0), 1 (q1..q4), 5 (q5..q6)
     let r0_c0 = load_chunk(0, -7);
     let r1_c0 = load_chunk(1, -7);
     let r2_c0 = load_chunk(2, -7);
@@ -3009,10 +3029,10 @@ fn loop_filter_4_8bpc_wd16_simd_h(
     let r1_c2 = load_chunk(1, 1);
     let r2_c2 = load_chunk(2, 1);
     let r3_c2 = load_chunk(3, 1);
-    let r0_c3 = load_chunk(0, 5);
-    let r1_c3 = load_chunk(1, 5);
-    let r2_c3 = load_chunk(2, 5);
-    let r3_c3 = load_chunk(3, 5);
+    let r0_c3 = load_chunk2(0, 5);
+    let r1_c3 = load_chunk2(1, 5);
+    let r2_c3 = load_chunk2(2, 5);
+    let r3_c3 = load_chunk2(3, 5);
 
     let transpose4 = |r0: __m128i, r1: __m128i, r2: __m128i, r3: __m128i| -> [__m128i; 4] {
         let t0 = _mm_unpacklo_epi32(r0, r1);
@@ -3045,7 +3065,7 @@ fn loop_filter_4_8bpc_wd16_simd_h(
     let q4_v = c2[3];
     let q5_v = c3[0];
     let q6_v = c3[1];
-    // c3[2], c3[3] are padding (unused)
+    // c3[2], c3[3] are the zero-filled dead lanes of `load_chunk2` (unused)
 
     // Same compute body as v-filter wd=16
     let i_v = _mm_set1_epi32(i);
@@ -5066,19 +5086,25 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             // — rows the previous sbrow's CDEF task is still legitimately
             // writing. Guarding them races that task (zenavif#30).
             let tap_before = if is_y { 7 } else { 3 };
-            // True perpendicular reach PAST the edge (#457): the tap ladder
-            // is symmetric — reads span p6..q6 for luma wd16 (7 after,
-            // indices 0..=+6) and p2..q2 for chroma wd6 (3 after). The 8bpc H
-            // kernels' 4-byte chunked transpose loads round past that: wd16
-            // loads 16 B/row covering -7..8 (after = 9), wd6 loads 4 B at +1
-            // covering +1..+4 (after = 5). The previous
-            // "+16" reached a full 16 rows below a V edge — into the NEXT
-            // superblock row, whose reconstruction runs concurrently now that
-            // the deblock barrier is gone; compact_read_per_row genuinely
-            // memcpys the window, so that read RACED the neighbour's
-            // BlockMut write-back (checked builds: intermittent overlap
-            // panics at t>=2). Exact windows stay inside the rows/cols the
-            // task graph already orders.
+            // Reach PAST the edge (#457). The tap ladder is symmetric — reads
+            // span p6..q6 for luma wd16 (7 after, indices 0..=+6) and p2..q2
+            // for chroma wd6 (3 after) — and since #524 every 8bpc kernel's
+            // LOADS stop there too, in both directions. The H values below stay
+            // at the old 9/5 anyway: they used to be the 4-byte chunked
+            // transpose loads' rounding (wd16 covered -7..8, wd6 +1..+4), and
+            // keeping them means this fallback predicate accepts exactly the
+            // edges it accepted before, so the SIMD-vs-scalar decision — and
+            // therefore every output byte — is unchanged by that fix. They are
+            // a deliberate superset of the reach, not a claim about it; the
+            // reach itself is `lf_run_reach`, which is what sizes the window.
+            //
+            // The previous "+16" reached a full 16 rows below a V edge — into
+            // the NEXT superblock row, whose reconstruction runs concurrently
+            // now that the deblock barrier is gone; compact_read_per_row
+            // genuinely memcpys the window, so that read RACED the neighbour's
+            // BlockMut write-back (checked builds: intermittent overlap panics
+            // at t>=2). Exact windows stay inside the rows/cols the task graph
+            // already orders.
             let tap_after = if is_y {
                 if is_v { 7 } else { 9 }
             } else if is_v {
@@ -5108,33 +5134,31 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                 return false;
             }
 
-            // The window the guard and the copy actually cover (#494).
+            // The window the guard and the copy actually cover (#494, #524).
             //
-            // For V (horizontal edges) the perpendicular extent is the tap
-            // reach of the widest width THIS RUN's mask can select, not the
-            // widest the plane allows: `lf_run_reach`'s docs carry the proof
-            // that a mask-derived window cannot read past the superblock row,
-            // and that a `tap_before/tap_after` of 7 reads 3 rows past it at
-            // every level-0 edge in the last 4-row band. Those rows belong to
-            // the tile worker reconstructing the next superblock row
-            // (`owned_recon.rs::stitch_sbrow`) and to that row's own
+            // Both directions size from the tap reach of the widest width THIS
+            // RUN's mask can select, not the widest the plane allows;
+            // `lf_compact_window` and `lf_run_reach` carry the proof for each.
+            //
+            // For V (horizontal edges) a mask-derived window cannot read past
+            // the superblock row, where `tap_before/tap_after` of 7 reads 3
+            // rows past it at every level-0 edge in the last 4-row band. Those
+            // rows belong to the tile worker reconstructing the next superblock
+            // row (`owned_recon.rs::stitch_sbrow`) and to that row's own
             // DeblockCols task, both of which run concurrently at `t > 1` with
             // no deblock barrier — an OBSERVED read/write race on x86_64,
             // where this dispatcher owns the guard policy that
             // `LfBlock::open` owns on aarch64 (which is why aarch64 is clean:
             // it sizes from the group's own `wd`).
             //
-            // H (vertical edges) keeps the plane worst case. Its perpendicular
-            // extent is COLUMNS of rows already inside this superblock row, so
-            // it has no cross-row ordering to violate, and its `tap_after` is
-            // not a tap bound at all but the 4-byte chunked transpose load's
-            // rounding (see `tap_after` above) — narrowing it would have to
-            // model the kernels' loads, for no correctness gain.
-            let (win_before, win_after) = if is_v {
+            // For H (vertical edges) a mask-derived window cannot read past the
+            // end of its own picture row, where `tap_after` of 5 reads one
+            // column past it at a chroma edge in the last 4-column group of a
+            // 384-stride plane — and that column is the next row's first pixel,
+            // which the next superblock row's stitch is writing (#524).
+            let (win_before, win_after) = {
                 let r = crate::src::loopfilter::lf_run_reach(is_y, mask);
                 (r, r)
-            } else {
-                (tap_before, tap_after)
             };
             let (win_reach_before, win_reach_after) = if !is_v {
                 (win_before, (max_iter * 4 - 1) * byte_stride + win_after)
@@ -5154,22 +5178,17 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                 (win_reach_before + win_reach_after).min(buf_pixel_len - start_pixel);
 
             if use_compact {
-                let (cw, ch, cstart, cbase) = if !is_v {
-                    (
-                        win_before + win_after,
-                        max_iter * 4,
-                        dst.offset - win_before,
-                        win_before,
-                    )
-                } else {
-                    let cw = max_iter * 4;
-                    (
-                        cw,
-                        win_before + win_after, // rows: win_before above + win_after below
-                        dst.offset.saturating_sub(win_before * byte_stride),
-                        win_before * cw,
-                    )
-                };
+                // The single source of truth for this geometry, so the window
+                // the guards reserve is the one `src/loopfilter.rs`'s unit
+                // tests check for row/superblock-row containment (#524).
+                let (cw, ch, cstart, cbase) = crate::src::loopfilter::lf_compact_window(
+                    is_v,
+                    is_y,
+                    mask,
+                    max_iter,
+                    dst.offset,
+                    byte_stride,
+                );
                 let lpf_pic = crate::src::with_offset::WithOffset {
                     data: dst.data,
                     offset: cstart,
@@ -5348,17 +5367,14 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
                 return false;
             }
 
-            // Per-run window (#494). Same rule and same reason as the 8bpc
-            // arm: for V the row extent is the reach of the widest width this
-            // run's mask can select, so the window cannot read past the
-            // superblock row into concurrently-reconstructed rows. H keeps the
-            // plane worst case (columns of rows already inside this superblock
-            // row).
-            let (win_before, win_after) = if is_v {
+            // Per-run window (#494, #524). Same rule and same reason as the
+            // 8bpc arm: the extent is the reach of the widest width this run's
+            // mask can select, so a V window cannot read past the superblock
+            // row and an H window cannot read past the end of its picture row,
+            // both of which are concurrently reconstructed at `t > 1`.
+            let (win_before, win_after) = {
                 let r = crate::src::loopfilter::lf_run_reach(is_y, mask);
                 (r, r)
-            } else {
-                (tap_before, tap_after)
             };
             let (win_reach_before, win_reach_after) = if !is_v {
                 (win_before, (max_iter * 4 - 1) * u16_stride + win_after)
@@ -5374,19 +5390,11 @@ pub fn loopfilter_sb_dispatch<BD: BitDepth>(
             let use_compact = crate::include::dav1d::picture::tile_threading_active();
 
             if use_compact {
-                let (compact_w, compact_h, start_pixel, base) = if !is_v {
-                    // H filter: win_before + win_after pixels wide, max_iter*4 rows tall
-                    let w = win_before + win_after;
-                    let h = max_iter * 4;
-                    let start = dst.offset - win_before;
-                    (w, h, start, win_before)
-                } else {
-                    // V filter: max_iter*4 pixels wide, win_before + win_after rows tall
-                    let w = max_iter * 4;
-                    let h = win_before + win_after;
-                    let start = dst.offset.saturating_sub(win_before * u16_stride);
-                    (w, h, start, win_before * w)
-                };
+                // Same single source of truth as the 8bpc arm (#524).
+                let (compact_w, compact_h, start_pixel, base) =
+                    crate::src::loopfilter::lf_compact_window(
+                        is_v, is_y, mask, max_iter, dst.offset, u16_stride,
+                    );
                 let lpf_pic = crate::src::with_offset::WithOffset {
                     data: dst.data,
                     offset: start_pixel,
