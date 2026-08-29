@@ -23,7 +23,7 @@
 #[cfg(debug_assertions)]
 compile_error!("tile_threading_parity tests require release mode: cargo test --release");
 
-use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
+use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings, Strictness};
 
 /// Decode every frame in `data` and return the MD5 of all plane bytes, plus the
 /// number of frames hashed. `threads = 1` exercises the single-threaded
@@ -32,6 +32,11 @@ use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
 /// synchronous (pure tile threading, no frame threading).
 fn decode_md5(data: &[u8], threads: u32) -> Result<(String, usize), String> {
     let mut settings = Settings::default();
+    // The vectors here are crafted / fuzz-derived streams kept for ST==MT
+    // parity, not conformance: `disjoint_mut_tile_overlap.obu` is refused up
+    // front by the `Strict` default (0.6.0), which is not what this test
+    // measures. Same pin as decode_md5_committed's parity references.
+    settings.strictness = Strictness::Lenient;
     settings.threads = threads;
     // Pin n_fc = 1 so decoding stays synchronous (pure tile threading).
     settings.max_frame_delay = 1;
