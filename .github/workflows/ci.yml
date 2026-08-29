@@ -48,6 +48,22 @@ jobs:
             features: "bitdepth_8,bitdepth_16"
             label: safe-simd-arm64
 
+          # C-FFI without `asm`, on native ARM. This combination had NO test
+          # leg anywhere: the `clippy` job LINTS it but never RUNS it, and the
+          # only other leg that turns `c-ffi` on is the x86_64 `asm` one —
+          # which also turns on `unchecked` and cfg's OUT the two aarch64
+          # parity harnesses (both are `#[cfg(not(feature = "asm"))]`). The
+          # result was 5 tests failing on main, on this arch, unseen:
+          # `ipred_arm::cfl_ac_parity` x3 and `mc_arm_prep_parity` x2, all on
+          # `wrap_buf`'s c-ffi zero-copy alignment assert.
+          #
+          # It is also the only leg where `wrap_buf` keeps the CALLER's
+          # pointer instead of copying, so it is the only one that can check
+          # that invariant at all.
+          - os: ubuntu-24.04-arm
+            features: "bitdepth_8,bitdepth_16,c-ffi"
+            label: c-ffi-arm64
+
           # macOS Intel (x86_64) — catch Intel-specific issues
           - os: macos-15-intel
             features: "bitdepth_8,bitdepth_16"
@@ -139,8 +155,14 @@ jobs:
       # satisfied — the first push of this branch failed exactly that way on
       # `ubuntu-latest`. `__ablate` is also a distinct feature set that forces a
       # full extra rebuild, so one leg is the right number.
+      #
+      # Both halves of the condition are load-bearing, and neither alone picks
+      # out one leg: `ubuntu-24.04-arm` now carries a second row
+      # (`c-ffi-arm64`), and `safe-simd-arm64` is also `windows-11-arm`'s label.
+      # Together they still select exactly the one leg they did before, so this
+      # stays one `__ablate` rebuild.
       - name: Run fuzz-regression liveness gate (__ablate activity counters)
-        if: matrix.os == 'ubuntu-24.04-arm'
+        if: matrix.os == 'ubuntu-24.04-arm' && matrix.label == 'safe-simd-arm64'
         run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }},__ablate" --release --test fuzz_regression -E 'test(fuzz_regression_corpus_exercises_instrumented_kernels)'
 
       # SIMD-vs-spec bit-exactness gate (issue #400). The `__simd_test` feature makes
@@ -215,6 +237,17 @@ jobs:
       # C-FFI build (strict — must pass)
       - name: Clippy (c-ffi)
         run: cargo clippy --no-default-features --features "c-ffi,bitdepth_8,bitdepth_16" -- -D warnings
+
+      # `probe-sites` build (strict — must pass). Nothing else lints it, and it
+      # compiles code the other two legs never see: `rav1d-disjoint-mut`'s
+      # `site_probe.rs` (which was carrying two `-D warnings` failures nobody
+      # could observe), and — since b6bf82ab — the #524 loop-filter window
+      # invariants in `loopfilter_sb_direct`, which are gated on
+      # `debug_assertions` OR this feature. The `extent-gate` job below already
+      # RUNS a `--features probe-sites` test, so this configuration has to keep
+      # building regardless; linting it is the cheap half of that.
+      - name: Clippy (probe-sites)
+        run: cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16,probe-sites" -- -D warnings
 
   # ==========================================================================
   # Format check
