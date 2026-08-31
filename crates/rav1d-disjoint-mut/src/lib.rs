@@ -1112,6 +1112,8 @@ use tracker_shard as checked;
     ))
 ))]
 pub use tracker_shard::wide_probe;
+#[cfg(feature = "__probe_lockstats")]
+pub use tracker_shard::lock_probe;
 
 /// The single-lock predecessor, kept only so the throwaway `__probe_*`
 /// decomposition arms (`benchmarks/tracker_decomp_2026-08-07.meta`) remain

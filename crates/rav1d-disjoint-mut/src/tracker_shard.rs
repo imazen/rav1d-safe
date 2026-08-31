@@ -438,6 +438,61 @@ pub mod wide_probe {
 /// on the old value, which is what the uncontended path wants. **Not
 /// reentrant** — every multi-shard operation in this module depends on that
 /// being remembered, hence the ascending acquisition order.
+/// THROWAWAY probe: how often is `TinyLock` actually contended, how long does
+/// a contended acquisition spin, and does the 64-spin bound ever get reached?
+///
+/// This exists because the campaign's "contention is ~0.02%" figure is
+/// `wide_probe::N_SLOW`, which counts `BorrowTracker::add_slow` — the
+/// poisoned / live-wide / multi-block path — and is a DIFFERENT event from
+/// `TinyLock::lock_slow`. A bounded-spin change is inert unless the bound is
+/// reached, so the yield count is the liveness assertion for it.
+///
+/// One `fetch_add` per contended acquisition, none on the fast path and none
+/// inside the spin loop (spins are accumulated in a local).
+#[cfg(feature = "__probe_lockstats")]
+pub mod lock_probe {
+    use core::sync::atomic::{AtomicU64, Ordering::Relaxed};
+
+    /// Contended acquisitions (entries into `TinyLock::lock_slow`).
+    pub static CONTENDED: AtomicU64 = AtomicU64::new(0);
+    /// Total `spin_loop()` iterations across all contended acquisitions.
+    pub static SPINS: AtomicU64 = AtomicU64::new(0);
+    /// `yield_now()` calls — i.e. how often the 64-spin bound was reached.
+    /// Zero here means this change cannot have done anything.
+    pub static YIELDS: AtomicU64 = AtomicU64::new(0);
+    /// Longest single contended acquisition, in spin iterations.
+    pub static MAX_SPINS: AtomicU64 = AtomicU64::new(0);
+
+    #[inline]
+    pub fn record(spins: u64, yields: u64) {
+        CONTENDED.fetch_add(1, Relaxed);
+        SPINS.fetch_add(spins, Relaxed);
+        YIELDS.fetch_add(yields, Relaxed);
+        MAX_SPINS.fetch_max(spins, Relaxed);
+    }
+
+    pub fn reset() {
+        for a in [&CONTENDED, &SPINS, &YIELDS, &MAX_SPINS] {
+            a.store(0, Relaxed);
+        }
+    }
+
+    pub fn report() -> std::string::String {
+        use core::fmt::Write as _;
+        let mut out = std::string::String::new();
+        let _ = writeln!(out, "LOCKHDR\tcontended\tspins\tyields\tmax_spins");
+        let _ = writeln!(
+            out,
+            "LOCK\t{}\t{}\t{}\t{}",
+            CONTENDED.load(Relaxed),
+            SPINS.load(Relaxed),
+            YIELDS.load(Relaxed),
+            MAX_SPINS.load(Relaxed),
+        );
+        out
+    }
+}
+
 struct TinyLock(AtomicBool);
 
 impl TinyLock {
@@ -471,11 +526,17 @@ impl TinyLock {
     fn lock_slow(&self) {
         #[cfg(feature = "__probe_lock_backoff")]
         let mut spins = 0u32;
+        #[cfg(feature = "__probe_lockstats")]
+        let mut total_spins = 0u64;
         loop {
             // Spin on a load, not a swap: a read-only spin keeps the line in
             // Shared instead of ping-ponging it Exclusive between waiters.
             while self.0.load(Ordering::Relaxed) {
                 core::hint::spin_loop();
+                #[cfg(feature = "__probe_lockstats")]
+                {
+                    total_spins += 1;
+                }
                 #[cfg(feature = "__probe_lock_backoff")]
                 {
                     spins += 1;
@@ -486,6 +547,8 @@ impl TinyLock {
                 }
             }
             if !self.0.swap(true, Ordering::Acquire) {
+                #[cfg(feature = "__probe_lockstats")]
+                lock_probe::record(total_spins, 0);
                 return;
             }
         }
