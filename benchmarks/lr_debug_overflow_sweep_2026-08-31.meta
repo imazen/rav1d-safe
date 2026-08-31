@@ -1,0 +1,65 @@
+# Dev-profile (overflow-checks ON) decode sweep of the full dav1d corpus
+# ======================================================================
+# Why: releases <= 0.5.7 crashed a DEBUG-profile consumer with
+#   looprestoration_arm.rs:465:30 "attempt to multiply with overflow"
+# on 8-bit/issues/320_tennis.ivf. Column 30 of that line is
+# `row_start * REST_UNIT_STRIDE`, where
+# `let row_start = (row_offset as isize - 1) as usize` is usize::MAX at
+# row_offset == 0 -- an INDEX multiply, not the `a * n - b * b` below it. With
+# overflow-checks OFF it wraps to the intended offset, so the failure exists
+# only in the dev profile, and no test in this repo had ever decoded a
+# bitstream in that profile (every decode suite opened with
+# `#[cfg(debug_assertions)] compile_error!`).
+#
+# This sweep is the empirical half of the fix: it establishes that on `main`
+# the whole corpus decodes in the dev profile with zero overflow traps, and
+# that the new `sgr_ab_{8,16}bpc` box-sum range assertions hold on real data.
+#
+# commit         : b2d76b7 (docs+test(looprestoration_arm): state the sgr
+#                           box-sum range invariant ...)
+# date           : 2026-08-31
+# host           : aarch64-apple-darwin (Darwin 25.5.0, Apple Silicon)
+# profile        : dev  (opt-level 0, debug-assertions ON, overflow-checks ON)
+# features       : --no-default-features --features bitdepth_8,bitdepth_16
+# binary         : target/debug/examples/decode_md5
+# invocation     : decode_md5 -q --threads 4 <vector>   (per vector, serial)
+# corpus         : test-vectors/dav1d-test-data, every *.ivf + *.obu
+#
+# RESULTS
+# -------
+# vectors run              : 783   (8-bit, 10-bit, 12-bit, multi-bit/argon)
+# nonzero exit / panic     : 0
+# assertion failures       : 0     (sgr_ab_8bpc / sgr_ab_16bpc range checks)
+# overflow traps           : 0
+# wall time                : ~20 min total, run in 4 chunks
+#
+# The same sweep was run BEFORE the assertions were added (same commit base,
+# same corpus, 783/783 clean), so the assertions add no failures of their own.
+#
+# LR variant coverage, from `--features __lrvarcov` on the committed vectors:
+#   8bpc : wiener5, sgr_3x3, sgr_5x5, sgr_mix
+#   16bpc: sgr_3x3, sgr_5x5, sgr_mix
+#   (8-bit/issues/320_tennis.ivf -- the vector in the crash report -- reports
+#    `LRVAR 8bpc sgr_mix` and `LRVAR 8bpc wiener5`, so it does reach the
+#    kernel that panicked on 0.5.7.)
+#
+# MUTATION CHECK (the guard actually fires)
+# -----------------------------------------
+# Reintroducing the 0.5.7 aa_base arithmetic in `sgr_ab_8bpc`, in a form whose
+# WRAPPED value is byte-identical to `(row + 1) * S + 2`:
+#     let row_start = (row as isize - 1) as usize;
+#     let base = (2 * S + 3).wrapping_add(row_start * S)
+#                           .wrapping_sub(S).wrapping_add(S - 1);
+#   dev     : 3 of 4 `decode_md5_committed` tests FAIL,
+#             "attempt to multiply with overflow" at looprestoration_arm.rs:875:27
+#   release : 4 of 4 PASS, every committed MD5 byte-identical
+# That asymmetry is the defect this campaign closed.
+#
+# DEV-PROFILE SUITE COST (why the release-only gates were removed)
+# ---------------------------------------------------------------
+# decode_md5_committed   4 tests   0.75 s
+# safe_simd_crashes     15 tests   0.29 s
+# fuzz_regression        3 tests   5.12 s   (33 seeds x 5 entry points)
+# For contrast, the downloaded dav1d corpus above is ~20 min in the dev
+# profile -- THAT is what "debug decode is too slow" was true of. It was never
+# true of the committed stills.
