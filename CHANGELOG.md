@@ -5,6 +5,25 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Changed
+- **`sgr_ab_{8,16}bpc` now state their box-sum range invariant** under
+  `#[cfg(debug_assertions)]` (`b2d76b7`): `a` in `[0, n * px_max^2]`, `b` in
+  `[0, n * px_max]`, checked over the row `boxsum_*` just wrote. That invariant
+  is what makes the *checked* `a * n - b * b` overflow-free (`n * a` peaks near
+  4.1e7, `p * s` near 4.24e9 at `n == 9, s == 3236`, the largest
+  `dav1d_sgr_params` entry), so an overflow there means a corrupted feed, not
+  arithmetic needing a wider type — `wrapping_mul` would preserve a wrong pixel
+  and widening to `i64` would diverge from the reference. Verified over all 783
+  `dav1d-test-data` vectors in the dev profile: zero assertion failures, zero
+  panics. The same expression and the same `(row + 1) * STRIDE + 2` index form
+  are used by `src/looprestoration.rs` and `src/safe_simd/looprestoration.rs`,
+  so the three tiers do not disagree. Release codegen is unchanged.
+- **Corrected a false claim in `looprestoration_arm.rs`'s module header**
+  (`b2d76b7`). It said `x * b * sgr_one_by_x` "genuinely overflows at 12bpc
+  (255 * 102375 * 455 = 1.19e10)"; that multiplies the `n == 25` sum bound by
+  the `n == 9` constant, which cannot co-occur. The true worst cases are
+  4,281,322,500 (`n == 25`) and 4,276,101,375 (`n == 9`), both inside
+  `u32::MAX` = 4,294,967,295. The wrapping form is kept — it is what the
+  reference's `c_uint` does — but on the correct justification.
 - **Third-party lockfile refreshed within the existing requirements** — no
   manifest requirement changed, so this is a `Cargo.lock` move only and every
   version stays inside the range the manifests already declared (`5b5cbfb`).
@@ -18,6 +37,37 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   `decode_md5_committed` passes unchanged — no committed MD5 moved.
 
 ### Fixed
+- **Every gate for the aarch64 loop-restoration overflow bug ran only in
+  `--release`, where the bug is invisible** (`45d13f4`, `b2d76b7`). A
+  debug-profile consumer of the published `0.5.7` crashed decoding
+  `8-bit/issues/320_tennis.ivf` with `attempt to multiply with overflow` at
+  `looprestoration_arm.rs:465:30`. Column 30 of that line is
+  `row_start * REST_UNIT_STRIDE`, **not** the `a * n - b * b` a few lines below
+  it: `let row_start = (row_offset as isize - 1) as usize` is `usize::MAX` at
+  `row_offset == 0`, so the index multiply overflows. With `overflow-checks`
+  OFF it wraps to the byte offset the code intended and the decode proceeds —
+  the failure exists **only in the dev profile**.
+  The arithmetic was fixed on 2026-06-16 (`da53bfa`, issue #14) by adopting the
+  x86 tier's `aa_base = (row + 1) * STRIDE + 2` form, and that fix is in
+  `0.6.0`; `0.5.7` is the last published release and still carries it. What was
+  left on `main` was a **guard that could not fire**: the regression vectors
+  filed against it (`arm_aa_base_underflow_{8,16}bpc` and the `lr_sgr_*` MD5
+  pins) live in `tests/safe_simd_crashes.rs`, `tests/decode_md5_committed.rs`
+  and `tests/fuzz_regression.rs`, all three of which opened with
+  `#[cfg(debug_assertions)] compile_error!("requires release mode")` — so
+  nothing in this repo or in CI had ever decoded a bitstream with overflow
+  checks live. Those `compile_error!`s are gone, and `ci.yml` now runs the three
+  suites a second time without `--release` on every matrix leg, including both
+  native aarch64 runners.
+  Measured, not assumed: dev-profile cost is 0.75 s + 0.29 s + 5.1 s on
+  aarch64-apple-darwin. The "debug decode is too slow" premise those gates cited
+  is real only for the downloaded dav1d corpus (~20 min in dev), not for
+  committed stills. Mutation-verified: reintroducing the `0.5.7` `aa_base`
+  arithmetic in `sgr_ab_8bpc` in a wrap-value-identical form fails 3 of the 4
+  `decode_md5_committed` tests in the dev profile with that exact message, and
+  passes 4/4 in release with byte-identical MD5s.
+  **No decoded pixel changes**: release MD5s are unchanged and the new
+  assertions compile out of release entirely.
 - **Two configurations CI compiled but never ran had been failing on `main`.**
   Neither is a decoder defect; both are gates that could not report.
   - `cargo test --features "bitdepth_8,bitdepth_16,c-ffi" --lib` failed 5 tests

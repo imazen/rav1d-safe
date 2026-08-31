@@ -690,9 +690,14 @@ zero-filled, bit-identical), so every 8bpc H kernel's load extent is exactly
 `lf_compact_window`. **Rule for the next window written here: size from the mask,
 and remember an H window has a picture ROW to stay inside, not just a superblock
 row.** Both window invariants are asserted in `loopfilter_sb_direct` under
-`debug_assertions` OR `--features probe-sites` — the latter because every decode
-test in this repo is release-only, so a `debug_assertions`-only check runs in no
-CI job at all.
+`debug_assertions` OR `--features probe-sites` — the latter because at the time
+EVERY decode test in this repo was release-only, so a `debug_assertions`-only
+check ran in no CI job at all. **That is no longer true as of 2026-08-31:**
+`decode_md5_committed`, `safe_simd_crashes` and `fuzz_regression` now run in the
+dev profile too, on every `build-test` leg (see the Known Bugs entry below), so
+a `debug_assertions`-only check on a committed vector now does reach CI. The
+`probe-sites` arm stays — it is the only one that covers the downloaded corpus,
+which is still release-only.
 
 **CDEF tile race (FIXED, commit b948270):** The `padding_8bpc`/`padding_16bpc` functions in
 `cdef.rs` locked 2 extra bytes (left-border context) even when `HAVE_LEFT` was false and those
@@ -879,6 +884,49 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+### The aarch64 LR overflow guard could not fire (2026-08-31) — FIXED
+A debug-profile consumer of the published `0.5.7` crashed decoding
+`8-bit/issues/320_tennis.ivf`:
+
+```
+looprestoration_arm.rs:465:30: attempt to multiply with overflow
+```
+
+**Column 30 of that line is `row_start * REST_UNIT_STRIDE`, not the
+`a * n - b * b` two lines below it.** `let row_start = (row_offset as isize - 1)
+as usize` is `usize::MAX` at `row_offset == 0`; the index multiply overflows,
+and with `overflow-checks` OFF it wraps to the offset the code intended, so the
+decode proceeds normally. **The failure exists only in the dev profile.** Do not
+reach for `wrapping_mul` on the `a * n - b * b` in that neighbourhood: it is a
+CHECKED multiply on purpose in all three tiers, its inputs are box sums bounded
+by `n * px_max^2` / `n * px_max`, and an overflow there would mean a corrupted
+feed — wrapping it would ship a wrong pixel. The neighbouring `wrapping_mul`s
+are a different quantity (`x * b * one_by_x`, u32, matching the reference's
+`c_uint`), not a half-finished fix.
+
+The arithmetic was fixed 2026-06-16 (`da53bfa`, issue #14) by adopting the x86
+`aa_base = (row + 1) * STRIDE + 2` form. What survived until 2026-08-31 was the
+**gate**: all four regression vectors filed against it
+(`arm_aa_base_underflow_{8,16}bpc`, the `lr_sgr_*` MD5 pins) sat in test files
+that opened with `#[cfg(debug_assertions)] compile_error!("requires release
+mode")`, so no test in this repo or in CI had ever decoded a bitstream with
+overflow checks live — a regression test for an overflow-check-only defect,
+running only with overflow checks off.
+
+Fix (`45d13f4`, `b2d76b7`): the `compile_error!` is gone from
+`decode_md5_committed`, `safe_simd_crashes` and `fuzz_regression`, and `ci.yml`
+runs all three a second time WITHOUT `--release` on every matrix leg (both
+native aarch64 runners included). Measured dev-profile cost: 0.75 s + 0.29 s +
+5.1 s. Mutation-verified: the `0.5.7` `aa_base` arithmetic reintroduced in a
+wrap-value-identical form fails 3 tests in dev with that exact message and 0 in
+release.
+
+**The durable rule:** a failure mode that only exists under `overflow-checks`
+needs a gate that runs under `overflow-checks`. Before adding
+`#[cfg(debug_assertions)] compile_error!` to a test file, MEASURE the dev-profile
+cost — for committed vectors it is seconds, and the "debug decode is too slow"
+premise only ever applied to the downloaded dav1d corpus (~20 min in dev).
+
 ### `just clippy` / `just check` cannot pass, on any host (2026-08-29) — OPEN
 `just clippy` runs `cargo clippy ... --all-targets`, which lints the **test**
 targets under the **dev** profile. Two of those tests open with
@@ -888,10 +936,14 @@ targets under the **dev** profile. Two of those tests open with
 compile_error!("... tests require release mode: cargo test --release");
 ```
 
-(`tests/decode_cpu_levels.rs`, `tests/decode_md5_committed.rs`), so
+Eight test files still do (`cancellation`, `decode_cpu_levels`,
+`decode_md5_verify`, `decode_permutations`, `integration_decode`,
+`tile_threading_overlap`, `tile_threading_parity`, `worker_panic_recovery` — all
+of which either need the downloaded corpus or are threading/timing tests), so
 `--all-targets` in a debug profile is unsatisfiable by construction — the recipe
 has never been able to succeed, and `just check` (which depends on it) inherits
-the failure. On aarch64 it additionally reports ~76 `dead_code` errors from
+the failure. (`decode_md5_committed`, `safe_simd_crashes` and `fuzz_regression`
+were on that list until 2026-08-31; they are not any more.) On aarch64 it additionally reports ~76 `dead_code` errors from
 `src/safe_simd/itx_arm.rs` in the `lib test` target.
 
 **CI is unaffected and is the gate that counts:** the `clippy` job runs
