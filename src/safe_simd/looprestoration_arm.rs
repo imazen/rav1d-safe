@@ -54,9 +54,29 @@
 //! The reference is the oracle, and the arithmetic here is written to match it
 //! bit for bit, including where it relies on wrapping:
 //!
-//! * `x * b * sgr_one_by_x` is `c_uint` (u32) arithmetic in the reference and
-//!   genuinely overflows at 12bpc on flat content (255 * 102375 * 455 is
-//!   1.19e10). `vmulq_u32` wraps identically. Do not "fix" this to u64.
+//! * `x * b * sgr_one_by_x` is `c_uint` (u32) arithmetic in the reference, and
+//!   the wrapping forms here (`vmulq_u32`, `wrapping_mul`) exist so the two
+//!   agree bit for bit whatever the input. An earlier note here claimed it
+//!   "genuinely overflows at 12bpc (255 * 102375 * 455 = 1.19e10)"; that mixed
+//!   the `n == 25` sum bound with the `n == 9` constant, which cannot co-occur.
+//!   Recomputed 2026-08-31, the true worst cases both FIT in u32, by under 0.5%:
+//!   `n == 25`: 255 * (25 * 4095) * 164 = 4,281,322,500; `n == 9`:
+//!   255 * (9 * 4095) * 455 = 4,276,101,375; `u32::MAX` = 4,294,967,295. Keep
+//!   the wrapping form anyway — it is what the reference's `c_uint` does — and
+//!   do not "fix" it to u64, which would silently diverge from the reference if
+//!   an input ever did leave that range.
+//! * `a * n - b * b` is a CHECKED multiply, here and in `src/looprestoration.rs`
+//!   and `src/safe_simd/looprestoration.rs` alike — the same expression in all
+//!   three, so the tiers cannot disagree on it. It cannot overflow on a correct
+//!   feed: `boxsum` writes exactly the cells the `a`/`b` loop reads, `n * a`
+//!   peaks near 4.1e7 and `p * s` near 4.24e9 (`n == 9`, `s == 3236`, the
+//!   largest entry of `dav1d_sgr_params`), inside `i32` / `u32` respectively.
+//!   So an overflow means a corrupted feed, not arithmetic needing a wider
+//!   type, and trapping is the CORRECT response — `wrapping_mul` here would
+//!   preserve a wrong pixel instead. Releases <= 0.5.7 tripped exactly this in
+//!   debug builds, from `(row_offset as isize - 1) as usize * REST_UNIT_STRIDE`
+//!   at `row_offset == 0`; the `#[cfg(debug_assertions)]` row checks in
+//!   `sgr_ab_{8,16}bpc` state the invariant where it can fail loudly.
 //! * `dst[i] = (...).as_()` is a truncating cast, so the narrow is
 //!   `vmovn_s32`, never a saturating `vqmovn_s32`.
 //! * The 8bpc horizontal Wiener pass folds the separate `tmp[i+3] * 128` term
@@ -867,6 +887,28 @@ fn sgr_ab_8bpc(
     let mut row = 0;
     while row < h + 2 {
         let base = (row + 1) * S + 2;
+        // The box-sum range that makes the CHECKED `a_val * n - b_val * b_val`
+        // below overflow-free (module header, "Exactness"). `boxsum_8bpc` wrote
+        // exactly the cells `[base, base + cols)` this call, so on a correct
+        // feed `a` is a sum of `n` squared 8-bit samples and `b` a sum of `n` of
+        // them. This assert cannot fail on a correct feed; it fails on a wrong
+        // index or an unwritten cell, which is the only way that multiply can
+        // overflow — and is exactly what releases <= 0.5.7 did.
+        #[cfg(debug_assertions)]
+        for (i, (&a_val, &b_val)) in sumsq[base..base + cols]
+            .iter()
+            .zip(sum[base..base + cols].iter())
+            .enumerate()
+        {
+            let b_val = b_val as i32;
+            debug_assert!(
+                (0..=n * 255 * 255).contains(&a_val) && (0..=n * 255).contains(&b_val),
+                "sgr_ab_8bpc: box sums out of range at row {row} col {i} (w={w} h={h} n={n}): \
+                 a={a_val} (max {}), b={b_val} (max {})",
+                n * 255 * 255,
+                n * 255,
+            );
+        }
         let mut i = 0;
         while i + 16 <= cols {
             let mut z = [vdupq_n_u32(0); 4];
@@ -1369,6 +1411,25 @@ fn sgr_ab_16bpc(
     let mut row = 0;
     while row < h + 2 {
         let base = (row + 1) * S + 2;
+        // Same invariant as `sgr_ab_8bpc`, with the sample ceiling taken from
+        // the bit depth: `boxsum_16bpc` wrote `[base, base + cols)` this call.
+        #[cfg(debug_assertions)]
+        {
+            let px_max = (1i32 << (8 + bdm8)) - 1;
+            for (i, (&a_raw, &b_raw)) in sumsq[base..base + cols]
+                .iter()
+                .zip(sum[base..base + cols].iter())
+                .enumerate()
+            {
+                debug_assert!(
+                    (0..=n * px_max * px_max).contains(&a_raw) && (0..=n * px_max).contains(&b_raw),
+                    "sgr_ab_16bpc: box sums out of range at row {row} col {i} \
+                     (w={w} h={h} n={n} bdm8={bdm8}): a={a_raw} (max {}), b={b_raw} (max {})",
+                    n * px_max * px_max,
+                    n * px_max,
+                );
+            }
+        }
         let mut i = 0;
         while i + 16 <= cols {
             let mut z = [vdupq_n_u32(0); 4];
