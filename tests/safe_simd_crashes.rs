@@ -3,12 +3,22 @@
 //! Each test decodes a raw AV1 OBU bitstream extracted from a real AVIF file.
 //! These should NOT panic — panics indicate bounds-check bugs in safe SIMD code.
 //!
-//! **Requires `--release`** — debug mode is too slow for decode tests.
+//! # Runs in BOTH profiles — the dev one is where two of these can fail
 //!
-//! Run: cargo test --release --test safe_simd_crashes
-
-#[cfg(debug_assertions)]
-compile_error!("safe_simd_crashes tests require release mode: cargo test --release");
+//! This file used to refuse to compile in the dev profile ("debug mode is too
+//! slow for decode tests"). Measured 2026-08-31 on aarch64-apple-darwin:
+//! **0.29 s** for all 15 tests in the dev profile. The claim was false, and it
+//! disarmed the two tests below that name a debug-only failure.
+//!
+//! `arm_aa_base_underflow_{8,16}bpc` guard `attempt to multiply with overflow`
+//! at `looprestoration_arm.rs:465:30` / `:999:30`: a `usize` index multiply
+//! whose overflow WRAPS, with `overflow-checks` off, to the value the code
+//! meant. With the release-only gate those two tests could not fail on the bug
+//! they are named after, no matter how completely it came back. Verified by
+//! mutation on 2026-08-31 — see `tests/decode_md5_committed.rs`'s module docs.
+//!
+//! Run: cargo test --test safe_simd_crashes           (debug: overflow checks)
+//!      cargo test --release --test safe_simd_crashes (release: speed)
 
 use rav1d_safe::src::managed::Decoder;
 

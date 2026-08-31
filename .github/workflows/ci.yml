@@ -144,6 +144,27 @@ jobs:
       - name: Run fuzz-crash regression gate
         run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }}" --release --test fuzz_regression ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
+      # The SAME three suites again, in the DEV profile. Not redundancy: this is
+      # the only place in CI where `overflow-checks` are live during a decode.
+      #
+      # Until 2026-08-31 all three opened with a `#[cfg(debug_assertions)]
+      # compile_error!("requires release mode")`, so every committed regression
+      # vector was only ever decoded with overflow checks OFF. Two of them —
+      # `arm_aa_base_underflow_{8,16}bpc`, and the `lr_sgr_*` MD5 pins — guard a
+      # `usize` index multiply in `looprestoration_arm.rs` whose overflow WRAPS
+      # to the intended value when checks are off. Releases <= 0.5.7 shipped that
+      # bug; a debug-profile consumer hit `attempt to multiply with overflow` at
+      # `looprestoration_arm.rs:465:30` on `8-bit/issues/320_tennis.ivf`, while
+      # every release-mode gate in this repo stayed green. Verified by mutation
+      # on 2026-08-31: the v0.5.7 arithmetic reintroduced in a wrap-identical
+      # form fails 3 tests here in dev and 0 in release.
+      #
+      # Cost, measured on aarch64-apple-darwin: 0.75 s + 0.29 s + 5.1 s. The
+      # "debug decode is too slow" premise those gates cited applies to the
+      # downloaded dav1d corpus (~20 min in dev), not to committed stills.
+      - name: Run committed-vector + crash-repro gates in the DEV profile (overflow checks)
+        run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }}" --test decode_md5_committed --test safe_simd_crashes --test fuzz_regression ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+
       # Liveness half of the same gate: asserts the corpus actually reaches itx,
       # CDEF and loop restoration (the three `ablate::note()`-instrumented
       # families) instead of being rejected at the header. Without it, "the crash

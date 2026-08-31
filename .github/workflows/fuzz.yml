@@ -93,6 +93,10 @@ jobs:
   # `compile_error!` into that same swallowed branch. It reported green for four
   # months with no `tests/fuzz_regression.rs` in the repo at all. Do not
   # reintroduce a fallback here: if the suite cannot run, this job must go red.
+  #
+  # (That `compile_error!` is gone as of 2026-08-31 — the suite now runs in
+  # either profile, and ci.yml runs it in the dev profile too, where
+  # `overflow-checks` are live. This job stays on `--release` for speed.)
   regression:
     name: Fuzz regression
     runs-on: ubuntu-latest

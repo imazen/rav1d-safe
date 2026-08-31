@@ -9,12 +9,32 @@
 //! off for being off-by-up-to-15 — the aarch64 run diverges from these MD5s and
 //! fails here instead of silently shipping wrong pixels.
 //!
-//! **Requires `--release`** — debug decode is too slow.
+//! # Runs in BOTH profiles, and the debug one is not optional
 //!
-//! Run: cargo test --release --test decode_md5_committed
-
-#[cfg(debug_assertions)]
-compile_error!("decode_md5_committed tests require release mode: cargo test --release");
+//! This file used to open with `#[cfg(debug_assertions)] compile_error!("...
+//! requires release mode: debug decode is too slow")`. That was measured false
+//! and it made the suite blind to the defect class it was written for.
+//!
+//! Measured 2026-08-31 on aarch64-apple-darwin: **0.75 s** for all four tests
+//! in the dev profile (the vectors here are 8x8..640x256 stills, not corpus
+//! streams). The cost claim never applied to committed vectors.
+//!
+//! The blindness matters more. Two of the `LR_SGR_VECTORS` below exist because
+//! releases <= 0.5.7 panicked `attempt to multiply with overflow` at
+//! `looprestoration_arm.rs:465:30` — a `usize` index multiply that WRAPS to the
+//! intended value with `overflow-checks` off. In release the wrap is silent and
+//! the decode is byte-identical, so a release-only gate cannot fail on it. That
+//! was verified by mutation on 2026-08-31: reintroducing the v0.5.7 `aa_base`
+//! arithmetic (in a wrap-value-identical form) makes three tests here fail in
+//! the dev profile with that exact message, and all four still pass in release.
+//!
+//! So: keep this file runnable in the dev profile, and keep CI running it there
+//! (`.github/workflows/ci.yml`, "Run committed-vector decode tests"). A gate for
+//! an overflow-check-only failure that only ever runs with overflow checks off
+//! is not a gate.
+//!
+//! Run: cargo test --test decode_md5_committed          (debug: overflow checks)
+//!      cargo test --release --test decode_md5_committed (release: speed)
 
 use rav1d_safe::src::managed::{Decoder, Frame, PixelLayout, Planes, Settings, Strictness};
 

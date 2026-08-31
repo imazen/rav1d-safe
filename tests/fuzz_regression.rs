@@ -56,18 +56,22 @@
 //! `--features __ablate` asserts the corpus actually reaches inverse transforms,
 //! CDEF and loop restoration — the three families with activity counters.
 //!
-//! Run: `cargo test --release --test fuzz_regression`
+//! # Profiles
+//!
+//! Runs in both. It used to be release-only ("a debug decode of the larger
+//! vectors is minutes, not milliseconds"); measured 2026-08-31 on
+//! aarch64-apple-darwin that is **5.1 s** in the dev profile for all three
+//! tests over all 33 seeds x 5 entry points.
+//!
+//! The dev profile is worth those seconds: `overflow-checks` are only live
+//! there, and several committed seeds guard panics that ONLY reproduce with
+//! them on (the `arm_aa_base_underflow_*` pair below — a `usize` index multiply
+//! that wraps to the right answer in release). A release-only regression suite
+//! cannot fail on an overflow-check-only defect.
+//!
+//! Run: `cargo test --test fuzz_regression`            (debug: overflow checks)
+//!      `cargo test --release --test fuzz_regression`  (release: speed)
 //! Liveness: `cargo test --release --features __ablate --test fuzz_regression`
-
-// Release-only, like `tests/safe_simd_crashes.rs`: a debug decode of the larger
-// vectors is minutes, not milliseconds. A `compile_error!` rather than a
-// `#![cfg(not(debug_assertions))]` on purpose — the cfg form would make a debug
-// `cargo test` silently run zero tests, which is the vacuous pass this file exists
-// to prevent.
-#[cfg(debug_assertions)]
-compile_error!(
-    "fuzz_regression requires release mode: cargo test --release --test fuzz_regression"
-);
 
 use std::fs;
 use std::path::{Path, PathBuf};
