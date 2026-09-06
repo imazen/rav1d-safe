@@ -19,3 +19,11 @@ All five comparisons favor NEON with paired confidence intervals excluding zero;
 `cargo clippy --locked -p rav1d-safe --bench tier_isolation -- -D warnings` passed. Existing decoder source was unchanged; the five fixture parity checks are the validation for this benchmark change.
 
 Fixtures are external at `test-vectors/dav1d-test-data`, or the explicit `RAV1D_BENCH_VECTORS` root. Missing fixtures fail loudly. Hashes are in [fixtures.tsv](fixtures.tsv).
+
+## Validation after the film-grain fixes
+
+The audit benchmark was rebased over the pre-existing `83fa5d3`, `69b6c70`, `56601c9`, and `6500658` commits. These are separate work, not optimizations authored by this audit. A command sequencing error pushed that existing stack before the benchmark; it remains in history.
+
+The rerun on benchmark commit `58015574` passed all 52 exact frame comparisons again. All five paired intervals still favor NEON. Native/scalar means in fixture order were 38.64/125.98, 10.59/26.46, 10.17/26.45, 18.13/34.40, and 24.29/43.30 ms. See [rerun](rav1d-tiers-grain-fixes.log). These separate builds do not constitute a paired measurement of the film-grain changes.
+
+The added row-guard tests passed at 8/10/12 bits (3 tests), the filmgrain_threads suite passed all 3 tests (13 reference-MD5 fixtures at 1/2/4/8 threads), and delayed_grain_panic_preserves_live_worker_state passed. Commands: `cargo test --locked -p rav1d-safe --lib filmgrain_arm_rows -- --test-threads=1`, `cargo test --locked -p rav1d-safe --test filmgrain_threads -- --test-threads=1`, and `cargo test --locked -p rav1d-safe --lib delayed_grain_panic_preserves_live_worker_state -- --test-threads=1`, all under the same nice/thread environment. The library-test build reports existing unused-code warnings; no warning was suppressed. Logs are retained alongside this report.
