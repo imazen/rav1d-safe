@@ -1,0 +1,81 @@
+[
+  {
+    "crate": "rav1d-safe",
+    "version": "0.5.7",
+    "created_at": "2026-05-26T12:46:55.768928Z",
+    "yanked": false,
+    "sha256": "717c3ef9a98101f3d2e33c4a8a4d1fd8b4fb0d39fa67a838e3308386ad9e7a1a",
+    "vcs": {
+      "git": {
+        "sha1": "6d9720fc5a46d2883df54fa0e3671dd066ee2492"
+      },
+      "path_in_vcs": ""
+    }
+  },
+  {
+    "crate": "rav1d-safe",
+    "version": "0.5.6",
+    "created_at": "2026-05-26T11:29:36.001170Z",
+    "yanked": true,
+    "sha256": "48a6023b01188a932fb5e1ff07f50cd9b11c9efd0b85cae74be8a5eab42e52bd",
+    "vcs": {
+      "git": {
+        "sha1": "6a677a78edcb0d9438f9b72ead9a4015e05c6380"
+      },
+      "path_in_vcs": ""
+    }
+  },
+  {
+    "crate": "rav1d-safe",
+    "version": "0.5.5",
+    "created_at": "2026-04-17T07:30:19.825703Z",
+    "yanked": false,
+    "sha256": "730a097196b6b4b2a540c28ff942e3ef23c5f3e6178403798f47b5ade33e69fa",
+    "vcs": {
+      "git": {
+        "sha1": "2ee582b30a34ccf6b999849e9e388eb3ab1dae17",
+        "dirty": true
+      },
+      "path_in_vcs": ""
+    }
+  },
+  {
+    "crate": "rav1d-disjoint-mut",
+    "version": "0.3.1",
+    "created_at": "2026-05-26T12:40:06.292278Z",
+    "yanked": false,
+    "sha256": "8d5f921332331631dd8716a93d81aef9ac21245da74af62bc14000a4fd7fdbfd",
+    "vcs": {
+      "git": {
+        "sha1": "dd60e0a61d88121fa764094f71d1d1de537f1f9f"
+      },
+      "path_in_vcs": "crates/rav1d-disjoint-mut"
+    }
+  },
+  {
+    "crate": "rav1d-disjoint-mut",
+    "version": "0.3.0",
+    "created_at": "2026-02-14T12:02:50.634496Z",
+    "yanked": false,
+    "sha256": "731512a636cc44496761bdab72157735a78cfffcbc3f42d1b0a84ff5800e3bc7",
+    "vcs": {
+      "git": {
+        "sha1": "2ed829007fb114155c7c10e98b839ed9d2096021"
+      },
+      "path_in_vcs": "crates/rav1d-disjoint-mut"
+    }
+  },
+  {
+    "crate": "rav1d-disjoint-mut",
+    "version": "0.2.1",
+    "created_at": "2026-02-14T06:21:26.363355Z",
+    "yanked": false,
+    "sha256": "e5ecc9de6dddfe693749c33d9f0aefc0adb5994a51e786558f1194afbdf83f1f",
+    "vcs": {
+      "git": {
+        "sha1": "5a8428b36fd47d1a141ae650ce8cde35dd7a9367"
+      },
+      "path_in_vcs": "crates/rav1d-disjoint-mut"
+    }
+  }
+]
