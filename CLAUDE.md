@@ -912,6 +912,12 @@ Default checked builds clamp `n_fc` to 1 in `src/lib.rs::get_num_threads`,
 so the 1/2/4/8-thread corpus run validates tile/grain worker concurrency,
 not concurrent frame contexts. The latter requires `unchecked` and was not
 validated in this run. Throughput impact was not measured.
+Follow-up concurrency validation on 2026-09-06 (`6115e06b`) passes with
+`unchecked`: 117 film-grain runs using 2/4 frame contexts, three independent
+decoders, and a 32-tile stream at eight workers and 1/2/4 frame contexts.
+See [FILMGRAIN_CONCURRENCY.md](docs/FILMGRAIN_CONCURRENCY.md) for the matrix,
+input-backpressure contract, liveness checks, and limits. Checked frame
+threading remains disabled; the earlier paragraph describes the initial run.
 The original downstream zenpipe AVIF was not identified or rerun here.
 Additional checks on Apple ARM: 116 dev-profile unit/committed-vector/crash
 tests passed (8 pre-existing ignored tests); six focused release tests passed,
