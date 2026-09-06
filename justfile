@@ -333,3 +333,8 @@ arm-tiers-macos:
     mkdir -p "$HOME/tmp"
     CARGO_BUILD_JOBS=4 RAYON_NUM_THREADS=4 OMP_NUM_THREADS=4 TMPDIR="$HOME/tmp" nice -n 19 cargo bench --locked -p rav1d-safe --bench tier_isolation -- --format=llm > "$HOME/tmp/rav1d-arm-tiers.log" 2>&1
 
+
+# #526: actual frame contexts plus a 32-tile stream, and concurrent decoders.
+test-filmgrain-concurrency:
+    CARGO_BUILD_JOBS=2 nice -n 19 cargo nextest run --lib --test filmgrain_threads -E 'binary(filmgrain_threads) | test(parallel_frame_tile_contexts)' --test-threads 1 --success-output immediate
+    CARGO_BUILD_JOBS=2 nice -n 19 cargo nextest run --features unchecked --lib --test filmgrain_threads -E 'binary(filmgrain_threads) | test(parallel_frame_tile_contexts)' --test-threads 1 --success-output immediate
