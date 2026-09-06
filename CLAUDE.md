@@ -1102,3 +1102,7 @@ but harmless and unrelated to the failure. Not `set_tile_threading`.
 duration (the same mutex `for_each_token_permutation` acquires), so token state
 is stable end-to-end. Test-only; decoder parallelism/perf/accuracy unchanged.
 Verified: full lib suite 0/60 fails, v4x×permutations 0/150 fails (was 86/100).
+
+### x86 film-grain row reservation fix (2026-09-06)
+
+The new filmgrain_threads CI gate exposed 32-row reservations in the x86 safe-dispatch grain kernels (`src/safe_simd/filmgrain.rs`), exceeding the unchanged picture extent ceiling. Commit `c2a7dfd7` makes luma/chroma use PictureGrainRows callbacks as the ARM path does. Native Zen 5 debug reproduction failed before and passed afterward; 8/10/12-bit row tests also pass on x86 and ARM. `just test-filmgrain-rows` now selects `filmgrain_rows`, and tests cover production dispatch on x86. See `benchmarks/arm_audit_2026-09-06/README.md` and its raw logs for scope and commands.

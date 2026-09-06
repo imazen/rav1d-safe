@@ -1,0 +1,22 @@
+run-heavy: mem-cap=24G (cgroup, hard) jobs=4/32 avail=46069MiB :: cargo test --locked --lib filmgrain_rows -- --test-threads=1
+   Compiling rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+warning: function `aligned_plane` is never used
+  --> src/safe_simd/mod.rs:57:15
+   |
+57 | pub(crate) fn aligned_plane<T: Copy + Default>(
+   |               ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `rav1d-safe` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.75s
+     Running unittests lib.rs (target/debug/deps/rav1d_safe-f9c1bfc072ae9cad)
+
+running 3 tests
+test src::filmgrain::row_tests::filmgrain_rows_match_scalar_10bit ... ok
+test src::filmgrain::row_tests::filmgrain_rows_match_scalar_12bit ... ok
+test src::filmgrain::row_tests::filmgrain_rows_match_scalar_8bit ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 55 filtered out; finished in 3.37s
+
+run-heavy: done rc=0 11s | peak-RSS 1.06GiB | min-avail 45148MiB | peak-load 0.78
