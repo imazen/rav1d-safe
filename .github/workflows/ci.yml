@@ -380,6 +380,9 @@ jobs:
           if [ ! -d test-vectors/dav1d-test-data ]; then
             git clone --depth 1 https://code.videolan.org/videolan/dav1d-test-data.git test-vectors/dav1d-test-data
           fi
+      - name: Film grain with threading and debug extent checks (#526)
+        run: cargo nextest run --profile ci --test filmgrain_threads --test-threads 1
+        timeout-minutes: 10
       - name: Run conformance (all vectors × all CPU tiers)
         # Each per-tier test runs in its own process, so switching the global
         # CPU-flags mask can't race across tests (no --test-threads=1 needed).

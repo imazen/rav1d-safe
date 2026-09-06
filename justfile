@@ -320,3 +320,10 @@ bench-compare:
     echo "============================================"
     cargo bench --bench decode_avif --features "asm,bitdepth_8,bitdepth_16" 2>&1 | grep -E "photo_|Timer"
     cargo bench --bench decode --features "asm,bitdepth_8,bitdepth_16" 2>&1 | grep -E "bit/|film_grain/|Timer"
+
+# #526: corpus reference MD5s with grain enabled at 1/2/4/8 threads, dev guards on.
+test-filmgrain:
+    CARGO_BUILD_JOBS=4 nice -n 19 cargo nextest run --test filmgrain_threads --test-threads 1
+
+test-filmgrain-rows:
+    CARGO_BUILD_JOBS=4 nice -n 19 cargo nextest run --lib -E 'test(filmgrain_arm_rows)' --test-threads 1

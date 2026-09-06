@@ -1583,3 +1583,154 @@ impl Rav1dFilmGrainDSPContext {
         Self::default::<BD>().init::<BD>(flags)
     }
 }
+
+#[cfg(all(test, target_arch = "aarch64", not(feature = "c-ffi")))]
+mod arm_row_tests {
+    use super::*;
+    use crate::include::common::bitdepth::{BitDepth8, BitDepth16};
+    use crate::include::dav1d::picture::set_tile_threading;
+    use crate::src::align::ArrayDefault;
+    use crate::src::safe_simd::filmgrain_arm::{fguv_32x32xn_dispatch, fgy_32x32xn_dispatch};
+    use zerocopy::IntoBytes;
+
+    fn check<BD: BitDepth>(bd: BD) {
+        let _tokens = crate::src::safe_simd::token_test_lock();
+        set_tile_threading(true);
+        let max = bd.bitdepth_max().as_::<i32>();
+        let mut scaling = BD::Scaling::default();
+        for (i, s) in scaling.as_mut().iter_mut().enumerate() {
+            *s = (i * 37 % 256) as u8;
+        }
+        let mut lut = GrainLut::<BD::Entry>::default();
+        for (y, row) in lut.iter_mut().enumerate() {
+            for (x, entry) in row.iter_mut().enumerate() {
+                *entry = (((x * 19 + y * 43) % 255) as i32 - 127).as_();
+            }
+        }
+        // A partial block and a wide still, first/overlapped bands, full/tail rows.
+        for (pw, bh, row_num) in [(65, 32, 0), (65, 1, 1), (3841, 17, 1)] {
+            for flags in 0..8 {
+                let data = Rav1dFilmGrainData {
+                    seed: 173,
+                    scaling_shift: 8,
+                    overlap_flag: flags & 1 != 0,
+                    clip_to_restricted_range: flags & 2 != 0,
+                    chroma_scaling_from_luma: flags & 4 != 0,
+                    uv_mult: [31, 47],
+                    uv_luma_mult: [37, 29],
+                    uv_offset: [-7, 13],
+                    ..Default::default()
+                };
+                for (layout, sx, sy) in [
+                    (Rav1dPixelLayoutSubSampled::I420, 1, 1),
+                    (Rav1dPixelLayoutSubSampled::I422, 1, 0),
+                    (Rav1dPixelLayoutSubSampled::I444, 0, 0),
+                ] {
+                    let stride = (pw + 63) & !31;
+                    let luma_stride = ((pw << sx) + 95) & !31;
+                    let first = row_num * FG_BLOCK_SIZE;
+                    let n = stride * (first + 32);
+                    let mut source: Vec<BD::Pixel> = (0..n)
+                        .map(|i| ((i * 17 % (max as usize + 1)) as i32).as_())
+                        .collect();
+                    let src = Rav1dPictureDataComponent::wrap_buf::<BD>(&mut source, stride);
+                    let mut lumap: Vec<BD::Pixel> = (0..luma_stride * (first + 64))
+                        .map(|i| ((i * 29 % (max as usize + 1)) as i32).as_())
+                        .collect();
+                    let luma = Rav1dPictureDataComponent::wrap_buf::<BD>(&mut lumap, luma_stride);
+                    let mut actual = vec![BD::Pixel::from(0xA5); n];
+                    let mut expected = actual.clone();
+                    let dst = Rav1dPictureDataComponent::wrap_buf::<BD>(&mut actual, stride);
+                    let reference =
+                        Rav1dPictureDataComponent::wrap_buf::<BD>(&mut expected, stride);
+                    let offset = (first * stride) as isize;
+                    // A band hull would include this padding pixel even in release.
+                    let padding = dst.slice_mut::<BD, _>((first * stride + pw.., ..1));
+                    assert!(fgy_32x32xn_dispatch::<BD>(
+                        &dst, &src, &data, pw, &scaling, &lut, bh, row_num, bd,
+                    ));
+                    drop(padding);
+                    fgy_32x32xn_rust::<BD>(
+                        reference.with_offset::<BD>() + offset,
+                        src.with_offset::<BD>() + offset,
+                        &data,
+                        pw,
+                        &scaling,
+                        &lut,
+                        bh,
+                        row_num,
+                        bd,
+                    );
+                    dst.copy_pixels_to::<BD>(&mut actual);
+                    reference.copy_pixels_to::<BD>(&mut expected);
+                    assert_eq!(
+                        actual.as_bytes(),
+                        expected.as_bytes(),
+                        "luma {pw} flags={flags}"
+                    );
+
+                    for is_uv in [false, true] {
+                        let first = first >> sy;
+                        let offset = (first * stride) as isize;
+                        let padding = dst.slice_mut::<BD, _>((first * stride + pw.., ..1));
+                        assert!(fguv_32x32xn_dispatch::<BD>(
+                            layout,
+                            &dst,
+                            &src,
+                            &data,
+                            pw,
+                            &scaling,
+                            &lut,
+                            (bh + sy) >> sy,
+                            row_num,
+                            &luma,
+                            is_uv,
+                            flags & 2 != 0,
+                            bd,
+                        ));
+                        drop(padding);
+                        fguv_32x32xn_rust::<BD>(
+                            reference.with_offset::<BD>() + offset,
+                            src.with_offset::<BD>() + offset,
+                            &data,
+                            pw,
+                            &scaling,
+                            &lut,
+                            (bh + sy) >> sy,
+                            row_num,
+                            luma.with_offset::<BD>()
+                                + (row_num * FG_BLOCK_SIZE * luma_stride) as isize,
+                            is_uv,
+                            flags & 2 != 0,
+                            sx != 0,
+                            sy != 0,
+                            bd,
+                        );
+                        dst.copy_pixels_to::<BD>(&mut actual);
+                        reference.copy_pixels_to::<BD>(&mut expected);
+                        assert_eq!(
+                            actual.as_bytes(),
+                            expected.as_bytes(),
+                            "chroma {pw} flags={flags} sx={sx} sy={sy}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn filmgrain_arm_rows_match_scalar_8bit() {
+        check(BitDepth8::new(()));
+    }
+
+    #[test]
+    fn filmgrain_arm_rows_match_scalar_10bit() {
+        check(BitDepth16::new(1023));
+    }
+
+    #[test]
+    fn filmgrain_arm_rows_match_scalar_12bit() {
+        check(BitDepth16::new(4095));
+    }
+}
