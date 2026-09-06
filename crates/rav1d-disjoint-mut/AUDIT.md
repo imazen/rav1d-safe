@@ -33,6 +33,16 @@ control arms so a future failure that is not about the move is distinguishable.
 **Standing lesson:** a Miri arm that only exercises `{ let _g = dm.index_mut(r);
 … }` cannot see this class at all. Concurrency tests must move guards.
 
+**Published artifact verified 2026-09-05:** the crates.io 0.3.1 archive
+(`8d5f921332331631dd8716a93d81aef9ac21245da74af62bc14000a4fd7fdbfd`)
+still has reference fields. The unchanged `guard_move_release` regression test,
+resolved against `=0.3.1` in `audit/published-disjoint-mut`, reports UB in
+`moving_a_mut_guard_into_drop_is_not_ub` under both Stacked Borrows and Tree
+Borrows (Miri `da86f4d072`). Each invocation aborted at that first test; the
+second test was not run against the published crate. Current main passed both
+tests under both models during setup. See
+[`audit/published-disjoint-mut/README.md`](../../audit/published-disjoint-mut/README.md).
+
 ### CRITICAL: Stacked Borrows UB in `Vec<V>::as_mut_ptr` (FIXED)
 
 `(*ptr).as_mut_ptr()` auto-refs to `&mut Vec<V>`, creating a `Unique` retag on the Vec struct allocation. When two threads call `index_mut` for disjoint ranges concurrently, thread A's `Unique` retag conflicts with thread B's `SharedReadOnly` retag from `(*ptr).len()`.
@@ -303,13 +313,13 @@ misses); on this revision 8 of 8 pass, under `cargo test` and under Miri with bo
 
 ### What's Sound
 
-1. **Core overlap tracking** — `BorrowTracker` uses `parking_lot::Mutex` to serialize registration. Registration before reference creation prevents TOCTOU. Poisoning on panic prevents access to potentially corrupted data.
+1. **Core overlap tracking** — The current default uses shard locks and atomic per-slot liveness flags (`tracker_shard.rs`); the historical `parking_lot::Mutex` description no longer describes it. Registration must precede reference creation, and release/acquire synchronization must order successive conflicting data accesses. Poisoning can reject later operations after a panic, but is not a substitute for exclusion or reference validity.
 
 2. **Guard lifecycle** — RAII-based. Drop deregisters. `ManuallyDrop` in `cast_slice`/`cast` correctly transfers borrow ownership. **Amended 2026-08-09:** the guard must hold the region as a POINTER, never as a reference — see the first entry under "Bugs Found and Fixed". Reverting that is UB, not a style choice.
 
-3. **Sealed trait** — `AsMutPtr` sealed via private supertrait. External types go through `unsafe ExternalAsMutPtr`. `Copy` bound on `Target` prevents torn reads.
+3. **Sealed trait** — `AsMutPtr` sealed via private supertrait. External types go through `unsafe ExternalAsMutPtr`. The `Copy` bound excludes destructors; it does not prevent torn reads or make data races defined. Exclusion and synchronization must prevent conflicting accesses regardless of element type.
 
-4. **Send/Sync bounds** — Correct: `T: Send` for `Send`, `T: Sync` for `Sync`. Tracker uses `Mutex`. **Amended 2026-08-09:** the guards' bounds are now explicit `unsafe impl`s rather than derived, because their region field is a raw pointer. They reproduce the derived bounds exactly; if you touch them, re-run the positive/negative probe pair against the previous revision.
+4. **Send/Sync bounds** — The container requires `T: Send` for `Send`, `T: Sync` for `Sync`. The tracker supplies the exclusion and synchronization described above. **Amended 2026-08-09:** the guards' bounds are now explicit `unsafe impl`s rather than derived, because their region field is a raw pointer. They reproduce the derived bounds exactly; if you touch them, re-run the positive/negative probe pair against the previous revision. Matching old bounds is a regression check, not an independent proof of the storage adapters' contracts.
 
 5. **All AsMutPtr impls override `as_mut_slice`** — The default impl (which creates `&T`) is never used. Every concrete type uses reference-free pointer operations.
 

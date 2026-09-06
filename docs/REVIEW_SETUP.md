@@ -107,7 +107,10 @@ does not describe this Linux Zen 4 machine. Do not extrapolate to ARM or Zen 5.
 2. Recheck historical guard-move/protector UB against published versions;
    inspect `e0187a30`, `825df674` and `tests/guard_move_release.rs`.
    The extracted 0.3.1 archive still has `slice: &'a mut V` / `slice: &'a V`
-   guard fields. A published-version reproducer remains to be run.
+   guard fields. The subsequent
+   [published-version reproducer](../audit/published-disjoint-mut/README.md)
+   reports guard-move UB under both Miri models; see
+   [SOUNDNESS_AND_PERFORMANCE.md](SOUNDNESS_AND_PERFORMANCE.md).
 3. Audit tracker publication/release ordering, narrow/wide exclusion, rectangle
    footprints and element-vs-byte units (`02660934`), panic paths and auto-traits.
    Verify that test assertions demonstrate actual contention and coverage.

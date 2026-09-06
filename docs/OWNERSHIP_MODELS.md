@@ -11,8 +11,8 @@ re-derive the four models that lost.
 
 | model | verdict | why |
 |---|---|---|
-| `split_at_mut` the shared plane | **impossible here** | there is no `&mut` to split, at any point |
-| Arc-per-tile, split then rejoin | **blocked by the same thing** | the rejoin was never the problem |
+| `split_at_mut` the shared plane | **requires an API/scheduling change** | workers currently receive shared access; default allocation is owned before publication |
+| Arc-per-tile, split then rejoin | **requires a partition/publication design** | cross-tile filters and all other consumers must participate |
 | tile-keyed locks over the shared plane | **unsound unless total** | partial keying misses real overlaps |
 | exact-record / wide-reference (strided rect) | **UB** | the record and the reference are different objects |
 | **owned per-worker, column-compact, one sbrow tall** | **ships** | #482: on the ceiling, +1.6 MB, no `unsafe` |
@@ -22,17 +22,21 @@ expect (see §5).
 
 ---
 
-## 1. `split_at_mut` on the shared picture — impossible, and the blocker is upstream
+## 1. `split_at_mut` on the shared picture — unavailable through the current worker API
 
 The obvious idea: rows are contiguous, so `chunks_mut(stride)` gives provably-disjoint rows, and
 `split_at_mut` at tile column boundaries splits each row into disjoint per-tile segments. Safe,
 zero-cost, no tracker.
 
-It cannot be done here, for three independent reasons, each verified:
+It cannot be substituted directly at the current worker call sites:
 
-- The plane arrives as a **raw pointer through a C-ABI allocator callback**
-  (`include/dav1d/picture.rs:1780`, `unsafe { Rav1dPictureDataComponentInner::new(ptr, len, stride) }`).
-  There is no owned slice to split. The pointer *is* the public API.
+- With `c-ffi`, an allocator callback supplies raw pointers. **Correction
+  2026-09-05:** this is not the default path. Without `c-ffi`,
+  `Rav1dPicAllocator::alloc_picture_data` allocates owned per-plane `Vec<u8>`
+  buffers, wraps them in `PicBuf::from_vec_aligned`, then publishes them in an
+  `Arc<Rav1dPictureData>` (`include/dav1d/picture.rs`). There IS exclusive
+  ownership before publication. Exploiting it requires a different partition
+  and handoff API; it is not a fundamental absence of ownership.
 - It lives behind `Arc<Rav1dPictureData>` (`picture.rs:1287`), shared with `sr_cur`, the ref slots
   and the output queue **during** decode.
 - Every tile and filter task opens `fc.data.try_read()` and receives `&Rav1dFrameData`
@@ -53,9 +57,13 @@ about owning a *different* buffer — which is what actually worked.
 Split at allocation while exclusive, hand each tile its own `Arc`, then `Arc::get_mut`/`into_inner`
 after the tile tasks join to recover exclusivity for the cross-tile filter pass.
 
-The rejoin half is sound and is the correct way to hand off. `Arc` also solves the `'static`-worker
-problem that kills a plain `&'a mut` split. But construction-time splitting still needs an owned
-buffer to split, and §1 says there isn't one. Sidestep it by *allocating your own* — §4.
+Ownership handoff is a sound direction, but an `Arc` alone does not confer
+exclusive access to its contents. Construction-time ownership does exist in
+the default allocation path (§1, corrected 2026-09-05). A zero-copy partition
+would need owned region capabilities, complete coverage of all shared-plane
+consumers, and a way to transfer authority at cross-tile filter boundaries.
+That design has not been implemented or priced here. Allocating worker-local
+scratch (§4) already fits the current scheduler and avoids that larger change.
 
 ## 3. Keying locks by tile — unsound unless the keying is total
 

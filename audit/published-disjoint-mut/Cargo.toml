@@ -1,0 +1,15 @@
+[package]
+name = "published-disjoint-mut-audit"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Resolve the published crate independently of the decoder's local path dependency.
+[workspace]
+
+[dev-dependencies]
+rav1d-disjoint-mut = "=0.3.1"
+
+[[test]]
+name = "guard_move_release"
+path = "../../crates/rav1d-disjoint-mut/tests/guard_move_release.rs"

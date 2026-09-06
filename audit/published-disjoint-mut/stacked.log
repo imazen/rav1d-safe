@@ -1,0 +1,65 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=8/24 avail=27909MiB :: cargo +nightly miri test --manifest-path audit/published-disjoint-mut/Cargo.toml --test guard_move_release
+[1m[92m    Updating[0m crates.io index
+[1m[92m     Locking[0m 1 package to latest Rust 1.99.0-nightly compatible version
+[1m[92m   Compiling[0m rav1d-disjoint-mut v0.3.1
+[1m[92m   Compiling[0m published-disjoint-mut-audit v0.0.0 (/home/lilith/work/zen/rav1d-safe/audit/published-disjoint-mut)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.40s
+[1m[92m     Running[0m ../../crates/rav1d-disjoint-mut/tests/guard_move_release.rs (audit/published-disjoint-mut/target/miri/x86_64-unknown-linux-gnu/debug/deps/guard_move_release-8c14fd0facf4d028)
+
+running 2 tests
+test moving_a_mut_guard_into_drop_is_not_ub ... error: Undefined Behavior: not granting access to tag <128162> because that would remove [Unique for <1800555>] which is strongly protected
+   --> ../../crates/rav1d-disjoint-mut/tests/guard_move_release.rs:106:37
+    |
+106 |                         let mut g = dm.index_mut(SHARED);
+    |                                     ^^^^^^^^^^^^^^^^^^^^ Undefined Behavior occurred here
+    |
+    = help: this indicates a potential bug in the program: it performed an invalid operation, but the Stacked Borrows rules it violated are still experimental
+    = help: see https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/stacked-borrows.md for further information
+help: <128162> was created here, as the root tag for alloc41779
+   --> ../../crates/rav1d-disjoint-mut/tests/guard_move_release.rs:72:40
+    |
+ 72 |     let dm = Arc::new(DisjointMut::new(vec![0u8; LEN]));
+    |                                        ^^^^^^^^^^^^^^
+help: <1800555> is this argument
+   --> ../../crates/rav1d-disjoint-mut/tests/guard_move_release.rs:109:29
+    |
+109 | ...                   drop(g);
+    |                       ^^^^^^^
+    = note: this is on thread `unnamed-5`
+    = note: stack backtrace:
+            0: contend::{closure#1}::{closure#0}
+                at ../../crates/rav1d-disjoint-mut/tests/guard_move_release.rs:106:37: 106:57
+            1: <{closure@../../crates/rav1d-disjoint-mut/tests/guard_move_release.rs:98:63: 98:65} as std::ops::FnOnce<()>>::call_once - shim
+                at /home/lilith/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5: 250:71
+            2: <std::panic::AssertUnwindSafe<{closure@../../crates/rav1d-disjoint-mut/tests/guard_move_release.rs:98:63: 98:65}> as std::ops::FnOnce<()>>::call_once
+                at /home/lilith/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/panic/unwind_safe.rs:275:9: 275:19
+            3: std::panicking::catch_unwind::do_call::<std::panic::AssertUnwindSafe<{closure@../../crates/rav1d-disjoint-mut/tests/guard_move_release.rs:98:63: 98:65}>, ()>
+                at /home/lilith/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/panicking.rs:576:43: 576:46
+            4: std::panicking::catch_unwind::<(), std::panic::AssertUnwindSafe<{closure@../../crates/rav1d-disjoint-mut/tests/guard_move_release.rs:98:63: 98:65}>>
+                at /home/lilith/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/panicking.rs:544:19: 544:77
+            5: std::panic::catch_unwind::<std::panic::AssertUnwindSafe<{closure@../../crates/rav1d-disjoint-mut/tests/guard_move_release.rs:98:63: 98:65}>, ()>
+                at /home/lilith/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/panic.rs:359:14: 359:40
+            6: contend::{closure#1}
+                at ../../crates/rav1d-disjoint-mut/tests/guard_move_release.rs:98:26: 112:20
+note: the last function in that backtrace got called indirectly due to this code
+   --> ../../crates/rav1d-disjoint-mut/tests/guard_move_release.rs:95:17
+    |
+ 95 |           hs.push(std::thread::spawn(move || {
+    |  _________________^
+ 96 | |             start.wait();
+ 97 | |             for _ in 0..ROUNDS {
+ 98 | |                 let ok = panic::catch_unwind(AssertUnwindSafe(|| {
+...   |
+120 | |         }));
+    | |__________^
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+
+[1m[91merror[0m: test failed, to rerun pass `--test guard_move_release`
+
+Caused by:
+  process didn't exit successfully: `/home/lilith/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/cargo-miri runner /home/lilith/work/zen/rav1d-safe/audit/published-disjoint-mut/target/miri/x86_64-unknown-linux-gnu/debug/deps/guard_move_release-8c14fd0facf4d028` (exit status: 1)
+[1m[92mnote[0m: test exited abnormally; to see the full output pass --no-capture to the harness.
+run-heavy: done rc=1 5s | peak-RSS 0.16GiB | min-avail 27839MiB | peak-load 0.18

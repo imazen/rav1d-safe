@@ -44,7 +44,12 @@ Guards act as locks — the borrow is tracked for the guard's lifetime and relea
 
 ### Element types must be `Copy`
 
-All container element types must be `Copy`. Concurrent mutable access to different regions of the same buffer means a torn read on a region boundary is possible in theory. With `Copy` types, a torn read produces a wrong value, not a dangling pointer or double free. Non-`Copy` types could have drop glue or internal invariants that torn reads would violate.
+All container element types must be `Copy`. This excludes element destructors;
+it does not permit torn reads or data races. A data race is undefined behavior
+even for `u8`, and `Copy` types can still have validity requirements. Disjoint
+regions must not overlap at their boundaries, and the tracker must synchronize
+successive conflicting accesses. Safety comes from those guarantees, not from
+the `Copy` bound.
 
 ### Borrow tracking
 

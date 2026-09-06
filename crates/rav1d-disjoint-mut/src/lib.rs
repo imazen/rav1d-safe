@@ -586,7 +586,8 @@ mod sealed {
 ///
 /// This trait is sealed and cannot be implemented outside of this crate.
 /// External types can use the [`ExternalAsMutPtr`] unsafe trait to opt in,
-/// which requires `Copy` element types for data-race safety.
+/// which requires `Copy` element types. This bound does not permit data races;
+/// exclusion and synchronization must prevent every conflicting data access.
 pub unsafe trait AsMutPtr: sealed::Sealed {
     type Target: Copy;
 
@@ -631,9 +632,11 @@ pub unsafe trait AsMutPtr: sealed::Sealed {
 /// Opt-in trait for external types to participate in [`DisjointMut`].
 ///
 /// Implement this trait for your container type so it can be used with
-/// `DisjointMut<YourType>`. The `Target` type must be `Copy` to ensure
-/// data races cannot cause memory safety issues beyond producing incorrect
-/// values (no torn reads on non-`Copy` types).
+/// `DisjointMut<YourType>`. The `Target` type must be `Copy`. This excludes
+/// element destructors, but does not make conflicting accesses safe: a data
+/// race is undefined behavior even for `u8`, and `Copy` types can still have
+/// validity requirements. The borrow tracker and storage implementation must
+/// prevent data races rather than tolerate torn reads.
 ///
 /// # Safety
 ///
