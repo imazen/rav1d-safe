@@ -20,6 +20,31 @@ re-derive the four models that lost.
 Copy/reshuffle is **cheap and worth it** — 60:1 in our numbers — but not for the reason people
 expect (see §5).
 
+### Experiment ledger (reviewed 2026-09-06)
+
+These attempts are not interchangeable. In particular, successful private
+reconstruction storage does not establish that a filter may snapshot a whole
+row while other tasks write sparse windows in that row.
+
+| Attempt | Disposition | Reason and record |
+| --- | --- | --- |
+| Tile-keyed tracking, #473 | Rejected | Keyed and ordinary address-based accesses did not meet in the same exclusion domain (§3). |
+| Full-plane per-tile copies, #474 | Superseded | Picture stride made most pages resident: +96.3/+191 MB in the recorded 8/16-bit runs, while reconstruction still registered borrows (§4). |
+| Per-worker compact sbrow, #482 | Retained with restrictions | Ordinary exclusive slices remove reconstruction tracking; intrabc must fall back because it reads current-picture pixels outside that owned band (§7c). Later `d973628c` fixed sub-superblock tile widths. |
+| Exact strided registration with a hull reference, #469 | Rejected as unsound | The reference covered unregistered gaps (§6); row references are required even if the kernel never indexes those gaps. |
+| Loop-filter copy-in band, #485 | Rejected | Copying the contiguous band itself read gaps that concurrent filter tasks legitimately wrote. No-tile gating was insufficient: superblock-row filters can run concurrently in a single-tile frame (§7d). |
+| Fused V-filter run, #488 | Reverted | About 1.97× fewer V-pass registrations but no wall win in the recorded run; wider lifetime/extent also exceeded measured neighbouring-write clearance (§7d, `benchmarks/lf_vbatch*`). |
+| Exact row-returning rectangle records, #505/#506 | Retained | Preserves the footprint while reducing registrations; gains were small and cell-dependent, and an apparent t1 regression required code-placement controls (`RECT_RECORDS.md`, `RECT_SHIP.md`). |
+| Whole-plane SIMD/scalar save/restore | Restricted to serial testing | Snapshot/restore can overwrite another worker's updates; merely narrowing tracker records cannot make this operation concurrent (§7e). |
+
+The less-than-ten-minute performance review for the release audit recommends
+no new copy/band or lock-policy implementation without a new access/overlap
+measurement. Remaining candidates are per-instance configuration (removes
+process-history effects), carefully published immutable reference data, and
+changes that reduce shared metadata without widening references. These are
+investigation candidates, not measured wins. The detailed prior records above
+take precedence over generic ownership advice.
+
 ---
 
 ## 1. `split_at_mut` on the shared picture — unavailable through the current worker API

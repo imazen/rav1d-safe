@@ -85,14 +85,17 @@ impl<T: ?Sized> Clone for StableRef<T> {
 impl<T: ?Sized> Copy for StableRef<T> {}
 
 #[cfg(feature = "c-ffi")]
-/// SAFETY: [`StableRef`]`<T>`, if it follows its safety guarantees, is essentially a `&T`/`&mut T`, which is [`Send`] if `T: `[`Send`]`.
+/// SAFETY: this copyable pointer provides shared access like `&T`, so sending
+/// it requires `T: Sync`. The owning `CArc` separately enforces ownership and
+/// destruction requirements through `Arc<Pin<CBox<T>>>`.
 #[allow(unsafe_code)]
-unsafe impl<T: Send + ?Sized> Send for StableRef<T> {}
+unsafe impl<T: Sync + ?Sized> Send for StableRef<T> {}
 
 #[cfg(feature = "c-ffi")]
-/// SAFETY: [`StableRef`]`<T>`, if it follows its safety guarantees, is essentially a `&T`/`&mut T`, which is [`Sync`] if `T: `[`Sync`].
+/// SAFETY: sharing this pointer provides shared access to `T`, requiring
+/// `T: Sync`; address stability alone does not make the elements thread-safe.
 #[allow(unsafe_code)]
-unsafe impl<T: Send + ?Sized> Sync for StableRef<T> {}
+unsafe impl<T: Sync + ?Sized> Sync for StableRef<T> {}
 
 // ===== AsRef / Deref =====
 

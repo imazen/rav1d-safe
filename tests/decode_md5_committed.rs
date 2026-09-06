@@ -176,6 +176,36 @@ fn committed_vectors_match_reference_md5() {
     );
 }
 
+/// Same-process clients are essential here: nextest normally isolates test
+/// cases, which cannot expose one decoder clobbering another decoder's globals.
+#[test]
+fn simultaneous_single_and_multi_thread_decoders_match_reference_md5() {
+    let start = std::sync::Barrier::new(3);
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = [1, 2, 4]
+            .into_iter()
+            .map(|threads| {
+                let start = &start;
+                scope.spawn(move || {
+                    start.wait();
+                    for _ in 0..3 {
+                        for &(label, data, expected) in &VECTORS[..4] {
+                            assert_eq!(
+                                decode_md5_with_threads(data, threads),
+                                expected,
+                                "{label}, threads={threads}, same-process concurrent decoders"
+                            );
+                        }
+                    }
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+    });
+}
+
 // ----------------------------------------------------------------------------
 // Issue #14: aarch64 loop-restoration (SGR/wiener) regression vectors.
 //

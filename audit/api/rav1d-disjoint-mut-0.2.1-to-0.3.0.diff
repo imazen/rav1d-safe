@@ -1,0 +1,10 @@
+--- rav1d-disjoint-mut-0.2.1
++++ rav1d-disjoint-mut-0.3.0
+@@ -1,7 +1,5 @@
+ pub mod rav1d_disjoint_mut
+ pub mod rav1d_disjoint_mut::align
+-pub use rav1d_disjoint_mut::align::Aligned
+-pub use rav1d_disjoint_mut::align::Aligned
+ pub struct rav1d_disjoint_mut::align::AlignedVec32<T>(_)
+ impl<T> rav1d_disjoint_mut::align::AlignedVec32<T>
+ pub fn rav1d_disjoint_mut::align::AlignedVec32<T>::new() -> Self

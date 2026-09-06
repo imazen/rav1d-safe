@@ -2,7 +2,23 @@
 
 All notable changes to `rav1d-disjoint-mut` are documented in this file. Format follows [Keep a Changelog](https://keepachangelog.com/). Versions before `0.3.1` were not changelogged; see git history.
 
-## [Unreleased]
+## [0.4.0] - Unreleased
+
+### Changed
+- `DisjointMut::new` is no longer `const` because the tracker is allocated at
+  runtime. Use runtime initialization, such as `std::sync::LazyLock`, for a
+  static buffer. This requires a 0.4 release rather than a compatible 0.3 update.
+- Historical measurement features that disable overlap enforcement now fail to
+  compile, preventing Cargo feature unification from weakening the safe API.
+- The external storage contract explicitly requires stable pointer identity,
+  initialized elements, a single storage authority, and correct thread traits.
+
+### Validation
+- Added Loom models for the production record protocol, with tracked metadata
+  and payload cells and an explicit Acquire/Release lock abstraction.
+- Added safe-client element-set oracle, lifetime compile-fail, leak, move,
+  typed-endpoint, and extreme-geometry regressions. The release protocol records
+  Miri runs and deliberate-defect controls; finite tests are not a universal proof.
 
 ### Fixed
 - **`index_rect{,_mut}` registered the rectangle in bytes while every other

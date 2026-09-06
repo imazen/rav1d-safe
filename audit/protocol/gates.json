@@ -1,0 +1,230 @@
+[
+  {
+    "gate": "disjoint-native",
+    "exit_code": 0,
+    "seconds": 5.68,
+    "command": [
+      "bash",
+      "scripts/review.sh",
+      "disjoint"
+    ],
+    "env": {}
+  },
+  {
+    "gate": "disjoint-no-std",
+    "exit_code": 0,
+    "seconds": 5.76,
+    "command": [
+      "bash",
+      "scripts/review.sh",
+      "no-std"
+    ],
+    "env": {}
+  },
+  {
+    "gate": "loom",
+    "exit_code": 0,
+    "seconds": 1.32,
+    "command": [
+      "bash",
+      "scripts/review.sh",
+      "loom"
+    ],
+    "env": {}
+  },
+  {
+    "gate": "miri-tree-api",
+    "exit_code": 0,
+    "seconds": 21.15,
+    "command": [
+      "bash",
+      "scripts/review.sh",
+      "miri-tree",
+      "--test",
+      "adversarial_api",
+      "--test",
+      "rect_units",
+      "--test",
+      "soundness"
+    ],
+    "env": {}
+  },
+  {
+    "gate": "threading-protocol",
+    "exit_code": 0,
+    "seconds": 8.03,
+    "command": [
+      "bash",
+      "scripts/review.sh",
+      "threading-protocol"
+    ],
+    "env": {}
+  },
+  {
+    "gate": "decoder-debug",
+    "exit_code": 0,
+    "seconds": 16.9,
+    "command": [
+      "bash",
+      "scripts/review.sh",
+      "decoder-debug"
+    ],
+    "env": {}
+  },
+  {
+    "gate": "decoder-release",
+    "exit_code": 0,
+    "seconds": 32.41,
+    "command": [
+      "bash",
+      "scripts/review.sh",
+      "decoder-smoke"
+    ],
+    "env": {}
+  },
+  {
+    "gate": "feature-boundary",
+    "exit_code": 0,
+    "seconds": 0.69,
+    "command": [
+      "/home/lilith/work/zen/scripts/run-heavy",
+      "--mem",
+      "16G",
+      "--jobs",
+      "8",
+      "--",
+      "bash",
+      "scripts/review-feature-gate.sh"
+    ],
+    "env": {}
+  },
+  {
+    "gate": "clippy-disjoint",
+    "exit_code": 0,
+    "seconds": 1.51,
+    "command": [
+      "/home/lilith/work/zen/scripts/run-heavy",
+      "--mem",
+      "16G",
+      "--jobs",
+      "8",
+      "--",
+      "cargo",
+      "clippy",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--features",
+      "aligned,pic-buf,zerocopy",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "env": {}
+  },
+  {
+    "gate": "clippy-no-std",
+    "exit_code": 0,
+    "seconds": 0.2,
+    "command": [
+      "/home/lilith/work/zen/scripts/run-heavy",
+      "--mem",
+      "16G",
+      "--jobs",
+      "8",
+      "--",
+      "cargo",
+      "clippy",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "env": {}
+  },
+  {
+    "gate": "clippy-decoder",
+    "exit_code": 0,
+    "seconds": 6.29,
+    "command": [
+      "bash",
+      "scripts/review.sh",
+      "clippy"
+    ],
+    "env": {}
+  },
+  {
+    "gate": "corpus-st",
+    "exit_code": 0,
+    "seconds": 47.07,
+    "command": [
+      "/home/lilith/work/zen/scripts/run-heavy",
+      "--mem",
+      "16G",
+      "--jobs",
+      "8",
+      "--",
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "rav1d-safe",
+      "--test",
+      "decode_md5_verify",
+      "test_md5_verify_comprehensive",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "env": {
+      "RAV1D_MD5_THREADS": "1"
+    }
+  },
+  {
+    "gate": "corpus-mt",
+    "exit_code": 0,
+    "seconds": 76.9,
+    "command": [
+      "/home/lilith/work/zen/scripts/run-heavy",
+      "--mem",
+      "16G",
+      "--jobs",
+      "8",
+      "--",
+      "cargo",
+      "test",
+      "--release",
+      "-p",
+      "rav1d-safe",
+      "--test",
+      "decode_md5_verify",
+      "test_md5_verify_comprehensive",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "env": {
+      "RAV1D_MD5_THREADS": "8"
+    }
+  },
+  {
+    "gate": "package-disjoint",
+    "exit_code": 0,
+    "seconds": 0.56,
+    "command": [
+      "/home/lilith/work/zen/scripts/run-heavy",
+      "--mem",
+      "16G",
+      "--jobs",
+      "8",
+      "--",
+      "cargo",
+      "package",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--allow-dirty"
+    ],
+    "env": {}
+  }
+]

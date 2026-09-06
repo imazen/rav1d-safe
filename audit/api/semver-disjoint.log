@@ -1,0 +1,25 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=8/24 avail=27622MiB :: cargo semver-checks -p rav1d-disjoint-mut --baseline-root /home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-disjoint-mut-0.3.1 --only-explicit-features --features std,aligned,pic-buf,zerocopy
+[1m[32m    Building[0m rav1d-disjoint-mut v0.3.1 (current)
+[1m[32m       Built[0m [   1.759s] (current)
+[1m[32m     Parsing[0m rav1d-disjoint-mut v0.3.1 (current)
+[1m[32m      Parsed[0m [   0.007s] (current)
+[1m[32m    Building[0m rav1d-disjoint-mut v0.3.1 (baseline)
+[1m[32m       Built[0m [   1.713s] (baseline)
+[1m[32m     Parsing[0m rav1d-disjoint-mut v0.3.1 (baseline)
+[1m[32m      Parsed[0m [   0.004s] (baseline)
+[1m[32m    Checking[0m rav1d-disjoint-mut v0.3.1 -> v0.3.1 (no change; assume minor)
+[1m[31m     Checked[0m [   0.005s] 196 checks: 195 pass, 1 fail, 0 warn, 57 skip
+
+--- failure inherent_method_const_removed: pub method is no longer const ---
+
+[1mDescription:[0m
+A publicly-visible method or associated fn is no longer `const` and can no longer be used in a `const` context.
+        ref: https://doc.rust-lang.org/reference/const_eval.html
+       impl: https://github.com/obi1kenobi/cargo-semver-checks/tree/v0.49.0/src/lints/inherent_method_const_removed.ron
+
+[1mFailed in:[0m
+  DisjointMut::new in /home/lilith/work/zen/rav1d-safe/crates/rav1d-disjoint-mut/src/lib.rs:250
+
+[1m[31m     Summary[0m semver requires new major version: 1 major and 0 minor checks failed
+[1m[32m    Finished[0m [   4.090s] rav1d-disjoint-mut
+run-heavy: done rc=100 4s | peak-RSS 0.40GiB | min-avail 27562MiB | peak-load 3.65

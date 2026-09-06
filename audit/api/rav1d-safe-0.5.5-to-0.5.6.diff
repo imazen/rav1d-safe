@@ -1,0 +1,10 @@
+--- rav1d-safe-0.5.5
++++ rav1d-safe-0.5.6
+@@ -1782,6 +1782,7 @@
+ pub const rav1d_safe::include::dav1d::picture::DAV1D_PICTURE_ALIGNMENT: usize
+ pub fn rav1d_safe::include::dav1d::picture::set_tile_threading(bool)
+ pub fn rav1d_safe::include::dav1d::picture::tile_threading_active() -> bool
++pub fn rav1d_safe::include::dav1d::picture::with_pixel_guard_immut<BD: rav1d_safe::include::common::bitdepth::BitDepth, R>(&rav1d_safe::src::with_offset::WithOffset<&rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponent>, usize, usize, impl core::ops::function::FnOnce(&[u8], usize, isize) -> R) -> R
+ pub fn rav1d_safe::include::dav1d::picture::with_pixel_guard_mut<BD: rav1d_safe::include::common::bitdepth::BitDepth, R>(&rav1d_safe::src::with_offset::WithOffset<&rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponent>, usize, usize, impl core::ops::function::FnOnce(&mut [u8], usize, isize) -> R) -> R
+ pub type rav1d_safe::include::dav1d::picture::PicOffset<'a> = rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponentOffset<'a>
+ pub type rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponentInner = rav1d_disjoint_mut::pic_buf::PicBuf

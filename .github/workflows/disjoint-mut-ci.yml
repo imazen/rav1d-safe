@@ -5,10 +5,12 @@ on:
     paths:
       - 'crates/rav1d-disjoint-mut/**'
       - '.github/workflows/disjoint-mut-ci.yml'
+      - 'scripts/review-feature-gate.sh'
   pull_request:
     paths:
       - 'crates/rav1d-disjoint-mut/**'
       - '.github/workflows/disjoint-mut-ci.yml'
+      - 'scripts/review-feature-gate.sh'
   # The path filter is right for the common case, but it also means a PR that
   # changes only the DECODER can never run these legs — including the two Miri
   # ones, which are the only aliasing-model gate the repo has. A campaign round
@@ -27,6 +29,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  protocol:
+    name: Loom protocol and safe-feature boundary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p rav1d-disjoint-mut --features __shards_4 --lib loom_protocol -- --test-threads=1
+        env:
+          RUSTFLAGS: --cfg disjoint_mut_loom
+          CARGO_TARGET_DIR: target/loom
+      - run: bash scripts/review-feature-gate.sh
+
   test:
     name: Test (${{ matrix.os }}, ${{ matrix.features }})
     runs-on: ${{ matrix.os }}
@@ -118,7 +132,7 @@ jobs:
       # `shard_liveness`, `wide_exclusion`, `aligned_miri` and
       # `pic_buf_overflow` never ran at all, and their silence was mistaken for
       # health. With this flag every target reports.
-      - run: cargo +nightly miri test -p rav1d-disjoint-mut --no-fail-fast
+      - run: cargo +nightly miri test -p rav1d-disjoint-mut --features aligned,pic-buf,zerocopy --no-fail-fast
         env:
           MIRIFLAGS: ${{ matrix.model.flags }}
 
@@ -151,6 +165,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo doc -p rav1d-disjoint-mut --no-deps
+      - run: cargo doc -p rav1d-disjoint-mut --features aligned,pic-buf,zerocopy --no-deps
         env:
           RUSTDOCFLAGS: -D warnings

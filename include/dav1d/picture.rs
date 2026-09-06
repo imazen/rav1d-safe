@@ -3004,4 +3004,64 @@ mod row_guard_policy_tests {
              and this test gates nothing"
         );
     }
+
+    #[test]
+    fn live_block_keeps_its_storage_when_another_decoder_changes_threading() {
+        use crate::src::managed::{Decoder, Settings};
+        in_child_process(
+            &format!("{TESTS}live_block_keeps_its_storage_when_another_decoder_changes_threading"),
+            "LIVE_BLOCK_THREADING_TRANSITION_RAN",
+            || {
+                let pic = plane();
+                let at = WithOffset {
+                    data: &pic,
+                    offset: 0,
+                };
+                let mut old = at.block_mut::<BitDepth8>(W, ROWS);
+                assert_eq!(old.byte_stride(), STRIDE as isize);
+                assert!(matches!(old.storage, super::BlockMutStorage::Direct { .. }));
+                // Create real worker threads after the old direct guard exists.
+                // Keep that decoder live while a second opener requests ST.
+                let mt = Decoder::with_settings(Settings {
+                    threads: 2,
+                    max_frame_delay: 1,
+                    ..Default::default()
+                })
+                .unwrap();
+                std::thread::spawn(|| {
+                    for _ in 0..4 {
+                        let st = Decoder::with_settings(Settings {
+                            threads: 1,
+                            ..Default::default()
+                        })
+                        .unwrap();
+                        assert!(tile_threading_active());
+                        drop(st);
+                    }
+                })
+                .join()
+                .unwrap();
+                assert_eq!(old.byte_stride(), STRIDE as isize);
+                for row in 0..ROWS {
+                    old.as_mut_bytes()[row * STRIDE] = 7;
+                }
+                drop(old); // must retire the direct guard, without compact writeback
+                let mut gap = pic.slice_mut::<BitDepth8, _>((W.., ..1));
+                gap[0] = 11;
+                let mut new = at.block_mut::<BitDepth8>(W, ROWS);
+                assert_eq!(new.byte_stride(), W as isize);
+                for row in 0..ROWS {
+                    new.as_mut_bytes()[row * W] = 9;
+                }
+                drop(new); // writeback must preserve the independently borrowed gap
+                assert_eq!(gap[0], 11);
+                drop(gap);
+                for row in 0..ROWS {
+                    assert_eq!(pic.slice::<BitDepth8, _>((row * STRIDE.., ..1))[0], 9);
+                }
+                drop(mt);
+                assert!(tile_threading_active());
+            },
+        );
+    }
 }

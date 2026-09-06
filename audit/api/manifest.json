@@ -1,0 +1,178 @@
+[
+  {
+    "crate": "rav1d-disjoint-mut",
+    "version": "0.2.1",
+    "command": [
+      "cargo",
+      "+nightly",
+      "public-api",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-disjoint-mut-0.2.1/Cargo.toml",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--omit",
+      "blanket-impls",
+      "--color",
+      "never",
+      "--features",
+      "aligned,pic-buf,zerocopy"
+    ],
+    "exit_code": 0,
+    "seconds": 0.3,
+    "sha256": "14bbc557262b862f9c001ec1f73bcd2cd06a0732c872cbf830d249d4b044b068",
+    "lines": 383
+  },
+  {
+    "crate": "rav1d-disjoint-mut",
+    "version": "0.3.0",
+    "command": [
+      "cargo",
+      "+nightly",
+      "public-api",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-disjoint-mut-0.3.0/Cargo.toml",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--omit",
+      "blanket-impls",
+      "--color",
+      "never",
+      "--features",
+      "aligned,pic-buf,zerocopy"
+    ],
+    "exit_code": 0,
+    "seconds": 0.29,
+    "sha256": "eddb93b82b0815564e73b0b5ffce9506b715b1d179314812fcf3a7504da94a4c",
+    "lines": 381
+  },
+  {
+    "crate": "rav1d-disjoint-mut",
+    "version": "0.3.1",
+    "command": [
+      "cargo",
+      "+nightly",
+      "public-api",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-disjoint-mut-0.3.1/Cargo.toml",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--omit",
+      "blanket-impls",
+      "--color",
+      "never",
+      "--features",
+      "aligned,pic-buf,zerocopy"
+    ],
+    "exit_code": 0,
+    "seconds": 0.35,
+    "sha256": "a924015a567ae422e5934806045115394b352e77d68c178a888bf9a2a1a566d4",
+    "lines": 381
+  },
+  {
+    "crate": "rav1d-disjoint-mut",
+    "version": "current",
+    "command": [
+      "cargo",
+      "+nightly",
+      "public-api",
+      "--manifest-path",
+      "/home/lilith/work/zen/rav1d-safe/Cargo.toml",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--omit",
+      "blanket-impls",
+      "--color",
+      "never",
+      "--features",
+      "aligned,pic-buf,zerocopy"
+    ],
+    "exit_code": 0,
+    "seconds": 0.48,
+    "sha256": "8d2931b8ab95e0be393c4f32ee0e2efa5796db1cc022f8b9c53667a33fbf3633",
+    "lines": 431
+  },
+  {
+    "crate": "rav1d-safe",
+    "version": "0.5.5",
+    "command": [
+      "cargo",
+      "+nightly",
+      "public-api",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-safe-0.5.5/Cargo.toml",
+      "-p",
+      "rav1d-safe",
+      "--omit",
+      "blanket-impls",
+      "--color",
+      "never"
+    ],
+    "exit_code": 0,
+    "seconds": 1.97,
+    "sha256": "33b8186b22f8dc36b6702cfcf44fe706e2f4ac689eb597e211896d3a07d6b593",
+    "lines": 2665
+  },
+  {
+    "crate": "rav1d-safe",
+    "version": "0.5.6",
+    "command": [
+      "cargo",
+      "+nightly",
+      "public-api",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-safe-0.5.6/Cargo.toml",
+      "-p",
+      "rav1d-safe",
+      "--omit",
+      "blanket-impls",
+      "--color",
+      "never"
+    ],
+    "exit_code": 0,
+    "seconds": 1.64,
+    "sha256": "1b63ec17aa4f9849cd0ec75432729eab0169c9cae28c4fb80229bc0fa9be0268",
+    "lines": 2666
+  },
+  {
+    "crate": "rav1d-safe",
+    "version": "0.5.7",
+    "command": [
+      "cargo",
+      "+nightly",
+      "public-api",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-safe-0.5.7/Cargo.toml",
+      "-p",
+      "rav1d-safe",
+      "--omit",
+      "blanket-impls",
+      "--color",
+      "never"
+    ],
+    "exit_code": 0,
+    "seconds": 1.58,
+    "sha256": "1b63ec17aa4f9849cd0ec75432729eab0169c9cae28c4fb80229bc0fa9be0268",
+    "lines": 2666
+  },
+  {
+    "crate": "rav1d-safe",
+    "version": "current",
+    "command": [
+      "cargo",
+      "+nightly",
+      "public-api",
+      "--manifest-path",
+      "/home/lilith/work/zen/rav1d-safe/Cargo.toml",
+      "-p",
+      "rav1d-safe",
+      "--omit",
+      "blanket-impls",
+      "--color",
+      "never"
+    ],
+    "exit_code": 0,
+    "seconds": 2.42,
+    "sha256": "23366079da0ac3dfd84ac014c03b17a4835572e57771082d9163cf98ba045650",
+    "lines": 2762
+  }
+]

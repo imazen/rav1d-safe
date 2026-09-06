@@ -1,0 +1,14 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=8/24 avail=26512MiB :: cargo semver-checks -p rav1d-disjoint-mut --baseline-root /home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-disjoint-mut-0.3.1 --only-explicit-features --features std,aligned,pic-buf,zerocopy
+[1m[32m    Building[0m rav1d-disjoint-mut v0.4.0 (current)
+[1m[32m       Built[0m [   3.363s] (current)
+[1m[32m     Parsing[0m rav1d-disjoint-mut v0.4.0 (current)
+[1m[32m      Parsed[0m [   0.008s] (current)
+[1m[32m    Building[0m rav1d-disjoint-mut v0.3.1 (baseline)
+[1m[32m       Built[0m [   0.593s] (baseline)
+[1m[32m     Parsing[0m rav1d-disjoint-mut v0.3.1 (baseline)
+[1m[32m      Parsed[0m [   0.006s] (baseline)
+[1m[32m    Checking[0m rav1d-disjoint-mut v0.3.1 -> v0.4.0 (major change)
+[1m[32m     Checked[0m [   0.000s] 0 checks: 0 pass, 253 skip
+[1m[32m     Summary[0m no semver update required
+[1m[32m    Finished[0m [   4.950s] rav1d-disjoint-mut
+run-heavy: done rc=0 5s | peak-RSS 0.40GiB | min-avail 26042MiB | peak-load 45.62

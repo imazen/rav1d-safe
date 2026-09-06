@@ -1,0 +1,585 @@
+{
+  "timestamp_utc": "2026-09-06T06:19:44.882158+00:00",
+  "source_digest": "b5ea822811bf29fddcbccde426bff3f3f0328c89bbee334a483941e1c4df5c8b",
+  "source_digest_method": "SHA256 of sorted relative-path + NUL + file SHA256 + newline; Rust source/test files, root build files, manifests/lock, review scripts and disjoint CI workflow",
+  "source_file_count": 175,
+  "cargo_lock_sha256": "83107321085ff1ffa2580409e9c0417e7bc7ebd469ca2d8eca88bfccf67fdcc7",
+  "package_sha256": "66412115be3a121f1b86b7175c3d5867ea3b4c8e9ebffaa81c265d6f0d7deae7",
+  "package_path": "/home/lilith/work/zen/rav1d-safe/target/package/rav1d-disjoint-mut-0.4.0.crate",
+  "gates": [
+    {
+      "gate": "disjoint-native",
+      "exit_code": 0,
+      "seconds": 5.68,
+      "command": [
+        "bash",
+        "scripts/review.sh",
+        "disjoint"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/final-gates/disjoint-native.log"
+    },
+    {
+      "gate": "disjoint-no-std",
+      "exit_code": 0,
+      "seconds": 5.76,
+      "command": [
+        "bash",
+        "scripts/review.sh",
+        "no-std"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/final-gates/disjoint-no-std.log"
+    },
+    {
+      "gate": "loom",
+      "exit_code": 0,
+      "seconds": 1.32,
+      "command": [
+        "bash",
+        "scripts/review.sh",
+        "loom"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/final-gates/loom.log"
+    },
+    {
+      "gate": "miri-tree-api",
+      "exit_code": 0,
+      "seconds": 21.15,
+      "command": [
+        "bash",
+        "scripts/review.sh",
+        "miri-tree",
+        "--test",
+        "adversarial_api",
+        "--test",
+        "rect_units",
+        "--test",
+        "soundness"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/final-gates/miri-tree-api.log"
+    },
+    {
+      "gate": "threading-protocol",
+      "exit_code": 0,
+      "seconds": 8.03,
+      "command": [
+        "bash",
+        "scripts/review.sh",
+        "threading-protocol"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/final-gates/threading-protocol.log"
+    },
+    {
+      "gate": "decoder-debug",
+      "exit_code": 0,
+      "seconds": 16.9,
+      "command": [
+        "bash",
+        "scripts/review.sh",
+        "decoder-debug"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/final-gates/decoder-debug.log"
+    },
+    {
+      "gate": "decoder-release",
+      "exit_code": 0,
+      "seconds": 32.41,
+      "command": [
+        "bash",
+        "scripts/review.sh",
+        "decoder-smoke"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/final-gates/decoder-release.log"
+    },
+    {
+      "gate": "feature-boundary",
+      "exit_code": 0,
+      "seconds": 0.69,
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "bash",
+        "scripts/review-feature-gate.sh"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/final-gates/feature-boundary.log"
+    },
+    {
+      "gate": "clippy-disjoint",
+      "exit_code": 0,
+      "seconds": 1.51,
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "clippy",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--features",
+        "aligned,pic-buf,zerocopy",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/final-gates/clippy-disjoint.log"
+    },
+    {
+      "gate": "clippy-no-std",
+      "exit_code": 0,
+      "seconds": 0.2,
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "clippy",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--no-default-features",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/final-gates/clippy-no-std.log"
+    },
+    {
+      "gate": "clippy-decoder",
+      "exit_code": 0,
+      "seconds": 6.29,
+      "command": [
+        "bash",
+        "scripts/review.sh",
+        "clippy"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/final-gates/clippy-decoder.log"
+    },
+    {
+      "gate": "corpus-st",
+      "exit_code": 0,
+      "seconds": 47.07,
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "test",
+        "--release",
+        "-p",
+        "rav1d-safe",
+        "--test",
+        "decode_md5_verify",
+        "test_md5_verify_comprehensive",
+        "--",
+        "--exact",
+        "--nocapture"
+      ],
+      "env": {
+        "RAV1D_MD5_THREADS": "1"
+      },
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/final-gates/corpus-st.log"
+    },
+    {
+      "gate": "corpus-mt",
+      "exit_code": 0,
+      "seconds": 76.9,
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "test",
+        "--release",
+        "-p",
+        "rav1d-safe",
+        "--test",
+        "decode_md5_verify",
+        "test_md5_verify_comprehensive",
+        "--",
+        "--exact",
+        "--nocapture"
+      ],
+      "env": {
+        "RAV1D_MD5_THREADS": "8"
+      },
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/final-gates/corpus-mt.log"
+    },
+    {
+      "gate": "package-disjoint",
+      "exit_code": 0,
+      "seconds": 0.56,
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "package",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--allow-dirty"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/final-gates/package-disjoint.log"
+    },
+    {
+      "gate": "msrv-default",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "seconds": 3.27,
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "+1.85.0",
+        "check",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-review-2026-09-05/last-gates/package/rav1d-disjoint-mut-0.4.0/Cargo.toml",
+        "--features",
+        "aligned,pic-buf,zerocopy"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/last-gates/msrv-default.log"
+    },
+    {
+      "gate": "msrv-no-std",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "seconds": 0.29,
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "+1.85.0",
+        "check",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-review-2026-09-05/last-gates/package/rav1d-disjoint-mut-0.4.0/Cargo.toml",
+        "--no-default-features"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/last-gates/msrv-no-std.log"
+    },
+    {
+      "gate": "i686",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "seconds": 3.06,
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "check",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-review-2026-09-05/last-gates/package/rav1d-disjoint-mut-0.4.0/Cargo.toml",
+        "--target",
+        "i686-unknown-linux-gnu",
+        "--features",
+        "aligned,pic-buf,zerocopy"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/last-gates/i686.log"
+    },
+    {
+      "gate": "wasm-no-std",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "seconds": 0.32,
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "check",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-review-2026-09-05/last-gates/package/rav1d-disjoint-mut-0.4.0/Cargo.toml",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--no-default-features"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/last-gates/wasm-no-std.log"
+    },
+    {
+      "gate": "semver-disjoint-04",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "seconds": 5.22,
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "semver-checks",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--baseline-root",
+        "/home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-disjoint-mut-0.3.1",
+        "--only-explicit-features",
+        "--features",
+        "std,aligned,pic-buf,zerocopy"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/last-gates/semver-disjoint-04.log"
+    },
+    {
+      "gate": "semver-decoder-breaks",
+      "exit_code": 100,
+      "expected_exit_code": 100,
+      "seconds": 18.61,
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "semver-checks",
+        "-p",
+        "rav1d-safe",
+        "--baseline-root",
+        "/home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-safe-0.5.7",
+        "--default-features",
+        "--release-type",
+        "minor"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/last-gates/semver-decoder-breaks.log"
+    },
+    {
+      "gate": "miri-stacked-final",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "seconds": 110.06,
+      "command": [
+        "bash",
+        "scripts/review.sh",
+        "miri-stacked",
+        "--test",
+        "adversarial_api",
+        "--test",
+        "rect_units",
+        "--test",
+        "guard_move_release",
+        "--test",
+        "aligned_miri",
+        "--test",
+        "pic_buf_overflow"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/last-gates/miri-stacked-final.log"
+    },
+    {
+      "gate": "miri-tree-guards",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "seconds": 120.25,
+      "command": [
+        "bash",
+        "scripts/review.sh",
+        "miri-tree",
+        "--test",
+        "guard_move_release",
+        "--test",
+        "aligned_miri",
+        "--test",
+        "pic_buf_overflow"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/last-gates/miri-tree-guards.log"
+    },
+    {
+      "gate": "fmt",
+      "exit_code": 0,
+      "expected_exit_code": 0,
+      "seconds": 0.75,
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "fmt",
+        "-p",
+        "rav1d-disjoint-mut",
+        "-p",
+        "rav1d-safe",
+        "--",
+        "--check"
+      ],
+      "env": {},
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/last-gates/fmt.log"
+    },
+    {
+      "gate": "doc",
+      "exit_code": 101,
+      "expected_exit_code": 0,
+      "seconds": 0.37,
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "doc",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--features",
+        "aligned,pic-buf,zerocopy",
+        "--no-deps"
+      ],
+      "env": {
+        "RUSTDOCFLAGS": "-D warnings"
+      },
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/last-gates/doc.log"
+    },
+    {
+      "gate": "c-ffi",
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "check",
+        "-p",
+        "rav1d-safe",
+        "--features",
+        "c-ffi",
+        "--lib"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "seconds": 7.17,
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/post-gates/c-ffi.log"
+    },
+    {
+      "gate": "doc",
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "doc",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--features",
+        "aligned,pic-buf,zerocopy",
+        "--no-deps"
+      ],
+      "env": {
+        "RUSTDOCFLAGS": "-D warnings"
+      },
+      "exit_code": 0,
+      "seconds": 0.55,
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/post-gates/doc.log"
+    },
+    {
+      "gate": "loom",
+      "command": [
+        "bash",
+        "scripts/review.sh",
+        "loom"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "seconds": 0.76,
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/post-gates/loom.log"
+    },
+    {
+      "gate": "api",
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "python3",
+        "scripts/review-api.py",
+        "--releases",
+        "/home/lilith/tmp/rav1d-review-2026-09-05/releases",
+        "--output",
+        "/home/lilith/tmp/rav1d-review-2026-09-05/api-final"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "seconds": 9.15,
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/post-gates/api.log"
+    },
+    {
+      "gate": "package",
+      "command": [
+        "/home/lilith/work/zen/scripts/run-heavy",
+        "--mem",
+        "16G",
+        "--jobs",
+        "8",
+        "--",
+        "cargo",
+        "package",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--allow-dirty"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "seconds": 0.47,
+      "log": "/home/lilith/tmp/rav1d-review-2026-09-05/post-gates/package.log"
+    }
+  ]
+}

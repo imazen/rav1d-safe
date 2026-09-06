@@ -1,0 +1,38 @@
+[
+  {
+    "mutation": "retire-without-release",
+    "command": [
+      "bash",
+      "scripts/review.sh",
+      "loom"
+    ],
+    "exit_code": 101,
+    "expected": "Causality violation",
+    "detected": true,
+    "original_sha256": "34d55d94921b2129de8b6843d73f1b905937a25779e52d59ea4a0a88e666db63"
+  },
+  {
+    "mutation": "wide-state-outside-lock",
+    "command": [
+      "bash",
+      "scripts/review.sh",
+      "loom"
+    ],
+    "exit_code": 101,
+    "expected": "currently writing to cell",
+    "detected": true,
+    "original_sha256": "34d55d94921b2129de8b6843d73f1b905937a25779e52d59ea4a0a88e666db63"
+  },
+  {
+    "mutation": "global-threading-reset",
+    "command": [
+      "bash",
+      "scripts/review.sh",
+      "threading-protocol"
+    ],
+    "exit_code": 101,
+    "expected": "assertion failed: tile_threading_active()",
+    "detected": true,
+    "original_sha256": "41873482f9c9cef69c83ac28f1fa0de435289dc783f423b372c0ba15b5c3e9ba"
+  }
+]

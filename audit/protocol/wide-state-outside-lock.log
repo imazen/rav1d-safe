@@ -1,0 +1,60 @@
+Log: /home/lilith/tmp/rav1d-review-2026-09-05/logs/loom-Mxc2wdAB.log
+2026-09-06T05:55:05+00:00
+c7c49c682c8e7dba2430afe7cf49ea4edce486e3
+ M .github/workflows/disjoint-mut-ci.yml
+ M Cargo.lock
+ M crates/rav1d-disjoint-mut/Cargo.toml
+ M crates/rav1d-disjoint-mut/src/lib.rs
+ A crates/rav1d-disjoint-mut/src/loom_protocol.rs
+ A crates/rav1d-disjoint-mut/src/tracker_cell.rs
+ M crates/rav1d-disjoint-mut/src/tracker_shard.rs
+ A crates/rav1d-disjoint-mut/tests/adversarial_api.rs
+ M docs/OWNERSHIP_MODELS.md
+ M include/dav1d/picture.rs
+ A scripts/review-feature-gate.sh
+ M scripts/review.sh
+ M tests/decode_md5_committed.rs
+?? audit/api/
+?? docs/RELEASE_SOUNDNESS_PROTOCOL.md
+rustc 1.98.1 (48a229cea 2026-09-01)
+binary: rustc
+commit-hash: 48a229ceaefd4985c50990b14116b6d856af0985
+commit-date: 2026-09-01
+host: x86_64-unknown-linux-gnu
+release: 1.98.1
+LLVM version: 22.1.8
+MIRIFLAGS=
+RUSTFLAGS=--cfg disjoint_mut_loom
+CARGO_TARGET_DIR=target/review-loom
+r7900x
+Command: cargo test -p rav1d-disjoint-mut --features __shards_4 --lib loom_protocol -- --test-threads=1
+ab977e671cc3bce06534bc183fa147fbc4746379af99ee5599f4db6a0f83a5c5  Cargo.lock
+run-heavy: mem-cap=16G (cgroup, hard) jobs=8/24 avail=27801MiB :: cargo test -p rav1d-disjoint-mut --features __shards_4 --lib loom_protocol -- --test-threads=1
+[1m[92m   Compiling[0m rav1d-disjoint-mut v0.3.1 (/home/lilith/work/zen/rav1d-safe/crates/rav1d-disjoint-mut)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 0.21s
+[1m[92m     Running[0m unittests src/lib.rs (target/review-loom/debug/deps/rav1d_disjoint_mut-eaa106db40f9615a)
+
+running 6 tests
+test tracker_shard::loom_protocol::global_hints_cannot_remap_a_live_tracker ... ok
+test tracker_shard::loom_protocol::last_reader_and_full_shard_fallback ... ok
+test tracker_shard::loom_protocol::multi_shard_exclusion_and_handoff ... ok
+test tracker_shard::loom_protocol::narrow_exclusion_and_retirement_handoff ... ok
+test tracker_shard::loom_protocol::rectangle_rows_exclude_but_gaps_remain_available ... ok
+test tracker_shard::loom_protocol::wide_narrow_exclusion_and_handoff ... FAILED
+
+failures:
+
+---- tracker_shard::loom_protocol::wide_narrow_exclusion_and_handoff stdout ----
+
+thread 'tracker_shard::loom_protocol::wide_narrow_exclusion_and_handoff' (2909146) panicked at /home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/loom-0.7.2/src/rt/cell.rs:76:13:
+currently writing to cell
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tracker_shard::loom_protocol::wide_narrow_exclusion_and_handoff
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.03s
+
+[1m[91merror[0m: test failed, to rerun pass `-p rav1d-disjoint-mut --lib`
+run-heavy: done rc=101 0s | peak-RSS 0.22GiB | min-avail 27801MiB | peak-load 0.09

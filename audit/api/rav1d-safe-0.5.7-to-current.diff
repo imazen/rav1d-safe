@@ -1,0 +1,169 @@
+--- rav1d-safe-0.5.7
++++ rav1d-safe-current
+@@ -1732,6 +1732,20 @@
+ impl core::marker::UnsafeUnpin for rav1d_safe::include::dav1d::picture::AlignedPixelChunk
+ impl core::panic::unwind_safe::RefUnwindSafe for rav1d_safe::include::dav1d::picture::AlignedPixelChunk
+ impl core::panic::unwind_safe::UnwindSafe for rav1d_safe::include::dav1d::picture::AlignedPixelChunk
++pub struct rav1d_safe::include::dav1d::picture::BlockMut<'a, BD: rav1d_safe::include::common::bitdepth::BitDepth>
++impl<'a, BD: rav1d_safe::include::common::bitdepth::BitDepth> rav1d_safe::include::dav1d::picture::BlockMut<'a, BD>
++pub fn rav1d_safe::include::dav1d::picture::BlockMut<'a, BD>::as_mut_bytes(&mut self) -> &mut [u8]
++pub fn rav1d_safe::include::dav1d::picture::BlockMut<'a, BD>::base(&self) -> usize
++pub fn rav1d_safe::include::dav1d::picture::BlockMut<'a, BD>::byte_stride(&self) -> isize
++impl<BD: rav1d_safe::include::common::bitdepth::BitDepth> core::ops::drop::Drop for rav1d_safe::include::dav1d::picture::BlockMut<'_, BD>
++pub fn rav1d_safe::include::dav1d::picture::BlockMut<'_, BD>::drop(&mut self)
++impl<'a, BD> core::marker::Freeze for rav1d_safe::include::dav1d::picture::BlockMut<'a, BD>
++impl<'a, BD> core::marker::Send for rav1d_safe::include::dav1d::picture::BlockMut<'a, BD> where <BD as rav1d_safe::include::common::bitdepth::BitDepth>::Pixel: core::marker::Send
++impl<'a, BD> core::marker::Sync for rav1d_safe::include::dav1d::picture::BlockMut<'a, BD> where <BD as rav1d_safe::include::common::bitdepth::BitDepth>::Pixel: core::marker::Sync
++impl<'a, BD> core::marker::Unpin for rav1d_safe::include::dav1d::picture::BlockMut<'a, BD>
++impl<'a, BD> core::marker::UnsafeUnpin for rav1d_safe::include::dav1d::picture::BlockMut<'a, BD>
++impl<'a, BD> !core::panic::unwind_safe::RefUnwindSafe for rav1d_safe::include::dav1d::picture::BlockMut<'a, BD>
++impl<'a, BD> !core::panic::unwind_safe::UnwindSafe for rav1d_safe::include::dav1d::picture::BlockMut<'a, BD>
+ #[repr(C)] pub struct rav1d_safe::include::dav1d::picture::Dav1dPictureParameters
+ pub rav1d_safe::include::dav1d::picture::Dav1dPictureParameters::bpc: core::ffi::primitives::c_int
+ pub rav1d_safe::include::dav1d::picture::Dav1dPictureParameters::h: core::ffi::primitives::c_int
+@@ -1780,6 +1794,12 @@
+ impl !core::panic::unwind_safe::RefUnwindSafe for rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponent
+ impl core::panic::unwind_safe::UnwindSafe for rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponent
+ pub const rav1d_safe::include::dav1d::picture::DAV1D_PICTURE_ALIGNMENT: usize
++pub const rav1d_safe::include::dav1d::picture::PIC_EXTENT_CEILINGS: &[(&str, usize)]
++pub const rav1d_safe::include::dav1d::picture::TILE_THREADED_PIC_EXTENT_MAX_BYTES: usize
++pub fn rav1d_safe::include::dav1d::picture::cdef_double_reads() -> bool
++pub fn rav1d_safe::include::dav1d::picture::pic_extent_ceiling(&str, usize) -> usize
++pub fn rav1d_safe::include::dav1d::picture::pic_extent_ceiling_const(&str) -> core::option::Option<usize>
++pub fn rav1d_safe::include::dav1d::picture::rect_hull_arm() -> bool
+ pub fn rav1d_safe::include::dav1d::picture::set_tile_threading(bool)
+ pub fn rav1d_safe::include::dav1d::picture::tile_threading_active() -> bool
+ pub fn rav1d_safe::include::dav1d::picture::with_pixel_guard_immut<BD: rav1d_safe::include::common::bitdepth::BitDepth, R>(&rav1d_safe::src::with_offset::WithOffset<&rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponent>, usize, usize, impl core::ops::function::FnOnce(&[u8], usize, isize) -> R) -> R
+@@ -1788,7 +1808,50 @@
+ pub type rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponentInner = rav1d_disjoint_mut::pic_buf::PicBuf
+ pub type rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponentOffset<'a> = rav1d_safe::src::with_offset::WithOffset<&'a rav1d_safe::include::dav1d::picture::Rav1dPictureDataComponent>
+ pub mod rav1d_safe::src
++pub mod rav1d_safe::src::ablate
++#[repr(u32)] pub enum rav1d_safe::src::ablate::Family
++pub rav1d_safe::src::ablate::Family::Cdef = 4
++pub rav1d_safe::src::ablate::Family::FilmGrain = 8
++pub rav1d_safe::src::ablate::Family::IntraPred = 7
++pub rav1d_safe::src::ablate::Family::Itx = 0
++pub rav1d_safe::src::ablate::Family::LoopFilter = 5
++pub rav1d_safe::src::ablate::Family::LoopRestoration = 6
++pub rav1d_safe::src::ablate::Family::McOther = 3
++pub rav1d_safe::src::ablate::Family::McPrep = 2
++pub rav1d_safe::src::ablate::Family::McPut = 1
++impl rav1d_safe::src::ablate::Family
++pub const rav1d_safe::src::ablate::Family::ALL: &'static [rav1d_safe::src::ablate::Family]
++pub fn rav1d_safe::src::ablate::Family::from_name(&str) -> core::option::Option<rav1d_safe::src::ablate::Family>
++pub const fn rav1d_safe::src::ablate::Family::name(self) -> &'static str
++impl core::clone::Clone for rav1d_safe::src::ablate::Family
++pub fn rav1d_safe::src::ablate::Family::clone(&self) -> rav1d_safe::src::ablate::Family
++impl core::cmp::Eq for rav1d_safe::src::ablate::Family
++impl core::cmp::PartialEq for rav1d_safe::src::ablate::Family
++pub fn rav1d_safe::src::ablate::Family::eq(&self, &rav1d_safe::src::ablate::Family) -> bool
++impl core::fmt::Debug for rav1d_safe::src::ablate::Family
++pub fn rav1d_safe::src::ablate::Family::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++impl core::marker::Copy for rav1d_safe::src::ablate::Family
++impl core::marker::StructuralPartialEq for rav1d_safe::src::ablate::Family
++impl core::marker::Freeze for rav1d_safe::src::ablate::Family
++impl core::marker::Send for rav1d_safe::src::ablate::Family
++impl core::marker::Sync for rav1d_safe::src::ablate::Family
++impl core::marker::Unpin for rav1d_safe::src::ablate::Family
++impl core::marker::UnsafeUnpin for rav1d_safe::src::ablate::Family
++impl core::panic::unwind_safe::RefUnwindSafe for rav1d_safe::src::ablate::Family
++impl core::panic::unwind_safe::UnwindSafe for rav1d_safe::src::ablate::Family
++pub const rav1d_safe::src::ablate::ENABLED: bool
++pub fn rav1d_safe::src::ablate::activity_reset()
++pub fn rav1d_safe::src::ablate::activity_snapshot() -> [u64; 9]
++pub fn rav1d_safe::src::ablate::is_off(rav1d_safe::src::ablate::Family) -> bool
++pub fn rav1d_safe::src::ablate::itx_shape_report() -> alloc::string::String
++pub fn rav1d_safe::src::ablate::itx_shape_reset()
++pub fn rav1d_safe::src::ablate::note(rav1d_safe::src::ablate::Family, u64)
++pub fn rav1d_safe::src::ablate::note_itx_shape(usize, u8, bool)
++pub fn rav1d_safe::src::ablate::set_disabled(&[rav1d_safe::src::ablate::Family])
+ pub mod rav1d_safe::src::managed
++pub use rav1d_safe::src::managed::Stop
++pub use rav1d_safe::src::managed::StopReason
++pub use rav1d_safe::src::managed::Unstoppable
+ #[repr(u8)] pub enum rav1d_safe::src::managed::ColorPrimaries
+ pub rav1d_safe::src::managed::ColorPrimaries::BT2020 = 9
+ pub rav1d_safe::src::managed::ColorPrimaries::BT470BG = 5
+@@ -1897,6 +1960,7 @@
+ impl core::panic::unwind_safe::RefUnwindSafe for rav1d_safe::src::managed::DecodeFrameType
+ impl core::panic::unwind_safe::UnwindSafe for rav1d_safe::src::managed::DecodeFrameType
+ pub enum rav1d_safe::src::managed::Error
++pub rav1d_safe::src::managed::Error::Cancelled
+ pub rav1d_safe::src::managed::Error::InitFailed
+ pub rav1d_safe::src::managed::Error::InvalidData
+ pub rav1d_safe::src::managed::Error::InvalidSettings(&'static str)
+@@ -1988,6 +2052,33 @@
+ impl<'a> core::marker::UnsafeUnpin for rav1d_safe::src::managed::Planes<'a>
+ impl<'a> !core::panic::unwind_safe::RefUnwindSafe for rav1d_safe::src::managed::Planes<'a>
+ impl<'a> !core::panic::unwind_safe::UnwindSafe for rav1d_safe::src::managed::Planes<'a>
++#[non_exhaustive] pub enum rav1d_safe::src::managed::Strictness
++pub rav1d_safe::src::managed::Strictness::Lenient
++pub rav1d_safe::src::managed::Strictness::Strict
++impl core::clone::Clone for rav1d_safe::src::managed::Strictness
++pub fn rav1d_safe::src::managed::Strictness::clone(&self) -> rav1d_safe::src::managed::Strictness
++impl core::cmp::Eq for rav1d_safe::src::managed::Strictness
++impl core::cmp::Ord for rav1d_safe::src::managed::Strictness
++pub fn rav1d_safe::src::managed::Strictness::cmp(&self, &rav1d_safe::src::managed::Strictness) -> core::cmp::Ordering
++impl core::cmp::PartialEq for rav1d_safe::src::managed::Strictness
++pub fn rav1d_safe::src::managed::Strictness::eq(&self, &rav1d_safe::src::managed::Strictness) -> bool
++impl core::cmp::PartialOrd for rav1d_safe::src::managed::Strictness
++pub fn rav1d_safe::src::managed::Strictness::partial_cmp(&self, &rav1d_safe::src::managed::Strictness) -> core::option::Option<core::cmp::Ordering>
++impl core::default::Default for rav1d_safe::src::managed::Strictness
++pub fn rav1d_safe::src::managed::Strictness::default() -> rav1d_safe::src::managed::Strictness
++impl core::fmt::Debug for rav1d_safe::src::managed::Strictness
++pub fn rav1d_safe::src::managed::Strictness::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
++impl core::hash::Hash for rav1d_safe::src::managed::Strictness
++pub fn rav1d_safe::src::managed::Strictness::hash<__H: core::hash::Hasher>(&self, &mut __H)
++impl core::marker::Copy for rav1d_safe::src::managed::Strictness
++impl core::marker::StructuralPartialEq for rav1d_safe::src::managed::Strictness
++impl core::marker::Freeze for rav1d_safe::src::managed::Strictness
++impl core::marker::Send for rav1d_safe::src::managed::Strictness
++impl core::marker::Sync for rav1d_safe::src::managed::Strictness
++impl core::marker::Unpin for rav1d_safe::src::managed::Strictness
++impl core::marker::UnsafeUnpin for rav1d_safe::src::managed::Strictness
++impl core::panic::unwind_safe::RefUnwindSafe for rav1d_safe::src::managed::Strictness
++impl core::panic::unwind_safe::UnwindSafe for rav1d_safe::src::managed::Strictness
+ #[repr(u8)] pub enum rav1d_safe::src::managed::TransferCharacteristics
+ pub rav1d_safe::src::managed::TransferCharacteristics::BT1361 = 12
+ pub rav1d_safe::src::managed::TransferCharacteristics::BT2020_10bit = 14
+@@ -2063,6 +2154,7 @@
+ pub fn rav1d_safe::src::managed::Decoder::flush(&mut self) -> rav1d_safe::src::managed::Result<alloc::vec::Vec<rav1d_safe::src::managed::Frame>>
+ pub fn rav1d_safe::src::managed::Decoder::get_frame(&mut self) -> rav1d_safe::src::managed::Result<core::option::Option<rav1d_safe::src::managed::Frame>>
+ pub fn rav1d_safe::src::managed::Decoder::new() -> rav1d_safe::src::managed::Result<Self>
++pub fn rav1d_safe::src::managed::Decoder::set_stop(&mut self, core::option::Option<alloc::sync::Arc<dyn enough::Stop>>)
+ pub fn rav1d_safe::src::managed::Decoder::with_settings(rav1d_safe::src::managed::Settings) -> rav1d_safe::src::managed::Result<Self>
+ impl core::ops::drop::Drop for rav1d_safe::src::managed::Decoder
+ pub fn rav1d_safe::src::managed::Decoder::drop(&mut self)
+@@ -2210,6 +2302,7 @@
+ pub rav1d_safe::src::managed::Settings::operating_point: u8
+ pub rav1d_safe::src::managed::Settings::output_invisible_frames: bool
+ pub rav1d_safe::src::managed::Settings::strict_std_compliance: bool
++pub rav1d_safe::src::managed::Settings::strictness: rav1d_safe::src::managed::Strictness
+ pub rav1d_safe::src::managed::Settings::threads: u32
+ impl core::clone::Clone for rav1d_safe::src::managed::Settings
+ pub fn rav1d_safe::src::managed::Settings::clone(&self) -> rav1d_safe::src::managed::Settings
+@@ -2335,6 +2428,7 @@
+ impl core::panic::unwind_safe::RefUnwindSafe for rav1d_safe::src::managed::DecodeFrameType
+ impl core::panic::unwind_safe::UnwindSafe for rav1d_safe::src::managed::DecodeFrameType
+ pub enum rav1d_safe::Error
++pub rav1d_safe::Error::Cancelled
+ pub rav1d_safe::Error::InitFailed
+ pub rav1d_safe::Error::InvalidData
+ pub rav1d_safe::Error::InvalidSettings(&'static str)
+@@ -2501,6 +2595,7 @@
+ pub fn rav1d_safe::src::managed::Decoder::flush(&mut self) -> rav1d_safe::src::managed::Result<alloc::vec::Vec<rav1d_safe::src::managed::Frame>>
+ pub fn rav1d_safe::src::managed::Decoder::get_frame(&mut self) -> rav1d_safe::src::managed::Result<core::option::Option<rav1d_safe::src::managed::Frame>>
+ pub fn rav1d_safe::src::managed::Decoder::new() -> rav1d_safe::src::managed::Result<Self>
++pub fn rav1d_safe::src::managed::Decoder::set_stop(&mut self, core::option::Option<alloc::sync::Arc<dyn enough::Stop>>)
+ pub fn rav1d_safe::src::managed::Decoder::with_settings(rav1d_safe::src::managed::Settings) -> rav1d_safe::src::managed::Result<Self>
+ impl core::ops::drop::Drop for rav1d_safe::src::managed::Decoder
+ pub fn rav1d_safe::src::managed::Decoder::drop(&mut self)
+@@ -2648,6 +2743,7 @@
+ pub rav1d_safe::Settings::operating_point: u8
+ pub rav1d_safe::Settings::output_invisible_frames: bool
+ pub rav1d_safe::Settings::strict_std_compliance: bool
++pub rav1d_safe::Settings::strictness: rav1d_safe::src::managed::Strictness
+ pub rav1d_safe::Settings::threads: u32
+ impl core::clone::Clone for rav1d_safe::src::managed::Settings
+ pub fn rav1d_safe::src::managed::Settings::clone(&self) -> rav1d_safe::src::managed::Settings

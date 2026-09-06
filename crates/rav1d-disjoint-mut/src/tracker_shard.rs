@@ -43,30 +43,35 @@
 //! which takes `&mut self` and so runs with no borrow outstanding). Those are
 //! locality-versus-collision knobs, never correctness ones.
 //!
-//! *Release does not need the lock.* Retiring a record is one bit-clear in
-//! [`Shard::occupied`], which is atomic and so cannot lose, or be lost by, the
-//! `fetch_or` a concurrent registration publishes with. See
-//! [`BorrowTracker::remove`] for why this does not widen the add/remove race.
+//! *Single-slot retirement does not need the lock.* Each slot has its own
+//! atomic live flag. Its owner stores zero with Release exactly once; a later
+//! allocator observes that retirement with Acquire before reusing the slot.
+//! The lock-protected allocation bitmap is a conservative superset of live
+//! flags. See [`BorrowTracker::remove`] for multi-slot and wide retirement.
 //!
-//! *No false positive.* Every stored record is the borrow's full interval, so
-//! two records overlap exactly when the two borrows do. (Storing a *clipped*
-//! per-shard record instead would be unsound in the other direction — a shard
-//! whose blocks are non-contiguous would report a hull that covers bytes the
-//! borrow never touched.)
+//! *Exact conflicts.* Interval records retain the full interval. Rectangle
+//! records encode the exact row set, and candidate hull intersections are
+//! refined against those rows. Shard selection may conservatively use a hull;
+//! conflict detection and payload references must use the actual footprint.
 //!
 //! *No deadlock.* [`TinyLock`] is not reentrant, so multi-shard operations sort
 //! and dedupe their shard indices and acquire strictly ascending. The wide path
 //! acquires *all* shards, also ascending, from a state where it holds none.
 //!
-//! This is **not** the March-2026 strided tracker that was merged and reverted
-//! the next day: that one declared the gaps between rows unaccessed, and safe
-//! code could write them. Nothing here ever declares a byte unaccessed.
+//! Rectangle guards return one row reference at a time. The March-2026 strided
+//! tracker instead returned a hull reference spanning unregistered gaps. That
+//! reference footprint was unsound even when kernels did not index the gaps.
 
+use super::tracker_cell::Cell as TrackerCell;
 use super::*;
 use core::panic::Location;
-#[cfg(not(feature = "__probe_lock_park"))]
+#[cfg(all(not(disjoint_mut_loom), not(feature = "__probe_lock_park")))]
 use core::sync::atomic::AtomicBool;
-use core::sync::atomic::{AtomicU8, AtomicU32, AtomicUsize, Ordering};
+use core::sync::atomic::Ordering;
+#[cfg(not(disjoint_mut_loom))]
+use core::sync::atomic::{AtomicU8, AtomicU32, AtomicUsize};
+#[cfg(disjoint_mut_loom)]
+use loom::sync::atomic::{AtomicU8, AtomicU32, AtomicUsize};
 
 // =============================================================================
 // Tunables (compile-time A/B knobs — see benchmarks/shard_tracker_*.meta)
@@ -619,10 +624,10 @@ pub mod wide_probe {
 /// 7.6 ns for `spin_loop()` on an idle core — the cost is the relaxed load
 /// pulling a line the holder is hammering, so a waiter that reads less often
 /// may let the holder finish sooner.
-#[cfg(not(feature = "__probe_lock_park"))]
+#[cfg(all(not(disjoint_mut_loom), not(feature = "__probe_lock_park")))]
 struct TinyLock(AtomicBool);
 
-#[cfg(not(feature = "__probe_lock_park"))]
+#[cfg(all(not(disjoint_mut_loom), not(feature = "__probe_lock_park")))]
 impl TinyLock {
     const fn new() -> Self {
         Self(AtomicBool::new(false))
@@ -704,6 +709,65 @@ impl TinyLock {
     #[inline(always)]
     fn unlock(&self) {
         self.0.store(false, Ordering::Release);
+    }
+}
+
+// The model abstracts ONLY lock waiting as an Acquire/Release mutex. Keeping
+// the native relaxed-load spin can explore an unbounded stale-read execution
+// even after the owner exits. The production record algorithm, per-slot flags,
+// state atomics, and metadata cells remain instrumented. TinyLock's native
+// mutual exclusion/ordering proof and scheduler fairness are separate from
+// these models; see docs/RELEASE_SOUNDNESS_PROTOCOL.md.
+#[cfg(disjoint_mut_loom)]
+struct TinyLock {
+    mutex: loom::sync::Mutex<()>,
+    held: core::cell::UnsafeCell<Option<loom::sync::MutexGuard<'static, ()>>>,
+}
+
+#[cfg(disjoint_mut_loom)]
+impl TinyLock {
+    fn new() -> Self {
+        Self {
+            mutex: loom::sync::Mutex::new(()),
+            held: core::cell::UnsafeCell::new(None),
+        }
+    }
+
+    fn remember(&self, guard: loom::sync::MutexGuard<'_, ()>) {
+        // SAFETY: the tracker is immovable and live while its locks are held.
+        // The erased lifetime never escapes this cell; `unlock` drops it
+        // before the caller can release its borrow of the tracker. The mutex
+        // excludes concurrent access to `held`, which contains no payload.
+        let guard = unsafe {
+            core::mem::transmute::<
+                loom::sync::MutexGuard<'_, ()>,
+                loom::sync::MutexGuard<'static, ()>,
+            >(guard)
+        };
+        unsafe {
+            *self.held.get() = Some(guard);
+        }
+    }
+
+    fn lock(&self) {
+        self.remember(self.mutex.lock().unwrap());
+    }
+
+    fn try_lock(&self) -> bool {
+        match self.mutex.try_lock() {
+            Ok(guard) => {
+                self.remember(guard);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    fn unlock(&self) {
+        // SAFETY: the caller owns this lock. Take the guard completely out
+        // before dropping it, so the next holder cannot race this cell access.
+        let guard = unsafe { (*self.held.get()).take().expect("unlock without lock") };
+        drop(guard);
     }
 }
 
@@ -1136,15 +1200,25 @@ struct Shard {
     /// Scanning wants a bitmap, though — hence [`ShardRecs::allocated`], a
     /// lock-protected superset that keeps the common case to one flag load.
     live: [AtomicU8; SLOTS],
-    recs: UnsafeCell<ShardRecs>,
+    recs: TrackerCell<ShardRecs>,
 }
 
 impl Shard {
+    #[cfg(not(disjoint_mut_loom))]
     const fn new() -> Self {
         Self {
             lock: TinyLock::new(),
             live: [const { AtomicU8::new(0) }; SLOTS],
-            recs: UnsafeCell::new(ShardRecs::new()),
+            recs: TrackerCell::new(ShardRecs::new()),
+        }
+    }
+
+    #[cfg(disjoint_mut_loom)]
+    fn new() -> Self {
+        Self {
+            lock: TinyLock::new(),
+            live: core::array::from_fn(|_| AtomicU8::new(0)),
+            recs: TrackerCell::new(ShardRecs::new()),
         }
     }
 
@@ -1208,7 +1282,7 @@ impl Shard {
 }
 
 const _: () = assert!(
-    core::mem::size_of::<Shard>() == 128 || cfg!(debug_assertions),
+    core::mem::size_of::<Shard>() == 128 || cfg!(any(debug_assertions, disjoint_mut_loom)),
     "Shard must be exactly one cache line in release builds"
 );
 
@@ -1397,7 +1471,7 @@ pub(super) struct BorrowTracker {
     tiny: bool,
     /// Live wide records. Read while holding **any** shard lock; written only
     /// while holding **every** shard lock.
-    wide: UnsafeCell<Vec<WideRec>>,
+    wide: TrackerCell<Vec<WideRec>>,
     /// Poison flag (bit 31) and live wide-record count (bits 0..31), in one
     /// word so the hot path tests both with a single load and one branch:
     /// `state == 0` means "not poisoned, no wide records", which is the case
@@ -1856,7 +1930,12 @@ const SHARDS_CONCURRENT: usize = N_SHARDS;
 const SHARDS_SERIAL: usize = 1;
 
 /// Declared decode parallelism, as a shard count. Monotone.
+#[cfg(not(disjoint_mut_loom))]
 static ACTIVE_SHARDS: AtomicUsize = AtomicUsize::new(SHARDS_SERIAL);
+#[cfg(disjoint_mut_loom)]
+loom::lazy_static! {
+    static ref ACTIVE_SHARDS: AtomicUsize = AtomicUsize::new(SHARDS_SERIAL);
+}
 
 /// Declare that up to `n` threads will register borrows concurrently.
 ///
@@ -1887,7 +1966,12 @@ fn active_shards() -> usize {
 }
 
 /// Tiles the busiest frame seen so far could decode at once. Monotone.
+#[cfg(not(disjoint_mut_loom))]
 static OBSERVED_TILES: AtomicUsize = AtomicUsize::new(1);
+#[cfg(disjoint_mut_loom)]
+loom::lazy_static! {
+    static ref OBSERVED_TILES: AtomicUsize = AtomicUsize::new(1);
+}
 
 /// Declare how many tiles a frame about to be decoded splits into.
 ///
@@ -1929,13 +2013,16 @@ fn tile_concurrency() -> usize {
 impl BorrowTracker {
     pub fn new(len: usize) -> Self {
         Self {
+            #[cfg(not(disjoint_mut_loom))]
             shards: [const { Shard::new() }; N_SHARDS],
+            #[cfg(disjoint_mut_loom)]
+            shards: core::array::from_fn(|_| Shard::new()),
             shift: block_shift_for(len),
             mask: mask_for(len),
             row_stride: 0,
             #[cfg(feature = "__probe_tinynop")]
             tiny: len < SHARD_MIN_LEN,
-            wide: UnsafeCell::new(Vec::new()),
+            wide: TrackerCell::new(Vec::new()),
             state: AtomicU32::new(0),
         }
     }
@@ -2227,7 +2314,7 @@ impl BorrowTracker {
         // slot search. A release landing between the two can only clear bits,
         // which at worst wastes a slot search — never loses a record.
         // SAFETY: this shard's lock is held.
-        let recs = unsafe { &mut *shard.recs.get() };
+        let mut recs = unsafe { shard.recs.write() };
         let occ = shard.live_mask(recs.allocated);
         // `allocated` is written ONCE, on the success path below, instead of
         // being narrowed here and re-widened there. Leaving it stale-LARGE on
@@ -2237,6 +2324,7 @@ impl BorrowTracker {
         // so it cannot saturate.
         if let Some(hit) = recs.find::<IS_MUT>(occ, start, end) {
             if let Some(existing) = recs.refine::<IS_MUT>(occ, start, end, self.row_stride, hit) {
+                drop(recs);
                 drop(g);
                 Self::overlap_panic(
                     start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
@@ -2254,6 +2342,7 @@ impl BorrowTracker {
                 // atomic against everything.
                 #[cfg(feature = "__probe_wide")]
                 wide_probe::WIDE_FULL.fetch_add(1, Ordering::Relaxed);
+                drop(recs);
                 drop(g);
                 self.add_wide::<IS_MUT>(start, end)
             }
@@ -2283,11 +2372,12 @@ impl BorrowTracker {
             return self.add_slow_wide_live::<IS_MUT>(start, end);
         }
         // SAFETY: this shard's lock is held.
-        let recs = unsafe { &mut *shard.recs.get() };
+        let mut recs = unsafe { shard.recs.write() };
         let occ = shard.live_mask(recs.allocated);
         recs.allocated = occ;
         if let Some(hit) = recs.find::<IS_MUT>(occ, start, end) {
             if let Some(existing) = recs.refine::<IS_MUT>(occ, start, end, self.row_stride, hit) {
+                drop(recs);
                 drop(g);
                 Self::overlap_panic(
                     start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
@@ -2303,6 +2393,7 @@ impl BorrowTracker {
             None => {
                 #[cfg(feature = "__probe_wide")]
                 wide_probe::WIDE_FULL.fetch_add(1, Ordering::Relaxed);
+                drop(recs);
                 drop(g);
                 self.add_wide::<IS_MUT>(start, end)
             }
@@ -2348,7 +2439,7 @@ impl BorrowTracker {
             shard.lock.lock();
             let g = ShardGuard(&shard.lock);
             // SAFETY: this shard's lock is held.
-            let recs = unsafe { &mut *shard.recs.get() };
+            let mut recs = unsafe { shard.recs.write() };
             let occ = shard.live_mask(recs.allocated);
             recs.allocated = occ;
             let mut hit = recs
@@ -2357,9 +2448,10 @@ impl BorrowTracker {
             if hit.is_none() {
                 // SAFETY: a shard lock is held, and wide records are only
                 // written while every shard lock is held.
-                hit = Self::find_wide::<IS_MUT>(unsafe { &*self.wide.get() }, start, end);
+                hit = Self::find_wide::<IS_MUT>(&unsafe { self.wide.read() }, start, end);
             }
             if let Some(existing) = hit {
+                drop(recs);
                 drop(g);
                 Self::overlap_panic(
                     start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
@@ -2374,6 +2466,7 @@ impl BorrowTracker {
                 None => {
                     #[cfg(feature = "__probe_wide")]
                     wide_probe::WIDE_FULL.fetch_add(1, Ordering::Relaxed);
+                    drop(recs);
                     drop(g);
                     self.add_wide::<IS_MUT>(start, end)
                 }
@@ -2427,7 +2520,7 @@ impl BorrowTracker {
         for &s in &set[..n] {
             let shard = &self.shards[(s as usize) & (N_SHARDS - 1)];
             // SAFETY: shard `s`'s lock is held.
-            let recs = unsafe { &mut *shard.recs.get() };
+            let mut recs = unsafe { shard.recs.write() };
             let occ = shard.live_mask(recs.allocated);
             recs.allocated = occ;
             if let Some(h) = recs
@@ -2440,7 +2533,7 @@ impl BorrowTracker {
         }
         if hit.is_none() && self.state.load(Ordering::Relaxed) & !POISON_BIT != 0 {
             // SAFETY: shard locks are held.
-            hit = Self::find_wide::<IS_MUT>(unsafe { &*self.wide.get() }, start, end);
+            hit = Self::find_wide::<IS_MUT>(&unsafe { self.wide.read() }, start, end);
         }
         if let Some(existing) = hit {
             Self::unlock_all(&self.shards, &set[..n]);
@@ -2455,7 +2548,7 @@ impl BorrowTracker {
         while done < n {
             let shard = &self.shards[(set[done] as usize) & (N_SHARDS - 1)];
             // SAFETY: the shard's lock is held.
-            let recs = unsafe { &mut *shard.recs.get() };
+            let mut recs = unsafe { shard.recs.write() };
             // `allocated` was refreshed to the live mask by the scan above and
             // nothing can have published since (this thread holds every one of
             // these locks), so it IS the occupancy snapshot here.
@@ -2481,7 +2574,7 @@ impl BorrowTracker {
         for i in 0..n {
             let shard = &self.shards[(set[i] as usize) & (N_SHARDS - 1)];
             // SAFETY: the shard's lock is held.
-            let recs = unsafe { &mut *shard.recs.get() };
+            let mut recs = unsafe { shard.recs.write() };
             recs.allocated |= 1u8 << (slots[i] as usize).min(SLOTS - 1);
             shard.publish(slots[i]);
         }
@@ -2648,7 +2741,7 @@ impl BorrowTracker {
         for &sh in &set[..n] {
             let shard = &self.shards[(sh as usize) & (N_SHARDS - 1)];
             // SAFETY: shard `sh`'s lock is held.
-            let recs = unsafe { &mut *shard.recs.get() };
+            let mut recs = unsafe { shard.recs.write() };
             let occ = shard.live_mask(recs.allocated);
             recs.allocated = occ;
             if let Some(h) = recs.find_from_rect::<IS_MUT>(occ, lo, end, s) {
@@ -2667,7 +2760,7 @@ impl BorrowTracker {
         while done < n {
             let shard = &self.shards[(set[done] as usize) & (N_SHARDS - 1)];
             // SAFETY: the shard's lock is held.
-            let recs = unsafe { &mut *shard.recs.get() };
+            let mut recs = unsafe { shard.recs.write() };
             // Refreshed to the live mask by the scan above, and nothing can have
             // published since — this thread holds every one of these locks.
             let occ = recs.allocated;
@@ -2690,7 +2783,7 @@ impl BorrowTracker {
         for i in 0..n {
             let shard = &self.shards[(set[i] as usize) & (N_SHARDS - 1)];
             // SAFETY: the shard's lock is held.
-            let recs = unsafe { &mut *shard.recs.get() };
+            let mut recs = unsafe { shard.recs.write() };
             recs.allocated |= 1u8 << (slots[i] as usize).min(SLOTS - 1);
             shard.publish(slots[i]);
         }
@@ -2723,7 +2816,7 @@ impl BorrowTracker {
         let mut hit = None;
         for shard in active {
             // SAFETY: every shard lock is held.
-            let recs = unsafe { &mut *shard.recs.get() };
+            let mut recs = unsafe { shard.recs.write() };
             let occ = shard.live_mask(recs.allocated);
             recs.allocated = occ;
             if let Some(h) = recs
@@ -2738,7 +2831,7 @@ impl BorrowTracker {
         // before the locks drop — otherwise another thread's `&` read of the
         // same list would alias a live `&mut`.
         if hit.is_none() {
-            hit = Self::find_wide::<IS_MUT>(unsafe { &*self.wide.get() }, start, end);
+            hit = Self::find_wide::<IS_MUT>(&unsafe { self.wide.read() }, start, end);
         }
         if let Some(existing) = hit {
             Self::unlock_every(active);
@@ -2748,7 +2841,7 @@ impl BorrowTracker {
         }
         let idx = {
             // SAFETY: every shard lock is held.
-            let wide = unsafe { &mut *self.wide.get() };
+            let mut wide = unsafe { self.wide.write() };
             let rec = (start, end, IS_MUT, wide_loc());
             match wide.iter().position(|r| r.0 >= r.1) {
                 Some(i) => {
@@ -2868,7 +2961,7 @@ impl BorrowTracker {
         {
             // SAFETY: every shard lock is held; scoped so the `&mut` is dead
             // before the locks drop.
-            let wide = unsafe { &mut *self.wide.get() };
+            let mut wide = unsafe { self.wide.write() };
             let i = id.wide_idx();
             if i < wide.len() {
                 wide[i] = (1, 0, false, None); // tombstone
@@ -2887,7 +2980,7 @@ fn wide_loc() -> Option<&'static Location<'static>> {
     Some(Location::caller())
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(disjoint_mut_loom)))]
 mod tests {
     use super::*;
 
@@ -3637,7 +3730,7 @@ mod tests {
             // The lock-protected superset must also narrow back to empty, or
             // every later scan on this shard pays for a phantom slot.
             assert_eq!(
-                shard.live_mask(unsafe { (*shard.recs.get()).allocated }),
+                shard.live_mask(unsafe { shard.recs.read() }.allocated),
                 0,
                 "shard {i}: live_mask disagrees with the flags"
             );
@@ -4205,3 +4298,7 @@ mod tests {
         assert!(refused > r_floor, "refused={refused}");
     }
 }
+
+#[cfg(all(test, disjoint_mut_loom))]
+#[path = "loom_protocol.rs"]
+mod loom_protocol;

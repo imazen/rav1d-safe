@@ -1,4 +1,4 @@
-//! Provably safe abstraction for concurrent, disjoint mutation of contiguous storage.
+//! Runtime-checked concurrent, disjoint mutation of contiguous storage.
 //!
 //! [`DisjointMut`] wraps a collection and allows non-overlapping mutable borrows
 //! through a shared `&` reference. Like [`RefCell`](std::cell::RefCell), it enforces
@@ -28,9 +28,75 @@
 //! let b = buf.index(50..100);
 //! assert_eq!(a.len() + b.len(), 100);
 //! ```
+//!
+//! # Compile-time boundaries
+//!
+//! A derived reference cannot survive dropping its registration:
+//!
+//! ```compile_fail,E0505
+//! use rav1d_disjoint_mut::DisjointMut;
+//! let dm = DisjointMut::new(vec![0u8; 8]);
+//! let mut guard = dm.index_mut(..);
+//! let reference = &mut guard[0];
+//! drop(guard);
+//! *reference = 1;
+//! ```
+//!
+//! Resizing requires exclusive access to the container:
+//!
+//! ```compile_fail,E0502
+//! use rav1d_disjoint_mut::DisjointMut;
+//! let mut dm = DisjointMut::new(vec![0u8; 8]);
+//! let guard = dm.index(..);
+//! dm.resize(16, 0);
+//! assert_eq!(guard[0], 0);
+//! ```
+//!
+//! Mutable row references are exclusive even within one rectangle guard:
+//!
+//! ```compile_fail,E0499
+//! use rav1d_disjoint_mut::DisjointMut;
+//! let mut dm = DisjointMut::new(vec![0u8; 16]);
+//! dm.declare_row_stride(8);
+//! let mut guard = dm.index_rect_mut(0, 2, 2, 8).unwrap();
+//! let first = guard.row_mut(0);
+//! let alias = guard.row_mut(0);
+//! first[0] = alias[0];
+//! ```
+//!
+//! `Copy` elements can still be non-thread-safe; guards must respect that:
+//!
+//! ```compile_fail,E0277
+//! use core::cell::Cell;
+//! use rav1d_disjoint_mut::DisjointImmutGuard;
+//! fn require_send<T: Send>() {}
+//! require_send::<DisjointImmutGuard<'static, Vec<&'static Cell<u8>>, [&'static Cell<u8>]>>();
+//! ```
 
 #![no_std]
 #![deny(unsafe_op_in_unsafe_fn)]
+
+// Cargo features are additive across dependencies. These historical timing
+// arms must never turn the safe constructor into an unchecked one in a release.
+// Reproduce them at the revisions recorded in docs/OWNERSHIP_MODELS.md.
+#[cfg(any(
+    feature = "__probe_untracked",
+    feature = "__probe_noscan",
+    feature = "__probe_lockonly",
+    feature = "__probe_tinynop",
+    feature = "__probe_addnop"
+))]
+compile_error!("unsound measurement probes are disabled; use a historical benchmark revision");
+
+#[cfg(all(
+    disjoint_mut_loom,
+    any(
+        feature = "__tracker_legacy",
+        feature = "__probe_count",
+        feature = "__probe_lock_park"
+    )
+))]
+compile_error!("Loom must exercise the production sharded tracker and its instrumented spin lock");
 
 extern crate alloc;
 // `std` is a FEATURE of the library and a REQUIREMENT of its unit tests: they
@@ -654,19 +720,29 @@ pub unsafe trait AsMutPtr: sealed::Sealed {
 ///    in a separate allocation from the elements), or override
 ///    [`ExternalAsMutPtr::as_mut_slice`] with raw pointer metadata.
 ///
-/// 3. **Valid pointer.** The returned `*mut Self::Target` must be valid
-///    for reads and writes over `0..self.len()` elements.
+/// 3. **Valid, stable storage.** The returned pointer must have provenance,
+///    alignment, and initialized, valid elements for reads and writes over
+///    `0..self.len()`. Repeated calls must designate the same elements in the
+///    same live allocation while a guard exists; shared access must not move,
+///    reallocate, free, or replace that storage.
 ///
 /// 4. **Stable length.** `len()` must return a consistent value for the
 ///    lifetime of any outstanding borrow guard.
 ///
-/// 5. **Inline data requires `as_mut_slice` override.** The default
-///    `as_mut_slice` calls `(*ptr).len()` which creates `&Self`. For
-///    types where element data is stored inline (e.g. `[V; N]` wrapped
-///    in a newtype), this creates a SharedReadOnly tag covering the
-///    data, which is UB under Stacked Borrows when concurrent mutable
-///    guards exist. **You MUST override `as_mut_slice`** for inline-data
-///    types using `ptr::slice_from_raw_parts_mut(ptr.cast(), N)`.
+/// 5. **One authority over the elements.** Two independently usable container
+///    values must not expose the same mutable storage to independent trackers.
+///    A cloneable shared allocation therefore needs external exclusion, or an
+///    ownership transfer that prevents the original owner and other aliases
+///    from accessing elements while this container controls them.
+///
+/// 6. **Thread traits match storage.** When `Self: Sync`, concurrent metadata
+///    and pointer queries must be safe alongside disjoint element accesses.
+///    When `Self: Send`, moving the owner between threads must be valid. The
+///    implementation cannot rely on a process-global single-threaded mode.
+///
+/// `as_mut_slice` is required explicitly: an inline-data implementation must
+/// use raw pointer metadata rather than creating an intermediate `&Self` that
+/// covers elements already mutably borrowed by a guard.
 ///
 /// See the `Vec<V>` and `Aligned<A, [V; N]>` implementations in this
 /// crate for reference patterns.
@@ -986,7 +1062,7 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
     /// aarch64 instructions, of which a 112-byte frame, ten callee-saved
     /// spill/reload pairs and the call/ret are about half. The 112 bytes exist
     /// only to hold the `CastError` the cold `.unwrap()` path would report,
-    /// which is why this attribute and [`cast_slice_failed`] are ONE change:
+    /// which is why this attribute and `cast_slice_failed` are ONE change:
     /// they are strongly super-additive, and either alone is small enough to be
     /// mistaken for noise. Measured on 2aa00c5, v4k_8tile_10b t=1, paired
     /// per-round ratios vs that base, n=9, md5-identical, idle box:
@@ -1340,6 +1416,14 @@ where
 
 /// The default tracker: address-block sharded, so concurrent tile workers stop
 /// serialising on one lock and one cache line.
+#[cfg(not(any(
+    feature = "__probe_count",
+    feature = "__probe_noscan",
+    feature = "__probe_lockonly",
+    feature = "__tracker_legacy"
+)))]
+mod tracker_cell;
+
 #[cfg(not(any(
     feature = "__probe_count",
     feature = "__probe_noscan",

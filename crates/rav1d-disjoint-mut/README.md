@@ -6,7 +6,7 @@ Runtime-checked disjoint mutable access to contiguous storage.
 
 ## Use case
 
-Multiple threads need to write to different regions of the same buffer simultaneously. Standard Rust won't let you split `&mut [T]` across threads without unsafe code. `DisjointMut` adds runtime tracking so the borrow checker doesn't have to:
+Multiple threads need to write to dynamically chosen regions of a shared buffer. A fixed partition can use `split_at_mut` and scoped threads entirely in safe Rust. `DisjointMut` handles regions chosen during shared access by checking each borrow at runtime:
 
 ```rust
 use rav1d_disjoint_mut::DisjointMut;

@@ -1,9 +1,9 @@
 [package]
 name = "rav1d-disjoint-mut"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.85"
-description = "A provably safe abstraction for concurrent disjoint mutable access to contiguous storage"
+description = "Runtime-checked concurrent disjoint mutable access to contiguous storage"
 license = "BSD-2-Clause OR MIT OR Apache-2.0"
 repository = "https://github.com/imazen/rav1d-safe"
 documentation = "https://docs.rs/rav1d-disjoint-mut"
@@ -148,6 +148,15 @@ parking_lot = { version = "0.12.2", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", default-features = false }
+
+# Instrument the production tracker only in the dedicated model-checking build.
+# A cfg rather than a Cargo feature prevents feature unification from replacing
+# application synchronization with Loom's model runtime.
+[target.'cfg(disjoint_mut_loom)'.dependencies]
+loom = "0.7.2"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(disjoint_mut_loom)'] }
 
 [[bench]]
 name = "lock_overhead"

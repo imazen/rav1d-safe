@@ -5,6 +5,13 @@ inspection, a new published-crate reproducer, and explicitly historical
 performance records. It is not a complete soundness audit or a new performance
 measurement.
 
+Follow-up: the [release protocol](RELEASE_SOUNDNESS_PROTOCOL.md) now records
+implemented Loom and adversarial API gates, global-threading mutation tests,
+feature-unification hardening, the 0.4.0 version preparation, and the
+[published API inventory](../audit/api/README.md). The historical performance
+follow-up was limited to about two minutes and produced the
+[ownership experiment ledger](OWNERSHIP_MODELS.md#experiment-ledger-reviewed-2026-09-06).
+
 ## Immediate result: published 0.3.1 fails the guard-move test
 
 The independent [`published-disjoint-mut-audit`](../audit/published-disjoint-mut/README.md)

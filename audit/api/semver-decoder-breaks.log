@@ -1,0 +1,36 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=8/24 avail=26331MiB :: cargo semver-checks -p rav1d-safe --baseline-root /home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-safe-0.5.7 --default-features --release-type minor
+[1m[32m    Building[0m rav1d-safe v0.6.0 (current)
+[1m[32m       Built[0m [   8.725s] (current)
+[1m[32m     Parsing[0m rav1d-safe v0.6.0 (current)
+[1m[32m      Parsed[0m [   0.129s] (current)
+[1m[32m    Building[0m rav1d-safe v0.5.7 (baseline)
+[1m[32m       Built[0m [   8.143s] (baseline)
+[1m[32m     Parsing[0m rav1d-safe v0.5.7 (baseline)
+[1m[32m      Parsed[0m [   0.125s] (baseline)
+[1m[32m    Checking[0m rav1d-safe v0.5.7 -> v0.6.0 (assume minor change)
+[1m[31m     Checked[0m [   0.029s] 196 checks: 194 pass, 2 fail, 0 warn, 57 skip
+
+--- failure enum_variant_added: enum variant added on exhaustive enum ---
+
+[1mDescription:[0m
+A publicly-visible enum without #[non_exhaustive] has a new variant.
+        ref: https://doc.rust-lang.org/cargo/reference/semver.html#enum-variant-new
+       impl: https://github.com/obi1kenobi/cargo-semver-checks/tree/v0.49.0/src/lints/enum_variant_added.ron
+
+[1mFailed in:[0m
+  variant Error:Cancelled in /home/lilith/work/zen/rav1d-safe/src/managed.rs:78
+  variant Error:Cancelled in /home/lilith/work/zen/rav1d-safe/src/managed.rs:78
+
+--- failure feature_missing: package feature removed or renamed ---
+
+[1mDescription:[0m
+A feature has been removed from this package's Cargo.toml. This will break downstream crates which enable that feature.
+        ref: https://doc.rust-lang.org/cargo/reference/semver.html#cargo-feature-remove
+       impl: https://github.com/obi1kenobi/cargo-semver-checks/tree/v0.49.0/src/lints/feature_missing.ron
+
+[1mFailed in:[0m
+  feature simd_test in the package's Cargo.toml
+
+[1m[31m     Summary[0m semver requires new major version: 2 major and 0 minor checks failed
+[1m[32m    Finished[0m [  18.291s] rav1d-safe
+run-heavy: done rc=100 19s | peak-RSS 0.63GiB | min-avail 25819MiB | peak-load 55.64

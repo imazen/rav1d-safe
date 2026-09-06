@@ -1,0 +1,29 @@
+--- rav1d-disjoint-mut-0.3.0
++++ rav1d-disjoint-mut-0.3.1
+@@ -251,7 +251,7 @@
+ pub fn rav1d_disjoint_mut::Clearable::clear(&mut self)
+ impl<V> rav1d_disjoint_mut::Clearable for alloc::vec::Vec<V>
+ pub fn alloc::vec::Vec<V>::clear(&mut self)
+-pub trait rav1d_disjoint_mut::DisjointMutIndex<T: ?core::marker::Sized>
++pub trait rav1d_disjoint_mut::DisjointMutIndex<T: ?core::marker::Sized>: rav1d_disjoint_mut::sealed::IndexLike
+ pub type rav1d_disjoint_mut::DisjointMutIndex::Output: ?core::marker::Sized
+ pub unsafe fn rav1d_disjoint_mut::DisjointMutIndex::get_mut(self, *mut T) -> *mut Self::Output
+ impl<T, I> rav1d_disjoint_mut::DisjointMutIndex<[T]> for I where I: rav1d_disjoint_mut::SliceBounds
+@@ -326,7 +326,7 @@
+ impl<V> rav1d_disjoint_mut::ResizableWith for alloc::vec::Vec<V>
+ pub type alloc::vec::Vec<V>::Item = V
+ pub fn alloc::vec::Vec<V>::resize_with<F: core::ops::function::FnMut() -> V>(&mut self, usize, F)
+-pub trait rav1d_disjoint_mut::SliceBounds: rav1d_disjoint_mut::TranslateRange + core::clone::Clone
++pub trait rav1d_disjoint_mut::SliceBounds: rav1d_disjoint_mut::TranslateRange + core::clone::Clone + rav1d_disjoint_mut::sealed::IndexLike
+ pub fn rav1d_disjoint_mut::SliceBounds::to_range(&self, usize) -> core::ops::range::Range<usize>
+ impl rav1d_disjoint_mut::SliceBounds for (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>)
+ pub fn (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>)::to_range(&self, usize) -> core::ops::range::Range<usize>
+@@ -342,7 +342,7 @@
+ pub fn core::ops::range::RangeTo<usize>::to_range(&self, usize) -> core::ops::range::Range<usize>
+ impl rav1d_disjoint_mut::SliceBounds for core::ops::range::RangeToInclusive<usize>
+ pub fn core::ops::range::RangeToInclusive<usize>::to_range(&self, usize) -> core::ops::range::Range<usize>
+-pub trait rav1d_disjoint_mut::TranslateRange
++pub trait rav1d_disjoint_mut::TranslateRange: rav1d_disjoint_mut::sealed::IndexLike
+ pub fn rav1d_disjoint_mut::TranslateRange::mul(&self, usize) -> Self
+ impl rav1d_disjoint_mut::TranslateRange for (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>)
+ pub fn (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>)::mul(&self, usize) -> Self
