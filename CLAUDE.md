@@ -884,6 +884,41 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+### ARM film-grain row reservations and panic cleanup (#526)
+
+Fixed by `83fa5d3e` and `56601c91`. The ARM grain dispatchers reserved a
+32-row hull, which fails the one-row extent guard in dev builds. They now
+borrow one block-row for destination, source, and the sampled luma row;
+NEON and scalar grain arithmetic share the same row callback. No extent
+ceiling was raised. The existing `filmgrain_threads` test reproduces both
+the extent panic and the cleanup `try_write().unwrap()` on the prior code.
+
+A worker panic wakes the grain caller before surviving workers necessarily
+release their read locks. Cleanup now stops scheduling without clearing
+those workers' pictures or progress counters; `rav1d_apply_grain` observes
+the panic flag and returns an error. The live-reader unit test reproduces
+this interleaving deterministically. Normal completion waits on the progress
+predicate rather than assuming every condvar wake means completion.
+
+Validation: `just test-filmgrain` checks 13 reference-MD5 vectors at 1/2/4/8
+threads with dev extent assertions. `just test-filmgrain-rows` compares ARM
+against scalar at 8/10/12 bits, all chroma layouts, overlap, clipping, chroma
+scaling, odd widths and a 3841-pixel-wide band, while holding padding borrowed.
+CI runs the corpus test in dev on both conformance architectures (`69b6c704`).
+The reservations are block-row segments, not full-width image rows: at most
+32 luma pixels, 16 horizontally subsampled chroma pixels (32 for 4:4:4), and
+32 input-luma pixels. Each callback drops its guards before the next row.
+Default checked builds clamp `n_fc` to 1 in `src/lib.rs::get_num_threads`,
+so the 1/2/4/8-thread corpus run validates tile/grain worker concurrency,
+not concurrent frame contexts. The latter requires `unchecked` and was not
+validated in this run. Throughput impact was not measured.
+The original downstream zenpipe AVIF was not identified or rerun here.
+Additional checks on Apple ARM: 116 dev-profile unit/committed-vector/crash
+tests passed (8 pre-existing ignored tests); six focused release tests passed,
+including grain token permutations. Default-library clippy passed. The optional
+`asm` build stopped in the assembler because `src/arm/asm-offsets.h` is missing,
+so that feature was not validated by this run.
+
 ### The aarch64 LR overflow guard could not fire (2026-08-31) — FIXED
 A debug-profile consumer of the published `0.5.7` crashed decoding
 `8-bit/issues/320_tennis.ivf`:

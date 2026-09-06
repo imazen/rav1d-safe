@@ -37,6 +37,8 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   `decode_md5_committed` passes unchanged — no committed MD5 moved.
 
 ### Fixed
+- ARM film-grain decoding uses row-scoped picture reservations, avoiding dev-profile panics with tile threading (#526; `83fa5d3e`, regression coverage `69b6c704`).
+- Film-grain worker panic cleanup preserves surviving workers' shared state and returns through the decode-error path (#526; `56601c91`).
 - **Every gate for the aarch64 loop-restoration overflow bug ran only in
   `--release`, where the bug is invisible** (`45d13f4`, `b2d76b7`). A
   debug-profile consumer of the published `0.5.7` crashed decoding
