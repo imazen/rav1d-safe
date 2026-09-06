@@ -1,9 +1,9 @@
 [package]
 name = "rav1d-disjoint-mut"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 rust-version = "1.85"
-description = "A provably safe abstraction for concurrent disjoint mutable access to contiguous storage"
+description = "Runtime-checked concurrent disjoint mutable access to contiguous storage"
 license = "BSD-2-Clause OR MIT OR Apache-2.0"
 repository = "https://github.com/imazen/rav1d-safe"
 documentation = "https://docs.rs/rav1d-disjoint-mut"
@@ -47,3 +47,10 @@ criterion = { version = "0.5", default-features = false }
 [[bench]]
 name = "lock_overhead"
 harness = false
+
+# Instrument only dedicated model-checking builds, never feature unification.
+[target.'cfg(disjoint_mut_loom)'.dependencies]
+loom = "0.7.2"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(disjoint_mut_loom)'] }

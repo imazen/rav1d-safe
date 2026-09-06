@@ -6,7 +6,7 @@ Runtime-checked disjoint mutable access to contiguous storage.
 
 ## Use case
 
-Multiple threads need to write to different regions of the same buffer simultaneously. Standard Rust won't let you split `&mut [T]` across threads without unsafe code. `DisjointMut` adds runtime tracking so the borrow checker doesn't have to:
+Multiple threads need to write to different regions of the same buffer simultaneously. Safe Rust supports fixed partitions with `split_at_mut` and scoped threads. `DisjointMut` supports ranges selected dynamically through shared access:
 
 ```rust
 use rav1d_disjoint_mut::DisjointMut;
@@ -44,7 +44,7 @@ Guards act as locks — the borrow is tracked for the guard's lifetime and relea
 
 ### Element types must be `Copy`
 
-All container element types must be `Copy`. Concurrent mutable access to different regions of the same buffer means a torn read on a region boundary is possible in theory. With `Copy` types, a torn read produces a wrong value, not a dangling pointer or double free. Non-`Copy` types could have drop glue or internal invariants that torn reads would violate.
+All container element types must be `Copy`. This excludes element destructors; it does not make data races or torn reads valid. Borrow tracking and the storage contract must prevent conflicting accesses even for `Copy` elements.
 
 ### Borrow tracking
 
@@ -64,7 +64,7 @@ Immutable guards do **not** poison on panic. Poisoning also triggers on out-of-b
 
 `unsafe fn dangerously_unchecked()` creates an instance without runtime tracking. The caller must guarantee that all borrows are non-overlapping.
 
-`new()` always creates a tracked instance.
+`new()` always creates a tracked instance, including in const/static initializers and with every published feature enabled. Version 0.3.2 fixes guard-move undefined behavior in 0.3.1 while retaining that API and the original per-instance tracker. Update existing lockfiles to receive the fix. See the [0.3.2 release protocol](RELEASE-0.3.2.md) for the compatibility contract and safety gates.
 
 ### Open-ended ranges are conservative
 

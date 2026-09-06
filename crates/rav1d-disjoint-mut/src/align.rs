@@ -17,9 +17,9 @@ use core::ops::{Deref, DerefMut};
 
 /// Create a `TryReserveError` to represent allocation failure from `aligned_vec`.
 ///
-/// `std::collections::TryReserveError` has no public constructor, so we trigger
+/// `alloc::collections::TryReserveError` has no public constructor, so we trigger
 /// a real one by asking a `Vec` to reserve `usize::MAX`.
-fn alloc_err() -> std::collections::TryReserveError {
+fn alloc_err() -> alloc::collections::TryReserveError {
     alloc::vec::Vec::<u8>::new()
         .try_reserve(usize::MAX)
         .unwrap_err()
@@ -208,7 +208,7 @@ impl<T: Clone> TryResizable for AlignedVec64<T> {
         &mut self,
         new_len: usize,
         value: T,
-    ) -> Result<(), std::collections::TryReserveError> {
+    ) -> Result<(), alloc::collections::TryReserveError> {
         if new_len > self.0.len() {
             self.0
                 .try_reserve(new_len - self.0.len())
@@ -311,7 +311,7 @@ impl<T: Clone> TryResizable for AlignedVec32<T> {
         &mut self,
         new_len: usize,
         value: T,
-    ) -> Result<(), std::collections::TryReserveError> {
+    ) -> Result<(), alloc::collections::TryReserveError> {
         if new_len > self.0.len() {
             self.0
                 .try_reserve(new_len - self.0.len())

@@ -1,15 +1,16 @@
-//! Provably safe abstraction for concurrent, disjoint mutation of contiguous storage.
+//! Runtime-checked concurrent, disjoint mutation of contiguous storage.
 //!
 //! [`DisjointMut`] wraps a collection and allows non-overlapping mutable borrows
-//! through a shared `&` reference. Like [`RefCell`](std::cell::RefCell), it enforces
+//! through a shared `&` reference. Like [`RefCell`](core::cell::RefCell), it enforces
 //! borrowing rules at runtime — but instead of whole-container borrows, it tracks
 //! *ranges* and panics only on truly overlapping access.
 //!
 //! # Safety Model
 //!
 //! By default, every `.index()` and `.index_mut()` call validates that the requested
-//! range doesn't overlap with any outstanding borrow. This makes `DisjointMut` a
-//! **sound safe abstraction**: safe code cannot cause undefined behavior.
+//! range doesn't overlap with any outstanding borrow. Safe clients need no
+//! scheduling discipline; correctness relies on the documented unsafe storage
+//! contracts and reference/registration invariants.
 //!
 //! For performance-critical code that has been audited for correctness, the
 //! [`DisjointMut::dangerously_unchecked()`] `unsafe` constructor skips runtime
@@ -28,12 +29,51 @@
 //! let b = buf.index(50..100);
 //! assert_eq!(a.len() + b.len(), 100);
 //! ```
+//!
+//! A reference cannot outlive the guard's reservation:
+//!
+//! ```compile_fail,E0505
+//! use rav1d_disjoint_mut::DisjointMut;
+//! let dm = DisjointMut::new(vec![0u8; 8]);
+//! let mut guard = dm.index_mut(..);
+//! let reference = &mut guard[0];
+//! drop(guard);
+//! *reference = 1;
+//! ```
+//!
+//! Resizing still requires exclusive access to the container:
+//!
+//! ```compile_fail,E0502
+//! use rav1d_disjoint_mut::DisjointMut;
+//! let mut dm = DisjointMut::new(vec![0u8; 8]);
+//! let guard = dm.index(..);
+//! dm.resize(16, 0);
+//! assert_eq!(guard[0], 0);
+//! ```
+//!
+//! A shared view of a non-Sync type cannot cross threads:
+//!
+//! ```compile_fail,E0277
+//! use core::cell::Cell;
+//! use rav1d_disjoint_mut::DisjointImmutGuard;
+//! fn require_send<T: Send>() {}
+//! require_send::<DisjointImmutGuard<'static, [u8; 1], Cell<u8>>>();
+//! ```
+//!
+//! An exclusive view of a non-Sync type cannot be shared:
+//!
+//! ```compile_fail,E0277
+//! use core::cell::Cell;
+//! use rav1d_disjoint_mut::DisjointMutGuard;
+//! fn require_sync<T: Sync>() {}
+//! require_sync::<DisjointMutGuard<'static, [u8; 1], Cell<u8>>>();
+//! ```
 
 #![no_std]
 #![deny(unsafe_op_in_unsafe_fn)]
 
 extern crate alloc;
-#[cfg(feature = "std")]
+#[cfg(any(feature = "std", test))]
 extern crate std;
 
 #[cfg(feature = "aligned")]
@@ -61,6 +101,7 @@ use core::ops::RangeInclusive;
 use core::ops::RangeTo;
 use core::ops::RangeToInclusive;
 use core::ptr;
+use core::ptr::NonNull;
 use core::ptr::addr_of_mut;
 #[cfg(feature = "zerocopy")]
 use zerocopy::FromBytes;
@@ -75,7 +116,7 @@ use zerocopy::KnownLayout;
 // Core types
 // =============================================================================
 
-/// Wraps an indexable collection to allow unchecked concurrent mutable borrows.
+/// Wraps an indexable collection to allow concurrent disjoint mutable borrows.
 ///
 /// This wrapper allows users to concurrently mutably borrow disjoint regions or
 /// elements from a collection. This is necessary to allow multiple threads to
@@ -85,7 +126,7 @@ use zerocopy::KnownLayout;
 /// Indexing returns a guard which acts as a lock for the borrowed region.
 /// By default, borrows are validated at runtime to ensure that mutably borrowed
 /// regions are actually disjoint with all other borrows for the lifetime of the
-/// returned guard. This makes `DisjointMut` a provably safe abstraction (like `RefCell`).
+/// returned guard, with references bounded by a borrow of that guard.
 ///
 /// For audited hot paths, use
 /// [`DisjointMut::dangerously_unchecked`] to skip tracking.
@@ -152,7 +193,18 @@ impl<T: AsMutPtr> DisjointMut<T> {
     ///
     /// Every `.index()` and `.index_mut()` call will validate that the
     /// requested range doesn't overlap with any outstanding borrow.
+    #[cfg(not(disjoint_mut_loom))]
     pub const fn new(value: T) -> Self {
+        Self {
+            inner: UnsafeCell::new(value),
+            tracker: Some(checked::BorrowTracker::new()),
+        }
+    }
+
+    // Loom synchronization is initialized inside a model execution, not const
+    // evaluation. This private test cfg is not a Cargo feature or release API.
+    #[cfg(disjoint_mut_loom)]
+    pub fn new(value: T) -> Self {
         Self {
             inner: UnsafeCell::new(value),
             tracker: Some(checked::BorrowTracker::new()),
@@ -208,10 +260,14 @@ impl<T: ?Sized + AsMutPtr> Drop for BorrowCleanup<'_, T> {
     }
 }
 
+/// A mutable region reservation. The pointer deliberately carries no reference
+/// protector when the guard moves into a call such as `drop(guard)`: its Drop
+/// can release the reservation before that call returns. References are created
+/// only when borrowing the guard, so they cannot survive its retirement.
 pub struct DisjointMutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
-    slice: &'a mut V,
+    slice: NonNull<V>,
 
-    phantom: PhantomData<&'a DisjointMut<T>>,
+    phantom: PhantomData<(&'a mut V, &'a DisjointMut<T>)>,
 
     /// Reference to parent for borrow removal on drop.
     /// `None` when parent was created with `dangerously_unchecked`.
@@ -226,11 +282,14 @@ impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
     fn cast_slice<V: IntoBytes + FromBytes + KnownLayout>(self) -> DisjointMutGuard<'a, T, [V]> {
         // We don't want to drop the old guard, because we aren't changing or
         // removing the borrow from parent here.
-        let mut old_guard = ManuallyDrop::new(self);
-        let bytes = mem::take(&mut old_guard.slice);
+        let old_guard = ManuallyDrop::new(self);
+        let mut raw = old_guard.slice;
+        // SAFETY: the exclusive reservation remains live in old_guard. The
+        // temporary reference is consumed by the cast and is not stored.
+        let bytes = unsafe { raw.as_mut() };
         DisjointMutGuard {
-            slice: <[V]>::mut_from_bytes(bytes).unwrap(),
-            phantom: old_guard.phantom,
+            slice: NonNull::from(<[V]>::mut_from_bytes(bytes).unwrap()),
+            phantom: PhantomData,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
         }
@@ -238,11 +297,13 @@ impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
 
     #[inline] // Inline to see alignment to potentially elide checks.
     fn cast<V: IntoBytes + FromBytes + KnownLayout>(self) -> DisjointMutGuard<'a, T, V> {
-        let mut old_guard = ManuallyDrop::new(self);
-        let bytes = mem::take(&mut old_guard.slice);
+        let old_guard = ManuallyDrop::new(self);
+        let mut raw = old_guard.slice;
+        // SAFETY: as in cast_slice; no reservation is retired by the cast.
+        let bytes = unsafe { raw.as_mut() };
         DisjointMutGuard {
-            slice: V::mut_from_bytes(bytes).unwrap(),
-            phantom: old_guard.phantom,
+            slice: NonNull::from(V::mut_from_bytes(bytes).unwrap()),
+            phantom: PhantomData,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
         }
@@ -252,21 +313,28 @@ impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Deref for DisjointMutGuard<'a, T, V> {
     type Target = V;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        self.slice
+        // SAFETY: the reservation outlives this borrow of the guard.
+        unsafe { self.slice.as_ref() }
     }
 }
 
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DerefMut for DisjointMutGuard<'a, T, V> {
+    #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.slice
+        // SAFETY: the live reservation excludes competing borrows, and &mut
+        // self prevents a second reference from this guard while this one lives.
+        unsafe { self.slice.as_mut() }
     }
 }
 
+/// A shared region reservation. Like DisjointMutGuard, moving this value must
+/// not protect a reference past the point where Drop retires its reservation.
 pub struct DisjointImmutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
-    slice: &'a V,
+    slice: NonNull<V>,
 
-    phantom: PhantomData<&'a DisjointMut<T>>,
+    phantom: PhantomData<(&'a V, &'a DisjointMut<T>)>,
 
     parent: Option<&'a DisjointMut<T>>,
     borrow_id: checked::BorrowId,
@@ -276,11 +344,12 @@ pub struct DisjointImmutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
 impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
     #[inline]
     fn cast_slice<V: FromBytes + KnownLayout + Immutable>(self) -> DisjointImmutGuard<'a, T, [V]> {
-        let mut old_guard = ManuallyDrop::new(self);
-        let bytes = mem::take(&mut old_guard.slice);
+        let old_guard = ManuallyDrop::new(self);
+        // SAFETY: old_guard keeps its shared reservation live through the cast.
+        let bytes = unsafe { old_guard.slice.as_ref() };
         DisjointImmutGuard {
-            slice: <[V]>::ref_from_bytes(bytes).unwrap(),
-            phantom: old_guard.phantom,
+            slice: NonNull::from(<[V]>::ref_from_bytes(bytes).unwrap()),
+            phantom: PhantomData,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
         }
@@ -288,11 +357,12 @@ impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
 
     #[inline]
     fn cast<V: FromBytes + KnownLayout + Immutable>(self) -> DisjointImmutGuard<'a, T, V> {
-        let mut old_guard = ManuallyDrop::new(self);
-        let bytes = mem::take(&mut old_guard.slice);
+        let old_guard = ManuallyDrop::new(self);
+        // SAFETY: as in cast_slice; no reservation is retired by the cast.
+        let bytes = unsafe { old_guard.slice.as_ref() };
         DisjointImmutGuard {
-            slice: V::ref_from_bytes(bytes).unwrap(),
-            phantom: old_guard.phantom,
+            slice: NonNull::from(V::ref_from_bytes(bytes).unwrap()),
+            phantom: PhantomData,
             parent: old_guard.parent,
             borrow_id: old_guard.borrow_id,
         }
@@ -302,10 +372,23 @@ impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Deref for DisjointImmutGuard<'a, T, V> {
     type Target = V;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
-        self.slice
+        // SAFETY: the shared reservation excludes writers until this borrow ends.
+        unsafe { self.slice.as_ref() }
     }
 }
+
+// SAFETY: preserve exactly the automatic bounds of the old reference fields.
+// The parent is shared (T: Sync). An exclusive view moves iff V: Send and is
+// shared iff V: Sync; a shared view requires V: Sync for both operations.
+unsafe impl<T: ?Sized + AsMutPtr + Sync, V: ?Sized + Send> Send for DisjointMutGuard<'_, T, V> {}
+// SAFETY: shared access to the exclusive guard only yields shared references.
+unsafe impl<T: ?Sized + AsMutPtr + Sync, V: ?Sized + Sync> Sync for DisjointMutGuard<'_, T, V> {}
+// SAFETY: the shared view and parent can both cross threads under these bounds.
+unsafe impl<T: ?Sized + AsMutPtr + Sync, V: ?Sized + Sync> Send for DisjointImmutGuard<'_, T, V> {}
+// SAFETY: the shared view and parent both permit concurrent shared access.
+unsafe impl<T: ?Sized + AsMutPtr + Sync, V: ?Sized + Sync> Sync for DisjointImmutGuard<'_, T, V> {}
 
 // =============================================================================
 // AsMutPtr trait (sealed — only implemented for types in this crate)
@@ -360,7 +443,8 @@ mod sealed {
 ///
 /// This trait is sealed and cannot be implemented outside of this crate.
 /// External types can use the [`ExternalAsMutPtr`] unsafe trait to opt in,
-/// which requires `Copy` element types for data-race safety.
+/// which requires `Copy` element types. This bound does not permit data races;
+/// exclusion and synchronization must prevent every conflicting data access.
 pub unsafe trait AsMutPtr: sealed::Sealed {
     type Target: Copy;
 
@@ -405,9 +489,11 @@ pub unsafe trait AsMutPtr: sealed::Sealed {
 /// Opt-in trait for external types to participate in [`DisjointMut`].
 ///
 /// Implement this trait for your container type so it can be used with
-/// `DisjointMut<YourType>`. The `Target` type must be `Copy` to ensure
-/// data races cannot cause memory safety issues beyond producing incorrect
-/// values (no torn reads on non-`Copy` types).
+/// `DisjointMut<YourType>`. The `Target` type must be `Copy`. This excludes
+/// element destructors, but does not make conflicting accesses safe: a data
+/// race is undefined behavior even for `u8`, and `Copy` types can still have
+/// validity requirements. The borrow tracker and storage implementation must
+/// prevent data races rather than tolerate torn reads.
 ///
 /// # Safety
 ///
@@ -425,19 +511,29 @@ pub unsafe trait AsMutPtr: sealed::Sealed {
 ///    in a separate allocation from the elements), or override
 ///    [`ExternalAsMutPtr::as_mut_slice`] with raw pointer metadata.
 ///
-/// 3. **Valid pointer.** The returned `*mut Self::Target` must be valid
-///    for reads and writes over `0..self.len()` elements.
+/// 3. **Valid, stable storage.** The returned pointer must have provenance,
+///    alignment, and initialized, valid elements for reads and writes over
+///    `0..self.len()`. Repeated calls must designate the same elements in the
+///    same live allocation while a guard exists; shared access must not move,
+///    reallocate, free, or replace that storage.
 ///
 /// 4. **Stable length.** `len()` must return a consistent value for the
 ///    lifetime of any outstanding borrow guard.
 ///
-/// 5. **Inline data requires `as_mut_slice` override.** The default
-///    `as_mut_slice` calls `(*ptr).len()` which creates `&Self`. For
-///    types where element data is stored inline (e.g. `[V; N]` wrapped
-///    in a newtype), this creates a SharedReadOnly tag covering the
-///    data, which is UB under Stacked Borrows when concurrent mutable
-///    guards exist. **You MUST override `as_mut_slice`** for inline-data
-///    types using `ptr::slice_from_raw_parts_mut(ptr.cast(), N)`.
+/// 5. **One authority over the elements.** Two independently usable container
+///    values must not expose the same mutable storage to independent trackers.
+///    A cloneable shared allocation therefore needs external exclusion, or an
+///    ownership transfer that prevents the original owner and other aliases
+///    from accessing elements while this container controls them.
+///
+/// 6. **Thread traits match storage.** When `Self: Sync`, concurrent metadata
+///    and pointer queries must be safe alongside disjoint element accesses.
+///    When `Self: Send`, moving the owner between threads must be valid. The
+///    implementation cannot rely on a process-global single-threaded mode.
+///
+/// `as_mut_slice` is required explicitly: an inline-data implementation must
+/// use raw pointer metadata rather than creating an intermediate `&Self` that
+/// covers elements already mutably borrowed by a guard.
 ///
 /// See the `Vec<V>` and `Aligned<A, [V; N]>` implementations in this
 /// crate for reference patterns.
@@ -585,7 +681,9 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         let cleanup = BorrowCleanup { parent };
         // SAFETY: The borrow has been registered (or we're unchecked).
         // The indexed region is guaranteed disjoint from all other active borrows.
-        let slice = unsafe { &mut *index.get_mut(self.as_mut_slice()) };
+        // SAFETY: a successful index points into live storage and is non-null.
+        // Keep only the pointer; moving the guard must not carry a protector.
+        let slice = unsafe { NonNull::new_unchecked(index.get_mut(self.as_mut_slice())) };
         // Success — disarm the cleanup guard.
         mem::forget(cleanup);
         DisjointMutGuard {
@@ -616,7 +714,8 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         let parent = self.tracker.as_ref().map(|_| self);
         let cleanup = BorrowCleanup { parent };
         // SAFETY: The borrow has been registered (or we're unchecked).
-        let slice = unsafe { &*index.get_mut(self.as_mut_slice()).cast_const() };
+        // SAFETY: as in index_mut. The live shared reservation excludes writers.
+        let slice = unsafe { NonNull::new_unchecked(index.get_mut(self.as_mut_slice())) };
         mem::forget(cleanup);
         DisjointImmutGuard {
             slice,
@@ -962,13 +1061,24 @@ where
 }
 
 // =============================================================================
-// Bounds tracking (single mutex, holds lock during reference creation)
+// Bounds tracking (one instance lock protects admission and retirement)
 // =============================================================================
 
 mod checked {
     use super::*;
     use core::panic::Location;
+    #[cfg(not(disjoint_mut_loom))]
     use core::sync::atomic::{AtomicBool, Ordering};
+    #[cfg(disjoint_mut_loom)]
+    use loom::sync::atomic::{AtomicBool, Ordering};
+
+    #[cfg(all(test, disjoint_mut_loom))]
+    mod loom_032;
+
+    #[cfg(not(disjoint_mut_loom))]
+    type SlotsCell = UnsafeCell<BorrowSlots>;
+    #[cfg(disjoint_mut_loom)]
+    type SlotsCell = loom::cell::UnsafeCell<BorrowSlots>;
 
     /// Lightweight spinlock for borrow tracking.
     ///
@@ -977,8 +1087,10 @@ mod checked {
     /// is an unconditional store (no branch on old value). For the
     /// single-threaded case (rav1d `threads=1`), this never spins.
     ///
+    #[cfg(not(disjoint_mut_loom))]
     struct TinyLock(AtomicBool);
 
+    #[cfg(not(disjoint_mut_loom))]
     impl TinyLock {
         const fn new() -> Self {
             Self(AtomicBool::new(false))
@@ -1010,12 +1122,31 @@ mod checked {
         }
     }
 
+    #[cfg(not(disjoint_mut_loom))]
     struct TinyGuard<'a>(&'a AtomicBool);
 
+    #[cfg(not(disjoint_mut_loom))]
     impl<'a> Drop for TinyGuard<'a> {
         #[inline(always)]
         fn drop(&mut self) {
             self.0.store(false, Ordering::Release);
+        }
+    }
+
+    // Abstract only native spin waiting. The record algorithm below is shared
+    // by normal and Loom builds; the mutex supplies Acquire/Release handoffs.
+    #[cfg(disjoint_mut_loom)]
+    struct TinyLock(loom::sync::Mutex<()>);
+
+    #[cfg(disjoint_mut_loom)]
+    impl TinyLock {
+        fn new() -> Self {
+            Self(loom::sync::Mutex::new(()))
+        }
+        fn lock(&self) -> loom::sync::MutexGuard<'_, ()> {
+            // Overlap diagnostics run after unlocking in both builds. Loom's
+            // internal mutex panics on poison, so any other panic fails loudly.
+            self.0.lock().unwrap()
         }
     }
 
@@ -1218,7 +1349,7 @@ mod checked {
     /// subsequent access to potentially corrupted data.
     pub(super) struct BorrowTracker {
         lock: TinyLock,
-        slots: UnsafeCell<BorrowSlots>,
+        slots: SlotsCell,
         poisoned: AtomicBool,
     }
 
@@ -1233,11 +1364,34 @@ mod checked {
     }
 
     impl BorrowTracker {
+        #[cfg(not(disjoint_mut_loom))]
         pub const fn new() -> Self {
             Self {
                 lock: TinyLock::new(),
-                slots: UnsafeCell::new(BorrowSlots::new()),
+                slots: SlotsCell::new(BorrowSlots::new()),
                 poisoned: AtomicBool::new(false),
+            }
+        }
+
+        #[cfg(disjoint_mut_loom)]
+        pub fn new() -> Self {
+            Self {
+                lock: TinyLock::new(),
+                slots: SlotsCell::new(BorrowSlots::new()),
+                poisoned: AtomicBool::new(false),
+            }
+        }
+
+        // Caller holds this instance's lock. Keep each modeled metadata access
+        // alive until its references end, before the surrounding guard unlocks.
+        fn with_slots<R>(&self, f: impl FnOnce(*mut BorrowSlots) -> R) -> R {
+            #[cfg(not(disjoint_mut_loom))]
+            {
+                f(self.slots.get())
+            }
+            #[cfg(disjoint_mut_loom)]
+            {
+                self.slots.with_mut(f)
             }
         }
 
@@ -1300,13 +1454,22 @@ mod checked {
                 return BorrowId(BorrowSlots::EMPTY_SLOT);
             }
             self.check_poisoned();
-            let _guard = self.lock.lock();
-            // SAFETY: TinyLock is held, so we have exclusive access to slots.
-            let slots = unsafe { &mut *self.slots.get() };
-            if let Some((es, ee, em)) = slots.find_overlap_any(start, end) {
-                Self::overlap_panic(start, end, true, es, ee, em);
+            let guard = self.lock.lock();
+            let result = self.with_slots(|slots| {
+                // SAFETY: TinyLock is held, so we have exclusive access to slots.
+                let slots = unsafe { &mut *slots };
+                match slots.find_overlap_any(start, end) {
+                    Some(conflict) => Err(conflict),
+                    None => Ok(BorrowId(slots.alloc(start, end, true))),
+                }
+            });
+            // End metadata references and unlock before invoking a caller's
+            // panic hook. A refused admission has published no reservation.
+            drop(guard);
+            match result {
+                Ok(id) => id,
+                Err((es, ee, em)) => Self::overlap_panic(start, end, true, es, ee, em),
             }
-            BorrowId(slots.alloc(start, end, true))
         }
 
         /// Register an immutable borrow. Only checks against mutable borrows.
@@ -1319,13 +1482,22 @@ mod checked {
                 return BorrowId(BorrowSlots::EMPTY_SLOT);
             }
             self.check_poisoned();
-            let _guard = self.lock.lock();
-            // SAFETY: TinyLock is held, so we have exclusive access to slots.
-            let slots = unsafe { &mut *self.slots.get() };
-            if let Some((es, ee, em)) = slots.find_overlap_mut(start, end) {
-                Self::overlap_panic(start, end, false, es, ee, em);
+            let guard = self.lock.lock();
+            let result = self.with_slots(|slots| {
+                // SAFETY: TinyLock is held, so we have exclusive access to slots.
+                let slots = unsafe { &mut *slots };
+                match slots.find_overlap_mut(start, end) {
+                    Some(conflict) => Err(conflict),
+                    None => Ok(BorrowId(slots.alloc(start, end, false))),
+                }
+            });
+            // End metadata references and unlock before invoking a caller's
+            // panic hook. A refused admission has published no reservation.
+            drop(guard);
+            match result {
+                Ok(id) => id,
+                Err((es, ee, em)) => Self::overlap_panic(start, end, false, es, ee, em),
             }
-            BorrowId(slots.alloc(start, end, false))
         }
 
         /// Remove a borrow by slot index. O(1).
@@ -1335,9 +1507,11 @@ mod checked {
                 return;
             }
             let _guard = self.lock.lock();
-            // SAFETY: TinyLock is held, so we have exclusive access to slots.
-            let slots = unsafe { &mut *self.slots.get() };
-            slots.free(id.0);
+            self.with_slots(|slots| {
+                // SAFETY: TinyLock is held, so we have exclusive access to slots.
+                let slots = unsafe { &mut *slots };
+                slots.free(id.0);
+            });
         }
     }
 }

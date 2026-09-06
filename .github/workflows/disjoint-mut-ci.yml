@@ -5,10 +5,13 @@ on:
     paths:
       - 'crates/rav1d-disjoint-mut/**'
       - '.github/workflows/disjoint-mut-ci.yml'
+      - 'scripts/review-disjoint-032.py'
   pull_request:
     paths:
       - 'crates/rav1d-disjoint-mut/**'
       - '.github/workflows/disjoint-mut-ci.yml'
+      - 'scripts/review-disjoint-032.py'
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -25,15 +28,42 @@ jobs:
         include:
           - os: ubuntu-latest
             features: "--all-features"
+          - os: ubuntu-latest
+            features: "--no-default-features --features aligned,pic-buf,zerocopy"
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test -p rav1d-disjoint-mut ${{ matrix.features }}
+      - run: cargo test -p rav1d-disjoint-mut ${{ matrix.features }} --all-targets --no-fail-fast
+      - run: cargo test -p rav1d-disjoint-mut ${{ matrix.features }} --doc
+
+  protocol:
+    name: 0.3 tracker Loom protocol
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p rav1d-disjoint-mut --lib loom_032 -- --test-threads=1
+        env:
+          RUSTFLAGS: --cfg disjoint_mut_loom
+          CARGO_TARGET_DIR: target/loom
+
+  semver:
+    name: Published 0.3.1 API compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks
+      - run: cargo semver-checks -p rav1d-disjoint-mut --baseline-version 0.3.1 --release-type patch --only-explicit-features --features std,instrument,aligned,pic-buf,zerocopy
+      - run: cargo semver-checks -p rav1d-disjoint-mut --baseline-version 0.3.1 --release-type patch --only-explicit-features
 
   miri:
-    name: Miri (${{ matrix.model }})
+    name: Miri (${{ matrix.model.name }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         model:
           - name: "Stacked Borrows"
@@ -45,7 +75,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
-      - run: cargo +nightly miri test -p rav1d-disjoint-mut
+      - run: cargo +nightly miri test -p rav1d-disjoint-mut --all-features --no-fail-fast
         env:
           MIRIFLAGS: ${{ matrix.model.flags }}
 
@@ -78,6 +108,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo doc -p rav1d-disjoint-mut --no-deps
+      - run: cargo doc -p rav1d-disjoint-mut --all-features --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
