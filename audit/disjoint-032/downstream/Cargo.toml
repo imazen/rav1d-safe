@@ -1,0 +1,11 @@
+[package]
+name = "published-decoder-disjoint-032-check"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+rav1d-safe = "=0.5.7"
+md5 = "0.8.0"

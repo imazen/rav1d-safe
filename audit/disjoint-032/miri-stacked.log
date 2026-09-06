@@ -1,0 +1,152 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling serde_core v1.0.228
+   Compiling zerocopy v0.8.48
+   Compiling zmij v1.0.21
+   Compiling serde v1.0.228
+   Compiling cfg-if v1.0.4
+   Compiling libc v0.2.184
+   Compiling autocfg v1.5.0
+   Compiling serde_json v1.0.149
+   Compiling anstyle v1.0.14
+   Compiling ciborium-io v0.2.2
+   Compiling either v1.15.0
+   Compiling itoa v1.0.18
+   Compiling stable_deref_trait v1.2.1
+   Compiling regex-syntax v0.8.10
+   Compiling memchr v2.8.0
+   Compiling clap_lex v1.1.0
+   Compiling itertools v0.10.5
+   Compiling as-slice v0.2.1
+   Compiling num-traits v0.2.19
+   Compiling clap_builder v4.6.0
+   Compiling syn v2.0.117
+   Compiling same-file v1.0.6
+   Compiling cast v0.3.0
+   Compiling walkdir v2.5.0
+   Compiling aligned v0.4.3
+   Compiling oorandom v11.1.5
+   Compiling is-terminal v0.4.17
+   Compiling once_cell v1.21.4
+   Compiling anes v0.1.6
+   Compiling regex-automata v0.4.14
+   Compiling criterion-plot v0.5.0
+   Compiling clap v4.6.0
+   Compiling regex v1.12.3
+   Compiling zerocopy-derive v0.8.48
+   Compiling serde_derive v1.0.228
+   Compiling equator-macro v0.4.2
+   Compiling equator v0.4.2
+   Compiling aligned-vec v0.6.4
+   Compiling tinytemplate v1.2.1
+   Compiling half v2.7.1
+   Compiling rav1d-disjoint-mut v0.3.2 (/home/lilith/work/zen/rav1d-safe--disjoint-0.3.2/crates/rav1d-disjoint-mut)
+   Compiling ciborium-ll v0.2.2
+   Compiling ciborium v0.2.2
+   Compiling criterion v0.5.1
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.28s
+     Running unittests src/lib.rs (target/miri/x86_64-unknown-linux-gnu/debug/deps/rav1d_disjoint_mut-1a08982edd3c3175)
+
+running 18 tests
+test align::tests::align_array_default ... ok
+test align::tests::align_constructor_and_deref ... ok
+test align::tests::align_copy ... ok
+test align::tests::align_disjoint_mut ... ok
+test align::tests::align_in_repr_c_struct ... ok
+test align::tests::align_type_alias_layout ... ok
+test align::tests::aligned_vec64_basic ... ok
+test align::tests::aligned_vec64_default ... ok
+test align::tests::aligned_vec64_disjoint_mut ... ok
+test align::tests::aligned_vec64_resizable ... ok
+test align::tests::deref_to_inner ... ok
+test test_dangerously_unchecked_skips_tracking ... ok
+test test_new_always_tracked ... ok
+test test_overlapping_immut ... ok
+test test_overlapping_mut - should panic ... ok
+test test_range_inclusive_mul ... ok
+test test_range_overlap ... ok
+test test_range_to_inclusive_mul ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.11s
+
+     Running tests/aligned_miri.rs (target/miri/x86_64-unknown-linux-gnu/debug/deps/aligned_miri-3c64a4f453f3cc64)
+
+running 2 tests
+test test_aligned_immut_and_mut_disjoint ... ok
+test test_aligned_two_disjoint_mut_guards ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+
+     Running tests/guard_move_release.rs (target/miri/x86_64-unknown-linux-gnu/debug/deps/guard_move_release-1f402f767e1e8b88)
+
+running 2 tests
+test moving_a_mut_guard_into_drop_is_not_ub ... ok
+test moving_a_shared_guard_into_drop_is_not_ub ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 84.94s
+
+     Running tests/patch_032.rs (target/miri/x86_64-unknown-linux-gnu/debug/deps/patch_032-984bdbbea8577f2d)
+
+running 6 tests
+test all_four_cast_paths_keep_the_original_reservation ... ok
+test const_and_static_construction_stays_checked_across_threads ... ok
+test existing_guard_send_sync_bounds_and_moves_compile ... ok
+test interval_admission_matches_an_independent_element_set ... ok
+test slot_exhaustion_and_reuse_never_release_a_forgotten_guard ... ok
+test zst_and_reversed_ranges_do_not_corrupt_other_records ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 42.78s
+
+     Running tests/pic_buf_overflow.rs (target/miri/x86_64-unknown-linux-gnu/debug/deps/pic_buf_overflow-7b6548afa9b4ee09)
+
+running 3 tests
+test accepts_valid_aligned_region ... ok
+test rejects_overflowing_usable_len - should panic ... ok
+test rejects_oversized_usable_len - should panic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+
+     Running tests/soundness.rs (target/miri/x86_64-unknown-linux-gnu/debug/deps/soundness-07a45f2fd5d7e491)
+
+running 23 tests
+test test_adjacent_element_guards ... ok
+test test_arc_slice_concurrent ... ok
+test test_concurrent_disjoint_array ... ok
+test test_concurrent_disjoint_box_slice ... ok
+test test_concurrent_disjoint_mut_access ... ok
+test test_concurrent_reads ... ok
+test test_cross_thread_mut_immut_disjoint ... ok
+test test_disjoint_immut_and_mut_single_thread ... ok
+test test_empty_range_no_conflict ... ok
+test test_guard_drop_enables_reborrow ... ok
+test test_immut_overlapping_mut_panics - should panic ... ok
+test test_mut_overlapping_immut_panics - should panic ... ok
+test test_oob_panic_poisons ... ok
+test test_overflow_beyond_64_borrows ... ok
+test test_overflow_overlap_detected - should panic ... ok
+test test_overflow_slot_reuse ... ok
+test test_overlapping_immut_guards ... ok
+test test_overlapping_mut_panics - should panic ... ok
+test test_panic_during_immut_guard_no_poison ... ok
+test test_panic_during_mut_guard_poisons ... ok
+test test_two_disjoint_mut_guards_single_thread ... ok
+test test_two_empty_ranges_same_position ... ok
+test test_zerocopy_cast_disjoint ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.55s
+
+   Doc-tests rav1d_disjoint_mut
+
+running 7 tests
+test crates/rav1d-disjoint-mut/src/lib.rs - ExternalAsMutPtr::as_mut_slice (line 559) ... ignored
+test crates/rav1d-disjoint-mut/src/lib.rs - ExternalAsMutPtr::as_mut_slice (line 571) ... ignored
+test crates/rav1d-disjoint-mut/src/lib.rs - (line 46) - compile fail ... ok
+test crates/rav1d-disjoint-mut/src/lib.rs - (line 35) - compile fail ... ok
+test crates/rav1d-disjoint-mut/src/lib.rs - (line 56) - compile fail ... ok
+test crates/rav1d-disjoint-mut/src/lib.rs - (line 65) - compile fail ... ok
+test crates/rav1d-disjoint-mut/src/lib.rs - (line 23) ... ok
+
+test result: ok. 5 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+all doctests ran in 0.10s; merged doctests compilation took 0.02s

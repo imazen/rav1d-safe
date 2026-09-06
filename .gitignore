@@ -38,3 +38,7 @@ target-*/
 __pycache__/
 *.pyc
 .jj/
+
+# Pinned independent 0.3.2 release controls.
+!audit/disjoint-032/controls/Cargo.lock
+!audit/disjoint-032/downstream/Cargo.lock

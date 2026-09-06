@@ -1,0 +1,11 @@
+   Compiling rav1d-disjoint-mut v0.3.2 (/home/lilith/work/zen/rav1d-safe--disjoint-0.3.2/crates/rav1d-disjoint-mut)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running unittests src/lib.rs (target/loom/debug/deps/rav1d_disjoint_mut-f1a22d9cf54f41e7)
+
+running 3 tests
+test checked::loom_032::inline_exclusion_reuse_and_payload_handoff ... ok
+test checked::loom_032::overflow_exclusion_reuse_and_payload_handoff ... ok
+test checked::loom_032::shared_reader_retirement_and_writer_exclusion ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.68s
+

@@ -4,6 +4,10 @@ All notable changes to `rav1d-disjoint-mut` are documented in this file. Format 
 
 ## [0.4.0] - Unreleased
 
+The compatible 0.3.2 maintenance release is prepared separately from the
+published 0.3.1 source. It preserves the const constructor and original tracker;
+see `audit/disjoint-032` in the repository for its evidence and release protocol.
+
 ### Changed
 - `DisjointMut::new` is no longer `const` because the tracker is allocated at
   runtime. Use runtime initialization, such as `std::sync::LazyLock`, for a
@@ -21,6 +25,8 @@ All notable changes to `rav1d-disjoint-mut` are documented in this file. Format 
   Miri runs and deliberate-defect controls; finite tests are not a universal proof.
 
 ### Fixed
+- `aligned` builds without `std` now use `alloc::collections::TryReserveError`,
+  the same type re-exported by `std`, for allocation-error paths.
 - **`index_rect{,_mut}` registered the rectangle in bytes while every other
   borrow is registered in `T::Target` elements** (soundness, safe API). On a
   buffer whose element is wider than a byte — `DisjointMut<Vec<u16>>`, say —
@@ -113,7 +119,7 @@ All notable changes to `rav1d-disjoint-mut` are documented in this file. Format 
 - **Memory safety: `PicBuf::from_vec_aligned` arithmetic overflow** (`68ab197`). `align_offset + usable_len` was an unchecked add; with a non-zero `align_offset` and a `usable_len` near `usize::MAX` it could wrap, letting the bounds `assert!` pass while `usable_len > vec.len()` — exposing an out-of-bounds region (reachable on 32-bit targets with crafted picture dimensions). Now uses `checked_add` and panics on overflow. Regression tests added in `tests/pic_buf_overflow.rs`.
 
 ### Changed (technically breaking — see note)
-- **Sealed the load-bearing index traits** `DisjointMutIndex`, `SliceBounds`, `TranslateRange` via a private `sealed::IndexLike` supertrait (`6fe6dc8`), closing a soundness hole: these traits are `unsafe`-adjacent (the `DisjointMut` core trusts impls to return in-bounds pointers matching their registered `Bounds`, mirroring `std::slice::SliceIndex`), so an external impl could only be unsound. `cargo-semver-checks` flags trait-sealing as a major change, but the practical break surface is empty — the only code it removes was already unsound. Shipped as a patch deliberately so all `^0.3` dependents receive the soundness + overflow fixes automatically.
+- **Sealed the load-bearing index traits** `DisjointMutIndex`, `SliceBounds`, `TranslateRange` via a private `sealed::IndexLike` supertrait (`6fe6dc8`), closing a soundness hole: these traits are `unsafe`-adjacent (the `DisjointMut` core trusts impls to return in-bounds pointers matching their registered `Bounds`, mirroring `std::slice::SliceIndex`), so an incorrect external impl could violate memory safety. `cargo-semver-checks` flags trait-sealing as a major change, and external implementations no longer compile, including implementations that may have been correct. Shipped as a patch deliberately so all `^0.3` dependents receive the soundness + overflow fixes automatically.
 
 ### Notes
 - `[0.3.0]` (2026-02-14) predates these fixes; `^0.3` users should upgrade to `0.3.1`.

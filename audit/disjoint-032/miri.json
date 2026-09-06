@@ -1,0 +1,88 @@
+[
+  {
+    "gate": "stacked",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--all-features",
+      "--no-fail-fast"
+    ],
+    "env": {
+      "MIRIFLAGS": ""
+    },
+    "exit_code": 0,
+    "seconds": 63.64,
+    "log": "miri-stacked.log",
+    "log_sha256": "858daa33d0617bebc6b5a2b0f217e4b70f4036419682bcd820fba89cdaa814ab",
+    "finished_utc": "2026-09-06T12:25:22.994531+00:00"
+  },
+  {
+    "gate": "stacked-no-std",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--test",
+      "patch_032"
+    ],
+    "env": {
+      "MIRIFLAGS": ""
+    },
+    "exit_code": 0,
+    "seconds": 18.77,
+    "log": "miri-stacked-no-std.log",
+    "log_sha256": "d2970f8062df750e072e6cce98fc29a846e0d797e2aa49e19c5a526cb321d724",
+    "finished_utc": "2026-09-06T12:25:41.761810+00:00"
+  },
+  {
+    "gate": "tree",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--all-features",
+      "--no-fail-fast"
+    ],
+    "env": {
+      "MIRIFLAGS": "-Zmiri-tree-borrows"
+    },
+    "exit_code": 0,
+    "seconds": 91.58,
+    "log": "miri-tree.log",
+    "log_sha256": "2c1477b626a067647fb5bcbac484b2a750dd025a564b2a6b5377a3ee897a43ac",
+    "finished_utc": "2026-09-06T12:27:13.338533+00:00"
+  },
+  {
+    "gate": "tree-no-std",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--test",
+      "patch_032"
+    ],
+    "env": {
+      "MIRIFLAGS": "-Zmiri-tree-borrows"
+    },
+    "exit_code": 0,
+    "seconds": 41.68,
+    "log": "miri-tree-no-std.log",
+    "log_sha256": "f86e25f053c56613a2315ecdb12a3a748e4ac480242e00cce46d50247b27522c",
+    "finished_utc": "2026-09-06T12:27:55.014168+00:00"
+  }
+]

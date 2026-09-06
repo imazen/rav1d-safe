@@ -1,0 +1,13 @@
+   Compiling rav1d-disjoint-mut v0.3.2 (/home/lilith/work/zen/rav1d-safe--disjoint-0.3.2/crates/rav1d-disjoint-mut)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running tests/patch_032.rs (target/miri/x86_64-unknown-linux-gnu/debug/deps/patch_032-be2baaca57fa84de)
+
+running 5 tests
+test const_and_static_construction_stays_checked_across_threads ... ok
+test existing_guard_send_sync_bounds_and_moves_compile ... ok
+test interval_admission_matches_an_independent_element_set ... ok
+test slot_exhaustion_and_reuse_never_release_a_forgotten_guard ... ok
+test zst_and_reversed_ranges_do_not_corrupt_other_records ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 42.08s
+

@@ -1,5 +1,13 @@
 # Published API comparison
 
+**0.3.2 maintenance update:** the 0.4 requirement below applies to the full
+development implementation. A separate backport retains the published 0.3
+tracker and const constructor while fixing guard references. Its patch-level
+semver checks pass for default, no-std, and all published features. See the
+[0.3.2 release evidence](../disjoint-032/README.md) for exact API differences,
+candidate revision, and safety gates; the historical comparison below is kept
+as evidence for the development line.
+
 Generated 2026-09-06 UTC with cargo-public-api 0.52.0 and the installed nightly
 toolchain. Inputs are the checksum-verified crates.io tarballs listed in
 [release metadata](../../docs/review-releases-2026-09-05.json), including the

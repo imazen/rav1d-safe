@@ -1,0 +1,148 @@
+[
+  {
+    "gate": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--",
+      "--check"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 0.05,
+    "log": "native-fmt.log",
+    "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "finished_utc": "2026-09-06T12:24:13.829870+00:00"
+  },
+  {
+    "gate": "all-targets",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--all-features",
+      "--all-targets",
+      "--no-fail-fast"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 1.33,
+    "log": "native-all-targets.log",
+    "log_sha256": "764a57a1d15e58bf1436908eee691db195823e9519ce2bd3b0f1a6770b948930",
+    "finished_utc": "2026-09-06T12:24:15.156090+00:00"
+  },
+  {
+    "gate": "no-std",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--no-fail-fast"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 1.2,
+    "log": "native-no-std.log",
+    "log_sha256": "fae0b312d4dd20afdedcc5a5ba64c8a6c3c6ba1aa341033e1c3a03a1c41e03a2",
+    "finished_utc": "2026-09-06T12:24:16.355997+00:00"
+  },
+  {
+    "gate": "no-std-storage",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "aligned,pic-buf,zerocopy",
+      "--no-fail-fast"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 1.27,
+    "log": "native-no-std-storage.log",
+    "log_sha256": "cbc5f2142a80e6088c5950db991f82d1e70f8fe051fbc6d2e705fa66ce56ee01",
+    "finished_utc": "2026-09-06T12:24:17.625233+00:00"
+  },
+  {
+    "gate": "doctests",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--all-features",
+      "--doc"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 0.19,
+    "log": "native-doctests.log",
+    "log_sha256": "e91848427e124275ac0674310d92501d90e43fa99fc9a85fb7a40196225c9e79",
+    "finished_utc": "2026-09-06T12:24:17.818370+00:00"
+  },
+  {
+    "gate": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--all-features",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 0.2,
+    "log": "native-clippy.log",
+    "log_sha256": "251b404b2975f3adf61d0b97fe0bf02c1e907202b3431d430ca257cca1e9f394",
+    "finished_utc": "2026-09-06T12:24:18.015100+00:00"
+  },
+  {
+    "gate": "clippy-no-std",
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 0.1,
+    "log": "native-clippy-no-std.log",
+    "log_sha256": "2b3228435b748ea8e76424de9b9cda30cdda9b0fe012201d3c0c41034ed7d40c",
+    "finished_utc": "2026-09-06T12:24:18.115558+00:00"
+  },
+  {
+    "gate": "docs",
+    "command": [
+      "cargo",
+      "doc",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--all-features",
+      "--no-deps"
+    ],
+    "env": {
+      "RUSTDOCFLAGS": "-D warnings"
+    },
+    "exit_code": 0,
+    "seconds": 0.3,
+    "log": "native-docs.log",
+    "log_sha256": "0ee2b1d39bab7b7ce0c55edb0776205a8e079caf8dd686c09a64ab202d77e69e",
+    "finished_utc": "2026-09-06T12:24:18.415361+00:00"
+  }
+]

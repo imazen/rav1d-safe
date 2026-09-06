@@ -1,0 +1,10 @@
+[package]
+name = "published-disjoint-032-controls"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+rav1d-disjoint-mut = { version = "=0.3.1", features = ["instrument", "aligned", "pic-buf", "zerocopy"] }

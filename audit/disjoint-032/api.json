@@ -1,0 +1,56 @@
+[
+  {
+    "name": "api-0.3.1",
+    "command": [
+      "cargo",
+      "+nightly",
+      "public-api",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-disjoint-mut-0.3.1/Cargo.toml",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--omit",
+      "blanket-impls",
+      "--color",
+      "never",
+      "--all-features"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe--disjoint-0.3.2",
+    "env": {
+      "CARGO_TARGET_DIR": "/home/lilith/work/zen/rav1d-safe--disjoint-0.3.2/target/api"
+    },
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 1.71,
+    "log": "api-0.3.1.log",
+    "sha256": "a924015a567ae422e5934806045115394b352e77d68c178a888bf9a2a1a566d4"
+  },
+  {
+    "name": "api-0.3.2",
+    "command": [
+      "cargo",
+      "+nightly",
+      "public-api",
+      "--manifest-path",
+      "/home/lilith/work/zen/rav1d-safe--disjoint-0.3.2/crates/rav1d-disjoint-mut/Cargo.toml",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--omit",
+      "blanket-impls",
+      "--color",
+      "never",
+      "--all-features"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe--disjoint-0.3.2",
+    "env": {
+      "CARGO_TARGET_DIR": "/home/lilith/work/zen/rav1d-safe--disjoint-0.3.2/target/api"
+    },
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 1.45,
+    "log": "api-0.3.2.log",
+    "sha256": "8bb9f01a92bf4e483e63b4ac0dcf2e8af8ed7553a3b7266e28018aea3e937a38"
+  }
+]

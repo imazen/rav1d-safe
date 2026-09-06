@@ -1,0 +1,13 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.45
+   Compiling zerocopy v0.8.48
+    Checking stable_deref_trait v1.2.1
+    Checking as-slice v0.2.1
+    Checking aligned v0.4.3
+   Compiling syn v2.0.117
+   Compiling equator-macro v0.4.2
+    Checking equator v0.4.2
+    Checking aligned-vec v0.6.4
+    Checking rav1d-disjoint-mut v0.3.2 (/home/lilith/tmp/rav1d-review-0.3.2/package-checkout/target/package/rav1d-disjoint-mut-0.3.2)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.76s

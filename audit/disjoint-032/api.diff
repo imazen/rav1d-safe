@@ -1,0 +1,26 @@
+--- rav1d-disjoint-mut-0.3.1
++++ rav1d-disjoint-mut-0.3.2
+@@ -122,9 +122,9 @@
+ pub fn rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V>::deref(&self) -> &Self::Target
+ impl<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V: ?core::marker::Sized> core::ops::drop::Drop for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V>
+ pub fn rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V>::drop(&mut self)
++impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr + core::marker::Sync, V: ?core::marker::Sized + core::marker::Sync> core::marker::Send for rav1d_disjoint_mut::DisjointImmutGuard<'_, T, V>
++impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr + core::marker::Sync, V: ?core::marker::Sized + core::marker::Sync> core::marker::Sync for rav1d_disjoint_mut::DisjointImmutGuard<'_, T, V>
+ impl<'a, T, V> core::marker::Freeze for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V> where T: ?core::marker::Sized, V: ?core::marker::Sized
+-impl<'a, T, V> core::marker::Send for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V> where V: core::marker::Sync + ?core::marker::Sized, T: core::marker::Sync + ?core::marker::Sized
+-impl<'a, T, V> core::marker::Sync for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V> where V: core::marker::Sync + ?core::marker::Sized, T: core::marker::Sync + ?core::marker::Sized
+ impl<'a, T, V> core::marker::Unpin for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V> where T: ?core::marker::Sized, V: ?core::marker::Sized
+ impl<'a, T, V> core::marker::UnsafeUnpin for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V> where T: ?core::marker::Sized, V: ?core::marker::Sized
+ impl<'a, T, V> !core::panic::unwind_safe::RefUnwindSafe for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V>
+@@ -198,9 +198,9 @@
+ pub fn rav1d_disjoint_mut::DisjointMutGuard<'a, T, V>::deref_mut(&mut self) -> &mut Self::Target
+ impl<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V: ?core::marker::Sized> core::ops::drop::Drop for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V>
+ pub fn rav1d_disjoint_mut::DisjointMutGuard<'a, T, V>::drop(&mut self)
++impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr + core::marker::Sync, V: ?core::marker::Sized + core::marker::Send> core::marker::Send for rav1d_disjoint_mut::DisjointMutGuard<'_, T, V>
++impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr + core::marker::Sync, V: ?core::marker::Sized + core::marker::Sync> core::marker::Sync for rav1d_disjoint_mut::DisjointMutGuard<'_, T, V>
+ impl<'a, T, V> core::marker::Freeze for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V> where T: ?core::marker::Sized, V: ?core::marker::Sized
+-impl<'a, T, V> core::marker::Send for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V> where V: core::marker::Send + ?core::marker::Sized, T: core::marker::Sync + ?core::marker::Sized
+-impl<'a, T, V> core::marker::Sync for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V> where V: core::marker::Sync + ?core::marker::Sized, T: core::marker::Sync + ?core::marker::Sized
+ impl<'a, T, V> core::marker::Unpin for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V> where T: ?core::marker::Sized, V: ?core::marker::Sized
+ impl<'a, T, V> core::marker::UnsafeUnpin for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V> where T: ?core::marker::Sized, V: ?core::marker::Sized
+ impl<'a, T, V> !core::panic::unwind_safe::RefUnwindSafe for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V>

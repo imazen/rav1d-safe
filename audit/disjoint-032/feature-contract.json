@@ -1,0 +1,38 @@
+{
+  "features": {
+    "default": [
+      "std"
+    ],
+    "std": [],
+    "instrument": [
+      "std"
+    ],
+    "aligned": [
+      "dep:aligned",
+      "dep:aligned-vec"
+    ],
+    "pic-buf": [],
+    "zerocopy": [
+      "dep:zerocopy"
+    ]
+  },
+  "normal_dependencies": {
+    "aligned": {
+      "version": "0.4",
+      "default-features": false,
+      "optional": true
+    },
+    "aligned-vec": {
+      "version": "0.6",
+      "default-features": false,
+      "optional": true
+    },
+    "zerocopy": {
+      "version": "0.8",
+      "default-features": false,
+      "optional": true
+    }
+  },
+  "rust-version": "1.85",
+  "identical_to_031": true
+}

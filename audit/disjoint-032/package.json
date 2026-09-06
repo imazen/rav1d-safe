@@ -1,0 +1,89 @@
+[
+  {
+    "gate": "package",
+    "command": [
+      "cargo",
+      "package",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--all-features",
+      "--allow-dirty"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 1.9,
+    "log": "package-package.log",
+    "log_sha256": "fc1b3ad598805b2c3d221d69a5daeadebed696eda8fcd5cb3e41b6d34eeb8a4f",
+    "finished_utc": "2026-09-06T12:36:52.500383+00:00"
+  },
+  {
+    "gate": "msrv",
+    "command": [
+      "cargo",
+      "+1.85.0",
+      "check",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-review-0.3.2/package-checkout/target/package/rav1d-disjoint-mut-0.3.2/Cargo.toml",
+      "--all-features"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 1.77,
+    "log": "package-msrv.log",
+    "log_sha256": "d21267e904ea8b9e2ef2e5fb979ba55dc56cf4af03f2e090026ce9f13c452ac0",
+    "finished_utc": "2026-09-06T12:36:54.268151+00:00"
+  },
+  {
+    "gate": "msrv-no-std",
+    "command": [
+      "cargo",
+      "+1.85.0",
+      "check",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-review-0.3.2/package-checkout/target/package/rav1d-disjoint-mut-0.3.2/Cargo.toml",
+      "--no-default-features"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 0.07,
+    "log": "package-msrv-no-std.log",
+    "log_sha256": "bcdb7978a43252762243a7cd397964c04aa2c07a165f18944126c9f0231af94d",
+    "finished_utc": "2026-09-06T12:36:54.335778+00:00"
+  },
+  {
+    "gate": "i686",
+    "command": [
+      "cargo",
+      "check",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-review-0.3.2/package-checkout/target/package/rav1d-disjoint-mut-0.3.2/Cargo.toml",
+      "--all-features",
+      "--target",
+      "i686-unknown-linux-gnu"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 1.78,
+    "log": "package-i686.log",
+    "log_sha256": "f4b80b50d230d9590b5989b0d71126ac7f7c02d77f4e7ac515c32cc9ff97859b",
+    "finished_utc": "2026-09-06T12:36:56.113287+00:00"
+  },
+  {
+    "gate": "wasm-no-std",
+    "command": [
+      "cargo",
+      "check",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-review-0.3.2/package-checkout/target/package/rav1d-disjoint-mut-0.3.2/Cargo.toml",
+      "--no-default-features",
+      "--target",
+      "wasm32-unknown-unknown"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 0.09,
+    "log": "package-wasm-no-std.log",
+    "log_sha256": "430297fb50193ac658cf48f27edeb9e9ac8aa0b7b47da1c74e4be779c62aca89",
+    "finished_utc": "2026-09-06T12:36:56.203474+00:00"
+  }
+]

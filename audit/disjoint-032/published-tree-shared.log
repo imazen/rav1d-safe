@@ -1,0 +1,62 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+     Running tests/guard_move_release.rs (controls/target/miri/x86_64-unknown-linux-gnu/debug/deps/guard_move_release-c89d95b041db4f7a)
+
+running 1 test
+test moving_a_shared_guard_into_drop_is_not_ub ... error: Undefined Behavior: write access through <1127018> at alloc43804[0x1000] is forbidden
+   --> tests/guard_move_release.rs:110:25
+    |
+110 |                         g[0] = g[0].wrapping_add(1);
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ Undefined Behavior occurred here
+    |
+    = help: this indicates a potential bug in the program: it performed an invalid operation, but the Tree Borrows rules it violated are still experimental
+    = help: see https://github.com/rust-lang/unsafe-code-guidelines/blob/master/wip/tree-borrows.md for further information
+    = help: the accessed tag <1127018> is foreign to the protected tag <1092378> (i.e., it is not a child)
+    = help: this foreign write access would cause the protected tag <1092378> (currently Frozen) to become Disabled
+    = help: protected tags must never be Disabled
+help: the accessed tag <1127018> was created here
+   --> tests/guard_move_release.rs:110:25
+    |
+110 |                         g[0] = g[0].wrapping_add(1);
+    |                         ^
+help: the protected tag <1092378> was created here, in the initial state Frozen
+   --> tests/guard_move_release.rs:106:29
+    |
+106 | ...                   drop(g);
+    |                       ^^^^^^^
+    = note: this is on thread `unnamed-8`
+    = note: stack backtrace:
+            0: contend::{closure#1}::{closure#0}
+                at tests/guard_move_release.rs:110:25: 110:52
+            1: <{closure@tests/guard_move_release.rs:101:67: 101:69} as std::ops::FnOnce<()>>::call_once - shim
+                at /home/lilith/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5: 250:71
+            2: <std::panic::AssertUnwindSafe<{closure@tests/guard_move_release.rs:101:67: 101:69}> as std::ops::FnOnce<()>>::call_once
+                at /home/lilith/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/panic/unwind_safe.rs:275:9: 275:19
+            3: std::panicking::catch_unwind::do_call::<std::panic::AssertUnwindSafe<{closure@tests/guard_move_release.rs:101:67: 101:69}>, ()>
+                at /home/lilith/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/panicking.rs:576:43: 576:46
+            4: std::panicking::catch_unwind::<(), std::panic::AssertUnwindSafe<{closure@tests/guard_move_release.rs:101:67: 101:69}>>
+                at /home/lilith/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/panicking.rs:544:19: 544:77
+            5: std::panic::catch_unwind::<std::panic::AssertUnwindSafe<{closure@tests/guard_move_release.rs:101:67: 101:69}>, ()>
+                at /home/lilith/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/panic.rs:359:14: 359:40
+            6: contend::{closure#1}
+                at tests/guard_move_release.rs:101:30: 115:20
+note: the last function in that backtrace got called indirectly due to this code
+   --> tests/guard_move_release.rs:98:17
+    |
+ 98 |           hs.push(std::thread::spawn(move || {
+    |  _________________^
+ 99 | |             start.wait();
+100 | |             for _ in 0..ROUNDS {
+101 | |                 let result = panic::catch_unwind(AssertUnwindSafe(|| {
+...   |
+137 | |         }));
+    | |__________^
+
+note: some details are omitted, run with `MIRIFLAGS=-Zmiri-backtrace=full` for a verbose backtrace
+
+error: aborting due to 1 previous error
+
+error: test failed, to rerun pass `--test guard_move_release`
+
+Caused by:
+  process didn't exit successfully: `/home/lilith/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/cargo-miri runner /home/lilith/work/zen/rav1d-safe/audit/disjoint-032/controls/target/miri/x86_64-unknown-linux-gnu/debug/deps/guard_move_release-c89d95b041db4f7a --exact moving_a_shared_guard_into_drop_is_not_ub` (exit status: 1)
+note: test exited abnormally; to see the full output pass --no-capture to the harness.

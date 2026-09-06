@@ -1,0 +1,8 @@
+    Checking stable_deref_trait v1.2.1
+    Checking zerocopy v0.8.48
+    Checking equator v0.4.2
+    Checking as-slice v0.2.1
+    Checking aligned v0.4.3
+    Checking aligned-vec v0.6.4
+ Documenting rav1d-disjoint-mut v0.3.2 (/home/lilith/work/zen/rav1d-safe--disjoint-0.3.2/crates/rav1d-disjoint-mut)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.31s

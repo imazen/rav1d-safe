@@ -1,0 +1,24 @@
+[
+  {
+    "gate": "loom",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--lib",
+      "loom_032",
+      "--",
+      "--test-threads=1"
+    ],
+    "env": {
+      "RUSTFLAGS": "--cfg disjoint_mut_loom",
+      "CARGO_TARGET_DIR": "/home/lilith/work/zen/rav1d-safe--disjoint-0.3.2/target/loom"
+    },
+    "exit_code": 0,
+    "seconds": 0.9,
+    "log": "loom-loom.log",
+    "log_sha256": "64de4f7f0d6aa097e637bbeb916a2aa931e323f9377b8490fd1959243b7d85ec",
+    "finished_utc": "2026-09-06T12:24:19.338601+00:00"
+  }
+]

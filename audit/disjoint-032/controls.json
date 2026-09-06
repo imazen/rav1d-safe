@@ -1,0 +1,106 @@
+[
+  {
+    "name": "published-stacked-mut",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "--manifest-path",
+      "/home/lilith/work/zen/rav1d-safe/audit/disjoint-032/controls/Cargo.toml",
+      "--test",
+      "guard_move_release",
+      "--",
+      "--exact",
+      "moving_a_mut_guard_into_drop_is_not_ub"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe/audit/disjoint-032",
+    "env": {
+      "MIRIFLAGS": ""
+    },
+    "exit_code": 1,
+    "expected_ub": true,
+    "passed": true,
+    "seconds": 5.96,
+    "log": "published-stacked-mut.log",
+    "sha256": "83f66f2d405f22fed98d97e19143d5082e3e353ead2ee02ff94eedd5e8c77af0"
+  },
+  {
+    "name": "published-stacked-shared",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "--manifest-path",
+      "/home/lilith/work/zen/rav1d-safe/audit/disjoint-032/controls/Cargo.toml",
+      "--test",
+      "guard_move_release",
+      "--",
+      "--exact",
+      "moving_a_shared_guard_into_drop_is_not_ub"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe/audit/disjoint-032",
+    "env": {
+      "MIRIFLAGS": ""
+    },
+    "exit_code": 1,
+    "expected_ub": true,
+    "passed": true,
+    "seconds": 2.93,
+    "log": "published-stacked-shared.log",
+    "sha256": "16f0812802109d052cf20c0e9afd05e95c567fa24fabf1c64f4d42ce891f19c6"
+  },
+  {
+    "name": "published-tree-mut",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "--manifest-path",
+      "/home/lilith/work/zen/rav1d-safe/audit/disjoint-032/controls/Cargo.toml",
+      "--test",
+      "guard_move_release",
+      "--",
+      "--exact",
+      "moving_a_mut_guard_into_drop_is_not_ub"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe/audit/disjoint-032",
+    "env": {
+      "MIRIFLAGS": "-Zmiri-tree-borrows"
+    },
+    "exit_code": 1,
+    "expected_ub": true,
+    "passed": true,
+    "seconds": 3.87,
+    "log": "published-tree-mut.log",
+    "sha256": "19e43abc27fd64dfc6a85a428d358b429e638ad058af042d6aa4a786eef3e836"
+  },
+  {
+    "name": "published-tree-shared",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "--manifest-path",
+      "/home/lilith/work/zen/rav1d-safe/audit/disjoint-032/controls/Cargo.toml",
+      "--test",
+      "guard_move_release",
+      "--",
+      "--exact",
+      "moving_a_shared_guard_into_drop_is_not_ub"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe/audit/disjoint-032",
+    "env": {
+      "MIRIFLAGS": "-Zmiri-tree-borrows"
+    },
+    "exit_code": 1,
+    "expected_ub": true,
+    "passed": true,
+    "seconds": 3.45,
+    "log": "published-tree-shared.log",
+    "sha256": "4aa6c4d5e94fc82ca798236df835c65037208b8ed0cadc24810a56605f6a6c4f"
+  }
+]

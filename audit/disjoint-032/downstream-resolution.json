@@ -1,0 +1,812 @@
+[
+  {
+    "name": "rav1d-disjoint-mut",
+    "version": "0.3.2",
+    "id": "path+file:///home/lilith/tmp/rav1d-review-0.3.2/package-checkout/target/package/rav1d-disjoint-mut-0.3.2#rav1d-disjoint-mut@0.3.2",
+    "license": "BSD-2-Clause OR MIT OR Apache-2.0",
+    "license_file": null,
+    "description": "Runtime-checked concurrent disjoint mutable access to contiguous storage",
+    "source": null,
+    "dependencies": [
+      {
+        "name": "aligned",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.4",
+        "kind": null,
+        "rename": null,
+        "optional": true,
+        "uses_default_features": false,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "aligned-vec",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.6",
+        "kind": null,
+        "rename": null,
+        "optional": true,
+        "uses_default_features": false,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "zerocopy",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.8",
+        "kind": null,
+        "rename": null,
+        "optional": true,
+        "uses_default_features": false,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "criterion",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.5",
+        "kind": "dev",
+        "rename": null,
+        "optional": false,
+        "uses_default_features": false,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "loom",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.7.2",
+        "kind": null,
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [],
+        "target": "cfg(disjoint_mut_loom)",
+        "registry": null
+      }
+    ],
+    "targets": [
+      {
+        "kind": [
+          "lib"
+        ],
+        "crate_types": [
+          "lib"
+        ],
+        "name": "rav1d_disjoint_mut",
+        "src_path": "/home/lilith/tmp/rav1d-review-0.3.2/package-checkout/target/package/rav1d-disjoint-mut-0.3.2/src/lib.rs",
+        "edition": "2024",
+        "doc": true,
+        "doctest": true,
+        "test": true
+      },
+      {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "aligned_miri",
+        "src_path": "/home/lilith/tmp/rav1d-review-0.3.2/package-checkout/target/package/rav1d-disjoint-mut-0.3.2/tests/aligned_miri.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "guard_move_release",
+        "src_path": "/home/lilith/tmp/rav1d-review-0.3.2/package-checkout/target/package/rav1d-disjoint-mut-0.3.2/tests/guard_move_release.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "patch_032",
+        "src_path": "/home/lilith/tmp/rav1d-review-0.3.2/package-checkout/target/package/rav1d-disjoint-mut-0.3.2/tests/patch_032.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "pic_buf_overflow",
+        "src_path": "/home/lilith/tmp/rav1d-review-0.3.2/package-checkout/target/package/rav1d-disjoint-mut-0.3.2/tests/pic_buf_overflow.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "soundness",
+        "src_path": "/home/lilith/tmp/rav1d-review-0.3.2/package-checkout/target/package/rav1d-disjoint-mut-0.3.2/tests/soundness.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      {
+        "kind": [
+          "bench"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "lock_overhead",
+        "src_path": "/home/lilith/tmp/rav1d-review-0.3.2/package-checkout/target/package/rav1d-disjoint-mut-0.3.2/benches/lock_overhead.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      }
+    ],
+    "features": {
+      "aligned": [
+        "dep:aligned",
+        "dep:aligned-vec"
+      ],
+      "default": [
+        "std"
+      ],
+      "instrument": [
+        "std"
+      ],
+      "pic-buf": [],
+      "std": [],
+      "zerocopy": [
+        "dep:zerocopy"
+      ]
+    },
+    "manifest_path": "/home/lilith/tmp/rav1d-review-0.3.2/package-checkout/target/package/rav1d-disjoint-mut-0.3.2/Cargo.toml",
+    "metadata": null,
+    "publish": null,
+    "authors": [],
+    "categories": [
+      "concurrency",
+      "no-std",
+      "data-structures"
+    ],
+    "keywords": [
+      "concurrency",
+      "mutex",
+      "slice",
+      "disjoint",
+      "borrow"
+    ],
+    "readme": "README.md",
+    "repository": "https://github.com/imazen/rav1d-safe",
+    "homepage": null,
+    "documentation": "https://docs.rs/rav1d-disjoint-mut",
+    "edition": "2024",
+    "links": null,
+    "default_run": null,
+    "rust_version": "1.85"
+  },
+  {
+    "name": "rav1d-safe",
+    "version": "0.5.7",
+    "id": "registry+https://github.com/rust-lang/crates.io-index#rav1d-safe@0.5.7",
+    "license": "AGPL-3.0-only OR LicenseRef-Imazen-Commercial",
+    "license_file": null,
+    "description": "Safe SIMD fork of rav1d - Rust AV1 decoder with archmage intrinsics",
+    "source": "registry+https://github.com/rust-lang/crates.io-index",
+    "dependencies": [
+      {
+        "name": "aligned",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.4",
+        "kind": null,
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "archmage",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.9.15",
+        "kind": null,
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [
+          "macros",
+          "avx512"
+        ],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "assert_matches",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^1.5.0",
+        "kind": null,
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "atomig",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.4.1",
+        "kind": null,
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [
+          "derive"
+        ],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "bitflags",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^2.4.0",
+        "kind": null,
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "cfg-if",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^1.0.0",
+        "kind": null,
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "libc",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.2",
+        "kind": null,
+        "rename": null,
+        "optional": true,
+        "uses_default_features": true,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "parking_lot",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.12.2",
+        "kind": null,
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "paste",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^1.0.14",
+        "kind": null,
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "rav1d-disjoint-mut",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.3.1",
+        "kind": null,
+        "rename": null,
+        "optional": false,
+        "uses_default_features": false,
+        "features": [
+          "std",
+          "aligned",
+          "pic-buf",
+          "zerocopy"
+        ],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "raw-cpuid",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^11.0.1",
+        "kind": null,
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "safe_unaligned_simd",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.2.5",
+        "kind": null,
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [
+          "avx512"
+        ],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "strum",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.28",
+        "kind": null,
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [
+          "derive"
+        ],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "to_method",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^1.1.0",
+        "kind": null,
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "zerocopy",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.8",
+        "kind": null,
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [
+          "derive"
+        ],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "archmage",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.9.15",
+        "kind": "dev",
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [
+          "macros",
+          "avx512",
+          "testable_dispatch"
+        ],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "divan",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.1",
+        "kind": "dev",
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "md5",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.8.0",
+        "kind": "dev",
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "zenavif-parse",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.5.1",
+        "kind": "dev",
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [
+          "eager"
+        ],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "zenbench",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.1.2",
+        "kind": "dev",
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "cc",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^1.0.79",
+        "kind": "build",
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "nasm-rs",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.3",
+        "kind": "build",
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [
+          "parallel"
+        ],
+        "target": null,
+        "registry": null
+      },
+      {
+        "name": "tango-bench",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "req": "^0.7",
+        "kind": "dev",
+        "rename": null,
+        "optional": false,
+        "uses_default_features": true,
+        "features": [],
+        "target": "cfg(not(target_family = \"wasm\"))",
+        "registry": null
+      }
+    ],
+    "targets": [
+      {
+        "kind": [
+          "rlib"
+        ],
+        "crate_types": [
+          "rlib"
+        ],
+        "name": "rav1d_safe",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/lib.rs",
+        "edition": "2024",
+        "doc": true,
+        "doctest": true,
+        "test": true
+      },
+      {
+        "kind": [
+          "example"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "decode_md5",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/examples/decode_md5.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      },
+      {
+        "kind": [
+          "example"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "demo_simple",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/examples/demo_simple.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      },
+      {
+        "kind": [
+          "example"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "dump_pixels",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/examples/dump_pixels.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      },
+      {
+        "kind": [
+          "example"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "managed_decode",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/examples/managed_decode.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      },
+      {
+        "kind": [
+          "example"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "perframe_md5",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/examples/perframe_md5.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      },
+      {
+        "kind": [
+          "example"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "profile_avif",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/examples/profile_avif.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      },
+      {
+        "kind": [
+          "example"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "profile_decode",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/examples/profile_decode.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      },
+      {
+        "kind": [
+          "example"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "profile_ivf",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/examples/profile_ivf.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      },
+      {
+        "kind": [
+          "bench"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "checked_vs_unchecked",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/benches/checked_vs_unchecked.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      },
+      {
+        "kind": [
+          "bench"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "decode",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/benches/decode.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      },
+      {
+        "kind": [
+          "bench"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "decode_avif",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/benches/decode_avif.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      },
+      {
+        "kind": [
+          "bench"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "tango_decode",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/benches/tango_decode.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      },
+      {
+        "kind": [
+          "bench"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "threading_bench",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/benches/threading_bench.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      },
+      {
+        "kind": [
+          "bench"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "tile_threading",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/benches/tile_threading.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      },
+      {
+        "kind": [
+          "custom-build"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "build-script-build",
+        "src_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/build.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": false
+      }
+    ],
+    "features": {
+      "asm": [
+        "c-ffi"
+      ],
+      "asm_arm64_dotprod": [
+        "asm"
+      ],
+      "asm_arm64_i8mm": [
+        "asm"
+      ],
+      "asm_arm64_sve2": [
+        "asm"
+      ],
+      "bitdepth_16": [],
+      "bitdepth_8": [],
+      "c-ffi": [
+        "unchecked",
+        "dav1d-compat",
+        "libc"
+      ],
+      "dav1d-compat": [],
+      "default": [
+        "bitdepth_8",
+        "bitdepth_16"
+      ],
+      "libc": [
+        "dep:libc"
+      ],
+      "partial_asm": [
+        "unchecked"
+      ],
+      "simd_test": [],
+      "unchecked": []
+    },
+    "manifest_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/Cargo.toml",
+    "metadata": null,
+    "publish": null,
+    "authors": [
+      "Rav1d Developers",
+      "Prossimo",
+      "Imazen"
+    ],
+    "categories": [
+      "multimedia::video",
+      "multimedia::encoding"
+    ],
+    "keywords": [
+      "av1",
+      "video",
+      "decoder",
+      "simd",
+      "codec"
+    ],
+    "readme": "README.md",
+    "repository": "https://github.com/imazen/rav1d-safe",
+    "homepage": null,
+    "documentation": null,
+    "edition": "2024",
+    "links": null,
+    "default_run": null,
+    "rust_version": "1.89"
+  }
+]

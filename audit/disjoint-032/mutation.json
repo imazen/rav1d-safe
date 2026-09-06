@@ -1,0 +1,22 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--manifest-path",
+    "/home/lilith/tmp/rav1d-review-0.3.2/mutation-no-mutable-scan/Cargo.toml",
+    "--lib",
+    "loom_032::inline_exclusion_reuse_and_payload_handoff",
+    "--",
+    "--test-threads=1"
+  ],
+  "env": {
+    "RUSTFLAGS": "--cfg disjoint_mut_loom",
+    "CARGO_TARGET_DIR": "/home/lilith/work/zen/rav1d-safe--disjoint-0.3.2/target/loom-mutation"
+  },
+  "exit_code": 101,
+  "detected_payload_violation": true,
+  "baseline_lib_sha256": "8806b419c91cb9eb70920c5795bae6c58c537d5c75a0693b5a93038665bd36a1",
+  "mutated_lib_sha256": "8d150fdaa2a9c10997e9df5248a843821ece8c9b6c86a294c420376227ef7618",
+  "original_checkout_unchanged": true,
+  "log_sha256": "3608dbb36ed9f7a97e68584986c462c787f453c80db6bbfa38d3217b1060fd8f"
+}
