@@ -326,7 +326,7 @@ test-filmgrain:
     CARGO_BUILD_JOBS=4 nice -n 19 cargo nextest run --test filmgrain_threads --test-threads 1
 
 test-filmgrain-rows:
-    CARGO_BUILD_JOBS=4 nice -n 19 cargo nextest run --lib -E 'test(filmgrain_arm_rows)' --test-threads 1
+    CARGO_BUILD_JOBS=4 nice -n 19 cargo nextest run --lib -E 'test(filmgrain_rows)' --test-threads 1
 
 # Native ARM interleaved decoder tiers; requires the explicit IVF fixtures.
 arm-tiers-macos:

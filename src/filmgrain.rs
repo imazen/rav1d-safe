@@ -1584,12 +1584,20 @@ impl Rav1dFilmGrainDSPContext {
     }
 }
 
-#[cfg(all(test, target_arch = "aarch64", not(feature = "c-ffi")))]
-mod arm_row_tests {
+#[cfg(all(
+    test,
+    not(feature = "c-ffi"),
+    any(
+        target_arch = "aarch64",
+        all(target_arch = "x86_64", not(feature = "asm"))
+    )
+))]
+mod row_tests {
     use super::*;
     use crate::include::common::bitdepth::{BitDepth8, BitDepth16};
     use crate::include::dav1d::picture::set_tile_threading;
     use crate::src::align::ArrayDefault;
+    #[cfg(target_arch = "aarch64")]
     use crate::src::safe_simd::filmgrain_arm::{fguv_32x32xn_dispatch, fgy_32x32xn_dispatch};
     use zerocopy::IntoBytes;
 
@@ -1646,9 +1654,14 @@ mod arm_row_tests {
                     let offset = (first * stride) as isize;
                     // A band hull would include this padding pixel even in release.
                     let padding = dst.slice_mut::<BD, _>((first * stride + pw.., ..1));
+                    #[cfg(target_arch = "aarch64")]
                     assert!(fgy_32x32xn_dispatch::<BD>(
                         &dst, &src, &data, pw, &scaling, &lut, bh, row_num, bd,
                     ));
+                    #[cfg(target_arch = "x86_64")]
+                    fgy_32x32xn_direct::<BD>(
+                        &dst, &src, &data, pw, &scaling, &lut, bh, row_num, bd,
+                    );
                     drop(padding);
                     fgy_32x32xn_rust::<BD>(
                         reference.with_offset::<BD>() + offset,
@@ -1673,6 +1686,7 @@ mod arm_row_tests {
                         let first = first >> sy;
                         let offset = (first * stride) as isize;
                         let padding = dst.slice_mut::<BD, _>((first * stride + pw.., ..1));
+                        #[cfg(target_arch = "aarch64")]
                         assert!(fguv_32x32xn_dispatch::<BD>(
                             layout,
                             &dst,
@@ -1688,6 +1702,22 @@ mod arm_row_tests {
                             flags & 2 != 0,
                             bd,
                         ));
+                        #[cfg(target_arch = "x86_64")]
+                        fguv_32x32xn_direct::<BD>(
+                            layout,
+                            &dst,
+                            &src,
+                            &data,
+                            pw,
+                            &scaling,
+                            &lut,
+                            (bh + sy) >> sy,
+                            row_num,
+                            &luma,
+                            is_uv,
+                            flags & 2 != 0,
+                            bd,
+                        );
                         drop(padding);
                         fguv_32x32xn_rust::<BD>(
                             reference.with_offset::<BD>() + offset,
@@ -1720,17 +1750,17 @@ mod arm_row_tests {
     }
 
     #[test]
-    fn filmgrain_arm_rows_match_scalar_8bit() {
+    fn filmgrain_rows_match_scalar_8bit() {
         check(BitDepth8::new(()));
     }
 
     #[test]
-    fn filmgrain_arm_rows_match_scalar_10bit() {
+    fn filmgrain_rows_match_scalar_10bit() {
         check(BitDepth16::new(1023));
     }
 
     #[test]
-    fn filmgrain_arm_rows_match_scalar_12bit() {
+    fn filmgrain_rows_match_scalar_12bit() {
         check(BitDepth16::new(4095));
     }
 }
