@@ -383,6 +383,9 @@ jobs:
       - name: Film grain with threading and debug extent checks (#526)
         run: cargo nextest run --profile ci --test filmgrain_threads --test-threads 1
         timeout-minutes: 10
+      - name: Film grain with parallel frame contexts and tile workers (#526)
+        run: cargo nextest run --profile ci --features unchecked --lib --test filmgrain_threads -E 'binary(filmgrain_threads) | test(parallel_frame_tile_contexts)' --test-threads 1 --success-output immediate
+        timeout-minutes: 10
       - name: Run conformance (all vectors × all CPU tiers)
         # Each per-tier test runs in its own process, so switching the global
         # CPU-flags mask can't race across tests (no --test-threads=1 needed).

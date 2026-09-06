@@ -1461,3 +1461,7 @@ pub fn enabled_features() -> String {
 
     features.join(", ")
 }
+
+#[cfg(test)]
+#[path = "managed/frame_tile_tests.rs"]
+mod frame_tile_tests;
