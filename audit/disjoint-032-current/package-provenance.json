@@ -1,0 +1,31 @@
+{
+  "candidate_commit": "09109d91180ed1eb2ae16cff2793013533679b25",
+  "archive": "/home/lilith/work/zen/rav1d-safe/target/package/rav1d-disjoint-mut-0.3.2.crate",
+  "archive_sha256": "153fd574588f5754ffd340b34f73a13407e409a7203598629e0745fc8e25b46c",
+  "vcs": {
+    "git": {
+      "sha1": "09109d91180ed1eb2ae16cff2793013533679b25"
+    },
+    "path_in_vcs": "crates/rav1d-disjoint-mut"
+  },
+  "packaged_files_match_commit": {
+    "AUDIT.md": "ca0ecc83d6c7e37769b8b40d2a08321f06f46d9405b7809c91454ac6838dfced",
+    "CHANGELOG.md": "3f47ee1836bbcd7f66a6a6babfbd52e877f794f7793ffe830f464a8c50bae514",
+    "Cargo.toml.orig": "eaa41158ad6c1f2ec8983d10f4129b02bcd9d086281bbd2828130fcaa4d34304",
+    "LICENSE-APACHE": "2d86ee259f79b5d5a74462fc525f156e196e3e152f35ef2cd2d1b4f5b262dd15",
+    "LICENSE-MIT": "ee18ec0569b72aad8494c00e9a1c273a40a7b3f26c8048945a58da89dbb42c4f",
+    "README.md": "433c14cab9401f8abd0182a322b01e0ad4a3b102b5dda9b0ea2c74d143a07894",
+    "examples/toctou_stress.rs": "ffb945b19c37ef770ac18a88129c0f1433d409d22c8d0ed92cae5f9bd43b39b3",
+    "src/align.rs": "82c36e244ef417da70e97b7def7841ebe2ff2f22097f32f486c603b72dca53bb",
+    "src/bounds_probe.rs": "5a8cf2afc5794b894aa3da908851a39e3c6492d91d175891e05d32cd0b60db27",
+    "src/instrument.rs": "d99fbc6e2e07b717b862b70657e59cb1dd3fc6f062c2958f62d4e1db5e8c40ab",
+    "src/lib.rs": "df3fdc350d0cff84a0c277580f2faaf783b21a68cd059469ddadf15662759984",
+    "src/loom_protocol.rs": "c0b9683cd1b30f93336f611ce71912ea2ac6212232c23ee440f25e130b7218fd",
+    "src/probe.rs": "9665e918546d9e4ee96b84e501c2c28b6ebad324b714fddd6dd697f2ac4c6edc",
+    "src/site_probe.rs": "5d67751bd9852120b5ef67f94d3b59409afc0f28b5c19cdf98d128c97783e2fb",
+    "src/tracker_cell.rs": "25b1d8867aa0e6c751fe2a4bfc71e54412f01a44a4c84116c05e030de56acadc",
+    "src/tracker_legacy.rs": "1d77252b95ad4c28df194ee9021b89efd84bd03558a02cb6d78de3b11a3afe83",
+    "src/tracker_shard.rs": "33ae3e897dcace0add971524a3704fcf2307e180ab8b81f8ba9bdab38283fd43",
+    "src/tracker_storage.rs": "d8f992f8f4a136d0b91b91866d5d5e0e7c1145a139483a071b9f2dcd743618e0"
+  }
+}

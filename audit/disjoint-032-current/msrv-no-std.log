@@ -1,0 +1,11 @@
+    Checking rav1d-disjoint-mut v0.3.2 (/home/lilith/work/zen/rav1d-safe/target/package/rav1d-disjoint-mut-0.3.2)
+warning: constant `SHARD_MASK_BITS` is never used
+    --> src/tracker_shard.rs:1334:7
+     |
+1334 | const SHARD_MASK_BITS: u64 = (1u64 << SHARD_ID_BITS) - 1;
+     |       ^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` on by default
+
+warning: `rav1d-disjoint-mut` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.13s

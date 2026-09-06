@@ -6,7 +6,8 @@ The candidate, logs and package below are retained as historical evidence for
 the earlier conservative backport. They do not validate the newer candidate.
 
 Historical candidate: **`fe45fd6c4af2accba0a61646350a2d96c4a736d2`**, local branch
-`release/disjoint-mut-0.3`. It starts at the published 0.3.1 revision
+`audit/disjoint-mut-032-backport` (originally `release/disjoint-mut-0.3`).
+It starts at the published 0.3.1 revision
 `dd60e0a61d88121fa764094f71d1d1de537f1f9f`; all baseline Rust implementation
 files were byte-identical to the verified crates.io archive before editing.
 The full [release protocol](RELEASE-0.3.2.md) is copied from the candidate.

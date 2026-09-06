@@ -1,0 +1,23 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.24
+    Checking stable_deref_trait v1.2.1
+   Compiling zerocopy v0.8.56
+    Checking spin v0.12.3
+    Checking as-slice v0.2.1
+    Checking aligned v0.4.3
+   Compiling syn v2.0.119
+   Compiling equator-macro v0.4.2
+    Checking equator v0.4.2
+    Checking aligned-vec v0.6.4
+    Checking rav1d-disjoint-mut v0.3.2 (/home/lilith/work/zen/rav1d-safe/target/package/rav1d-disjoint-mut-0.3.2)
+warning: constant `SHARD_MASK_BITS` is never used
+    --> src/tracker_shard.rs:1334:7
+     |
+1334 | const SHARD_MASK_BITS: u64 = (1u64 << SHARD_ID_BITS) - 1;
+     |       ^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` on by default
+
+warning: `rav1d-disjoint-mut` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.84s

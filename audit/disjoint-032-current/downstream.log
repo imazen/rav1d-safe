@@ -1,0 +1,54 @@
+    Updating crates.io index
+     Locking 1 package to latest Rust 1.98.1 compatible version
+      Adding spin v0.12.3
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.47
+   Compiling libc v0.2.189
+   Compiling parking_lot_core v0.9.12
+   Compiling shlex v2.0.1
+   Compiling log v0.4.34
+   Compiling find-msvc-tools v0.1.12
+   Compiling stable_deref_trait v1.2.1
+   Compiling zerocopy v0.8.56
+   Compiling cc v1.4.5
+   Compiling as-slice v0.2.1
+   Compiling scopeguard v1.2.0
+   Compiling cfg-if v1.0.4
+   Compiling smallvec v1.16.0
+   Compiling heck v0.5.0
+   Compiling paste v1.0.15
+   Compiling lock_api v0.4.14
+   Compiling aligned v0.4.3
+   Compiling spin v0.12.3
+   Compiling bitflags v2.13.1
+   Compiling safe_unaligned_simd v0.2.5
+   Compiling to_method v1.1.0
+   Compiling assert_matches v1.5.0
+   Compiling md5 v0.8.1
+   Compiling raw-cpuid v11.6.0
+   Compiling syn v2.0.119
+   Compiling jobserver v0.1.35
+   Compiling parking_lot v0.12.5
+   Compiling nasm-rs v0.3.2
+   Compiling rav1d-safe v0.5.7
+   Compiling equator-macro v0.4.2
+   Compiling zerocopy-derive v0.8.56
+   Compiling archmage-macros v0.9.28
+   Compiling strum_macros v0.28.0
+   Compiling atomig-macro v0.4.0
+   Compiling atomig v0.4.3
+   Compiling equator v0.4.2
+   Compiling aligned-vec v0.6.4
+   Compiling archmage v0.9.28
+   Compiling strum v0.28.0
+   Compiling rav1d-disjoint-mut v0.3.2 (/home/lilith/work/zen/rav1d-safe/target/package/rav1d-disjoint-mut-0.3.2)
+   Compiling published-decoder-disjoint-032-check v0.0.0 (/home/lilith/work/zen/rav1d-safe/audit/disjoint-032-current/downstream)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.82s
+     Running tests/decode.rs (target/review-downstream/debug/deps/decode-3323bbddcf7e0fa4)
+
+running 1 test
+test published_decoder_accepts_the_patch_and_matches_reference_pixels ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
+

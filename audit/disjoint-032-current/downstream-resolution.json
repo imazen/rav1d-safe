@@ -1,0 +1,14 @@
+[
+  {
+    "name": "rav1d-disjoint-mut",
+    "version": "0.3.2",
+    "source": null,
+    "manifest_path": "/home/lilith/work/zen/rav1d-safe/target/package/rav1d-disjoint-mut-0.3.2/Cargo.toml"
+  },
+  {
+    "name": "rav1d-safe",
+    "version": "0.5.7",
+    "source": "registry+https://github.com/rust-lang/crates.io-index",
+    "manifest_path": "/home/lilith/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rav1d-safe-0.5.7/Cargo.toml"
+  }
+]

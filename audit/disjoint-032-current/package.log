@@ -1,0 +1,18 @@
+   Packaging rav1d-disjoint-mut v0.3.2 (/home/lilith/work/zen/rav1d-safe/crates/rav1d-disjoint-mut)
+warning: ignoring test `adversarial_api` as `tests/adversarial_api.rs` is not included in the published package
+warning: ignoring test `aligned_miri` as `tests/aligned_miri.rs` is not included in the published package
+warning: ignoring test `const_constructor` as `tests/const_constructor.rs` is not included in the published package
+warning: ignoring test `guard_move_release` as `tests/guard_move_release.rs` is not included in the published package
+warning: ignoring test `narrow_release` as `tests/narrow_release.rs` is not included in the published package
+warning: ignoring test `pic_buf_overflow` as `tests/pic_buf_overflow.rs` is not included in the published package
+warning: ignoring test `rect_units` as `tests/rect_units.rs` is not included in the published package
+warning: ignoring test `shard_liveness` as `tests/shard_liveness.rs` is not included in the published package
+warning: ignoring test `soundness` as `tests/soundness.rs` is not included in the published package
+warning: ignoring test `wide_exclusion` as `tests/wide_exclusion.rs` is not included in the published package
+warning: ignoring benchmark `lock_overhead` as `benches/lock_overhead.rs` is not included in the published package
+    Updating crates.io index
+    Packaged 21 files, 543.4KiB (154.8KiB compressed)
+   Verifying rav1d-disjoint-mut v0.3.2 (/home/lilith/work/zen/rav1d-safe/crates/rav1d-disjoint-mut)
+   Compiling zerocopy v0.8.56
+   Compiling rav1d-disjoint-mut v0.3.2 (/home/lilith/work/zen/rav1d-safe/target/package/rav1d-disjoint-mut-0.3.2)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.64s

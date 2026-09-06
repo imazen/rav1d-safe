@@ -1,0 +1,75 @@
+[
+  {
+    "gate": "msrv-const-client",
+    "command": [
+      "cargo",
+      "+1.85.0",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--test",
+      "const_constructor"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 4.97,
+    "log": "msrv-const-client.log",
+    "log_sha256": "69984be147b478346ffc06eaded28c947a0e04f820c456c1ac6a167fbbadd995",
+    "finished_utc": "2026-09-06T23:09:13.390381+00:00"
+  },
+  {
+    "gate": "package",
+    "command": [
+      "cargo",
+      "package",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--features",
+      "aligned,pic-buf,zerocopy"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 1.68,
+    "log": "package.log",
+    "log_sha256": "171427ed12232dc7e7957f7c82424c84175ab72668326a609157523ff31c2923",
+    "finished_utc": "2026-09-06T23:09:15.068656+00:00"
+  },
+  {
+    "gate": "msrv-storage",
+    "command": [
+      "cargo",
+      "+1.85.0",
+      "check",
+      "--manifest-path",
+      "/home/lilith/work/zen/rav1d-safe/target/package/rav1d-disjoint-mut-0.3.2/Cargo.toml",
+      "--features",
+      "std,instrument,aligned,pic-buf,zerocopy"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 1.85,
+    "log": "msrv-storage.log",
+    "log_sha256": "724c2067391b44378d943192403869e03030f5b6306199733be11ae08c0b6824",
+    "finished_utc": "2026-09-06T23:09:16.921432+00:00"
+  },
+  {
+    "gate": "msrv-no-std",
+    "command": [
+      "cargo",
+      "+1.85.0",
+      "check",
+      "--manifest-path",
+      "/home/lilith/work/zen/rav1d-safe/target/package/rav1d-disjoint-mut-0.3.2/Cargo.toml",
+      "--no-default-features",
+      "--features",
+      "aligned,pic-buf,zerocopy"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 0.14,
+    "log": "msrv-no-std.log",
+    "log_sha256": "c34a3bc064b02eda73f14799aa264dac1dec4fe14cc01b224d2402fcfd9c6db5",
+    "finished_utc": "2026-09-06T23:09:17.063081+00:00"
+  }
+]

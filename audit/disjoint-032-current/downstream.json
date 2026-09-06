@@ -1,0 +1,23 @@
+[
+  {
+    "gate": "downstream",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "/home/lilith/work/zen/rav1d-safe/audit/disjoint-032-current/downstream/Cargo.toml",
+      "--config",
+      "patch.crates-io.rav1d-disjoint-mut.path=\"/home/lilith/work/zen/rav1d-safe/target/package/rav1d-disjoint-mut-0.3.2\"",
+      "--test",
+      "decode"
+    ],
+    "env": {
+      "CARGO_TARGET_DIR": "/home/lilith/work/zen/rav1d-safe/target/review-downstream"
+    },
+    "exit_code": 0,
+    "seconds": 10.71,
+    "log": "downstream.log",
+    "log_sha256": "dc59045671c7cef8df8bf93b2877d19cd15e6693e4b0bf545ae97504faa23c50",
+    "finished_utc": "2026-09-06T23:11:01.765116+00:00"
+  }
+]
