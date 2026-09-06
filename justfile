@@ -327,3 +327,9 @@ test-filmgrain:
 
 test-filmgrain-rows:
     CARGO_BUILD_JOBS=4 nice -n 19 cargo nextest run --lib -E 'test(filmgrain_arm_rows)' --test-threads 1
+
+# Native ARM interleaved decoder tiers; requires the explicit IVF fixtures.
+arm-tiers-macos:
+    mkdir -p "$HOME/tmp"
+    CARGO_BUILD_JOBS=4 RAYON_NUM_THREADS=4 OMP_NUM_THREADS=4 TMPDIR="$HOME/tmp" nice -n 19 cargo bench --locked -p rav1d-safe --bench tier_isolation -- --format=llm > "$HOME/tmp/rav1d-arm-tiers.log" 2>&1
+
