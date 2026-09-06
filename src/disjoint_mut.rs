@@ -28,7 +28,7 @@ pub use rav1d_disjoint_mut::TryResizableWith;
 /// are verified by running the full conformance suite in checked mode.
 #[cfg(not(feature = "unchecked"))]
 pub fn dm_new<T: AsMutPtr>(val: T) -> DisjointMut<T> {
-    DisjointMut::new(val)
+    DisjointMut::new_eager(val)
 }
 
 /// See checked variant above.

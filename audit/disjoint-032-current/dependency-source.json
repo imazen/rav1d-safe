@@ -1,0 +1,15 @@
+{
+  "crate": "spin",
+  "version": "0.12.3",
+  "features": [
+    "once"
+  ],
+  "default_features": false,
+  "files": {
+    "src/once.rs": "b84481e2f017a8d8fd04b315448d2bb685e0de99d2e1f8b2dda69891c44b245d",
+    "src/lib.rs": "413924d535e02b3c9eb8d335a7b0cf97a74773932e43f8a60eb1536db686c8f0",
+    "CHANGELOG.md": "b66ffbb11ec70ee0829f0ad2d290ea6400a439bf69ec889cd4be29740d2ea44f"
+  },
+  "source": "https://codeberg.org/zesterer/spin",
+  "note": "Reviewed safe Once methods new/call_once/get/get_mut and publication/drop; no unchecked methods or ownership-extraction methods used."
+}

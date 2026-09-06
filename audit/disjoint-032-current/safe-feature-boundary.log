@@ -1,0 +1,5 @@
+PASS: __probe_untracked rejected by the safety boundary
+PASS: __probe_noscan rejected by the safety boundary
+PASS: __probe_lockonly rejected by the safety boundary
+PASS: __probe_tinynop rejected by the safety boundary
+PASS: __probe_addnop rejected by the safety boundary

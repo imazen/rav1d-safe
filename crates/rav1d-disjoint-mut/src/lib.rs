@@ -125,6 +125,9 @@ pub mod site_probe;
 #[cfg(feature = "__probe_bounds")]
 pub mod bounds_probe;
 
+mod tracker_storage;
+use tracker_storage::TrackerStorage;
+
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -177,10 +180,9 @@ use zerocopy::KnownLayout;
 /// For audited hot paths, use
 /// [`DisjointMut::dangerously_unchecked`] to skip tracking.
 pub struct DisjointMut<T: ?Sized + AsMutPtr> {
-    /// Boxed so that `DisjointMut` stays pointer-sized regardless of how many
-    /// shards the tracker carries: `Rav1dTaskContext` embeds ~20 of these and
-    /// has a 48 KiB stack-weight gate.
-    tracker: Option<Box<checked::BorrowTracker>>,
+    /// The large tracker stays boxed, including for const-created instances.
+    /// `Rav1dTaskContext` embeds ~20 buffers and has a 48 KiB stack-weight gate.
+    tracker: TrackerStorage,
 
     inner: UnsafeCell<T>,
 }
@@ -201,7 +203,7 @@ unsafe impl<T: ?Sized + AsMutPtr + Sync> Sync for DisjointMut<T> {}
 
 impl<T: AsMutPtr + Default> Default for DisjointMut<T> {
     fn default() -> Self {
-        Self::new(T::default())
+        Self::new_eager(T::default())
     }
 }
 
@@ -215,9 +217,16 @@ impl<T: ?Sized + AsMutPtr> Debug for DisjointMut<T> {
 }
 
 impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
+    #[inline]
+    fn tracker(&self) -> Option<&checked::BorrowTracker> {
+        // Read metadata through raw storage access, never a reference to the
+        // whole container: another guard may already cover inline elements.
+        self.tracker.get_or_init(|| self.as_mut_slice().len())
+    }
+
     /// Returns `true` if this instance performs runtime overlap checking.
     pub const fn is_checked(&self) -> bool {
-        self.tracker.is_some()
+        self.tracker.is_checked()
     }
 
     /// Returns a raw pointer to the inner container, bypassing the borrow tracker.
@@ -243,20 +252,32 @@ impl<T: AsMutPtr> DisjointMut<T> {
     /// Every `.index()` and `.index_mut()` call will validate that the
     /// requested range doesn't overlap with any outstanding borrow.
     ///
-    /// Not `const`: the tracker sizes its shard array from the container's
-    /// length, so that a picture plane gets many independently locked shards
-    /// while a 32-byte scratch buffer gets one cache line. If the container is
-    /// later grown with [`Self::resize`], the shard array is re-sized with it.
-    pub fn new(value: T) -> Self {
+    /// The boxed tracker is initialized on first borrow (or when declaring a
+    /// row stride). Concurrent first callers all use the same tracker. Its
+    /// placement hints are sampled at initialization and stay fixed while
+    /// usable guards exist. Use [`Self::new_eager`] to initialize immediately.
+    ///
+    /// ```
+    /// use rav1d_disjoint_mut::DisjointMut;
+    /// static BUFFER: DisjointMut<[u8; 64]> = DisjointMut::new([0; 64]);
+    /// BUFFER.index_mut(0..4).copy_from_slice(b"data");
+    /// ```
+    pub const fn new(value: T) -> Self {
+        Self {
+            tracker: TrackerStorage::new(),
+            inner: UnsafeCell::new(value),
+        }
+    }
+
+    /// Creates a checked buffer and allocates its tracker immediately.
+    ///
+    /// This has the same overlap checks as [`Self::new`], samples placement
+    /// hints now, and avoids a lazy-initialization check on each borrow.
+    /// [`Default`] and the allocating slice constructors use this path.
+    pub fn new_eager(value: T) -> Self {
         let len = AsMutPtr::len(&value);
         Self {
-            #[cfg(not(feature = "__probe_untracked"))]
-            tracker: Some(Box::new(checked::BorrowTracker::new(len))),
-            #[cfg(feature = "__probe_untracked")]
-            tracker: {
-                let _ = len;
-                None
-            },
+            tracker: TrackerStorage::eager(len),
             inner: UnsafeCell::new(value),
         }
     }
@@ -276,7 +297,7 @@ impl<T: AsMutPtr> DisjointMut<T> {
     pub const unsafe fn dangerously_unchecked(value: T) -> Self {
         Self {
             inner: UnsafeCell::new(value),
-            tracker: None,
+            tracker: TrackerStorage::Unchecked,
         }
     }
 
@@ -305,7 +326,7 @@ impl<T: ?Sized + AsMutPtr> Drop for BorrowCleanup<'_, T> {
         // This only fires on panic (mem::forget on success path).
         // Poison rather than clean up — the data structure is compromised.
         if let Some(parent) = self.parent {
-            parent.tracker.as_ref().unwrap().poison();
+            parent.tracker.get().unwrap().poison();
         }
     }
 }
@@ -903,7 +924,7 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         stride: isize,
     ) {
         #[cfg(feature = "__probe_bounds")]
-        if let Some(tracker) = self.tracker.as_ref() {
+        if let Some(tracker) = self.tracker() {
             bounds_probe::eval_rect(
                 loc,
                 self.as_mut_ptr() as usize,
@@ -942,11 +963,11 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         // Register the borrow BEFORE creating the reference.
         // This prevents a TOCTOU gap where two threads could both create
         // references to overlapping ranges before either registers.
-        let borrow_id = match &self.tracker {
+        let borrow_id = match self.tracker() {
             Some(tracker) => tracker.add_mut(&bounds),
             None => checked::BorrowId::UNCHECKED,
         };
-        let parent = self.tracker.as_ref().map(|_| self);
+        let parent = self.is_checked().then_some(self);
         // Scope guard: if get_mut panics (OOB), poison the data structure.
         // We don't try to clean up the leaked borrow — poisoning is stricter
         // and prevents all future access, following std::sync::Mutex semantics.
@@ -1000,11 +1021,11 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         let mut bounds: Bounds = index.clone().into();
         // See `index_mut` for why the clamp is here and why it is sound.
         clamp_bounds(&mut bounds, self.as_mut_slice().len());
-        let borrow_id = match &self.tracker {
+        let borrow_id = match self.tracker() {
             Some(tracker) => tracker.add_immut(&bounds),
             None => checked::BorrowId::UNCHECKED,
         };
-        let parent = self.tracker.as_ref().map(|_| self);
+        let parent = self.is_checked().then_some(self);
         let cleanup = BorrowCleanup { parent };
         // SAFETY: The borrow has been registered (or we're unchecked). No
         // reference is created here — see [`DisjointImmutGuard`].
@@ -1522,7 +1543,7 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointMutGuard<'a, T, V> {
         #[cfg(feature = "__probe_bounds")]
         bounds_probe::release(self.probe);
         if let Some(parent) = self.parent {
-            let tracker = parent.tracker.as_ref().unwrap();
+            let tracker = parent.tracker.get().unwrap();
             // If the thread is panicking while we hold a mutable guard,
             // the data may be partially written / inconsistent.
             // Poison the data structure so all future borrows fail.
@@ -1540,7 +1561,7 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointImmutGuard<'a, T, V> 
         #[cfg(feature = "__probe_bounds")]
         bounds_probe::release(self.probe);
         if let Some(parent) = self.parent {
-            parent.tracker.as_ref().unwrap().remove(self.borrow_id);
+            parent.tracker.get().unwrap().remove(self.borrow_id);
         }
     }
 }
@@ -1637,7 +1658,7 @@ impl<'a, T: ?Sized + AsMutPtr, V> DisjointImmutRectGuard<'a, T, V> {
 impl<'a, T: ?Sized + AsMutPtr, V> Drop for DisjointImmutRectGuard<'a, T, V> {
     fn drop(&mut self) {
         if let Some(parent) = self.parent {
-            parent.tracker.as_ref().unwrap().remove(self.borrow_id);
+            parent.tracker.get().unwrap().remove(self.borrow_id);
         }
     }
 }
@@ -1719,7 +1740,7 @@ impl<'a, T: ?Sized + AsMutPtr, V> DisjointMutRectGuard<'a, T, V> {
 impl<'a, T: ?Sized + AsMutPtr, V> Drop for DisjointMutRectGuard<'a, T, V> {
     fn drop(&mut self) {
         if let Some(parent) = self.parent {
-            let tracker = parent.tracker.as_ref().unwrap();
+            let tracker = parent.tracker.get().unwrap();
             // A panic while an exclusive guard is live may leave the data
             // partially written; poison exactly as `DisjointMutGuard` does.
             #[cfg(feature = "std")]
@@ -1777,7 +1798,7 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     ) -> Option<DisjointImmutRectGuard<'a, T, V>> {
         let (lo_asc, astride, base) = self.rect_geometry::<V>(lo, seg, rows, stride)?;
         let unit = Self::rect_unit::<V>();
-        let borrow_id = match &self.tracker {
+        let borrow_id = match self.tracker() {
             Some(tracker) => tracker.add_rect_immut(
                 lo_asc * unit,
                 seg * unit,
@@ -1786,7 +1807,7 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
             )?,
             None => checked::BorrowId::UNCHECKED,
         };
-        let parent = self.tracker.as_ref().map(|_| self);
+        let parent = self.is_checked().then_some(self);
         Some(DisjointImmutRectGuard {
             base,
             seg,
@@ -1816,13 +1837,13 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     ) -> Option<DisjointMutRectGuard<'a, T, V>> {
         let (lo_asc, astride, base) = self.rect_geometry::<V>(lo, seg, rows, stride)?;
         let unit = Self::rect_unit::<V>();
-        let borrow_id = match &self.tracker {
+        let borrow_id = match self.tracker() {
             Some(tracker) => {
                 tracker.add_rect_mut(lo_asc * unit, seg * unit, rows, astride.checked_mul(unit)?)?
             }
             None => checked::BorrowId::UNCHECKED,
         };
-        let parent = self.tracker.as_ref().map(|_| self);
+        let parent = self.is_checked().then_some(self);
         Some(DisjointMutRectGuard {
             base,
             seg,
@@ -2018,7 +2039,7 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     #[inline]
     fn retrack(&mut self) {
         let len = self.as_mut_slice().len();
-        if let Some(tracker) = self.tracker.as_mut() {
+        if let Some(tracker) = self.tracker.get_mut() {
             tracker.reprovision(len);
         }
     }
@@ -2048,7 +2069,8 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     #[inline]
     pub fn declare_row_stride(&mut self, stride_bytes: usize) {
         let len = self.as_mut_slice().len();
-        if let Some(tracker) = self.tracker.as_mut() {
+        self.tracker.get_or_init(|| len);
+        if let Some(tracker) = self.tracker.get_mut() {
             tracker.set_row_stride(len, stride_bytes);
         }
     }
@@ -2336,7 +2358,7 @@ impl<T: Copy> DisjointMutArcSlice<T> {
         v.try_reserve(n)?;
         v.resize(n, value);
         Ok(Self {
-            inner: Arc::new(DisjointMut::new(v.into_boxed_slice())),
+            inner: Arc::new(DisjointMut::new_eager(v.into_boxed_slice())),
         })
     }
 
@@ -2362,7 +2384,7 @@ impl<T: Copy> FromIterator<T> for DisjointMutArcSlice<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let box_slice = iter.into_iter().collect::<Box<[_]>>();
         Self {
-            inner: Arc::new(DisjointMut::new(box_slice)),
+            inner: Arc::new(DisjointMut::new_eager(box_slice)),
         }
     }
 }

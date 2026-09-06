@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests src/lib.rs (target/miri/x86_64-unknown-linux-gnu/debug/deps/rav1d_disjoint_mut-fbbe1d626e98a4b4)
+
+running 2 tests
+test tracker_storage::tests::concurrent_first_call_publishes_exactly_one_tracker ... ok
+test tracker_storage::tests::eager_storage_never_calls_the_lazy_initializer ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 42 filtered out; finished in 0.53s
+

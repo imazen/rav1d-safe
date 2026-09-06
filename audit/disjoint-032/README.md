@@ -1,6 +1,11 @@
-# Compatible 0.3.2 maintenance release
+# Historical 0.3.2 backport candidate
 
-Candidate: **`fe45fd6c4af2accba0a61646350a2d96c4a736d2`**, local branch
+The preferred release route now preserves const construction on the current
+sharded implementation; see [current 0.3.2 evidence](../disjoint-032-current/README.md).
+The candidate, logs and package below are retained as historical evidence for
+the earlier conservative backport. They do not validate the newer candidate.
+
+Historical candidate: **`fe45fd6c4af2accba0a61646350a2d96c4a736d2`**, local branch
 `release/disjoint-mut-0.3`. It starts at the published 0.3.1 revision
 `dd60e0a61d88121fa764094f71d1d1de537f1f9f`; all baseline Rust implementation
 files were byte-identical to the verified crates.io archive before editing.

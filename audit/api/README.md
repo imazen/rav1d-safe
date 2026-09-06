@@ -1,12 +1,12 @@
 # Published API comparison
 
-**0.3.2 maintenance update:** the 0.4 requirement below applies to the full
-development implementation. A separate backport retains the published 0.3
-tracker and const constructor while fixing guard references. Its patch-level
-semver checks pass for default, no-std, and all published features. See the
-[0.3.2 release evidence](../disjoint-032/README.md) for exact API differences,
-candidate revision, and safety gates; the historical comparison below is kept
-as evidence for the development line.
+**Current release decision:** preserve `const new` on the current sharded
+implementation and ship it as **0.3.2**. The constructor can initialize its
+boxed tracker on first use; `new_eager` retains runtime construction for the
+decoder. See the [current 0.3.2 evidence](../disjoint-032-current/README.md).
+The old-tracker backport is retained as historical evidence, not the preferred
+release route. The inventory below describes revision `4a2f99b5`, before const
+construction was restored; its files and hashes are preserved unchanged.
 
 Generated 2026-09-06 UTC with cargo-public-api 0.52.0 and the installed nightly
 toolchain. Inputs are the checksum-verified crates.io tarballs listed in
@@ -28,22 +28,18 @@ Cargo feature additions/removals are recorded separately in
 | --- | --- |
 | [Disjoint 0.2.1 → 0.3.0](rav1d-disjoint-mut-0.2.1-to-0.3.0.diff) | Removed `Aligned` re-exports in the selected feature surface |
 | [Disjoint 0.3.0 → 0.3.1](rav1d-disjoint-mut-0.3.0-to-0.3.1.diff) | Sealed `DisjointMutIndex`, `SliceBounds`, and `TranslateRange`; external implementations cease to compile |
-| [Disjoint 0.3.1 → current](rav1d-disjoint-mut-0.3.1-to-current.diff) | `new` loses `const`; adds borrowed mutable-slice storage, exact rectangle APIs, placement hints, and probe methods; guard thread bounds become explicit implementations |
+| [Disjoint 0.3.1 → development snapshot](rav1d-disjoint-mut-0.3.1-to-current.diff) | `new` loses `const`; adds borrowed mutable-slice storage, exact rectangle APIs, placement hints, and probe methods; guard thread bounds become explicit implementations |
 | [Decoder 0.5.5 → 0.5.6](rav1d-safe-0.5.5-to-0.5.6.diff) | Adds `with_pixel_guard_immut` |
 | Decoder 0.5.6 → 0.5.7 | Identical selected API snapshots; this does not imply identical implementation or soundness |
-| [Decoder 0.5.7 → current](rav1d-safe-0.5.7-to-current.diff) | Adds strictness, cancellation, block helpers, and exposed experiment helpers |
+| [Decoder 0.5.7 → development snapshot](rav1d-safe-0.5.7-to-current.diff) | Adds strictness, cancellation, block helpers, and exposed experiment helpers |
 
-The disjoint 0.3.1-to-main semver check failed specifically for
-`inherent_method_const_removed` ([log](semver-disjoint.log)). The local release
-version and decoder dependency are therefore prepared as **0.4.0**. Runtime
-initialization replaces const/static construction, for example:
-
-```rust
-use std::sync::LazyLock;
-use rav1d_disjoint_mut::DisjointMut;
-static BUFFER: LazyLock<DisjointMut<[u8; 64]>> =
-    LazyLock::new(|| DisjointMut::new([0; 64]));
-```
+The original 0.3.1-to-development semver check failed specifically for
+`inherent_method_const_removed` ([log](semver-disjoint.log)). That justified
+0.4.0 only **if the constructor change shipped unchanged**. It did not justify
+requiring the older tracker for a 0.3.2 safety release. Current `new` is const
+again, so existing const/static initializers continue to compile; an eager
+constructor is additive. The new API diff and patch-level checks are recorded
+separately alongside the current candidate's evidence.
 
 Decoder `Settings` gained a public `strictness` field. It was already
 `#[non_exhaustive]` in 0.5.7, so this field addition is compatible; outside the
@@ -59,7 +55,7 @@ The decoder check deliberately overrode the release type to `minor` to inventory
 breaks that the real 0.6.0 version bump permits. It reported the new exhaustive
 error variant and removed Cargo feature; the text diff also records the
 compatible settings field. The disjoint check
-with its corrected 0.4.0 version passed. These are compatibility checks, not
+with the then-proposed 0.4.0 version passed. These are compatibility checks, not
 soundness proofs.
 
 The auto-trait text changes for existing disjoint guards do not themselves

@@ -1,0 +1,127 @@
+--- 0.3.1
++++ 0.3.2
+@@ -117,18 +117,34 @@
+ impl core::panic::unwind_safe::RefUnwindSafe for rav1d_disjoint_mut::Bounds
+ impl core::panic::unwind_safe::UnwindSafe for rav1d_disjoint_mut::Bounds
+ pub struct rav1d_disjoint_mut::DisjointImmutGuard<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V: ?core::marker::Sized>
++impl<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V: ?core::marker::Sized> rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V>
++pub fn rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V>::probe_declare_rows(&self, usize, usize, usize, isize)
+ impl<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V: ?core::marker::Sized> core::ops::deref::Deref for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V>
+ pub type rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V>::Target = V
+ pub fn rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V>::deref(&self) -> &Self::Target
+ impl<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V: ?core::marker::Sized> core::ops::drop::Drop for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V>
+ pub fn rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V>::drop(&mut self)
++impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr + core::marker::Sync, V: ?core::marker::Sized + core::marker::Sync> core::marker::Send for rav1d_disjoint_mut::DisjointImmutGuard<'_, T, V>
++impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr + core::marker::Sync, V: ?core::marker::Sized + core::marker::Sync> core::marker::Sync for rav1d_disjoint_mut::DisjointImmutGuard<'_, T, V>
+ impl<'a, T, V> core::marker::Freeze for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V> where T: ?core::marker::Sized, V: ?core::marker::Sized
+-impl<'a, T, V> core::marker::Send for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V> where V: core::marker::Sync + ?core::marker::Sized, T: core::marker::Sync + ?core::marker::Sized
+-impl<'a, T, V> core::marker::Sync for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V> where V: core::marker::Sync + ?core::marker::Sized, T: core::marker::Sync + ?core::marker::Sized
+ impl<'a, T, V> core::marker::Unpin for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V> where T: ?core::marker::Sized, V: ?core::marker::Sized
+ impl<'a, T, V> core::marker::UnsafeUnpin for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V> where T: ?core::marker::Sized, V: ?core::marker::Sized
+ impl<'a, T, V> !core::panic::unwind_safe::RefUnwindSafe for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V>
+ impl<'a, T, V> !core::panic::unwind_safe::UnwindSafe for rav1d_disjoint_mut::DisjointImmutGuard<'a, T, V>
++pub struct rav1d_disjoint_mut::DisjointImmutRectGuard<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V>
++impl<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V> rav1d_disjoint_mut::DisjointImmutRectGuard<'a, T, V>
++pub fn rav1d_disjoint_mut::DisjointImmutRectGuard<'a, T, V>::row(&self, usize) -> &[V]
++pub fn rav1d_disjoint_mut::DisjointImmutRectGuard<'a, T, V>::rows(&self) -> usize
++pub fn rav1d_disjoint_mut::DisjointImmutRectGuard<'a, T, V>::seg(&self) -> usize
++impl<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V> core::ops::drop::Drop for rav1d_disjoint_mut::DisjointImmutRectGuard<'a, T, V>
++pub fn rav1d_disjoint_mut::DisjointImmutRectGuard<'a, T, V>::drop(&mut self)
++impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr + core::marker::Sync, V: core::marker::Sync> core::marker::Send for rav1d_disjoint_mut::DisjointImmutRectGuard<'_, T, V>
++impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr + core::marker::Sync, V: core::marker::Sync> core::marker::Sync for rav1d_disjoint_mut::DisjointImmutRectGuard<'_, T, V>
++impl<'a, T, V> core::marker::Freeze for rav1d_disjoint_mut::DisjointImmutRectGuard<'a, T, V> where T: ?core::marker::Sized
++impl<'a, T, V> core::marker::Unpin for rav1d_disjoint_mut::DisjointImmutRectGuard<'a, T, V> where T: ?core::marker::Sized
++impl<'a, T, V> core::marker::UnsafeUnpin for rav1d_disjoint_mut::DisjointImmutRectGuard<'a, T, V> where T: ?core::marker::Sized
++impl<'a, T, V> !core::panic::unwind_safe::RefUnwindSafe for rav1d_disjoint_mut::DisjointImmutRectGuard<'a, T, V>
++impl<'a, T, V> !core::panic::unwind_safe::UnwindSafe for rav1d_disjoint_mut::DisjointImmutRectGuard<'a, T, V>
+ pub struct rav1d_disjoint_mut::DisjointMut<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr>
+ impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr> rav1d_disjoint_mut::DisjointMut<T>
+ pub fn rav1d_disjoint_mut::DisjointMut<T>::as_mut_ptr(&self) -> *mut <T as rav1d_disjoint_mut::AsMutPtr>::Target
+@@ -138,6 +154,13 @@
+ pub fn rav1d_disjoint_mut::DisjointMut<T>::index_mut<'a, I>(&'a self, I) -> rav1d_disjoint_mut::DisjointMutGuard<'a, T, <I as rav1d_disjoint_mut::DisjointMutIndex>::Output> where I: core::convert::Into<rav1d_disjoint_mut::Bounds> + core::clone::Clone + rav1d_disjoint_mut::DisjointMutIndex<[<T as rav1d_disjoint_mut::AsMutPtr>::Target]>
+ pub fn rav1d_disjoint_mut::DisjointMut<T>::is_empty(&self) -> bool
+ pub fn rav1d_disjoint_mut::DisjointMut<T>::len(&self) -> usize
++pub fn rav1d_disjoint_mut::DisjointMut<T>::probe_declare_stride(&self, isize)
++pub fn rav1d_disjoint_mut::DisjointMut<T>::probe_eval_rect(&self, &'static core::panic::location::Location<'static>, bool, usize, usize, usize, isize)
++impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr> rav1d_disjoint_mut::DisjointMut<T>
++pub fn rav1d_disjoint_mut::DisjointMut<T>::declare_row_stride(&mut self, usize)
++impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr> rav1d_disjoint_mut::DisjointMut<T>
++pub fn rav1d_disjoint_mut::DisjointMut<T>::index_rect<'a>(&'a self, usize, usize, usize, isize) -> core::option::Option<rav1d_disjoint_mut::DisjointImmutRectGuard<'a, T, <T as rav1d_disjoint_mut::AsMutPtr>::Target>>
++pub fn rav1d_disjoint_mut::DisjointMut<T>::index_rect_mut<'a>(&'a self, usize, usize, usize, isize) -> core::option::Option<rav1d_disjoint_mut::DisjointMutRectGuard<'a, T, <T as rav1d_disjoint_mut::AsMutPtr>::Target>>
+ impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr> rav1d_disjoint_mut::DisjointMut<T>
+ pub const fn rav1d_disjoint_mut::DisjointMut<T>::is_checked(&self) -> bool
+ impl<T: rav1d_disjoint_mut::AsMutPtr + rav1d_disjoint_mut::Clearable> rav1d_disjoint_mut::DisjointMut<T>
+@@ -155,10 +178,14 @@
+ pub fn rav1d_disjoint_mut::DisjointMut<T>::mut_element_as<'a, V>(&'a self, usize) -> rav1d_disjoint_mut::DisjointMutGuard<'a, T, V> where V: zerocopy::IntoBytes + zerocopy::FromBytes + zerocopy::KnownLayout
+ pub fn rav1d_disjoint_mut::DisjointMut<T>::mut_slice_as<'a, I, V>(&'a self, I) -> rav1d_disjoint_mut::DisjointMutGuard<'a, T, [V]> where I: rav1d_disjoint_mut::SliceBounds, V: zerocopy::IntoBytes + zerocopy::FromBytes + zerocopy::KnownLayout
+ pub fn rav1d_disjoint_mut::DisjointMut<T>::slice_as<'a, I, V>(&'a self, I) -> rav1d_disjoint_mut::DisjointImmutGuard<'a, T, [V]> where I: rav1d_disjoint_mut::SliceBounds, V: zerocopy::FromBytes + zerocopy::KnownLayout + zerocopy::Immutable
++impl<T: rav1d_disjoint_mut::AsMutPtr<Target = u8>> rav1d_disjoint_mut::DisjointMut<T>
++pub fn rav1d_disjoint_mut::DisjointMut<T>::index_rect_as<'a, V>(&'a self, usize, usize, usize, isize) -> core::option::Option<rav1d_disjoint_mut::DisjointImmutRectGuard<'a, T, V>> where V: zerocopy::FromBytes + zerocopy::KnownLayout + zerocopy::Immutable
++pub fn rav1d_disjoint_mut::DisjointMut<T>::index_rect_mut_as<'a, V>(&'a self, usize, usize, usize, isize) -> core::option::Option<rav1d_disjoint_mut::DisjointMutRectGuard<'a, T, V>> where V: zerocopy::FromBytes + zerocopy::IntoBytes + zerocopy::KnownLayout + zerocopy::Immutable
+ impl<T: rav1d_disjoint_mut::AsMutPtr> rav1d_disjoint_mut::DisjointMut<T>
+ pub unsafe const fn rav1d_disjoint_mut::DisjointMut<T>::dangerously_unchecked(T) -> Self
+ pub fn rav1d_disjoint_mut::DisjointMut<T>::into_inner(self) -> T
+ pub const fn rav1d_disjoint_mut::DisjointMut<T>::new(T) -> Self
++pub fn rav1d_disjoint_mut::DisjointMut<T>::new_eager(T) -> Self
+ impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr + core::marker::Send> core::marker::Send for rav1d_disjoint_mut::DisjointMut<T>
+ impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr + core::marker::Sync> core::marker::Sync for rav1d_disjoint_mut::DisjointMut<T>
+ impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr> core::fmt::Debug for rav1d_disjoint_mut::DisjointMut<T>
+@@ -191,6 +218,8 @@
+ impl<T> !core::panic::unwind_safe::RefUnwindSafe for rav1d_disjoint_mut::DisjointMutArcSlice<T>
+ impl<T> !core::panic::unwind_safe::UnwindSafe for rav1d_disjoint_mut::DisjointMutArcSlice<T>
+ pub struct rav1d_disjoint_mut::DisjointMutGuard<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V: ?core::marker::Sized>
++impl<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V: ?core::marker::Sized> rav1d_disjoint_mut::DisjointMutGuard<'a, T, V>
++pub fn rav1d_disjoint_mut::DisjointMutGuard<'a, T, V>::probe_declare_rows(&self, usize, usize, usize, isize)
+ impl<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V: ?core::marker::Sized> core::ops::deref::Deref for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V>
+ pub type rav1d_disjoint_mut::DisjointMutGuard<'a, T, V>::Target = V
+ pub fn rav1d_disjoint_mut::DisjointMutGuard<'a, T, V>::deref(&self) -> &Self::Target
+@@ -198,13 +227,27 @@
+ pub fn rav1d_disjoint_mut::DisjointMutGuard<'a, T, V>::deref_mut(&mut self) -> &mut Self::Target
+ impl<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V: ?core::marker::Sized> core::ops::drop::Drop for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V>
+ pub fn rav1d_disjoint_mut::DisjointMutGuard<'a, T, V>::drop(&mut self)
++impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr + core::marker::Sync, V: ?core::marker::Sized + core::marker::Send> core::marker::Send for rav1d_disjoint_mut::DisjointMutGuard<'_, T, V>
++impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr + core::marker::Sync, V: ?core::marker::Sized + core::marker::Sync> core::marker::Sync for rav1d_disjoint_mut::DisjointMutGuard<'_, T, V>
+ impl<'a, T, V> core::marker::Freeze for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V> where T: ?core::marker::Sized, V: ?core::marker::Sized
+-impl<'a, T, V> core::marker::Send for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V> where V: core::marker::Send + ?core::marker::Sized, T: core::marker::Sync + ?core::marker::Sized
+-impl<'a, T, V> core::marker::Sync for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V> where V: core::marker::Sync + ?core::marker::Sized, T: core::marker::Sync + ?core::marker::Sized
+ impl<'a, T, V> core::marker::Unpin for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V> where T: ?core::marker::Sized, V: ?core::marker::Sized
+ impl<'a, T, V> core::marker::UnsafeUnpin for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V> where T: ?core::marker::Sized, V: ?core::marker::Sized
+ impl<'a, T, V> !core::panic::unwind_safe::RefUnwindSafe for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V>
+ impl<'a, T, V> !core::panic::unwind_safe::UnwindSafe for rav1d_disjoint_mut::DisjointMutGuard<'a, T, V>
++pub struct rav1d_disjoint_mut::DisjointMutRectGuard<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V>
++impl<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V> rav1d_disjoint_mut::DisjointMutRectGuard<'a, T, V>
++pub fn rav1d_disjoint_mut::DisjointMutRectGuard<'a, T, V>::row_mut(&mut self, usize) -> &mut [V]
++pub fn rav1d_disjoint_mut::DisjointMutRectGuard<'a, T, V>::rows(&self) -> usize
++pub fn rav1d_disjoint_mut::DisjointMutRectGuard<'a, T, V>::seg(&self) -> usize
++impl<'a, T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr, V> core::ops::drop::Drop for rav1d_disjoint_mut::DisjointMutRectGuard<'a, T, V>
++pub fn rav1d_disjoint_mut::DisjointMutRectGuard<'a, T, V>::drop(&mut self)
++impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr + core::marker::Sync, V: core::marker::Send> core::marker::Send for rav1d_disjoint_mut::DisjointMutRectGuard<'_, T, V>
++impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr + core::marker::Sync, V: core::marker::Sync> core::marker::Sync for rav1d_disjoint_mut::DisjointMutRectGuard<'_, T, V>
++impl<'a, T, V> core::marker::Freeze for rav1d_disjoint_mut::DisjointMutRectGuard<'a, T, V> where T: ?core::marker::Sized
++impl<'a, T, V> core::marker::Unpin for rav1d_disjoint_mut::DisjointMutRectGuard<'a, T, V> where T: ?core::marker::Sized
++impl<'a, T, V> core::marker::UnsafeUnpin for rav1d_disjoint_mut::DisjointMutRectGuard<'a, T, V> where T: ?core::marker::Sized
++impl<'a, T, V> !core::panic::unwind_safe::RefUnwindSafe for rav1d_disjoint_mut::DisjointMutRectGuard<'a, T, V>
++impl<'a, T, V> !core::panic::unwind_safe::UnwindSafe for rav1d_disjoint_mut::DisjointMutRectGuard<'a, T, V>
+ pub unsafe trait rav1d_disjoint_mut::AsMutPtr: rav1d_disjoint_mut::sealed::Sealed
+ pub type rav1d_disjoint_mut::AsMutPtr::Target: core::marker::Copy
+ pub unsafe fn rav1d_disjoint_mut::AsMutPtr::as_mut_ptr(*mut Self) -> *mut Self::Target
+@@ -229,6 +272,12 @@
+ pub unsafe fn [V; N]::as_mut_slice(*mut Self) -> *mut [Self::Target]
+ pub fn [V; N]::is_empty(&self) -> bool
+ pub fn [V; N]::len(&self) -> usize
++impl<V: core::marker::Copy> rav1d_disjoint_mut::AsMutPtr for &mut [V]
++pub type &mut [V]::Target = V
++pub unsafe fn &mut [V]::as_mut_ptr(*mut Self) -> *mut V
++pub unsafe fn &mut [V]::as_mut_slice(*mut Self) -> *mut [Self::Target]
++pub fn &mut [V]::is_empty(&self) -> bool
++pub fn &mut [V]::len(&self) -> usize
+ impl<V: core::marker::Copy> rav1d_disjoint_mut::AsMutPtr for [V]
+ pub type [V]::Target = V
+ pub unsafe fn [V]::as_mut_ptr(*mut Self) -> *mut Self::Target
+@@ -378,4 +427,6 @@
+ impl<V> rav1d_disjoint_mut::TryResizableWith for alloc::vec::Vec<V>
+ pub type alloc::vec::Vec<V>::Item = V
+ pub fn alloc::vec::Vec<V>::try_resize_with<F: core::ops::function::FnMut() -> V>(&mut self, usize, F) -> core::result::Result<(), alloc::collections::TryReserveError>
++pub fn rav1d_disjoint_mut::set_parallelism(usize)
++pub fn rav1d_disjoint_mut::set_tile_concurrency(usize)
+ pub type rav1d_disjoint_mut::DisjointMutSlice<T> = rav1d_disjoint_mut::DisjointMut<alloc::boxed::Box<[T]>>

@@ -1,0 +1,480 @@
+[
+  {
+    "name": "features-0",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.15,
+    "log": "features-0.log",
+    "sha256": "fa017e19c446764d5c25a854a3c1887e261f1775e7d849e277c43f5631660770"
+  },
+  {
+    "name": "features-1",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "aligned"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.17,
+    "log": "features-1.log",
+    "sha256": "de6a6f5966bd0489955503df86dcd5eb255faa3a63e601a895e9da7355bfef26"
+  },
+  {
+    "name": "features-2",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "aligned,instrument,pic-buf,std"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.17,
+    "log": "features-2.log",
+    "sha256": "de6a6f5966bd0489955503df86dcd5eb255faa3a63e601a895e9da7355bfef26"
+  },
+  {
+    "name": "features-3",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "aligned,instrument,pic-buf,std,zerocopy"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.18,
+    "log": "features-3.log",
+    "sha256": "c49994e72c179fc2d6a00f0a0e8ee32d92f613178fb4bdb4bc7bbb49cdc5715a"
+  },
+  {
+    "name": "features-4",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "aligned,instrument,std"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.16,
+    "log": "features-4.log",
+    "sha256": "d5c51768fed3b34a99a1327200872038cf91968a0e50af909a53e9b73943262c"
+  },
+  {
+    "name": "features-5",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "aligned,instrument,std,zerocopy"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.16,
+    "log": "features-5.log",
+    "sha256": "de6a6f5966bd0489955503df86dcd5eb255faa3a63e601a895e9da7355bfef26"
+  },
+  {
+    "name": "features-6",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "aligned,pic-buf"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.15,
+    "log": "features-6.log",
+    "sha256": "d5c51768fed3b34a99a1327200872038cf91968a0e50af909a53e9b73943262c"
+  },
+  {
+    "name": "features-7",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "aligned,pic-buf,std"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.16,
+    "log": "features-7.log",
+    "sha256": "d5c51768fed3b34a99a1327200872038cf91968a0e50af909a53e9b73943262c"
+  },
+  {
+    "name": "features-8",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "aligned,pic-buf,std,zerocopy"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.16,
+    "log": "features-8.log",
+    "sha256": "de6a6f5966bd0489955503df86dcd5eb255faa3a63e601a895e9da7355bfef26"
+  },
+  {
+    "name": "features-9",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "aligned,pic-buf,zerocopy"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.15,
+    "log": "features-9.log",
+    "sha256": "d5c51768fed3b34a99a1327200872038cf91968a0e50af909a53e9b73943262c"
+  },
+  {
+    "name": "features-10",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "aligned,std"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.15,
+    "log": "features-10.log",
+    "sha256": "d5c51768fed3b34a99a1327200872038cf91968a0e50af909a53e9b73943262c"
+  },
+  {
+    "name": "features-11",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "aligned,std,zerocopy"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.17,
+    "log": "features-11.log",
+    "sha256": "de6a6f5966bd0489955503df86dcd5eb255faa3a63e601a895e9da7355bfef26"
+  },
+  {
+    "name": "features-12",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "aligned,zerocopy"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.15,
+    "log": "features-12.log",
+    "sha256": "d5c51768fed3b34a99a1327200872038cf91968a0e50af909a53e9b73943262c"
+  },
+  {
+    "name": "features-13",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "instrument,pic-buf,std"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.14,
+    "log": "features-13.log",
+    "sha256": "fa017e19c446764d5c25a854a3c1887e261f1775e7d849e277c43f5631660770"
+  },
+  {
+    "name": "features-14",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "instrument,pic-buf,std,zerocopy"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.15,
+    "log": "features-14.log",
+    "sha256": "d5c51768fed3b34a99a1327200872038cf91968a0e50af909a53e9b73943262c"
+  },
+  {
+    "name": "features-15",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "instrument,std"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.14,
+    "log": "features-15.log",
+    "sha256": "fa017e19c446764d5c25a854a3c1887e261f1775e7d849e277c43f5631660770"
+  },
+  {
+    "name": "features-16",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "instrument,std,zerocopy"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.16,
+    "log": "features-16.log",
+    "sha256": "d5c51768fed3b34a99a1327200872038cf91968a0e50af909a53e9b73943262c"
+  },
+  {
+    "name": "features-17",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "pic-buf"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.14,
+    "log": "features-17.log",
+    "sha256": "d74f2c23b2262a7c55730f56e26f748fcf6c3777787a4267819fb625bf8878db"
+  },
+  {
+    "name": "features-18",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "pic-buf,std"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.15,
+    "log": "features-18.log",
+    "sha256": "fa017e19c446764d5c25a854a3c1887e261f1775e7d849e277c43f5631660770"
+  },
+  {
+    "name": "features-19",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "pic-buf,std,zerocopy"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.15,
+    "log": "features-19.log",
+    "sha256": "d5c51768fed3b34a99a1327200872038cf91968a0e50af909a53e9b73943262c"
+  },
+  {
+    "name": "features-20",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "pic-buf,zerocopy"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.15,
+    "log": "features-20.log",
+    "sha256": "fa017e19c446764d5c25a854a3c1887e261f1775e7d849e277c43f5631660770"
+  },
+  {
+    "name": "features-21",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "std"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.14,
+    "log": "features-21.log",
+    "sha256": "d74f2c23b2262a7c55730f56e26f748fcf6c3777787a4267819fb625bf8878db"
+  },
+  {
+    "name": "features-22",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "std,zerocopy"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.15,
+    "log": "features-22.log",
+    "sha256": "d5c51768fed3b34a99a1327200872038cf91968a0e50af909a53e9b73943262c"
+  },
+  {
+    "name": "features-23",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "zerocopy"
+    ],
+    "cwd": "/home/lilith/work/zen/rav1d-safe",
+    "env": {},
+    "exit_code": 0,
+    "expected_ub": false,
+    "passed": true,
+    "seconds": 0.15,
+    "log": "features-23.log",
+    "sha256": "fa017e19c446764d5c25a854a3c1887e261f1775e7d849e277c43f5631660770"
+  }
+]

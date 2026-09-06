@@ -1,0 +1,12 @@
+    Building rav1d-disjoint-mut v0.3.2 (current)
+       Built [   1.759s] (current)
+     Parsing rav1d-disjoint-mut v0.3.2 (current)
+      Parsed [   0.005s] (current)
+    Building rav1d-disjoint-mut v0.3.1 (baseline)
+       Built [   0.270s] (baseline)
+     Parsing rav1d-disjoint-mut v0.3.1 (baseline)
+      Parsed [   0.004s] (baseline)
+    Checking rav1d-disjoint-mut v0.3.1 -> v0.3.2 (assume patch change)
+     Checked [   0.004s] 223 checks: 223 pass, 30 skip
+     Summary no semver update required
+    Finished [   2.480s] rav1d-disjoint-mut

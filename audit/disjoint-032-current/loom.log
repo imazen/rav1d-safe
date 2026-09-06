@@ -1,0 +1,15 @@
+   Compiling spin v0.12.3
+   Compiling rav1d-disjoint-mut v0.3.2 (/home/lilith/work/zen/rav1d-safe/crates/rav1d-disjoint-mut)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.49s
+     Running unittests src/lib.rs (target/review-loom/debug/deps/rav1d_disjoint_mut-d75edfb246296b84)
+
+running 6 tests
+test tracker_shard::loom_protocol::global_hints_cannot_remap_a_live_tracker ... ok
+test tracker_shard::loom_protocol::last_reader_and_full_shard_fallback ... ok
+test tracker_shard::loom_protocol::multi_shard_exclusion_and_handoff ... ok
+test tracker_shard::loom_protocol::narrow_exclusion_and_retirement_handoff ... ok
+test tracker_shard::loom_protocol::rectangle_rows_exclude_but_gaps_remain_available ... ok
+test tracker_shard::loom_protocol::wide_narrow_exclusion_and_handoff ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.14s
+

@@ -1,0 +1,131 @@
+{
+  "published_features_preserved": {
+    "default": [
+      "std"
+    ],
+    "std": [],
+    "instrument": [
+      "std"
+    ],
+    "aligned": [
+      "dep:aligned",
+      "dep:aligned-vec"
+    ],
+    "pic-buf": [],
+    "zerocopy": [
+      "dep:zerocopy"
+    ]
+  },
+  "added_features": {
+    "__probe_count": [
+      "std"
+    ],
+    "__probe_noscan": [],
+    "__probe_lockonly": [],
+    "__probe_untracked": [],
+    "__probe_wide": [
+      "std"
+    ],
+    "__probe_sites": [
+      "std"
+    ],
+    "__probe_bounds": [
+      "std",
+      "__probe_sites"
+    ],
+    "__probe_tinynop": [],
+    "__probe_addnop": [],
+    "__probe_shardsim": [
+      "__probe_count"
+    ],
+    "__probe_lock_backoff": [
+      "std"
+    ],
+    "__probe_lock_yield": [
+      "std"
+    ],
+    "__probe_lock_relax": [],
+    "__probe_lock_park": [
+      "std",
+      "dep:parking_lot"
+    ],
+    "__rect_mut": [],
+    "__tracker_legacy": [],
+    "__shards_1": [],
+    "__shards_4": [],
+    "__shards_8": [],
+    "__shards_16": [],
+    "__shards_32": [],
+    "__shards_64": [],
+    "__shards_128": [],
+    "__shards_256": [],
+    "__shard_ident": [],
+    "__blockshift_8": [],
+    "__blockshift_10": [],
+    "__blockshift_13": [],
+    "__blockshift_14": [],
+    "__blockshift_15": [],
+    "__blockshift_16": [],
+    "__blockshift_adaptive": [],
+    "__bps_quarter": [],
+    "__bps_half": [],
+    "__bps_1": [],
+    "__bps_4": [],
+    "__bps_8": [],
+    "__bps_blocks": [],
+    "__rpb_2": [],
+    "__rpb_8": [],
+    "__rpb_16": [],
+    "__probe_shiftpin": [
+      "std"
+    ],
+    "__msb_5": [],
+    "__rect_1shard": []
+  },
+  "dependencies_before": {
+    "aligned": {
+      "version": "0.4",
+      "default-features": false,
+      "optional": true
+    },
+    "aligned-vec": {
+      "version": "0.6",
+      "default-features": false,
+      "optional": true
+    },
+    "zerocopy": {
+      "version": "0.8",
+      "default-features": false,
+      "optional": true
+    }
+  },
+  "dependencies_after": {
+    "spin": {
+      "version": "0.12.3",
+      "default-features": false,
+      "features": [
+        "once"
+      ]
+    },
+    "aligned": {
+      "version": "0.4",
+      "default-features": false,
+      "optional": true
+    },
+    "aligned-vec": {
+      "version": "0.6",
+      "default-features": false,
+      "optional": true
+    },
+    "zerocopy": {
+      "version": "0.8",
+      "default-features": false,
+      "optional": true
+    },
+    "parking_lot": {
+      "version": "0.12.2",
+      "optional": true
+    }
+  },
+  "rust-version": "1.85"
+}

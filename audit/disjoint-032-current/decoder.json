@@ -1,0 +1,62 @@
+[
+  {
+    "gate": "decoder-regressions",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "-p",
+      "rav1d-safe",
+      "--test",
+      "decode_md5_committed",
+      "--test",
+      "safe_simd_crashes",
+      "--test",
+      "fuzz_regression",
+      "--test-threads",
+      "1"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 16.68,
+    "log": "decoder-regressions.log",
+    "log_sha256": "4346caa9cc6f230972c9a0b5411c8d65d3b9f538f3ea56732471446d516b95db",
+    "finished_utc": "2026-09-06T23:05:53.939595+00:00"
+  },
+  {
+    "gate": "decoder-task-size",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "rav1d-safe",
+      "--lib",
+      "task_context_stays_stack_light",
+      "--",
+      "--nocapture"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 7.48,
+    "log": "decoder-task-size.log",
+    "log_sha256": "76a04bbfa97e484c802ac277391d338585ccecfb5081c722b026594e111e02ee",
+    "finished_utc": "2026-09-06T23:06:01.419617+00:00"
+  },
+  {
+    "gate": "decoder-global-threading",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "rav1d-safe",
+      "--lib",
+      "live_block_keeps_its_storage_when_another_decoder_changes_threading"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 0.07,
+    "log": "decoder-global-threading.log",
+    "log_sha256": "2f76c6561e00bb34d38e13c269bd52cc69ac18620e02a431878756d44f2a1cab",
+    "finished_utc": "2026-09-06T23:06:01.489144+00:00"
+  }
+]

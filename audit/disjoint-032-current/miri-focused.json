@@ -1,0 +1,164 @@
+[
+  {
+    "gate": "miri-stacked-init",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--lib",
+      "tracker_storage"
+    ],
+    "env": {
+      "MIRIFLAGS": ""
+    },
+    "exit_code": 0,
+    "seconds": 0.95,
+    "log": "miri-stacked-init.log",
+    "log_sha256": "110327341feb011e969514bc57b5a59d3df82c1ff94413aca53bc5368ed227cc",
+    "finished_utc": "2026-09-06T22:55:14.315714+00:00"
+  },
+  {
+    "gate": "miri-stacked-focused",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--features",
+      "aligned,pic-buf,zerocopy",
+      "--no-fail-fast",
+      "--test",
+      "adversarial_api",
+      "--test",
+      "aligned_miri",
+      "--test",
+      "const_constructor",
+      "--test",
+      "guard_move_release",
+      "--test",
+      "pic_buf_overflow",
+      "--test",
+      "rect_units",
+      "--test",
+      "soundness",
+      "--test",
+      "wide_exclusion"
+    ],
+    "env": {
+      "MIRIFLAGS": ""
+    },
+    "exit_code": 0,
+    "seconds": 237.22,
+    "log": "miri-stacked-focused.log",
+    "log_sha256": "521a2478e87e0a1b7472fdef3d24943ded83fe833bc5a78d5ba0ebbe44277bae",
+    "finished_utc": "2026-09-06T22:59:11.531350+00:00"
+  },
+  {
+    "gate": "miri-stacked-no-std-focused",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--test",
+      "const_constructor"
+    ],
+    "env": {
+      "MIRIFLAGS": ""
+    },
+    "exit_code": 0,
+    "seconds": 1.95,
+    "log": "miri-stacked-no-std-focused.log",
+    "log_sha256": "14dd86bdeeebef1d3b72116f4d9e7201a9c2101f7efa1c6afe95c17b37db97df",
+    "finished_utc": "2026-09-06T22:59:13.484576+00:00"
+  },
+  {
+    "gate": "miri-tree-init",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--lib",
+      "tracker_storage"
+    ],
+    "env": {
+      "MIRIFLAGS": "-Zmiri-tree-borrows"
+    },
+    "exit_code": 0,
+    "seconds": 1.04,
+    "log": "miri-tree-init.log",
+    "log_sha256": "39e4fc48f075d18dc6383bd88e22d16661217cf87ddb1eee1703fd9eb66abed2",
+    "finished_utc": "2026-09-06T22:59:14.528591+00:00"
+  },
+  {
+    "gate": "miri-tree-focused",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--features",
+      "aligned,pic-buf,zerocopy",
+      "--no-fail-fast",
+      "--test",
+      "adversarial_api",
+      "--test",
+      "aligned_miri",
+      "--test",
+      "const_constructor",
+      "--test",
+      "guard_move_release",
+      "--test",
+      "pic_buf_overflow",
+      "--test",
+      "rect_units",
+      "--test",
+      "soundness",
+      "--test",
+      "wide_exclusion"
+    ],
+    "env": {
+      "MIRIFLAGS": "-Zmiri-tree-borrows"
+    },
+    "exit_code": 0,
+    "seconds": 359.5,
+    "log": "miri-tree-focused.log",
+    "log_sha256": "521a2478e87e0a1b7472fdef3d24943ded83fe833bc5a78d5ba0ebbe44277bae",
+    "finished_utc": "2026-09-06T23:05:14.033634+00:00"
+  },
+  {
+    "gate": "miri-tree-no-std-focused",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--test",
+      "const_constructor"
+    ],
+    "env": {
+      "MIRIFLAGS": "-Zmiri-tree-borrows"
+    },
+    "exit_code": 0,
+    "seconds": 2.4,
+    "log": "miri-tree-no-std-focused.log",
+    "log_sha256": "a574440c231f55b53869030b3d74477fab7a5c69b187e393c846bd9986862fc3",
+    "finished_utc": "2026-09-06T23:05:16.432181+00:00"
+  }
+]

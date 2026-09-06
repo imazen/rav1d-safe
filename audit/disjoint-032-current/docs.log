@@ -1,0 +1,21 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+   Doc-tests rav1d_disjoint_mut
+
+running 4 tests
+test crates/rav1d-disjoint-mut/src/lib.rs - ExternalAsMutPtr::as_mut_slice (line 789) ... ignored
+test crates/rav1d-disjoint-mut/src/lib.rs - ExternalAsMutPtr::as_mut_slice (line 801) ... ignored
+test crates/rav1d-disjoint-mut/src/lib.rs - DisjointMut<T>::new (line 260) ... ok
+test crates/rav1d-disjoint-mut/src/lib.rs - (line 22) ... ok
+
+test result: ok. 2 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 4 tests
+test crates/rav1d-disjoint-mut/src/lib.rs - (line 36) - compile fail ... ok
+test crates/rav1d-disjoint-mut/src/lib.rs - (line 57) - compile fail ... ok
+test crates/rav1d-disjoint-mut/src/lib.rs - (line 47) - compile fail ... ok
+test crates/rav1d-disjoint-mut/src/lib.rs - (line 69) - compile fail ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+all doctests ran in 0.16s; merged doctests compilation took 0.14s

@@ -158,6 +158,8 @@ jobs:
           toolchain: "1.85"
       - run: cargo check -p rav1d-disjoint-mut
       - run: cargo check -p rav1d-disjoint-mut --no-default-features
+      # Compile real const/static clients on the minimum supported compiler.
+      - run: cargo test -p rav1d-disjoint-mut --no-default-features --test const_constructor
 
   doc:
     name: Documentation

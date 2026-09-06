@@ -2,16 +2,20 @@
 
 All notable changes to `rav1d-disjoint-mut` are documented in this file. Format follows [Keep a Changelog](https://keepachangelog.com/). Versions before `0.3.1` were not changelogged; see git history.
 
-## [0.4.0] - Unreleased
+## [0.3.2] - Unreleased
 
-The compatible 0.3.2 maintenance release is prepared separately from the
-published 0.3.1 source. It preserves the const constructor and original tracker;
-see `audit/disjoint-032` in the repository for its evidence and release protocol.
+This release keeps the current sharded tracker and soundness fixes while
+preserving the published `const fn DisjointMut::new` API. A 0.4.0 bump is not
+needed: removal of const construction is deferred. See
+`audit/disjoint-032-current` in the repository for this candidate's evidence.
 
 ### Changed
-- `DisjointMut::new` is no longer `const` because the tracker is allocated at
-  runtime. Use runtime initialization, such as `std::sync::LazyLock`, for a
-  static buffer. This requires a 0.4 release rather than a compatible 0.3 update.
+- `DisjointMut::new` remains `const`. It initializes one boxed tracker on first
+  use via `spin::Once` (no_std compatible); all concurrent first callers share
+  that tracker. `is_checked` remains const and returns true before initialization.
+- Added `DisjointMut::new_eager` for allocation at construction, avoiding the
+  Once check on subsequent borrows. `Default`, allocating slice constructors,
+  and the decoder use this path. Both constructors use identical borrow checks.
 - Historical measurement features that disable overlap enforcement now fail to
   compile, preventing Cargo feature unification from weakening the safe API.
 - The external storage contract explicitly requires stable pointer identity,

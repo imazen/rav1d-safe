@@ -1,0 +1,24 @@
+[
+  {
+    "gate": "miri-stacked",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--features",
+      "aligned,pic-buf,zerocopy"
+    ],
+    "env": {
+      "MIRIFLAGS": ""
+    },
+    "exit_code": 1,
+    "seconds": 1514.47,
+    "log": "miri-stacked.log",
+    "log_sha256": "f8b9a8230f263a615b2a60b3f0c99fe4b42412ac5c3b2826df2b8dec574d00e1",
+    "finished_utc": "2026-09-06T22:53:47.946184+00:00",
+    "disposition": "Interrupted by reviewer after 1514 seconds in the unchanged 160000-iteration shard_liveness stress test; not a passing full-suite result. No UB was reported before interruption."
+  }
+]

@@ -1,0 +1,64 @@
+[
+  {
+    "gate": "semver-default",
+    "command": [
+      "cargo",
+      "semver-checks",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--baseline-root",
+      "/home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-disjoint-mut-0.3.1",
+      "--release-type",
+      "patch",
+      "--default-features"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 0.96,
+    "log": "semver-default.log",
+    "log_sha256": "f614097458fe45c948f7749efc44e8a388080caf8488eae97fc20b02f95e4cda",
+    "finished_utc": "2026-09-06T22:54:33.267327+00:00"
+  },
+  {
+    "gate": "semver-no-std",
+    "command": [
+      "cargo",
+      "semver-checks",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--baseline-root",
+      "/home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-disjoint-mut-0.3.1",
+      "--release-type",
+      "patch",
+      "--only-explicit-features"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 0.78,
+    "log": "semver-no-std.log",
+    "log_sha256": "6ba9d359ff25dcda470ff3ce0bbd9cf748ac0f869bb9a2ce5b294dde09119eba",
+    "finished_utc": "2026-09-06T22:54:34.051688+00:00"
+  },
+  {
+    "gate": "semver-storage",
+    "command": [
+      "cargo",
+      "semver-checks",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--baseline-root",
+      "/home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-disjoint-mut-0.3.1",
+      "--release-type",
+      "patch",
+      "--only-explicit-features",
+      "--features",
+      "std,instrument,aligned,pic-buf,zerocopy"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 2.59,
+    "log": "semver-storage.log",
+    "log_sha256": "b800d47783fedbd8d7bb37a612da18927823fddfbecfcdea17f9b077d1fce131",
+    "finished_utc": "2026-09-06T22:54:36.639706+00:00"
+  }
+]

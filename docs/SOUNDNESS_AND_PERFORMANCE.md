@@ -7,7 +7,7 @@ measurement.
 
 Follow-up: the [release protocol](RELEASE_SOUNDNESS_PROTOCOL.md) now records
 implemented Loom and adversarial API gates, global-threading mutation tests,
-feature-unification hardening, the 0.4.0 version preparation, and the
+feature-unification hardening, the [const-compatible 0.3.2 candidate](../audit/disjoint-032-current/README.md), and the
 [published API inventory](../audit/api/README.md). The historical performance
 follow-up was limited to about two minutes and produced the
 [ownership experiment ledger](OWNERSHIP_MODELS.md#experiment-ledger-reviewed-2026-09-06).

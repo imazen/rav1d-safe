@@ -1,0 +1,39 @@
+[
+  {
+    "gate": "loom",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--features",
+      "__shards_4",
+      "--lib",
+      "loom_protocol",
+      "--",
+      "--test-threads=1"
+    ],
+    "env": {
+      "RUSTFLAGS": "--cfg disjoint_mut_loom",
+      "CARGO_TARGET_DIR": "/home/lilith/work/zen/rav1d-safe/target/review-loom"
+    },
+    "exit_code": 0,
+    "seconds": 0.66,
+    "log": "loom.log",
+    "log_sha256": "91d3fb12a575e312c3d4cfd184a8eb9faf5f1870a6b6733d498aeed1172d9c7f",
+    "finished_utc": "2026-09-06T22:55:01.762728+00:00"
+  },
+  {
+    "gate": "safe-feature-boundary",
+    "command": [
+      "bash",
+      "scripts/review-feature-gate.sh"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 0.65,
+    "log": "safe-feature-boundary.log",
+    "log_sha256": "f906a45a8d1a4c5fbb3043194637d8625a36e6dfa04920155a8f0b7d64f8170b",
+    "finished_utc": "2026-09-06T22:55:02.411767+00:00"
+  }
+]

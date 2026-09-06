@@ -1,0 +1,13 @@
+   Compiling rav1d-disjoint-mut v0.3.2 (/home/lilith/work/zen/rav1d-safe/crates/rav1d-disjoint-mut)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running tests/const_constructor.rs (target/miri/x86_64-unknown-linux-gnu/debug/deps/const_constructor-538962910ded2493)
+
+running 5 tests
+test both_constructors_preserve_live_leases_when_global_hints_change ... ok
+test const_static_concurrent_first_use_stays_checked ... ok
+test exclusive_storage_mutation_before_initialization_uses_current_length ... ok
+test moved_initialized_buffer_preserves_poison_and_leaked_reservations ... ok
+test resize_and_stride_before_and_after_first_borrow ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.31s
+

@@ -53,11 +53,21 @@ the `Copy` bound.
 
 ### Borrow tracking
 
-Borrows are tracked in a **64-slot inline array** with a `u64` bitmask for O(1) allocation and deallocation. Each `index()` or `index_mut()` call occupies one slot; the slot is freed when the guard drops.
+The default tracker assigns address blocks to independently locked shards.
+Overlapping borrows always meet in a shared conflict domain; large ranges and
+shard overflow use a wide path that coordinates with every active shard.
+Strided-rectangle guards register exactly their rows and expose each row
+separately, allowing other guards to access the gaps.
 
-If all 64 inline slots are occupied, additional borrows spill into a heap-allocated `Vec`. The overflow `Vec` is never allocated unless you actually exceed 64 concurrent borrows on a single instance. The theoretical maximum is 254 concurrent borrows per instance (u8 encoding limit).
+`DisjointMut::new` remains `const`, including for statics. It initializes one
+boxed tracker on first use through `spin::Once`; simultaneous callers all use
+the same tracker. `DisjointMut::new_eager` allocates immediately and avoids the
+Once check on each borrow. `Default` and allocating slice constructors use the
+eager path. Both constructors enforce the same borrowing rules.
 
-Empty ranges (start >= end) are free — they skip slot allocation and overlap checks entirely.
+An empty range consumes no record. Invalid or reversed ranges are refused
+before creating a reference. Tracker capacity and placement are implementation
+details, not a stable slot-count guarantee.
 
 ### Poisoning
 
@@ -71,9 +81,10 @@ Immutable guards do **not** poison on panic. Poisoning also triggers on out-of-b
 
 `new()` always creates a tracked instance.
 
-### Open-ended ranges are conservative
+### Open-ended ranges
 
-Open-ended ranges like `5..` are tracked as `5..usize::MAX`. The tracker may reject borrows beyond the collection's actual length that wouldn't truly overlap with the guarded data. In practice this rarely matters, since out-of-bounds access would panic anyway.
+Open-ended ranges like `5..` are clamped to the storage length for tracking.
+Index validation still rejects out-of-bounds access before returning a guard.
 
 ## Ways to get it wrong
 
@@ -134,18 +145,12 @@ unsafe impl ExternalAsMutPtr for MyVec {
 
 The difference is `as_mut_ptr(&mut self)` vs `as_ptr(&self).cast_mut()`. Both return the same pointer value, but the first creates `&mut Vec` which retags the struct with Unique provenance, invalidating any concurrent `&Vec` on other threads.
 
-### Leaking guards to exhaust the slot pool
+### Leaking guards
 
-```rust
-let dm = DisjointMut::new(vec![0u8; 1000]);
-for i in 0..254 {
-    std::mem::forget(dm.index_mut(i..i+1)); // slot never freed
-}
-// 255th borrow panics — all slots consumed by leaked guards
-let _ = dm.index_mut(500..501); // panic!
-```
-
-Each `mem::forget`'d guard permanently consumes a slot. After 254 (64 inline + 190 overflow), the instance is bricked. This isn't UB, but it's a denial-of-service if guards are leaked in a loop.
+Forgetting a guard retains its reservation. Later conflicting access is still
+refused, even after moving the buffer. Repeated leaks can consume tracking
+resources and cause allocation or admission failure; they must never permit a
+conflicting reference. Memory safety does not require every guard to be dropped.
 
 ### `dangerously_unchecked` with overlapping borrows
 
@@ -173,17 +178,20 @@ The primary API is `index()` / `index_mut()`, which return tracked guards. Prefe
 | `std` | yes | Enables `std::thread::panicking()` for mutable guard poisoning on panic. |
 | `aligned` | no | Aligned newtypes (`Align4`..`Align64`) and `AlignedVec32`/`AlignedVec64` for SIMD-friendly layout. |
 | `pic-buf` | no | `PicBuf`: owned byte buffer with alignment offset for `DisjointMut`. |
-| `zerocopy` | no | Zero-copy typed access via zerocopy's `AsBytes`/`FromBytes` traits. |
+| `zerocopy` | no | Zero-copy typed access via zerocopy's `IntoBytes`/`FromBytes` traits. |
 
 ## `no_std` support
 
-This crate is `no_std` compatible (requires `alloc`). Without `std`, the borrow tracker still works, but **poisoning is disabled** since `std::thread::panicking()` is unavailable. A panic while holding a mutable guard frees the borrow slot but doesn't prevent future access to potentially inconsistent data. Because elements are `Copy`, inconsistent data can't cause memory unsafety — only logic errors.
+This crate supports `no_std` with `alloc`, including both constructors. Without
+`std`, guard drop cannot detect thread unwinding and therefore does not poison
+on that event. Indexing cleanup still poisons after an out-of-bounds panic.
+Exclusion and reference validity remain enforced in both configurations.
 
 ## Running tests under Miri
 
 ```bash
-cargo +nightly miri test -p rav1d-disjoint-mut --all-features
-MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test -p rav1d-disjoint-mut --all-features
+cargo +nightly miri test -p rav1d-disjoint-mut --features aligned,pic-buf,zerocopy --no-fail-fast
+MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test -p rav1d-disjoint-mut --features aligned,pic-buf,zerocopy --no-fail-fast
 ```
 
 ## License

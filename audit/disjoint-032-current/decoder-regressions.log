@@ -1,0 +1,31 @@
+   Compiling rav1d-disjoint-mut v0.3.2 (/home/lilith/work/zen/rav1d-safe/crates/rav1d-disjoint-mut)
+   Compiling rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.65s
+────────────
+ Nextest run ID f2b7190a-b8f0-47cb-9dab-ef3fb5b89fc1 with nextest profile: default
+    Starting 23 tests across 3 binaries
+        PASS [   0.024s] ( 1/23) rav1d-safe::decode_md5_committed cdef_12bpc_422_matches_c_oracle_per_frame
+        PASS [   0.375s] ( 2/23) rav1d-safe::decode_md5_committed committed_vectors_match_reference_md5
+        PASS [   0.589s] ( 3/23) rav1d-safe::decode_md5_committed lr_sgr_vectors_match_reference_md5
+        PASS [   0.507s] ( 4/23) rav1d-safe::decode_md5_committed lr_sgr_vectors_threaded_match_reference_md5
+        PASS [   1.435s] ( 5/23) rav1d-safe::decode_md5_committed simultaneous_single_and_multi_thread_decoders_match_reference_md5
+        PASS [   0.003s] ( 6/23) rav1d-safe::fuzz_regression fuzz_regression_corpus_exercises_instrumented_kernels
+        PASS [   5.536s] ( 7/23) rav1d-safe::fuzz_regression fuzz_regression_seeds_do_not_panic
+        PASS [   0.004s] ( 8/23) rav1d-safe::fuzz_regression guarded_seeds_all_present
+        PASS [   0.004s] ( 9/23) rav1d-safe::safe_simd_crashes arm_aa_base_underflow_16bpc
+        PASS [   0.004s] (10/23) rav1d-safe::safe_simd_crashes arm_aa_base_underflow_8bpc
+        PASS [   0.004s] (11/23) rav1d-safe::safe_simd_crashes arm_boxsum3_oob_16bpc
+        PASS [   0.004s] (12/23) rav1d-safe::safe_simd_crashes arm_boxsum3_oob_8bpc
+        PASS [   0.004s] (13/23) rav1d-safe::safe_simd_crashes arm_mc16_avg_overshoot
+        PASS [   0.004s] (14/23) rav1d-safe::safe_simd_crashes arm_mc16_blend_dir_overshoot
+        PASS [   0.004s] (15/23) rav1d-safe::safe_simd_crashes arm_mc16_blend_overshoot
+        PASS [   0.004s] (16/23) rav1d-safe::safe_simd_crashes arm_mc16_mask_overshoot
+        PASS [   0.004s] (17/23) rav1d-safe::safe_simd_crashes arm_mc16_overshoot
+        PASS [   0.004s] (18/23) rav1d-safe::safe_simd_crashes arm_mc16_w_mask_overshoot
+        PASS [   0.009s] (19/23) rav1d-safe::safe_simd_crashes ipred_z2_bounds_circle
+        PASS [   0.316s] (20/23) rav1d-safe::safe_simd_crashes ipred_z2_bounds_kodim03
+        PASS [   0.016s] (21/23) rav1d-safe::safe_simd_crashes loopfilter_slice_bounds_alpha_noispe
+        PASS [   0.021s] (22/23) rav1d-safe::safe_simd_crashes picbuf_empty_vec
+        PASS [   0.035s] (23/23) rav1d-safe::safe_simd_crashes range_start_bounds_colors_hdr
+────────────
+     Summary [   8.913s] 23 tests run: 23 passed, 0 skipped

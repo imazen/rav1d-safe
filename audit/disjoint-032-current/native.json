@@ -1,0 +1,136 @@
+[
+  {
+    "gate": "native",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--features",
+      "aligned,pic-buf,zerocopy",
+      "--all-targets"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 5.42,
+    "log": "native.log",
+    "log_sha256": "1fee00cbea789a2f63e92dd9487d58f3d947fe9343968b1c7eb6c13842809bed",
+    "finished_utc": "2026-09-06T22:27:59.820470+00:00"
+  },
+  {
+    "gate": "no-std-storage",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "aligned,pic-buf,zerocopy"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 5.68,
+    "log": "no-std-storage.log",
+    "log_sha256": "34ab5e150f908b086f89281a3d6534db766ddfe93b7134f73e067aa13c5e3910",
+    "finished_utc": "2026-09-06T22:28:05.499734+00:00"
+  },
+  {
+    "gate": "docs",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--features",
+      "aligned,pic-buf,zerocopy",
+      "--doc"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 0.23,
+    "log": "docs.log",
+    "log_sha256": "a93c8318f90408a60f8e849892b7c770db2c9a0548f1565194a7e6fbafa05e88",
+    "finished_utc": "2026-09-06T22:28:05.734501+00:00"
+  },
+  {
+    "gate": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--all-targets",
+      "--features",
+      "aligned,pic-buf,zerocopy",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 2.54,
+    "log": "clippy.log",
+    "log_sha256": "13a1d4824c577192aec37cad0ebea31132d2e07ba0a422a8d121ae76c9359221",
+    "finished_utc": "2026-09-06T22:28:08.271045+00:00"
+  },
+  {
+    "gate": "clippy-no-std",
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--features",
+      "aligned,pic-buf,zerocopy",
+      "--lib",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 0.18,
+    "log": "clippy-no-std.log",
+    "log_sha256": "c49994e72c179fc2d6a00f0a0e8ee32d92f613178fb4bdb4bc7bbb49cdc5715a",
+    "finished_utc": "2026-09-06T22:28:08.455677+00:00"
+  },
+  {
+    "gate": "i686",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--features",
+      "aligned,pic-buf,zerocopy",
+      "--target",
+      "i686-unknown-linux-gnu"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 1.83,
+    "log": "i686.log",
+    "log_sha256": "f327639be726faee0e97e550cc1e8572be95430227c4d584cca4aef852320b02",
+    "finished_utc": "2026-09-06T22:28:10.288240+00:00"
+  },
+  {
+    "gate": "wasm-no-std",
+    "command": [
+      "cargo",
+      "check",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--target",
+      "wasm32-unknown-unknown"
+    ],
+    "env": {},
+    "exit_code": 0,
+    "seconds": 0.17,
+    "log": "wasm-no-std.log",
+    "log_sha256": "477236107c3f9600ae175302b6aa32e92e0f8be9f7ec21922f4c2965a7e4d6ef",
+    "finished_utc": "2026-09-06T22:28:10.460448+00:00"
+  }
+]

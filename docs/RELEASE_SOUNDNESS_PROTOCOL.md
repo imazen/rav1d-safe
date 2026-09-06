@@ -35,6 +35,51 @@ assembly, experimental trackers, and every probe configuration do not inherit
 a universal proof from those checks. Selecting `dangerously_unchecked` requires
 the caller to supply the exclusion proof that the runtime normally provides.
 
+## Const-compatible tracker initialization (0.3.2)
+
+The current release retains `const fn DisjointMut::new`. `TrackerStorage` has
+three private variants: unchecked, an eager boxed tracker, or a const-created
+`spin::Once<Box<BorrowTracker>>`. Both checked variants use the same production
+tracker. There is no fallback to an unchecked state when initialization has
+not happened, and `is_checked()` remains const and true in that state.
+
+For lazy construction, every admission calls `get_or_init` before registering
+and before creating a payload reference. Once chooses one initializer and
+publishes its completed value with Release; other callers obtain that same
+value through Acquire. The initializer reads the length using the raw storage
+metadata API, not a shared reference covering inline payload elements. The
+instance never changes its variant or replaces its tracker under `&self`.
+A destructor or panic cleanup uses only the already-initialized tracker and
+cannot allocate a fresh conflict domain. An initialization panic grants no
+capability; Once poisoning prevents use of incomplete state.
+
+Global hints are sampled at tracker initialization (`new_eager` construction,
+or first use of `new`). Their timing can affect placement but cannot split a
+live instance's conflict domain. Resize and stride declaration still require
+`&mut self`. Resize can leave an unused lazy tracker uninitialized; its later
+initializer reads the current length. Stride declaration initializes first so
+the hint is installed on the same tracker used by later borrows. Leaked guard
+records may remain; no *usable* guard/reference can survive the exclusive
+borrow. Reconfiguration does not rely on `Drop` having run.
+
+The new wrapper contains no unsafe code. It adds a trusted synchronization
+dependency: `spin` 0.12.3 with only the `once` feature, no std requirement, and
+MSRV 1.71 (below this crate's 1.85). Its production initializer publication is
+reviewed in source and exercised under native execution and both Miri models.
+**The six Loom record models do not instrument spin::Once initialization.**
+They continue to check the shared record protocol after initialization. This
+boundary is explicit; passing those models is not a proof of the new dependency.
+The initializer identity test checks exactly one closure and one returned
+tracker address during concurrent first calls. Public API tests additionally
+exercise const/statics, both constructors, global-hint changes with a live
+lease, resize/stride transitions, moved buffers, leaked guards, and poison.
+
+`new_eager`, `Default`, and allocating slice constructors avoid the Once load
+on borrow/drop. The decoder uses `new_eager`. The wrapper remains small and is
+covered by the decoder's unchanged 48 KiB task-context size gate. This change
+has no new performance measurement; it preserves the eager algorithm and
+keeps the earlier performance investigation within the requested time budget.
+
 ## Abstract state and obligations
 
 For one storage owner, let `R` be a set of **elements of `T::Target`**, and let a
