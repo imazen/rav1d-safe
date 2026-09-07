@@ -166,7 +166,7 @@ DisjointImmutGuard<'a, T, V>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindS
 DisjointImmutRectGuard<'_, T, V>: !Freeze !RefUnwindSafe !Unpin !UnwindSafe
 DisjointImmutRectGuard<'a, T, V>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 DisjointMut<T>: !Freeze !RefUnwindSafe !Unpin !UnwindSafe
-DisjointMutArcSlice<T>: !RefUnwindSafe !Send !Sync !UnwindSafe
+DisjointMutArcSlice<T>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 DisjointMutGuard<'_, T, V>: !Freeze !RefUnwindSafe !Unpin !UnwindSafe
 DisjointMutGuard<'a, T, V>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 DisjointMutRectGuard<'_, T, V>: !Freeze !RefUnwindSafe !Unpin !UnwindSafe

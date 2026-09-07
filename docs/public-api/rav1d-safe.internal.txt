@@ -7,7 +7,7 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 
-NOTE: excluded-feature surface (__ablate,__lf_rect,__lf_rect1,__lrpoison,__lrvarcov,__pad2,__pad3,__pad4,__pad_far,__pad_small,__pad_text,__probe_bounds,__probe_cdef_double,__probe_lf_hull,__probe_rect_hull,__probe_x86tier,__rows_rect,__simd_test,__simd_test_log,__test_induce_worker_panic) not buildable: rustdoc JSON build failed: [1m[91merror[E0599][0m[1m: no associated function or constant named `probe_shard_of` found for struct `BorrowTracker` in the current scope[0m
+NOTE: excluded-feature surface (__ablate,__lf_rect,__lf_rect1,__lrpoison,__lrvarcov,__pad2,__pad3,__pad4,__pad_far,__pad_small,__pad_text,__probe_bounds,__probe_cdef_double,__probe_lf_hull,__probe_rect_hull,__probe_x86tier,__rows_rect,__simd_test,__simd_test_log,__test_induce_worker_panic) not buildable: rustdoc JSON build failed: error[E0599]: no associated function or constant named `probe_shard_of` found for struct `BorrowTracker` in the current scope
 ## summary
 #
 #   pub types (struct/enum/trait/alias)         3

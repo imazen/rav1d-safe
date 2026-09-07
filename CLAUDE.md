@@ -884,6 +884,14 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+### Root `Strictness` import (#525)
+
+`Strictness` is now re-exported alongside `Settings`. For downstream callers,
+create `Settings::default()` and then assign `settings.strictness`; `Settings`
+remains non-exhaustive. The integration suite `tests/strictness.rs` imports
+from the root and tests both policies against conforming and malformed streams.
+
+
 ### ARM film-grain row reservations and panic cleanup (#526)
 
 Fixed by `83fa5d3e` and `56601c91`. The ARM grain dispatchers reserved a

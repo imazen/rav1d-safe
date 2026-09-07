@@ -111,5 +111,5 @@ u8: align::ArrayDefault
 ## auto traits
 
 0 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
-align::AlignedVec32<T>: !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
-align::AlignedVec64<T>: !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
+align::AlignedVec32<T>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
+align::AlignedVec64<T>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe

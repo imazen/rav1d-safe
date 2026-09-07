@@ -17,7 +17,7 @@
 //! Both verified 2026-08-28 against aomdec (libaom 632172a) and the dav1d 1.5.3
 //! CLI: `--strict 0` decodes 1/1 frames, `--strict 1` rejects. The record is
 //! `benchmarks/strictness_2026-08-28.meta`.
-use rav1d_safe::src::managed::{Decoder, Error, Frame, Planes, Settings, Strictness};
+use rav1d_safe::{Decoder, Error, Frame, Planes, Settings, Strictness};
 
 const SEG_ID_DESYNC: &[u8] = include_bytes!("strictness_vectors/segment_id_desync_zenrav1e35.obu");
 const TILE_PADDING_DESYNC: &[u8] =
