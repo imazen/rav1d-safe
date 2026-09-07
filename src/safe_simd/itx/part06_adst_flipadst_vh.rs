@@ -1089,11 +1089,43 @@ macro_rules! impl_8x8_transform {
     };
 }
 
-/// 8x8 8bpc variant with SIMD column pass.
-/// Row pass uses scalar tuple `row_fn`, column pass uses a SIMD helper that
-/// operates on a flat row-major `[i32; 64]` buffer (e.g. `dct8_1d_cols8`).
-macro_rules! impl_8x8_transform_simd_col {
-    ($name:ident, $row_fn:ident, $simd_col_fn:ident) => {
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn mixed8_row_dct(token: Desktop64, coeff: &[i16], tmp: &mut [i32; 64]) {
+    const MIN: i32 = i16::MIN as i32;
+    const MAX: i32 = i16::MAX as i32;
+    simd_row_dct8_8bpc_8rows(token, coeff, 8, 0, false, 1, 1, tmp, MIN, MAX, MIN, MAX);
+}
+
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn mixed8_row_adst<const FLIPPED: bool>(token: Desktop64, coeff: &[i16], tmp: &mut [i32; 64]) {
+    const MIN: i32 = i16::MIN as i32;
+    const MAX: i32 = i16::MAX as i32;
+    simd_row_adst8_8bpc_8rows(
+        token, coeff, 8, 0, false, FLIPPED, 1, 1, tmp, MIN, MAX, MIN, MAX,
+    );
+}
+
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn mixed8_row_identity(_token: Desktop64, coeff: &[i16], tmp: &mut [i32; 64]) {
+    // Identity8 doubles each input; the 8x8 intermediate (2*x + 1) >> 1
+    // recovers x exactly for every i16. Only the layout changes here.
+    let mut cols = [_mm256_setzero_si256(); 8];
+    for x in 0..8 {
+        cols[x] = _mm256_cvtepi16_epi32(loadu_128!(&coeff[x * 8..x * 8 + 8], [i16; 8]));
+    }
+    let rows = transpose_8x8_i32!(cols);
+    for y in 0..8 {
+        storeu_256!(&mut tmp[y * 8..y * 8 + 8], [i32; 8], rows[y]);
+    }
+}
+
+/// 8x8 8bpc transform with SIMD row and column passes. The row helper reads
+/// column-major coefficients and writes a rounded/clipped row-major buffer.
+macro_rules! impl_8x8_transform_simd {
+    ($name:ident, $row_fn:path, $simd_col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
         pub fn $name(
@@ -1104,35 +1136,19 @@ macro_rules! impl_8x8_transform_simd_col {
             _eob: i32,
             _bitdepth_max: i32,
         ) {
-            let mut dst = dst.flex_mut();
-            let mut coeff = coeff.flex_mut();
+            let span = dst_stride
+                .checked_mul(7)
+                .and_then(|n| n.checked_add(8))
+                .expect("8x8 transform destination span overflow");
+            // Validate the whole footprint before Flex access, including in
+            // unchecked builds. Every row index fits this prefix.
+            let mut dst = dst[..span].flex_mut();
+            let mut coeff = coeff[..64].flex_mut();
             const MIN: i32 = i16::MIN as i32;
             const MAX: i32 = i16::MAX as i32;
 
-            // Row pass: scalar tuple, store row-major to flat tmp.
             let mut tmp = [0i32; 64];
-            for y in 0..8 {
-                let (o0, o1, o2, o3, o4, o5, o6, o7) = $row_fn(
-                    coeff[y * 8] as i32,
-                    coeff[y * 8 + 1] as i32,
-                    coeff[y * 8 + 2] as i32,
-                    coeff[y * 8 + 3] as i32,
-                    coeff[y * 8 + 4] as i32,
-                    coeff[y * 8 + 5] as i32,
-                    coeff[y * 8 + 6] as i32,
-                    coeff[y * 8 + 7] as i32,
-                    MIN,
-                    MAX,
-                );
-                tmp[y * 8] = o0;
-                tmp[y * 8 + 1] = o1;
-                tmp[y * 8 + 2] = o2;
-                tmp[y * 8 + 3] = o3;
-                tmp[y * 8 + 4] = o4;
-                tmp[y * 8 + 5] = o5;
-                tmp[y * 8 + 6] = o6;
-                tmp[y * 8 + 7] = o7;
-            }
+            $row_fn(_token, coeff.as_slice(), &mut tmp);
 
             // SIMD column pass: 8 cols × 8 rows in one chunk.
             {
@@ -1163,45 +1179,45 @@ macro_rules! impl_8x8_transform_simd_col {
     };
 }
 
-// Generate all 8x8 ADST/FlipADST combinations (SIMD col where possible)
-impl_8x8_transform_simd_col!(
+// Generate all 8x8 ADST/FlipADST combinations.
+impl_8x8_transform_simd!(
     inv_txfm_add_adst_dct_8x8_8bpc_avx2_inner,
-    adst8_1d_scalar,
+    mixed8_row_adst::<false>,
     dct8_1d_cols8
 );
-impl_8x8_transform_simd_col!(
+impl_8x8_transform_simd!(
     inv_txfm_add_dct_adst_8x8_8bpc_avx2_inner,
-    dct8_1d_scalar,
+    mixed8_row_dct,
     adst8_1d_cols8
 );
-impl_8x8_transform_simd_col!(
+impl_8x8_transform_simd!(
     inv_txfm_add_adst_adst_8x8_8bpc_avx2_inner,
-    adst8_1d_scalar,
+    mixed8_row_adst::<false>,
     adst8_1d_cols8
 );
-impl_8x8_transform_simd_col!(
+impl_8x8_transform_simd!(
     inv_txfm_add_flipadst_dct_8x8_8bpc_avx2_inner,
-    flipadst8_1d_scalar,
+    mixed8_row_adst::<true>,
     dct8_1d_cols8
 );
-impl_8x8_transform_simd_col!(
+impl_8x8_transform_simd!(
     inv_txfm_add_dct_flipadst_8x8_8bpc_avx2_inner,
-    dct8_1d_scalar,
+    mixed8_row_dct,
     flipadst8_1d_cols8
 );
-impl_8x8_transform_simd_col!(
+impl_8x8_transform_simd!(
     inv_txfm_add_flipadst_flipadst_8x8_8bpc_avx2_inner,
-    flipadst8_1d_scalar,
+    mixed8_row_adst::<true>,
     flipadst8_1d_cols8
 );
-impl_8x8_transform_simd_col!(
+impl_8x8_transform_simd!(
     inv_txfm_add_adst_flipadst_8x8_8bpc_avx2_inner,
-    adst8_1d_scalar,
+    mixed8_row_adst::<false>,
     flipadst8_1d_cols8
 );
-impl_8x8_transform_simd_col!(
+impl_8x8_transform_simd!(
     inv_txfm_add_flipadst_adst_8x8_8bpc_avx2_inner,
-    flipadst8_1d_scalar,
+    mixed8_row_adst::<true>,
     adst8_1d_cols8
 );
 
@@ -1944,35 +1960,35 @@ fn identity8_1d_scalar(
     )
 }
 
-// Use the macro to generate V/H transforms for 8x8 (SIMD col)
-impl_8x8_transform_simd_col!(
+// Generate V/H transforms for 8x8.
+impl_8x8_transform_simd!(
     inv_txfm_add_identity_adst_8x8_8bpc_avx2_inner,
-    identity8_1d_scalar,
+    mixed8_row_identity,
     adst8_1d_cols8
 );
-impl_8x8_transform_simd_col!(
+impl_8x8_transform_simd!(
     inv_txfm_add_adst_identity_8x8_8bpc_avx2_inner,
-    adst8_1d_scalar,
+    mixed8_row_adst::<false>,
     identity8_1d_cols8
 );
-impl_8x8_transform_simd_col!(
+impl_8x8_transform_simd!(
     inv_txfm_add_identity_flipadst_8x8_8bpc_avx2_inner,
-    identity8_1d_scalar,
+    mixed8_row_identity,
     flipadst8_1d_cols8
 );
-impl_8x8_transform_simd_col!(
+impl_8x8_transform_simd!(
     inv_txfm_add_flipadst_identity_8x8_8bpc_avx2_inner,
-    flipadst8_1d_scalar,
+    mixed8_row_adst::<true>,
     identity8_1d_cols8
 );
-impl_8x8_transform_simd_col!(
+impl_8x8_transform_simd!(
     inv_txfm_add_identity_dct_8x8_8bpc_avx2_inner,
-    identity8_1d_scalar,
+    mixed8_row_identity,
     dct8_1d_cols8
 );
-impl_8x8_transform_simd_col!(
+impl_8x8_transform_simd!(
     inv_txfm_add_dct_identity_8x8_8bpc_avx2_inner,
-    dct8_1d_scalar,
+    mixed8_row_dct,
     identity8_1d_cols8
 );
 
@@ -2001,4 +2017,3 @@ impl_8x8_ffi_wrapper!(
     inv_txfm_add_dct_identity_8x8_8bpc_avx2,
     inv_txfm_add_dct_identity_8x8_8bpc_avx2_inner
 );
-

@@ -1,0 +1,98 @@
+[
+  {
+    "file": "profile-photo-8k-t8-t1-upstream.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-8k-t8-t1-upstream.txt",
+    "bytes": 13920,
+    "sha256": "c9ac6c66a2753fba30f3e90022526a83ffd283bc489d28263936ebd5a8cf7011"
+  },
+  {
+    "file": "profile-photo-8k-t8-t1-wire16.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-8k-t8-t1-wire16.txt",
+    "bytes": 21144,
+    "sha256": "251af010528cac29a699e905006137d27ea847230b554e1dd87518f150239982"
+  },
+  {
+    "file": "profile-photo-8k-t8-t8-baseline.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-8k-t8-t8-baseline.txt",
+    "bytes": 19080,
+    "sha256": "5ee265c028e47eb166d58903883fac4d56d58203bd8ad03eb1fd6d55e0b813b7"
+  },
+  {
+    "file": "profile-photo-8k-t8-t8-upstream.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-8k-t8-t8-upstream.txt",
+    "bytes": 8860,
+    "sha256": "aae1b62c3268c28ee6f416d6a0233762eff9dff19ce82176ee5056a6dc35e72f"
+  },
+  {
+    "file": "profile-photo-8k-t8-t8-wire16.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-8k-t8-t8-wire16.txt",
+    "bytes": 19596,
+    "sha256": "b2f9ec8a59ded443bdec5e48142f139b3a36bcaf18de3778033d4a10f14f7f2c"
+  },
+  {
+    "file": "profile-wire8-commands.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles-wire8/commands.json",
+    "bytes": 16543,
+    "sha256": "744ee3bb80381f4dd69dbf334d40fb2a9b0590db2f6973d209592782b107b75b"
+  },
+  {
+    "file": "profile-wire8-photo-4k-t8-t1-baseline.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles-wire8/photo-4k-t8-t1-baseline.txt",
+    "bytes": 21402,
+    "sha256": "a9f33cdd9b2f50f67feae6d1138e8a846d1036ac4d697f9f434a23f57ed9ffef"
+  },
+  {
+    "file": "profile-wire8-photo-4k-t8-t1-row.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles-wire8/photo-4k-t8-t1-row.txt",
+    "bytes": 22434,
+    "sha256": "669ea2e3f027d463e347cad81d9cc738e32cbc6a5f116280d24135df01c8de2c"
+  },
+  {
+    "file": "profile-wire8-photo-4k-t8-t1-upstream.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles-wire8/photo-4k-t8-t1-upstream.txt",
+    "bytes": 13275,
+    "sha256": "950335bd615d9af030ea408819b6e59ef4abf2576f8a543c749a226c4df77dee"
+  },
+  {
+    "file": "profile-wire8-photo-8k-t8-t1-baseline.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles-wire8/photo-8k-t8-t1-baseline.txt",
+    "bytes": 21402,
+    "sha256": "90f8efc6495a469545e844e84e48d8f39b541b805a28a29bd8f1f6dc1b5bdb1d"
+  },
+  {
+    "file": "profile-wire8-photo-8k-t8-t1-row.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles-wire8/photo-8k-t8-t1-row.txt",
+    "bytes": 20886,
+    "sha256": "6be11abdd2ebbbb1d65b8fd752a726fa8cdc7c8a31d46e0560cc2508c16dce28"
+  },
+  {
+    "file": "profile-wire8-photo-8k-t8-t1-upstream.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles-wire8/photo-8k-t8-t1-upstream.txt",
+    "bytes": 11598,
+    "sha256": "a40d20aa7cfde45d484a110b8e58cf0404047428b2718f3e93b4a1f6e8ac1203"
+  },
+  {
+    "file": "profile-wire8-photo-8k-t8-t8-baseline.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles-wire8/photo-8k-t8-t8-baseline.txt",
+    "bytes": 20370,
+    "sha256": "49d5ec5a09689d81ea5248cf41ffb8d3757da9a8cd8b934213bc5730761fc458"
+  },
+  {
+    "file": "profile-wire8-photo-8k-t8-t8-row.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles-wire8/photo-8k-t8-t8-row.txt",
+    "bytes": 19854,
+    "sha256": "81c958ac83b6a56562e3f235e52bfd13a30a7b918cce4b0dca188b2041dcc39a"
+  },
+  {
+    "file": "profile-wire8-photo-8k-t8-t8-upstream.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles-wire8/photo-8k-t8-t8-upstream.txt",
+    "bytes": 8760,
+    "sha256": "cdcc3fe4ae960d38602976768f21babbe772af93336785d134740345552cc8b3"
+  },
+  {
+    "file": "profile-wire8-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles-wire8/provenance.json",
+    "bytes": 969,
+    "sha256": "94890cada47f3204ce2bf6242a2062a22f68b6676959fcb80a17ad0cf13bca78"
+  }
+]

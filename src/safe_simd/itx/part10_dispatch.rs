@@ -518,6 +518,25 @@ fn itxfm_dispatch_8bpc(
         (R32x16, IDTX) => arcane!(inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner),
         (S32x32, IDTX) => arcane!(inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner),
 
+        // Mixed 8x8 transforms: kernel names list row then column, while
+        // TxfmType lists column then row (as in the scalar reference).
+        (S8x8, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_8x8_8bpc_avx2_inner),
+        (S8x8, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_8x8_8bpc_avx2_inner),
+        (S8x8, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_8x8_8bpc_avx2_inner),
+        (S8x8, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_8x8_8bpc_avx2_inner),
+        (S8x8, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_8x8_8bpc_avx2_inner),
+        (S8x8, FLIPADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_flipadst_8x8_8bpc_avx2_inner)
+        }
+        (S8x8, ADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_adst_8x8_8bpc_avx2_inner),
+        (S8x8, FLIPADST_ADST) => arcane!(inv_txfm_add_adst_flipadst_8x8_8bpc_avx2_inner),
+        (S8x8, H_DCT) => arcane!(inv_txfm_add_dct_identity_8x8_8bpc_avx2_inner),
+        (S8x8, V_DCT) => arcane!(inv_txfm_add_identity_dct_8x8_8bpc_avx2_inner),
+        (S8x8, H_ADST) => arcane!(inv_txfm_add_adst_identity_8x8_8bpc_avx2_inner),
+        (S8x8, V_ADST) => arcane!(inv_txfm_add_identity_adst_8x8_8bpc_avx2_inner),
+        (S8x8, H_FLIPADST) => arcane!(inv_txfm_add_flipadst_identity_8x8_8bpc_avx2_inner),
+        (S8x8, V_FLIPADST) => arcane!(inv_txfm_add_identity_flipadst_8x8_8bpc_avx2_inner),
+
         // Mixed 16x16 transforms: kernel names list row then column, while
         // TxfmType lists column then row (as in the scalar reference).
         (S16x16, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_16x16_8bpc_avx2_inner),

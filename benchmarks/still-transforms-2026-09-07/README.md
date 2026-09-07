@@ -337,14 +337,17 @@ for every run. `profile_summary.py` groups reported self-cycle percentages:
 Transform self share drops in each paired profile. This is not an absolute
 stage-time estimate: inlining, sampling variation, and the changing total
 cost affect percentages. Upstream reports include 10–14% anonymous NASM
-labels; their ownership has not been resolved, so incomplete named stage
-sums cannot establish a stage-level slowdown ratio.
+labels; their ownership was unresolved in this initial report, so incomplete
+named stage sums could not establish a stage-level slowdown ratio.
 
-Entropy remains the largest serial target. Scalar ADST-8/DCT-8 and mixed 8×8
-fallbacks remain visible, making their coefficient layout/intermediate
-rounding and existing SIMD helpers the next transform lead to validate.
-Loopfilter and tracker work have larger shares at eight workers. These
-profiles do not provide new evidence of substantial spinning.
+The initial reading prioritized entropy by its checked self share. The
+[follow-up mixed 8×8 investigation](MIXED8.md) resolves the sampled anonymous
+labels to upstream entropy functions and normalizes cycles by timed frames.
+That correction shows much closer sampled entropy cost and redirects the
+next investigation toward transforms and loopfilter, alongside tracker
+overhead. The follow-up also fixes and connects the mixed 8×8 SIMD kernels;
+its direct arithmetic tests, paired timings, and scope are recorded there.
+These profiles do not provide new evidence of substantial spinning.
 
 Final local checks pass all seven selected debug tests (the new differential
 and token sweeps plus five committed-vector/concurrency fixtures), strict
