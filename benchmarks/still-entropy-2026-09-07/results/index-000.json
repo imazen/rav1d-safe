@@ -228,15 +228,15 @@
     "sha256": "335c863240128caed901c7c0ad8acbfafc23ef6fa46a0a703ca9d4fe260a820f"
   },
   {
-    "file": "candidate-builds.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/candidate-builds.json",
-    "bytes": 315,
-    "sha256": "834632c035faa3aa1e8c0a6f0b19aa696c4e9bd20eb0ef073298d0e487ba0b6a"
+    "file": "block-v3-all-codegen.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-all-codegen.json",
+    "bytes": 6509,
+    "sha256": "26033bf802ec1c737fd43cc59a0660b40290f9708a1268805e9c664884cdfa6e"
   },
   {
-    "file": "candidate-checked-build.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/candidate-checked-build.log",
-    "bytes": 257,
-    "sha256": "f897b95dd611aa46b1aacb4b566217762331e23f5810005e13c184ccacd9ff08"
+    "file": "block-v3-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-builds.json",
+    "bytes": 496,
+    "sha256": "1189bd591a15b3f6c66c46edd3b7fce07b3b1d3c35631dd500e567103a3343ee"
   }
 ]

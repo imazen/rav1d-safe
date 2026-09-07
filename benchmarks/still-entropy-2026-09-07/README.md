@@ -315,3 +315,133 @@ contain immutable binary and lockfile hashes; `mage-*-screen*` contains all
 raw samples. Both repositories' source and the decoder Cargo files were
 restored byte for byte after archiving. The clean dependency's generator,
 registry, token, and soundness health checks also passed before editing.
+
+## Follow-up: interval selection without an indexed stack lookup
+
+`interval-cmov.patch.gz`, against `19e859ed`, replaces adapt4's two interval
+lookups with balanced `core::hint::select_unpredictable` expressions. This
+API has been stable since Rust 1.88, within the manifest's 1.89 minimum
+([standard-library documentation](https://doc.rust-lang.org/std/hint/fn.select_unpredictable.html)).
+The four possible symbols choose exactly the same `(upper, lower)` pairs:
+`(rng, v0)`, `(v0, v1)`, `(v1, v2)`, `(v2, 0)`. CDF updates, refill, and
+normalization are unchanged.
+
+Generated coefficient routines go from 112 to 12 indexed stack-address
+operands each, with substantially more conditional moves. All 76 checked
+decoder unit/fixture tests pass. The five-round six-cell screen validates
+all 90 measured runs against both references, but serial time regresses:
+
+| 4K input | Workers | Paired change from retained CDF kernel |
+|---|---:|---:|
+| Photo, minimum tiles | 1 | +0.99% |
+| Photo, minimum tiles | 8 | +1.45% |
+| Photo, eight tiles | 1 | +1.28% |
+| Photo, eight tiles | 8 | -0.25% |
+| Map, eight tiles | 1 | +0.87% |
+| Map, eight tiles | 8 | -2.59% |
+
+Reject and restore the original source. The tiled-map screen improvement
+does not justify serial regressions or establish an acceptance result.
+`interval-cmov-*` records the code-generation counts, binaries, tests, and
+every timing sample. Removing indexed memory operations alone did not help.
+
+## Entropy usage probe
+
+`entropy-probe.patch.gz`, against `19e859ed`, adds ordinary counters owned by
+each exclusively accessed MsacContext. Its diagnostic field prints on drop;
+there are no atomics, shared counters, concurrent resets, or process-global
+policy changes. `probe.py` checks every output against independent dav1d and
+keeps the diagnostic build's timings out of performance analysis. This patch
+is archived and reverted, not part of the shipped decoder.
+
+All 12 development streams were probed at one and eight workers. Each
+invocation decodes four visible frames, giving 96 checked visible decodes.
+Every normalization is accounted for by a symbol or boolean operation, and
+every recorded CDF lookup has one symbol. Counts match exactly between one
+and eight workers for every stream. The bitstreams are the same frozen
+two-source development seed used by the timing screens.
+
+| Input, eight tiles | Entropy operations/frame | Four-symbol share | Equal-probability boolean share | Four-symbol CDF already saturated |
+|---|---:|---:|---:|---:|
+| Photo 2K | 2,242,531 | 55.83% | 31.6% | 96.10% |
+| Photo 4K | 7,683,137 | 57.24% | 31.1% | 98.67% |
+| Photo 8K | 18,121,706 | 61.42% | 29.8% | 99.48% |
+| Map 2K | 2,101,676 | 49.93% | 27.9% | 96.12% |
+| Map 4K | 5,756,076 | 49.13% | 27.3% | 98.15% |
+| Map 8K | 15,614,584 | 48.96% | 27.9% | 99.14% |
+
+Across all layouts, symbol zero accounts for 35–45% of four-symbol calls;
+it is not an overwhelmingly dominant early exit. Refills occur once per
+approximately 38–40 entropy operations. Saturated CDFs account for 96.10–99.80%
+of four-symbol calls: their update rate is seven and their count stays 32.
+This makes a fixed-rate CDF specialization a stronger measured lead than
+further optimizing the uncommon refill. `entropy-probe-analysis.json.gz`
+contains exact fractions; the summary and per-cell files retain every local
+counter, command, visible hash, and the probe binary hash.
+
+## Follow-up: saturated CDF and constant lane masks
+
+Two independent candidates apply to `19e859ed`. `cdf-steady.patch.gz` handles
+`count == 32 && rate == 7` with immediate vector shifts and leaves the already
+saturated count lane intact; callers load `count` from that lane. Other
+states retain the original kernel. `cdf-mask-table.patch.gz` instead keeps
+the variable-rate arithmetic and obtains the lane mask from a four-element
+constant table indexed by the already-clamped symbol. Neither changes the
+caller or expands its borrowed footprint.
+
+Both pass all 76 checked decoder unit/fixture tests, including exhaustive
+CDF arithmetic and live/disabled baseline-token permutations. The mask-table
+leaf is 77 bytes versus 98; the steady-state function, including its fallback,
+is 197 bytes. These are code-generation observations, not speed claims.
+
+| 4K input | Workers | Saturated CDF | Mask table |
+|---|---:|---:|---:|
+| Photo, minimum tiles | 1 | -0.49% | -1.14% |
+| Photo, minimum tiles | 8 | +0.04% | -1.70% |
+| Photo, eight tiles | 1 | +0.76% | -0.53% |
+| Photo, eight tiles | 8 | +1.80% | +2.74% |
+| Map, eight tiles | 1 | -0.04% | -0.21% |
+| Map, eight tiles | 8 | +0.26% | +0.44% |
+
+Five rotated paired rounds validate all 120 measured runs against both
+references. The fixed-rate variant provides no convincing gain. The mask
+table's small serial changes and mixed tiled results do not justify promotion
+from this screen. Both are archived and restored, with raw samples and code
+in `cdf-steady-*`, `cdf-mask-table-*`, and `cdf-steady-mask-screen*`.
+
+## Follow-up: CPU tier around coefficient decoding
+
+`block-v3.patch.gz`, against `19e859ed`, revisits the earlier block boundary
+with X64V3Token. This tier proves BMI2 and LZCNT as well as AVX2, allowing the
+compiler to select independent variable shifts and leading-zero counts in
+scalar code. Runtime detection and the original fallback remain in place;
+build-wide target flags and dependencies are unchanged.
+
+Code inspection shows that the first formulation leaves three large inner
+coefficient-class helpers outlined at the baseline tier. A separate
+`block-v3-inline.patch.gz` forces these helpers to inline. Its two hot
+bit-depth routines now contain 63 LZCNT sites each and 138–139 SHLX / 144 SHRX
+sites, with no BSR. They also have 25 CDF calls and 60 VZEROUPPER sites each;
+the baseline has 8–9 CDF calls and no VZEROUPPER sites. These are static
+instruction counts, not dynamically weighted costs. The complete symbol
+inventory includes the outlined helpers and scalar fallback, so it does not
+mistake a smaller outer function for eliminated work.
+
+Both formulations pass all 76 checked decoder unit/fixture tests. Five
+rotated paired rounds validate all 120 measured runs against both references:
+
+| 4K input | Workers | Partial V3 boundary | Full inner-loop V3 boundary |
+|---|---:|---:|---:|
+| Photo, minimum tiles | 1 | -0.79% | +3.41% |
+| Photo, minimum tiles | 8 | -0.37% | +3.95% |
+| Photo, eight tiles | 1 | +0.22% | +4.33% |
+| Photo, eight tiles | 8 | +0.53% | +3.61% |
+| Map, eight tiles | 1 | +0.37% | +4.03% |
+| Map, eight tiles | 8 | -1.88% | +0.80% |
+
+Neither is retained. The partial boundary does not provide a convincing
+serial benefit; the full boundary regresses serial time. The source is
+restored exactly. A possible follow-up would need evidence that CDF
+operations inline within the same CPU tier, eliminating the extra boundaries,
+before repeating this design. `block-v3-*` records both builds, tests, all
+timings, and the complete code-generation inventory.
