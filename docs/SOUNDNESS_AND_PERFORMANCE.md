@@ -109,6 +109,15 @@ data races. `forbid(unsafe_code)` in a caller cannot repair an unsound dependenc
    checks show whether a test can detect its claimed defect, while the formal
    argument explains why the implementation should satisfy the general rule.
 
+## Bounded compact-storage and x86-layout experiment
+
+The [2026-09-06 experiment record](../audit/perf-032/README.md) tests compact
+shard allocation and a layout that puts hot metadata in one x86 cache line.
+Compact storage greatly reduces tiny-buffer construction cost but adds a hot-path
+cost; neither prototype establishes a whole-decoder speedup in the two-vector
+screen. Both remain isolated experiments, with patches, raw timings and checks
+preserved. The const-compatible 0.3.2 implementation is unchanged.
+
 ## What makes the decoder slow
 
 The relevant costs are fine-grained registration, repeated writes to shared

@@ -1,0 +1,59 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.24
+   Compiling serde_core v1.0.229
+   Compiling zerocopy v0.8.56
+   Compiling serde v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde_json v1.0.151
+   Compiling cfg-if v1.0.4
+   Compiling autocfg v1.5.1
+   Compiling libc v0.2.189
+   Compiling regex-syntax v0.8.11
+   Compiling itoa v1.0.18
+   Compiling either v1.18.0
+   Compiling clap_lex v1.1.0
+   Compiling anstyle v1.0.14
+   Compiling ciborium-io v0.2.2
+   Compiling memchr v2.8.3
+   Compiling itertools v0.10.5
+   Compiling num-traits v0.2.19
+   Compiling clap_builder v4.6.6
+   Compiling syn v2.0.119
+   Compiling syn v3.0.5
+   Compiling same-file v1.0.6
+   Compiling cast v0.3.0
+   Compiling walkdir v2.5.0
+   Compiling regex-automata v0.4.18
+   Compiling is-terminal v0.4.17
+   Compiling spin v0.12.3
+   Compiling criterion-plot v0.5.0
+   Compiling anes v0.1.6
+   Compiling oorandom v11.1.5
+   Compiling once_cell v1.21.4
+   Compiling rav1d-disjoint-mut v0.3.2 (/home/lilith/tmp/rav1d-perf-experiment-2026-09-06/compact/disjoint)
+   Compiling clap v4.6.6
+   Compiling serde_derive v1.0.229
+   Compiling regex v1.13.1
+   Compiling zerocopy-derive v0.8.56
+   Compiling tinytemplate v1.2.1
+   Compiling half v2.7.1
+   Compiling ciborium-ll v0.2.2
+   Compiling ciborium v0.2.2
+   Compiling criterion v0.5.1
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.36s
+     Running tests/compact_transition.rs (/home/lilith/tmp/rav1d-perf-experiment-2026-09-06/miri-target/miri/x86_64-unknown-linux-gnu/debug/deps/compact_transition-01a39d100f197b7d)
+
+running 1 test
+test grows_after_parallelism_change_and_preserves_exclusion ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 61.23s
+
+     Running tests/guard_move_release.rs (/home/lilith/tmp/rav1d-perf-experiment-2026-09-06/miri-target/miri/x86_64-unknown-linux-gnu/debug/deps/guard_move_release-5f405ca82346fc9c)
+
+running 2 tests
+test moving_a_mut_guard_into_drop_is_not_ub ... ok
+test moving_a_shared_guard_into_drop_is_not_ub ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 136.32s
+

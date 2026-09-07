@@ -1,0 +1,19 @@
+--- a/examples/bench_ab_decode.rs
++++ b/examples/bench_ab_decode.rs
+@@ -98,7 +98,7 @@
+         .to_string();
+ 
+     let avif = std::fs::read(path).expect("read input");
+-    let obu = extract_obu(&avif);
++    let obu = if path.ends_with(".obu") { avif } else { extract_obu(&avif) };
+ 
+     let mut settings = Settings::default();
+     settings.threads = threads;
+@@ -139,6 +139,7 @@
+         let t0 = Instant::now();
+         for _ in 0..iters {
+             let f = dec.decode(black_box(&obu)).expect("decode");
++            assert!(f.is_some(), "timed decode returned no frame");
+             black_box(&f);
+             drop(f);
+         }

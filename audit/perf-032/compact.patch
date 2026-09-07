@@ -1,0 +1,44 @@
+--- a/crates/rav1d-disjoint-mut/src/tracker_shard.rs
++++ b/crates/rav1d-disjoint-mut/src/tracker_shard.rs
+@@ -1439,7 +1439,7 @@
+ /// mutable guard leaves the region possibly half-written, so every later borrow
+ /// fails.
+ pub(super) struct BorrowTracker {
+-    shards: [Shard; N_SHARDS],
++    shards: Vec<Shard>,
+     /// `log2` of this instance's block size — see [`block_shift_for`]. Read
+     /// once per registration off the same line as `mask`.
+     shift: u32,
+@@ -2012,13 +2012,13 @@
+ 
+ impl BorrowTracker {
+     pub fn new(len: usize) -> Self {
++        let mask = mask_for(len);
++        let mut shards = Vec::with_capacity(mask + 1);
++        shards.resize_with(mask + 1, Shard::new);
+         Self {
+-            #[cfg(not(disjoint_mut_loom))]
+-            shards: [const { Shard::new() }; N_SHARDS],
+-            #[cfg(disjoint_mut_loom)]
+-            shards: core::array::from_fn(|_| Shard::new()),
++            shards,
+             shift: block_shift_for(len),
+-            mask: mask_for(len),
++            mask,
+             row_stride: 0,
+             #[cfg(feature = "__probe_tinynop")]
+             tiny: len < SHARD_MIN_LEN,
+@@ -2034,8 +2034,12 @@
+     pub fn reprovision(&mut self, len: usize) {
+         // Only the mask (and the block shift) moves; the shards are already
+         // there, and `&mut self` guarantees every one of them is empty.
++        let mask = mask_for(len);
++        if self.shards.len() < mask + 1 {
++            self.shards.resize_with(mask + 1, Shard::new);
++        }
+         self.shift = block_shift_for(len);
+-        self.mask = mask_for(len);
++        self.mask = mask;
+         // A resize drops the stride hint, exactly as it drops the derived shift
+         // (see `DisjointMut::declare_row_stride`). Rectangle records simply stop
+         // being offered until a stride is declared again; every caller has a

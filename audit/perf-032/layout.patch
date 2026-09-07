@@ -1,0 +1,100 @@
+--- a/crates/rav1d-disjoint-mut/src/tracker_shard.rs
++++ b/crates/rav1d-disjoint-mut/src/tracker_shard.rs
+@@ -844,6 +844,7 @@
+ /// Liveness is NOT here — it lives in [`Shard::live`], one atomic byte per
+ /// slot, because releasing a borrow has to be doable without the lock. See
+ /// [`BorrowTracker::remove`] and [`Shard::live`].
++#[repr(C)]
+ struct ShardRecs {
+     /// SUPERSET of the live slots: bit `i` clear ⇒ slot `i` is provably dead.
+     ///
+@@ -878,8 +879,7 @@
+     /// which is what shard selection needs anyway, and `(rows, seg)` is
+     /// recovered from the hull and the stride by [`rect_decode`]. That is an
+     /// exact bijection, so nothing about the footprint is approximated.
+-    starts: [usize; SLOTS],
+-    ends: [usize; SLOTS],
++    bounds: [(usize, usize); SLOTS],
+     /// Registration site, for the overlap panic message.
+     ///
+     /// Debug only. In release the wrapper methods do not propagate
+@@ -895,8 +895,7 @@
+         Self {
+             allocated: 0,
+             flags: 0,
+-            starts: [0; SLOTS],
+-            ends: [0; SLOTS],
++            bounds: [(0, 0); SLOTS],
+             #[cfg(debug_assertions)]
+             locs: [None; SLOTS],
+         }
+@@ -961,8 +960,8 @@
+         };
+         while mask != 0 {
+             let i = (mask.trailing_zeros() as usize).min(SLOTS - 1);
+-            if self.starts[i] < end && start < self.ends[i] {
+-                return Some(self.hit(i, self.starts[i], self.ends[i]));
++            if self.bounds[i].0 < end && start < self.bounds[i].1 {
++                return Some(self.hit(i, self.bounds[i].0, self.bounds[i].1));
+             }
+             mask &= mask - 1;
+         }
+@@ -1013,15 +1012,15 @@
+         let rect = (flags >> RECT_SHIFT) as u8;
+         while mask != 0 {
+             let i = (mask.trailing_zeros() as usize).min(SLOTS - 1);
+-            if self.starts[i] < end && start < self.ends[i] {
++            if self.bounds[i].0 < end && start < self.bounds[i].1 {
+                 if rect & (1 << i) == 0 {
+-                    return Some(self.hit(i, self.starts[i], self.ends[i]));
++                    return Some(self.hit(i, self.bounds[i].0, self.bounds[i].1));
+                 }
+                 // The exact test: walk the rows the probe range can reach and
+                 // report the row segment that actually collided. The inter-row
+                 // gaps are not part of the record and are not reported.
+                 if let Some((rs, re)) =
+-                    rect_hit_range(self.starts[i], self.ends[i], row_stride, start, end)
++                    rect_hit_range(self.bounds[i].0, self.bounds[i].1, row_stride, start, end)
+                 {
+                     return Some(self.hit(i, rs, re));
+                 }
+@@ -1055,7 +1054,7 @@
+         let (rows, seg) = rect_decode(h0, h1, row_stride);
+         while mask != 0 {
+             let i = (mask.trailing_zeros() as usize).min(SLOTS - 1);
+-            let (es, ee) = (self.starts[i], self.ends[i]);
++            let (es, ee) = (self.bounds[i].0, self.bounds[i].1);
+             // Hull-vs-hull prefilter, exactly as in `find`.
+             if es < h1 && h0 < ee {
+                 if rect & (1 << i) == 0 {
+@@ -1104,8 +1103,8 @@
+         // chain between the lock acquire and the record write — the only kind
+         // of work this path is sensitive to.
+         if occupied == 0 {
+-            self.starts[0] = start;
+-            self.ends[0] = end;
++            self.bounds[0].0 = start;
++            self.bounds[0].1 = end;
+             // Whole-WORD STORE, not `|= 1` / `&= !1`: with no live slot, no
+             // other slot's mutability or rectangle bit is meaningful (`find`
+             // masks with the live set), so there is nothing to preserve — and
+@@ -1125,8 +1124,8 @@
+         if free == SLOTS {
+             return None;
+         }
+-        self.starts[free] = start;
+-        self.ends[free] = end;
++        self.bounds[free].0 = start;
++        self.bounds[free].1 = end;
+         if IS_MUT {
+             self.flags |= 1 << free;
+         } else {
+@@ -1169,7 +1168,7 @@
+ /// borrows onto the wide path, which IS measurable without a timer
+ /// (`--features __probe_wide`) and should be checked first.
+ /// See `docs/X64_APPLICABILITY.md` H1.
+-#[repr(align(128))]
++#[repr(C, align(128))]
+ struct Shard {
+     lock: TinyLock,
+     /// Slot `i` holds a live record iff `live[i]` is nonzero.

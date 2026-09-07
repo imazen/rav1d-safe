@@ -1,0 +1,47 @@
+[
+  {
+    "arm": "base",
+    "command": [
+      "cargo",
+      "build",
+      "--offline",
+      "--release",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-perf-experiment-2026-09-06/base/decoder/Cargo.toml",
+      "--example",
+      "bench_ab_decode"
+    ],
+    "seconds": 32.47163330402691,
+    "exit_code": 0
+  },
+  {
+    "arm": "compact",
+    "command": [
+      "cargo",
+      "build",
+      "--offline",
+      "--release",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-perf-experiment-2026-09-06/compact/decoder/Cargo.toml",
+      "--example",
+      "bench_ab_decode"
+    ],
+    "seconds": 27.93279822601471,
+    "exit_code": 0
+  },
+  {
+    "arm": "layout",
+    "command": [
+      "cargo",
+      "build",
+      "--offline",
+      "--release",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-perf-experiment-2026-09-06/layout/decoder/Cargo.toml",
+      "--example",
+      "bench_ab_decode"
+    ],
+    "seconds": 28.239410325069912,
+    "exit_code": 0
+  }
+]

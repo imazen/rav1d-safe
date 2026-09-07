@@ -1,0 +1,34 @@
+[
+  {
+    "arm": "compact",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-perf-experiment-2026-09-06/compact/disjoint/Cargo.toml",
+      "--features",
+      "aligned,pic-buf,zerocopy",
+      "--lib",
+      "--tests"
+    ],
+    "seconds": 9.800222081015818,
+    "exit_code": 0
+  },
+  {
+    "arm": "layout",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-perf-experiment-2026-09-06/layout/disjoint/Cargo.toml",
+      "--features",
+      "aligned,pic-buf,zerocopy",
+      "--lib",
+      "--tests"
+    ],
+    "seconds": 5.1747564520919695,
+    "exit_code": 0
+  }
+]

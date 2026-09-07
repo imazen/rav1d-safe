@@ -1,0 +1,82 @@
+[
+  {
+    "arm": "compact",
+    "model": "stacked",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "--offline",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-perf-experiment-2026-09-06/compact/disjoint/Cargo.toml",
+      "--test",
+      "compact_transition",
+      "--test",
+      "guard_move_release"
+    ],
+    "flags": "",
+    "seconds": 75.52946137893014,
+    "exit_code": 0
+  },
+  {
+    "arm": "compact",
+    "model": "tree",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "--offline",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-perf-experiment-2026-09-06/compact/disjoint/Cargo.toml",
+      "--test",
+      "compact_transition",
+      "--test",
+      "guard_move_release"
+    ],
+    "flags": "-Zmiri-tree-borrows",
+    "seconds": 94.4647235890152,
+    "exit_code": 0
+  },
+  {
+    "arm": "layout",
+    "model": "stacked",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "--offline",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-perf-experiment-2026-09-06/layout/disjoint/Cargo.toml",
+      "--test",
+      "compact_transition",
+      "--test",
+      "guard_move_release"
+    ],
+    "flags": "",
+    "seconds": 71.26305571501143,
+    "exit_code": 0
+  },
+  {
+    "arm": "layout",
+    "model": "tree",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "--offline",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-perf-experiment-2026-09-06/layout/disjoint/Cargo.toml",
+      "--test",
+      "compact_transition",
+      "--test",
+      "guard_move_release"
+    ],
+    "flags": "-Zmiri-tree-borrows",
+    "seconds": 94.90689267602284,
+    "exit_code": 0
+  }
+]

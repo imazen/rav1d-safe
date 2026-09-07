@@ -1,0 +1,200 @@
+[
+  {
+    "case": "construct",
+    "threads": 1,
+    "arm": "base",
+    "median_ns": 21100364,
+    "paired_median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0,
+    "faster": 0,
+    "rounds": 7
+  },
+  {
+    "case": "construct",
+    "threads": 1,
+    "arm": "compact",
+    "median_ns": 461627,
+    "paired_median_ratio": 0.02242885580817711,
+    "min_ratio": 0.02036581890916031,
+    "max_ratio": 0.03186655926883536,
+    "faster": 7,
+    "rounds": 7
+  },
+  {
+    "case": "construct",
+    "threads": 1,
+    "arm": "layout",
+    "median_ns": 20860730,
+    "paired_median_ratio": 1.0182756647812747,
+    "min_ratio": 0.9661741567945866,
+    "max_ratio": 1.0698408618284705,
+    "faster": 3,
+    "rounds": 7
+  },
+  {
+    "case": "small",
+    "threads": 1,
+    "arm": "base",
+    "median_ns": 511101,
+    "paired_median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0,
+    "faster": 0,
+    "rounds": 7
+  },
+  {
+    "case": "small",
+    "threads": 1,
+    "arm": "compact",
+    "median_ns": 565363,
+    "paired_median_ratio": 1.1348541007483302,
+    "min_ratio": 1.0057209235306779,
+    "max_ratio": 1.3125958712637087,
+    "faster": 0,
+    "rounds": 7
+  },
+  {
+    "case": "small",
+    "threads": 1,
+    "arm": "layout",
+    "median_ns": 561045,
+    "paired_median_ratio": 1.0574858118627894,
+    "min_ratio": 0.9933700615675259,
+    "max_ratio": 1.5512597497334606,
+    "faster": 1,
+    "rounds": 7
+  },
+  {
+    "case": "small",
+    "threads": 4,
+    "arm": "base",
+    "median_ns": 29350931,
+    "paired_median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0,
+    "faster": 0,
+    "rounds": 7
+  },
+  {
+    "case": "small",
+    "threads": 4,
+    "arm": "compact",
+    "median_ns": 30456781,
+    "paired_median_ratio": 1.0566850502970417,
+    "min_ratio": 0.49745480064267117,
+    "max_ratio": 1.5162786779191912,
+    "faster": 3,
+    "rounds": 7
+  },
+  {
+    "case": "small",
+    "threads": 4,
+    "arm": "layout",
+    "median_ns": 28587382,
+    "paired_median_ratio": 0.9886631024272532,
+    "min_ratio": 0.638968797775017,
+    "max_ratio": 1.3921492412155096,
+    "faster": 4,
+    "rounds": 7
+  },
+  {
+    "case": "large",
+    "threads": 1,
+    "arm": "base",
+    "median_ns": 3294516,
+    "paired_median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0,
+    "faster": 0,
+    "rounds": 7
+  },
+  {
+    "case": "large",
+    "threads": 1,
+    "arm": "compact",
+    "median_ns": 3396439,
+    "paired_median_ratio": 1.0353138218825786,
+    "min_ratio": 0.7467309019242064,
+    "max_ratio": 1.3721724222920757,
+    "faster": 3,
+    "rounds": 7
+  },
+  {
+    "case": "large",
+    "threads": 1,
+    "arm": "layout",
+    "median_ns": 3495207,
+    "paired_median_ratio": 0.9757903525663209,
+    "min_ratio": 0.8100817548715039,
+    "max_ratio": 1.2513572797285926,
+    "faster": 4,
+    "rounds": 7
+  },
+  {
+    "case": "large",
+    "threads": 4,
+    "arm": "base",
+    "median_ns": 3974757,
+    "paired_median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0,
+    "faster": 0,
+    "rounds": 7
+  },
+  {
+    "case": "large",
+    "threads": 4,
+    "arm": "compact",
+    "median_ns": 4564657,
+    "paired_median_ratio": 1.1484115884316952,
+    "min_ratio": 0.9722741713608534,
+    "max_ratio": 1.3488359395554825,
+    "faster": 3,
+    "rounds": 7
+  },
+  {
+    "case": "large",
+    "threads": 4,
+    "arm": "layout",
+    "median_ns": 3851553,
+    "paired_median_ratio": 0.8532080875103676,
+    "min_ratio": 0.6457048465123347,
+    "max_ratio": 1.4151551750799383,
+    "faster": 5,
+    "rounds": 7
+  },
+  {
+    "case": "large",
+    "threads": 8,
+    "arm": "base",
+    "median_ns": 5041052,
+    "paired_median_ratio": 1.0,
+    "min_ratio": 1.0,
+    "max_ratio": 1.0,
+    "faster": 0,
+    "rounds": 7
+  },
+  {
+    "case": "large",
+    "threads": 8,
+    "arm": "compact",
+    "median_ns": 4720223,
+    "paired_median_ratio": 0.9397165106331766,
+    "min_ratio": 0.6289553111960157,
+    "max_ratio": 1.1298125867378477,
+    "faster": 5,
+    "rounds": 7
+  },
+  {
+    "case": "large",
+    "threads": 8,
+    "arm": "layout",
+    "median_ns": 3920905,
+    "paired_median_ratio": 0.7777949919977021,
+    "min_ratio": 0.6208541469780838,
+    "max_ratio": 0.8551376595831464,
+    "faster": 7,
+    "rounds": 7
+  }
+]
