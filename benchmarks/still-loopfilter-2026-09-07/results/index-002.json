@@ -60,6 +60,30 @@
     "sha256": "f36e72befcf6632e747e93a7c5cf48af0c86fe208b97498254318da301245b36"
   },
   {
+    "file": "earlywide-mask-restored.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/earlywide-mask-restored.log",
+    "bytes": 1469,
+    "sha256": "e87c4ee571c3fa54cec49876796054822a95252f81c9c8958bb148d988bbb127"
+  },
+  {
+    "file": "earlywide-mask-scalar.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/earlywide-mask-scalar.log",
+    "bytes": 1469,
+    "sha256": "d54c257932494f02364a4d471ffc1f6e1d270e1e989ae913a53c806973ae8f52"
+  },
+  {
+    "file": "earlywide-mask-validation.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/earlywide-mask-validation.json",
+    "bytes": 1883,
+    "sha256": "67ef81f7dfdc33ff3a0a3fb1e2a11caee558d6f89106504c83b35f8d1c8f1fcb"
+  },
+  {
+    "file": "earlywide-partial-mask-mutation.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/earlywide-partial-mask-mutation.log",
+    "bytes": 13133,
+    "sha256": "b360de6db66bcdbef6e645d5b9b82b580701d3405bdc6c4682e52fc5133df3be"
+  },
+  {
     "file": "mask-census-build.log.gz",
     "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/mask-census-build.log",
     "bytes": 570,
@@ -102,9 +126,117 @@
     "sha256": "52a27c69d770a2e2fee5891d7ed37dfa7363fa8b8744157e9866c6ad15a5e6e0"
   },
   {
-    "file": "transform-984d41dd-ci.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/transform-984d41dd-ci.json",
-    "bytes": 9835,
-    "sha256": "3c2fa8bbd9224b86b9598e28226096473fc5029a7328e71f8b96ee0152b4d0a3"
+    "file": "mask-scalar-baseline.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/mask-scalar-baseline.log",
+    "bytes": 1469,
+    "sha256": "1f3a3843fb20508cb0e849fbb04c78a95f5065cfb4bbd192b2f9609d8e545f02"
+  },
+  {
+    "file": "packed-linear-bounds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed-linear-bounds.json",
+    "bytes": 14361,
+    "sha256": "d9b080e2cabed4bc2c3e4aaf4d678ad936bdec0970e7e1bd2bbd88717cf6f39f"
+  },
+  {
+    "file": "packed16-bound-probe-correction.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-bound-probe-correction.json",
+    "bytes": 381,
+    "sha256": "5a754f520a80ab5ada27789cde4007bf77a508d8a3b1112a06a11a8d9eb0ecfa"
+  },
+  {
+    "file": "packed16-prototype-audit.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-prototype-audit.json",
+    "bytes": 307,
+    "sha256": "d1815b70aeb49184efbbec4993ce76c0791021c11098711873d72ec1125f9171"
+  },
+  {
+    "file": "packed6-align5-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-align5-builds.json",
+    "bytes": 562,
+    "sha256": "88299ce418f705b0f7898e683cb2153b2f5abd653ce9ebbc41691e0ea99cf81d"
+  },
+  {
+    "file": "packed6-align5-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-align5-checked-build.log",
+    "bytes": 266,
+    "sha256": "c8e859a7ad3a258474ce7147ac5d6da578a166fd3f1814ce6f720b23158c00a0"
+  },
+  {
+    "file": "packed6-api-audit.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-api-audit.json",
+    "bytes": 1581,
+    "sha256": "58e635d30fee2b253b5c576f30606e492870b5713f35c926fe8a0d2fd2a209fa"
+  },
+  {
+    "file": "packed6-baseline-align5-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-baseline-align5-builds.json",
+    "bytes": 571,
+    "sha256": "b919725cc651cc760300f718e6e7916a25d093dc30b1681900b0f9303232ba5d"
+  },
+  {
+    "file": "packed6-baseline-align5-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-baseline-align5-checked-build.log",
+    "bytes": 275,
+    "sha256": "ecac210ce371d58006f4554105255cd42cb98d4bf76c90690d4f0a28b3c2bae8"
+  },
+  {
+    "file": "packed6-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-build.log",
+    "bytes": 440,
+    "sha256": "746460f174a8b64ab6ecb1baff6c3944269a2362041ec94b0973fd6acec38962"
+  },
+  {
+    "file": "packed6-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-builds.json",
+    "bytes": 555,
+    "sha256": "1469af93f7d53a366dea1cabf9a732320c40466b4037b69e13c6fef788b64b95"
+  },
+  {
+    "file": "packed6-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-checked-build.log",
+    "bytes": 259,
+    "sha256": "c117a0b1d6a64830f430e59555092d848a3a181e47144c5922170742b30869ca"
+  },
+  {
+    "file": "packed6-clippy-debug.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-clippy-debug.log",
+    "bytes": 164,
+    "sha256": "6f3c1918b475854cb3bafac291fe2517b765f448b20732bf44a9909298bf1aea"
+  },
+  {
+    "file": "packed6-clippy-release.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-clippy-release.log",
+    "bytes": 166,
+    "sha256": "7c9a5b3928045c2ca73e0bec0c0e86932816884e3e4558d0311470b021b5dd14"
+  },
+  {
+    "file": "packed6-confirm-command-0.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm-command-0.log",
+    "bytes": 386,
+    "sha256": "b23d7d7f95fa4d6e0f8eae4a489bde4ad2d0bee96bb3cf411510efa9351529b6"
+  },
+  {
+    "file": "packed6-confirm-command-1.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm-command-1.log",
+    "bytes": 488,
+    "sha256": "4d6ced6f66bc5236f070b8460ad9b3cb9d9c5f87d52a09e80350bfb9e26584a2"
+  },
+  {
+    "file": "packed6-confirm-commands.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm-commands.json",
+    "bytes": 1184,
+    "sha256": "53573d242a586a0d089e1b346b3d05728aaf0966224700f9db3967cab3428662"
+  },
+  {
+    "file": "packed6-confirm-confidence.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm-confidence.json",
+    "bytes": 14479,
+    "sha256": "98b2eaefd312b1c709ef6c23ae650fdc6e2902a0df5dc0084fc4e88a60bd7f45"
+  },
+  {
+    "file": "packed6-confirm-frame-reference.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm-frame-reference.json",
+    "bytes": 523,
+    "sha256": "6c5a16c3f6bdadf1936d3d92d884a486be0e2bcd86fde66efe2900c39309cd05"
   }
 ]

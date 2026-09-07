@@ -2345,3 +2345,51 @@ mod neon_parity {
         sweep::<BitDepth16>(BitDepth16::new(4095), &ALL_WD);
     }
 }
+
+/// Test-only slice adapter to the production scalar arithmetic. SIMD tests
+/// share this oracle rather than transcribing filter formulas or using a
+/// second SIMD width as the reference.
+#[cfg(all(test, target_arch = "x86_64", feature = "bitdepth_8"))]
+pub(crate) fn loop_filter_scalar_for_test(
+    buf: &mut [u8],
+    base: usize,
+    strides: [isize; 2],
+    lanes: usize,
+    levels: [u8; 3],
+    width: usize,
+) {
+    use crate::include::common::bitdepth::BitDepth8;
+
+    struct Taps<'a> {
+        buf: &'a mut [u8],
+        base: usize,
+        strides: [isize; 2],
+    }
+    impl Taps<'_> {
+        fn at(&self, lane: isize, tap: isize) -> usize {
+            self.base
+                .checked_add_signed(lane * self.strides[0] + tap * self.strides[1])
+                .unwrap()
+        }
+    }
+    impl LfTaps<BitDepth8> for Taps<'_> {
+        fn get(&self, lane: isize, tap: isize) -> i32 {
+            i32::from(self.buf[self.at(lane, tap)])
+        }
+        fn set(&mut self, lane: isize, tap: isize, value: u8) {
+            let at = self.at(lane, tap);
+            self.buf[at] = value;
+        }
+    }
+
+    assert_eq!(lanes % 4, 0);
+    let [e, i, h] = levels;
+    for lane in (0..lanes).step_by(4) {
+        let mut taps = Taps {
+            buf,
+            base: base.checked_add_signed(lane as isize * strides[0]).unwrap(),
+            strides,
+        };
+        loop_filter(&mut taps, e, i, h, width as c_int, BitDepth8::new(()));
+    }
+}

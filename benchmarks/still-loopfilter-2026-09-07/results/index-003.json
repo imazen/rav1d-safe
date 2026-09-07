@@ -1,0 +1,242 @@
+[
+  {
+    "file": "packed6-confirm-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm-provenance.json",
+    "bytes": 1596,
+    "sha256": "c04270d2f530c9d9714065c16fcc4fb651a66ff4020fcc61ffc49a7a5f91862f"
+  },
+  {
+    "file": "packed6-confirm-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm-summary.json",
+    "bytes": 9865,
+    "sha256": "3f1d82ba68b6a429c50a3bd9ad40fdbfa0b0a5f03d2310baa7558337c04449fe"
+  },
+  {
+    "file": "packed6-confirm-000.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
+    "bytes": 24604,
+    "sha256": "faa0997925747d69cb78e42f5dbd7127948e321b559c76eda102dbb6c454d4c7"
+  },
+  {
+    "file": "packed6-confirm-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
+    "bytes": 24508,
+    "sha256": "99b2f77f4f54c505641168a4c1bab86c6b8c2e50d0fb574bca1c3c878b9ad641"
+  },
+  {
+    "file": "packed6-confirm-002.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
+    "bytes": 24410,
+    "sha256": "d0ef80ae20a7ec22cd392f24ced79a60314a976046323d896aa4e3ddbfbb8202"
+  },
+  {
+    "file": "packed6-confirm-003.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
+    "bytes": 24451,
+    "sha256": "2b574c1bfc4b987d3aec011160f908a5b4c242e6a68b794ea7759e3efa2dfbfa"
+  },
+  {
+    "file": "packed6-confirm-004.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
+    "bytes": 24392,
+    "sha256": "94a8983ce447fe702eb64e4847a818fd03348e7c726c96cbe5671b41e51d576d"
+  },
+  {
+    "file": "packed6-confirm-005.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
+    "bytes": 24411,
+    "sha256": "6ac3b448397899473d3ffd1445eaa2548f6891b811136e75f25db44cf58a98ee"
+  },
+  {
+    "file": "packed6-confirm-006.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
+    "bytes": 24362,
+    "sha256": "7a6d138b870d66aef9fe895e819421aafce35a7d896bdc85050db3992a885c35"
+  },
+  {
+    "file": "packed6-confirm-007.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
+    "bytes": 24282,
+    "sha256": "95723b9479369e636590656a1714c207e33008eb2de463bae6951d49907d136e"
+  },
+  {
+    "file": "packed6-confirm-008.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
+    "bytes": 9782,
+    "sha256": "bfbdaef682cc5f4edea5cffe19196e5f4faca2e8502c30995a89fab33fb2371f"
+  },
+  {
+    "file": "packed6-conformance-env-audit.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-conformance-env-audit.json",
+    "bytes": 457,
+    "sha256": "6a28f33397a39b2de05e2aafc557fe5df4f891e307457f4cc8543676c48bd52f"
+  },
+  {
+    "file": "packed6-conformance-explicit-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-conformance-explicit-t8.json",
+    "bytes": 573,
+    "sha256": "d75b44310feea693b8bc1310a095187360b57c680917704e7b3517f446696220"
+  },
+  {
+    "file": "packed6-conformance-explicit-t8.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-conformance-explicit-t8.log",
+    "bytes": 2463,
+    "sha256": "8c8d3eb739730dfa0afcfddaf635e2d0b665c67adf5b9f268f74589e11d24906"
+  },
+  {
+    "file": "packed6-conformance-t1.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-conformance-t1.log",
+    "bytes": 2519,
+    "sha256": "b50cb3663805fbb3f279206f1d3cb3049e0317f1b653503a0c730232d82d6e78"
+  },
+  {
+    "file": "packed6-conformance-t8.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-conformance-t8.log",
+    "bytes": 2439,
+    "sha256": "a2f4b99aa5ad7c7510749e296af32d9d92608952d48bc232bd3be958809f2aaa"
+  },
+  {
+    "file": "packed6-debug-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-debug-tests.log",
+    "bytes": 5233,
+    "sha256": "0b70aa3a81b0726d0ce024153fe90116504f8932e855f6e5dd69ff2a57a4ee6f"
+  },
+  {
+    "file": "packed6-decoder-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-decoder-tests.log",
+    "bytes": 51559,
+    "sha256": "31f35fa687eaee24103243182121f6cd2c089ff0b303ee150b424aec5963db0f"
+  },
+  {
+    "file": "packed6-final-commands.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-final-commands.json",
+    "bytes": 1913,
+    "sha256": "2e54214882b308badfbfbcf77ebdc7d19d0038259c21da8d3b4b1d4869fd880d"
+  },
+  {
+    "file": "packed6-fixture-correction.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-fixture-correction.json",
+    "bytes": 373,
+    "sha256": "bfdb7c1c0d2b0b7645a84a10fafa2ad16e5c9757d94a3d6cac54f53e8f1897db"
+  },
+  {
+    "file": "packed6-followup-commands.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-followup-commands.json",
+    "bytes": 3160,
+    "sha256": "b5982a7fbd5232d9ac9577cce0c7a161100a4a71ec1abc43eeded06f3ab44ee8"
+  },
+  {
+    "file": "packed6-footprint.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-footprint.json",
+    "bytes": 2226,
+    "sha256": "712308af6940315939a6f8969fce0480ea99d7a6d939c2f45352d2cf582c438f"
+  },
+  {
+    "file": "packed6-format.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-format.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "file": "packed6-grouping-fixed-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-grouping-fixed-tests.log",
+    "bytes": 2119,
+    "sha256": "855da027b4cd0ef4557ca515ae734dbd9fae2ce4fc132204092d38d3f582e3a3"
+  },
+  {
+    "file": "packed6-grouping-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-grouping-tests.log",
+    "bytes": 4795,
+    "sha256": "3b0344ccd85635f66e59d935f7bc599378d64c9282ec6ff99948f5a2a23e0732"
+  },
+  {
+    "file": "packed6-included-format.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-included-format.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "file": "packed6-level-mutation.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-level-mutation.log",
+    "bytes": 2184,
+    "sha256": "646b60dd9b0ade396a4934dcb121f29e7f71333b12970b5c0506337a7bc16883"
+  },
+  {
+    "file": "packed6-permutation-smoke.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-permutation-smoke.log",
+    "bytes": 1547,
+    "sha256": "bf56c5874e2464e4c5d282cbd79a19f02c47229bfbc2c0bf374eccfc8ddf7362"
+  },
+  {
+    "file": "packed6-placement-align5-sources.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-align5-sources.json",
+    "bytes": 2104,
+    "sha256": "62ae4d2e830378cbcad18d71b983e6450c2613f4de7ea56bf05c0fe55fed54e7"
+  },
+  {
+    "file": "packed6-placement-analyze.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-analyze.log",
+    "bytes": 488,
+    "sha256": "973b62897bfe6538f9fd98d1c62377105bee49296081d0934e7770549f8ac83e"
+  },
+  {
+    "file": "packed6-placement-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-build.log",
+    "bytes": 250,
+    "sha256": "7e16bba56bb0d0657726c207da46ebb411682d9b6b721745a3209bd5e686006d"
+  },
+  {
+    "file": "packed6-placement-compare.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-compare.log",
+    "bytes": 388,
+    "sha256": "f48c1071aa3c73c3ab1598617c1baa8071e8e4d2ce6d44e31e1a7f1f152b7219"
+  },
+  {
+    "file": "packed6-placement-confidence.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-confidence.json",
+    "bytes": 8451,
+    "sha256": "3ea67285bb6af4f7a8bfd028aaf9294c06e34a6ad774d43ca81653ac5afba235"
+  },
+  {
+    "file": "packed6-placement-frame-reference.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-frame-reference.json",
+    "bytes": 523,
+    "sha256": "6c5a16c3f6bdadf1936d3d92d884a486be0e2bcd86fde66efe2900c39309cd05"
+  },
+  {
+    "file": "packed6-placement-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-provenance.json",
+    "bytes": 1377,
+    "sha256": "3ae25a879cb4f0f092f8b1deb061000ea029ee4f8960d5c09c6bc5e891b4669b"
+  },
+  {
+    "file": "packed6-placement-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-summary.json",
+    "bytes": 7117,
+    "sha256": "1e6900f3fe7760ed1d5fa4f139511d8afcc9b13b421946bac4dd1a1f27f43f67"
+  },
+  {
+    "file": "packed6-placement-000.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement.jsonl",
+    "bytes": 25133,
+    "sha256": "37699c23e94e4239205be7c8d886f1058e9fc530ff0ef6259387fd0ccf73cb88"
+  },
+  {
+    "file": "packed6-placement-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement.jsonl",
+    "bytes": 24967,
+    "sha256": "fa8c56985fb697621172a9acbcc33111154aa92bc4f2a348ae888cd29bb800eb"
+  },
+  {
+    "file": "packed6-placement-002.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement.jsonl",
+    "bytes": 24977,
+    "sha256": "a5d73a3116f59d0f0e3596efaec95d00ce10275e6f1020afef05292bf214c333"
+  },
+  {
+    "file": "packed6-placement-003.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement.jsonl",
+    "bytes": 24951,
+    "sha256": "4018b0239db61f3d5344035d0716b165f8c2412ecd08b21576c831d63d4d014d"
+  }
+]
