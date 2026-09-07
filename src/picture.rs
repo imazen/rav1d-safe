@@ -119,77 +119,90 @@ impl Rav1dPictureParameters {
 /// # Safety
 ///
 /// * `p_c` must be from a `&mut Dav1dPicture`.
-/// * `cookie` must be from a `&Arc<MemPool<u8>>`.
 #[cfg(feature = "c-ffi")]
 unsafe extern "C" fn dav1d_default_picture_alloc(
     p_c: *mut Dav1dPicture,
-    cookie: Option<SendSyncNonNull<c_void>>,
+    _cookie: Option<SendSyncNonNull<c_void>>,
 ) -> Dav1dResult {
-    // SAFETY: Guaranteed by safety preconditions.
-    let p = unsafe { p_c.read() }.to::<Rav1dPicture>();
-    let hbd = (p.p.bpc > 8) as c_int;
-    let aligned_w = p.p.w + 127 & !127;
-    let has_chroma = p.p.layout != Rav1dPixelLayout::I400;
-    let ss_hor = (p.p.layout != Rav1dPixelLayout::I444) as c_int;
-    let mut y_stride = (aligned_w << hbd) as ptrdiff_t;
-    let mut uv_stride = if has_chroma { y_stride >> ss_hor } else { 0 };
-    if y_stride & 1023 == 0 {
-        y_stride += RAV1D_PICTURE_ALIGNMENT as isize;
-    }
-    if uv_stride & 1023 == 0 && has_chroma {
-        uv_stride += RAV1D_PICTURE_ALIGNMENT as isize;
-    }
-    let stride = [y_stride, uv_stride];
-    let [y_sz, uv_sz] = match p.p.pic_len(stride) {
-        Ok(v) => v,
-        Err(_) => return Dav1dResult(-ENOMEM.errno()),
-    };
-    let pic_size = y_sz + 2 * uv_sz;
+    // The public callback has no owning-cookie API. It must work even when
+    // function-pointer comparison does not recognize it as the default.
+    // SAFETY: The pointer precondition is identical to this callback's.
+    unsafe { Rav1dPicAllocator::default_picture_alloc_with_pool(p_c, Arc::new(MemPool::new())) }
+}
 
-    let pool = cookie.unwrap().cast::<Arc<MemPool<u8>>>();
-    // SAFETY: Guaranteed by safety preconditions.
-    let pool = unsafe { pool.as_ref() };
-    let pool = pool.clone();
-    let pic_cap = pic_size + RAV1D_PICTURE_ALIGNMENT;
-    let buf = match pool.pop_init(pic_cap, 0) {
-        Ok(buf) => buf,
-        Err(_) => return Dav1dResult(-ENOMEM.errno()),
-    };
-    // We have to `Box` this because `Dav1dPicture::allocator_data` is only 8 bytes.
-    let mut buf = Box::new(MemPoolBuf { pool, buf });
-    let data = &mut buf.buf[..pic_cap];
-    // SAFETY: `Rav1dPicAllocator::alloc_picture_callback` requires that these are `RAV1D_PICTURE_ALIGNMENT`-aligned.
-    let align_offset = data.as_ptr().align_offset(RAV1D_PICTURE_ALIGNMENT);
-    let data = &mut data[align_offset..][..pic_size];
-
-    let (data0, data12) = data.split_at_mut(y_sz);
-    let (data1, data2) = data12.split_at_mut(uv_sz);
-    // Note that `data[1]` and `data[2]`
-    // were previously null instead of an empty slice when `!has_chroma`,
-    // but this way is simpler and more uniform, especially when we move to slices.
-    let data = [data0, data1, data2].map(|data| {
-        if data.is_empty() {
-            ptr::null_mut()
-        } else {
-            data.as_mut_ptr().cast()
+#[cfg(feature = "c-ffi")]
+impl Rav1dPicAllocator {
+    /// Allocate using a Rust-owned pool, without encoding its lifetime in a cookie.
+    ///
+    /// # Safety
+    ///
+    /// * `p_c` must be from a `&mut Dav1dPicture`.
+    pub(crate) unsafe fn default_picture_alloc_with_pool(
+        p_c: *mut Dav1dPicture,
+        pool: Arc<MemPool<u8>>,
+    ) -> Dav1dResult {
+        // SAFETY: Guaranteed by safety preconditions.
+        let p = unsafe { p_c.read() }.to::<Rav1dPicture>();
+        let hbd = (p.p.bpc > 8) as c_int;
+        let aligned_w = p.p.w + 127 & !127;
+        let has_chroma = p.p.layout != Rav1dPixelLayout::I400;
+        let ss_hor = (p.p.layout != Rav1dPixelLayout::I444) as c_int;
+        let mut y_stride = (aligned_w << hbd) as ptrdiff_t;
+        let mut uv_stride = if has_chroma { y_stride >> ss_hor } else { 0 };
+        if y_stride & 1023 == 0 {
+            y_stride += RAV1D_PICTURE_ALIGNMENT as isize;
         }
-    });
+        if uv_stride & 1023 == 0 && has_chroma {
+            uv_stride += RAV1D_PICTURE_ALIGNMENT as isize;
+        }
+        let stride = [y_stride, uv_stride];
+        let [y_sz, uv_sz] = match p.p.pic_len(stride) {
+            Ok(v) => v,
+            Err(_) => return Dav1dResult(-ENOMEM.errno()),
+        };
+        let pic_size = y_sz + 2 * uv_sz;
 
-    // SAFETY: Guaranteed by safety preconditions.
-    let p_c = unsafe { &mut *p_c };
-    p_c.stride = stride;
-    p_c.data = data.map(NonNull::new);
-    p_c.allocator_data = Some(SendSyncNonNull::from_box(buf).cast::<c_void>());
-    // The caller will create the real `Rav1dPicture` from the `Dav1dPicture` fields set above,
-    // so we don't want to drop the `Rav1dPicture` we created for convenience here.
-    mem::forget(p);
+        let pic_cap = pic_size + RAV1D_PICTURE_ALIGNMENT;
+        let buf = match pool.pop_init(pic_cap, 0) {
+            Ok(buf) => buf,
+            Err(_) => return Dav1dResult(-ENOMEM.errno()),
+        };
+        // We have to `Box` this because `Dav1dPicture::allocator_data` is only 8 bytes.
+        let mut buf = Box::new(MemPoolBuf { pool, buf });
+        let data = &mut buf.buf[..pic_cap];
+        // SAFETY: `Rav1dPicAllocator::alloc_picture_callback` requires that these are `RAV1D_PICTURE_ALIGNMENT`-aligned.
+        let align_offset = data.as_ptr().align_offset(RAV1D_PICTURE_ALIGNMENT);
+        let data = &mut data[align_offset..][..pic_size];
 
-    Rav1dResult::Ok(()).into()
+        let (data0, data12) = data.split_at_mut(y_sz);
+        let (data1, data2) = data12.split_at_mut(uv_sz);
+        // Note that `data[1]` and `data[2]`
+        // were previously null instead of an empty slice when `!has_chroma`,
+        // but this way is simpler and more uniform, especially when we move to slices.
+        let data = [data0, data1, data2].map(|data| {
+            if data.is_empty() {
+                ptr::null_mut()
+            } else {
+                data.as_mut_ptr().cast()
+            }
+        });
+
+        // SAFETY: Guaranteed by safety preconditions.
+        let p_c = unsafe { &mut *p_c };
+        p_c.stride = stride;
+        p_c.data = data.map(NonNull::new);
+        p_c.allocator_data = Some(SendSyncNonNull::from_box(buf).cast::<c_void>());
+        // The caller will create the real `Rav1dPicture` from the `Dav1dPicture` fields set above,
+        // so we don't want to drop the `Rav1dPicture` we created for convenience here.
+        mem::forget(p);
+
+        Rav1dResult::Ok(()).into()
+    }
 }
 
 /// # Safety
 ///
-/// * `p` is from a `&mut Dav1dPicture` initialized by [`dav1d_default_picture_alloc`].
+/// * `p` is from a `&mut Dav1dPicture` initialized by the default allocation helper.
 #[cfg(feature = "c-ffi")]
 unsafe extern "C" fn dav1d_default_picture_release(
     p: *mut Dav1dPicture,
@@ -198,8 +211,9 @@ unsafe extern "C" fn dav1d_default_picture_release(
     // SAFETY: Guaranteed by safety preconditions.
     let p = unsafe { &mut *p };
     let buf = p.allocator_data.unwrap().cast::<MemPoolBuf<u8>>();
-    // SAFETY: `dav1d_default_picture_alloc` stores `SendSyncNonNull::from_box` of a `Box<MemPoolBuf<u8>>` in `Dav1dPicture::allocator_data`,
-    // and `(Rav1dPicAllocator::release_picture_callback == dav1d_default_picture_release) == (Rav1dPicAllocator::alloc_picture_callback == dav1d_default_picture_alloc)`.
+    // SAFETY: The default helper stores SendSyncNonNull::from_box of a
+    // Box<MemPoolBuf<u8>> in allocator_data. Both the public callback and the
+    // pooled Rust allocation path use that helper and this release callback.
     let buf = unsafe { buf.into_box() };
     let MemPoolBuf { pool, buf } = *buf;
     pool.push(buf);
@@ -210,11 +224,9 @@ impl Default for Rav1dPicAllocator {
     fn default() -> Self {
         Self {
             cookie: None,
-            default_pool: None,
+            default_pool: Some(Arc::new(MemPool::new())),
             // SAFETY: `dav1d_default_picture_alloc` requires `p_c` be from a `&mut Dav1dPicture`,
             // `Self::alloc_picture_callback` safety preconditions guarantee that.
-            // `dav1d_default_picture_alloc` also requires that `cookie` be from a `&Arc<MemPool<u8>>`,
-            // which callback_cookie borrows from default_pool, initialized in rav1d_open.
             alloc_picture_callback: dav1d_default_picture_alloc,
             // SAFETY: `dav1d_default_picture_release` requires `p` be from a `&mut Dav1dPicture`
             // initialized by `dav1d_default_picture_alloc`.
@@ -227,6 +239,13 @@ impl Default for Rav1dPicAllocator {
 #[cfg(feature = "c-ffi")]
 impl Rav1dPicAllocator {
     pub fn is_default(&self) -> bool {
+        if self.default_pool.is_some() {
+            return true;
+        }
+        // Recognition of callbacks imported from C only enables pool reuse.
+        // False negatives are permitted by fn_addr_eq: the public callback
+        // still allocates correctly without this optimization. Do not assert
+        // equal results for independently compared allocation/release pointers.
         let alloc = fn_addr_eq(
             self.alloc_picture_callback,
             dav1d_default_picture_alloc
@@ -240,7 +259,6 @@ impl Rav1dPicAllocator {
             dav1d_default_picture_release
                 as unsafe extern "C" fn(*mut Dav1dPicture, Option<SendSyncNonNull<c_void>>),
         );
-        assert!(alloc == release); // This should be impossible since these `fn`s are private.
         alloc && release
     }
 }

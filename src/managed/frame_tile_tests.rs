@@ -77,6 +77,44 @@ fn copied_picture_can_allocate_after_decoder_and_source_drop() {
     }
 }
 
+/// A small allocation-only path for Miri: no entropy decoding or SIMD is
+/// needed to exercise the allocator cookie's ownership and provenance.
+#[cfg(feature = "c-ffi")]
+#[test]
+fn retained_allocator_allocates_after_decoder_drop() {
+    let mut settings = Settings::default();
+    settings.threads = 1;
+    settings.max_frame_delay = 1;
+    let decoder = Decoder::with_settings(settings).unwrap();
+    let allocator = decoder.ctx.allocator.clone();
+    drop(decoder);
+
+    use crate::include::dav1d::picture::{Dav1dPicAllocator, Rav1dPicAllocator};
+    let exported = Dav1dPicAllocator::from(Rav1dPicAllocator::default());
+    let imported = Rav1dPicAllocator::try_from(exported).unwrap();
+    // Exercise the actual C callback fallback too, without asking is_default
+    // to recognize its addresses and replace it with the pooled Rust path.
+    assert!(imported.default_pool.is_none());
+    for allocator in [allocator, imported] {
+        let seq_hdr = crate::src::obu::rav1d_parse_sequence_header(STREAM).unwrap();
+        let mut picture = allocator
+            .alloc_picture_data(16, 16, Arc::new(seq_hdr), None)
+            .unwrap();
+        drop(allocator);
+        for _ in 0..4 {
+            let mut next = Rav1dPicture::default();
+            crate::src::picture::rav1d_picture_alloc_copy(&None, &mut next, 16, &picture).unwrap();
+            drop(picture);
+            picture = next;
+        }
+        let frame = Frame { inner: picture };
+        match frame.planes() {
+            Planes::Depth8(planes) => assert_eq!(planes.y().rows().next().unwrap().len(), 16),
+            Planes::Depth16(_) => panic!("the committed sequence is 8-bit"),
+        }
+    }
+}
+
 #[test]
 fn serial_and_threaded_decoders_run_concurrently_with_local_policies() {
     let (a_tx, a_rx) = std::sync::mpsc::sync_channel(1);

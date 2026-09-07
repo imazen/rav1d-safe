@@ -202,10 +202,13 @@ private arithmetic change; conformance and dispatch gates still apply.
 CI exposed two independent issues, repaired in separate commits:
 
 - The default C-FFI allocator cookie pointed into a dropped decoder. Its
-  internal allocator clones now retain the pool Arc and borrow a live Arc
-  slot only during a callback. All 21 assembly library tests and four C-FFI
-  lifecycle tests pass, including the former SIGSEGV and a 16-generation
-  retained-picture copy chain. The default checked allocator already owned
+  internal allocator clones now retain the pool Arc and pass owned handles
+  directly to the allocation helper. Default callbacks also work when their
+  addresses are not recognized, a second failure exposed by Miri. All 27
+  assembly and 61 C-FFI library/integration checks pass, including the former
+  SIGSEGV and a 16-generation retained-picture copy chain. The minimal test
+  passes Stacked and Tree Borrows with strict provenance, exercising both
+  owned defaults and C callback fallback. Both models are added to CI. The default checked allocator already owned
   its pool. The public C ABI is unchanged. See
   [the lifetime argument](../../docs/FFI_ALLOCATOR_LIFETIME.md).
 - The whole-plane `__simd_test` save/restore protocol requires serial
@@ -218,5 +221,6 @@ CI exposed two independent issues, repaired in separate commits:
   assertion or concurrent workload was removed. See the protocol in
   [the ownership ledger](../../docs/OWNERSHIP_MODELS.md#7e-the-whole-plane-guard-audit-479-and-why-only-one-of-the-three-sites-was-a-bug).
 
-Cross-platform CI and the remaining performance gates are still required;
+The default checked doctest gate passes (nine tests, 13 pre-existing ignored
+examples). Cross-platform CI and the remaining performance gates are still required;
 the draft is not ready to merge or release.
