@@ -54,6 +54,17 @@ another decoder cannot impose unnecessary sharding on serial work. The first
 threshold-only arm regressed primed serial decoding, which is why these changes
 are paired. See the [experiment and validation record](../benchmarks/tracker-sharding-2026-09-07/README.md).
 
+**2026-09-07 high-resolution still follow-up:** the 2K/4K/8K development
+corpus showed no tracker-slot overflow in nine census cases and at most 0.12%
+explicit spin/slow-lock samples in the selected profiles. Compact loopfilter
+row reads dominate the tiled borrow counts; coefficient/entropy work and
+scalar transform fallbacks dominate serial-photo opportunities. This supports
+investigating exact row-record coalescing and read/write kernel footprints,
+not reviving a whole-band snapshot or widening a reference. The investigation
+changes no ownership implementation. See the
+[still baseline, profiles, and scope limits](../benchmarks/stills-2026-09-07/README.md)
+and the [proposed parity goal](PERFORMANCE_PARITY_GOAL.md).
+
 ---
 
 ## 1. `split_at_mut` on the shared picture — unavailable through the current worker API

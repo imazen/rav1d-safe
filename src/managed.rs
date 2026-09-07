@@ -178,19 +178,22 @@ pub enum Strictness {
 pub struct Settings {
     /// Number of threads for decoding
     ///
-    /// * `0` = auto-detect (enables frame threading for better performance but asynchronous behavior)
+    /// * `0` = auto-detect the worker count
     /// * `1` = single-threaded (default, simpler synchronous behavior)
-    /// * `2+` = multi-threaded with frame threading
+    /// * `2+` = multiple workers, including tile parallelism within a frame
     ///
-    /// With frame threading enabled (threads >= 2 or threads == 0), `decode()` may return `None`
+    /// With multiple workers, `decode()` may return `None`
     /// even when complete frame data is provided, as frames are processed asynchronously.
     /// Poll [`get_frame()`](Decoder::get_frame) between chunks, and call
     /// [`flush()`](Decoder::flush) once at end of input — it drains every frame still
     /// owed (in flight or queued in the last chunk) before it resets.
     ///
-    /// **Note:** Multithreading requires the `unchecked` feature. Without it,
-    /// the decoder silently falls back to single-threaded to prevent runtime
-    /// panics from DisjointMut overlap detection on stride gap bytes.
+    /// Tile threading works in the default checked build. Decoding multiple
+    /// frames in flight also requires the `unchecked` feature; without it,
+    /// frame delay is capped at one while the requested worker count is retained.
+    /// For stills, additional workers help mainly when the image has multiple
+    /// tiles. Set [`max_frame_delay`](Self::max_frame_delay) to one for explicit
+    /// single-frame latency measurements.
     pub threads: u32,
 
     /// Apply film grain synthesis during decoding

@@ -1,0 +1,36 @@
+[
+  {
+    "path": "1400-lilith-nature/1407_nature_rocky-coastline-ocean_20210608-132404-2_8160x6120.jpg",
+    "folder": "1400-lilith-nature",
+    "category": "nature",
+    "number": "1407",
+    "descriptor": "rocky-coastline-ocean",
+    "location": "",
+    "width": "8160",
+    "height": "6120",
+    "format": "jpg",
+    "bytes": "10246643",
+    "original_filename": "20210608_132404~2.jpg",
+    "source": "lilith",
+    "license": "PD-own",
+    "url": "https://codec-corpus.r2.imazen.org/imazen-26-unprocessed/1400-lilith-nature/1407_nature_rocky-coastline-ocean_20210608-132404-2_8160x6120.jpg",
+    "sha256": "8de18289ef2f0191a7b005397a30507c93bb9527094b95538cc3335613f7c77e"
+  },
+  {
+    "path": "5000-national-park-service-brochures/color/5017_nps_grsm-grsm-trail-map_color_p01_9146x5272.png",
+    "folder": "5000-national-park-service-brochures",
+    "category": "nps",
+    "number": "5017",
+    "descriptor": "grsm-grsm-trail-map_color_p01",
+    "location": "",
+    "width": "9146",
+    "height": "5272",
+    "format": "png",
+    "bytes": "36009637",
+    "original_filename": "nps_nps-grsm-GRSM_Trail_Map_p01.png",
+    "source": "nps",
+    "license": "PD-USGov",
+    "url": "https://codec-corpus.r2.imazen.org/imazen-26-unprocessed/5000-national-park-service-brochures/color/5017_nps_grsm-grsm-trail-map_color_p01_9146x5272.png",
+    "sha256": "a034c17ec389f7a3adb09f7cba17e95509689bc4532940ae8a34769560660605"
+  }
+]

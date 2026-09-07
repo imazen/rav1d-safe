@@ -170,7 +170,12 @@ With `threads >= 2` or `threads == 0`, the decoder uses tile threading to parall
 rav1d-safe = { version = "0.5", features = ["bitdepth_8", "bitdepth_16"] }
 ```
 
-With 2 threads, expect ~2x speedup on photo decode. Frame threading (`max_frame_delay > 1`) still requires the `unchecked` feature.
+Still-image scaling depends on the encoded tile layout. A single-tile image
+may gain little from additional workers; tiled images can benefit substantially.
+Measure the intended workload and set `max_frame_delay = 1` when comparing
+single-frame latency. Frame threading (`max_frame_delay > 1`) still requires
+the `unchecked` feature. See the [2K/4K/8K still investigation](benchmarks/stills-2026-09-07/README.md)
+and the [performance parity goal](docs/PERFORMANCE_PARITY_GOAL.md).
 
 #### `strictness` — what to do with a stream that breaks the spec
 
