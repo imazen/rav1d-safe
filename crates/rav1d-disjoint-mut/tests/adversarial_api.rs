@@ -5,6 +5,35 @@
 use rav1d_disjoint_mut::DisjointMut;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+#[test]
+fn explicit_policy_can_change_between_borrows_but_never_disables_checks() {
+    let mut dm = DisjointMut::new(vec![0u8; 128]);
+    for threads in [0, 8, 1, 24, 1] {
+        dm.configure_parallelism(threads, 4);
+        dm.resize(256, 0);
+        dm.declare_row_stride(16);
+        rav1d_disjoint_mut::set_parallelism(32);
+        rav1d_disjoint_mut::set_tile_concurrency(64);
+        std::thread::scope(|scope| {
+            for lane in 0..2 {
+                let dm = &dm;
+                scope.spawn(move || {
+                    for value in 0..8 {
+                        let mut guard = dm.index_mut(lane * 64..(lane + 1) * 64);
+                        guard.fill(value);
+                        assert!(rejected(|| {
+                            drop(dm.index(lane * 64..lane * 64 + 1));
+                        }));
+                        assert!(guard.iter().all(|&x| x == value));
+                    }
+                });
+            }
+        });
+        assert!(dm.index(..128).iter().all(|&x| x == 7));
+        dm.resize(128, 0);
+    }
+}
+
 fn rejected(f: impl FnOnce()) -> bool {
     match catch_unwind(AssertUnwindSafe(f)) {
         Ok(()) => false,

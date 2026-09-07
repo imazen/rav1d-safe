@@ -241,3 +241,38 @@ No crate, advisory, or upstream message is published by this local review.
 See the [API review](../audit/api/README.md),
 [ownership experiment ledger](OWNERSHIP_MODELS.md#experiment-ledger-reviewed-2026-09-06),
 and [initial soundness analysis](SOUNDNESS_AND_PERFORMANCE.md) for linked evidence.
+
+
+## Instance-local placement and picture policy (2026-09-07)
+
+`DisjointMut::configure_parallelism(&mut self, threads, tiles)` changes only
+placement, under exclusive access. A caller may underestimate concurrency:
+all overlapping accesses still meet in the same instance's exclusion domains.
+The method preserves poison and does not retire records. No usable guard may
+coexist with reconfiguration; a compile-fail example enforces that boundary.
+Local hints persist through resize/stride changes and ignore other decoders'
+global hints. The fallback globals remain monotone. Admission/retirement memory
+orderings are unchanged. `const new` remains available.
+
+`local_policy_survives_concurrent_global_changes_and_retirement` models the
+production record algorithm across a global promotion, conflicting admission,
+retirement, and exclusive reconfiguration. The public adversarial test races
+two disjoint writers even with a single-worker hint and uses each live guard
+after a competing overlap was rejected. Run it under both Miri memory models.
+This extends the existing bounded models; it does not model the entire decoder.
+
+Each decoded picture is configured before its allocation is shared. Retained
+pictures and copied allocations keep that policy after decoder destruction.
+A worker pool with multiple workers needs row guards even for a one-tile frame,
+because post-filters can run concurrently. Mixed decoder lifetime/concurrency
+and actual gap-reservation tests guard this distinction.
+
+The bounded x86 MC source helper registers the complete contiguous Rust slice,
+including row gaps. Its allocation checks, tap geometry, signed-stride hulls,
+and 135x135 maximum are documented in `audit/concurrency-fixes/README.md`.
+This narrows a formerly whole-component read; it never uses a rectangle record
+to justify a wider reference. The reconstruction extent thresholds remain
+unchanged. The extent gate now reads decoded plane views to retain its existing
+whole-component liveness check after MC no longer exercises that exemption.
+Tight/full SIMD parity, independent corpus MD5s, gap conflicts, token modes,
+and deliberate short-window/global-policy mutations provide separate gates.

@@ -13,12 +13,16 @@ use std::format;
 use std::string::String;
 use std::sync::{Mutex, OnceLock};
 
+type BorrowKey = (&'static Location<'static>, bool, u32, u32, usize, u32);
+type BorrowTotals = (u64, u64, u64);
+type PolicyKey = (&'static str, usize, usize, u32, usize);
+
 #[derive(Default)]
 struct Counts {
     // Location, mutable, bytes log bucket, rows log bucket, active shards, shift.
-    borrows: BTreeMap<(&'static Location<'static>, bool, u32, u32, usize, u32), (u64, u64, u64)>,
+    borrows: BTreeMap<BorrowKey, BorrowTotals>,
     // event, length in container elements, shards, block shift, row stride bytes.
-    policies: BTreeMap<(&'static str, usize, usize, u32, usize), (u64, u64)>,
+    policies: BTreeMap<PolicyKey, (u64, u64)>,
     occupancy: [u64; 8],
     threads: u64,
 }

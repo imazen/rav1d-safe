@@ -1,0 +1,30 @@
+[
+  {
+    "arm": "base-t8-i1",
+    "spin": 18.58,
+    "wide_add": 15.56,
+    "wide_remove": 10.95,
+    "tracker": 66.60000000000002
+  },
+  {
+    "arm": "base-t8-i4",
+    "spin": 17.56,
+    "wide_add": 16.0,
+    "wide_remove": 11.42,
+    "tracker": 65.7
+  },
+  {
+    "arm": "combined-t8-i1",
+    "spin": 18.05,
+    "wide_add": 3.04,
+    "wide_remove": 1.86,
+    "tracker": 53.63
+  },
+  {
+    "arm": "combined-t8-i4",
+    "spin": 16.12,
+    "wide_add": 3.2600000000000002,
+    "wide_remove": 1.66,
+    "tracker": 52.22000000000001
+  }
+]

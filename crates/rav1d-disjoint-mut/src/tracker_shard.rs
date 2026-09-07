@@ -1477,16 +1477,19 @@ pub(super) struct BorrowTracker {
     mask: usize,
     /// This instance's picture row stride in BYTES, or 0 when none was declared.
     ///
-    /// Written only through [`Self::set_row_stride`] / [`Self::reprovision`],
-    /// both `&mut self`, so it is fixed for as long as any record can exist —
+    /// Written only through `set_row_stride` or `reprovision`, both `&mut self`,
+    /// so it is fixed while any guard remains usable —
     /// which is what lets a rectangle record's `(rows, seg)` be *derived* from
     /// its hull instead of stored (see [`rect_decode`]). Both registrants of a
     /// shared byte read the same value, exactly as they do for `shift` and
     /// `mask`, and it lives on the same line as those.
     row_stride: usize,
+    /// Explicit instance policy, retained across resize and stride declarations.
+    /// Only `&mut self` may replace it; borrow registration never reads globals.
+    local_policy: Option<(usize, usize)>,
     /// THROWAWAY (`__probe_tinynop`): this instance is shorter than
-    /// [`SHARD_MIN_LEN`]. Set once in [`Self::new`]/[`Self::reprovision`] off
-    /// the same line as `mask`, and read only to SKIP tracking entirely.
+    /// [`SHARD_MIN_LEN`]. Set in `new`/`reprovision` beside `mask`, and read
+    /// only to SKIP tracking entirely.
     /// UNSOUND — measurement only. See [`Self::add`]'s probe arm.
     #[cfg(feature = "__probe_tinynop")]
     tiny: bool,
@@ -1911,11 +1914,11 @@ fn shard_of(block: usize, mask: usize) -> usize {
 /// release.
 #[inline]
 fn mask_for(len: usize) -> usize {
-    if len >= SHARD_MIN_LEN {
-        active_shards() - 1
-    } else {
-        0
-    }
+    mask_for_policy(len, active_shards())
+}
+
+fn mask_for_policy(len: usize, shards: usize) -> usize {
+    if len >= SHARD_MIN_LEN { shards - 1 } else { 0 }
 }
 
 /// Shards a *concurrent* instance gets. The compile-time array size, i.e. the
@@ -2033,16 +2036,7 @@ fn tile_concurrency() -> usize {
 
 impl BorrowTracker {
     pub fn new(len: usize) -> Self {
-        #[cfg(feature = "__probe_usage")]
-        crate::usage_probe::policy(
-            "new",
-            len,
-            mask_for(len),
-            block_shift_for(len),
-            0,
-            core::mem::size_of::<Self>(),
-        );
-        Self {
+        let tracker = Self {
             #[cfg(not(disjoint_mut_loom))]
             shards: [const { Shard::new() }; N_SHARDS],
             #[cfg(disjoint_mut_loom)]
@@ -2050,22 +2044,58 @@ impl BorrowTracker {
             shift: block_shift_for(len),
             mask: mask_for(len),
             row_stride: 0,
+            local_policy: None,
             #[cfg(feature = "__probe_tinynop")]
             tiny: len < SHARD_MIN_LEN,
             wide: TrackerCell::new(Vec::new()),
             state: AtomicU32::new(0),
+        };
+        #[cfg(feature = "__probe_usage")]
+        crate::usage_probe::policy(
+            "new",
+            len,
+            tracker.mask,
+            tracker.shift,
+            0,
+            core::mem::size_of::<Self>(),
+        );
+        tracker
+    }
+
+    fn policy(&self) -> (usize, usize) {
+        self.local_policy
+            .unwrap_or_else(|| (active_shards(), tile_concurrency()))
+    }
+
+    pub fn configure_parallelism(&mut self, len: usize, threads: usize, tiles: usize) {
+        let shards = if threads > 1 {
+            SHARDS_CONCURRENT
+        } else {
+            SHARDS_SERIAL
+        };
+        let tiles = tiles.max(1);
+        self.local_policy = Some((shards, tiles));
+        self.mask = mask_for_policy(len, shards);
+        self.shift = block_shift_rule_rows(len, shards, tiles, self.row_stride);
+        #[cfg(feature = "__probe_shiftpin")]
+        if let Some(pinned) = pinned_shift(self.row_stride) {
+            self.shift = pinned;
         }
+        #[cfg(feature = "__probe_usage")]
+        crate::usage_probe::policy("configure", len, self.mask, self.shift, self.row_stride, 0);
     }
 
     /// Re-size the shard array after the container's length changed.
     ///
-    /// `&mut self` is the whole safety argument: the caller holds `&mut
-    /// DisjointMut`, so no borrow can be outstanding and no record can be lost.
+    /// The caller holds `&mut DisjointMut`, so no usable guard can remain.
+    /// Forgotten guards may leave records, but cannot later access storage or
+    /// retire through their old mapping. Neither records nor poison are cleared.
     pub fn reprovision(&mut self, len: usize) {
-        // Only the mask (and the block shift) moves; the shards are already
-        // there, and `&mut self` guarantees every one of them is empty.
-        self.shift = block_shift_for(len);
-        self.mask = mask_for(len);
+        // Only the mask and block shift move; the shard array stays in place.
+        // Exclusive access rules out every usable guard, including its Drop.
+        let (shards, tiles) = self.policy();
+        self.shift = block_shift_rule(len, shards, tiles);
+        self.mask = mask_for_policy(len, shards);
         // A resize drops the stride hint, exactly as it drops the derived shift
         // (see `DisjointMut::declare_row_stride`). Rectangle records simply stop
         // being offered until a stride is declared again; every caller has a
@@ -2084,8 +2114,8 @@ impl BorrowTracker {
     /// shift can be chosen in ROWS rather than in blocks-per-buffer.
     ///
     /// `&mut self` carries the same whole safety argument as
-    /// [`Self::reprovision`]: the caller holds `&mut DisjointMut`, so no borrow
-    /// can be outstanding and no record can be lost when the shift moves.
+    /// [`Self::reprovision`]: the caller holds `&mut DisjointMut`, so no usable
+    /// guard can access storage or retire through the old mapping.
     ///
     /// **This decides the shipped block shift for every picture plane** since
     /// 2026-08-11; before that it was a no-op feeding an A/B arm. It reverts to
@@ -2103,7 +2133,8 @@ impl BorrowTracker {
             self.shift = pinned;
             return;
         }
-        self.shift = block_shift_rule_rows(len, active_shards(), tile_concurrency(), stride);
+        let (shards, tiles) = self.policy();
+        self.shift = block_shift_rule_rows(len, shards, tiles, stride);
         #[cfg(feature = "__probe_usage")]
         crate::usage_probe::policy("stride", len, self.mask, self.shift, stride, 0);
     }
@@ -3037,6 +3068,57 @@ fn wide_loc() -> Option<&'static Location<'static>> {
 #[cfg(all(test, not(disjoint_mut_loom)))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_policy_survives_global_promotions_stride_and_resize() {
+        let mut serial = BorrowTracker::new(1 << 20);
+        serial.configure_parallelism(1 << 20, 0, 0);
+        let mut parallel = BorrowTracker::new(1 << 20);
+        parallel.configure_parallelism(1 << 20, 8, 4);
+        for len in [1 << 20, 16, 1 << 22] {
+            set_parallelism(24);
+            set_tile_concurrency(32);
+            for (tracker, shards, tiles) in [
+                (&mut serial, SHARDS_SERIAL, 1),
+                (&mut parallel, SHARDS_CONCURRENT, 4),
+            ] {
+                tracker.reprovision(len);
+                tracker.set_row_stride(len, 1024);
+                assert_eq!(tracker.mask, mask_for_policy(len, shards));
+                assert_eq!(
+                    tracker.shift,
+                    block_shift_rule_rows(len, shards, tiles, 1024)
+                );
+                assert_eq!(tracker.local_policy, Some((shards, tiles)));
+            }
+        }
+    }
+
+    #[test]
+    fn local_policy_never_changes_a_live_records_mapping() {
+        for threads in [0, 1, 8] {
+            let mut tracker = BorrowTracker::new(1 << 20);
+            tracker.configure_parallelism(1 << 20, threads, 4);
+            let mapping = (tracker.mask, tracker.shift);
+            let held = tracker.add_immut(&b(8190..16390));
+            set_parallelism(32);
+            set_tile_concurrency(64);
+            assert_eq!((tracker.mask, tracker.shift), mapping);
+            assert!(
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    tracker.add_mut(&b(16388..16400))
+                }))
+                .is_err()
+            );
+            tracker.remove(held);
+            // A clean conflict need not poison. Simulate the partial-publication
+            // failure path independently and ensure reconfiguration cannot heal it.
+            tracker.poison();
+            assert_ne!(tracker.state.load(Ordering::Relaxed) & POISON_BIT, 0);
+            tracker.configure_parallelism(1 << 20, 1, 1);
+            assert_ne!(tracker.state.load(Ordering::Relaxed) & POISON_BIT, 0);
+        }
+    }
 
     fn b(r: core::ops::Range<usize>) -> Bounds {
         Bounds { range: r }

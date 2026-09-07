@@ -3,6 +3,91 @@ use super::*;
 // Committed 1024x1024 still with a 4x8 tile grid.
 const STREAM: &[u8] = include_bytes!("../../tests/crash_vectors/tile_threading_cdef_lpf_race.obu");
 
+fn assert_picture_policy(frame: &Frame, threads: u32) {
+    for plane in &frame.inner.data.as_ref().unwrap().data {
+        let policy = plane
+            .threading_policy()
+            .expect("decoder-owned picture policy");
+        assert_eq!(policy.parallel, threads > 1);
+        assert_eq!(plane.uses_row_guards(), threads > 1);
+    }
+}
+
+#[test]
+fn picture_policy_is_local_and_survives_decoder_lifetimes() {
+    let mut retained = Vec::new();
+    for order in [[8, 1], [1, 8]] {
+        let mut decoders: Vec<_> = order
+            .into_iter()
+            .map(|threads| {
+                let mut settings = Settings::default();
+                settings.threads = threads;
+                settings.max_frame_delay = 1;
+                Decoder::with_settings(settings).unwrap()
+            })
+            .collect();
+        for _ in 0..2 {
+            for (decoder, threads) in decoders.iter_mut().zip(order) {
+                let frame = decoder.decode(STREAM).unwrap().expect("still frame");
+                assert_picture_policy(&frame, threads);
+                assert_eq!(hash(&frame), "51b9c3ab246fda65e2c0a2155588e9a5");
+                retained.push((frame, threads));
+            }
+        }
+        drop(decoders);
+        for (frame, threads) in &retained {
+            assert_picture_policy(frame, *threads);
+            let mut copy = Rav1dPicture::default();
+            crate::src::picture::rav1d_picture_alloc_copy(
+                &None,
+                &mut copy,
+                frame.inner.p.w,
+                &frame.inner,
+            )
+            .unwrap();
+            assert_picture_policy(&Frame { inner: copy }, *threads);
+        }
+    }
+}
+
+#[test]
+fn serial_and_threaded_decoders_run_concurrently_with_local_policies() {
+    let (a_tx, a_rx) = std::sync::mpsc::sync_channel(1);
+    let (b_tx, b_rx) = std::sync::mpsc::sync_channel(1);
+    let retained = std::thread::scope(|scope| {
+        let handles: Vec<_> = [(1, a_tx, b_rx), (8, b_tx, a_rx)]
+            .into_iter()
+            .map(|(threads, tx, rx)| {
+                scope.spawn(move || {
+                    let mut settings = Settings::default();
+                    settings.threads = threads;
+                    settings.max_frame_delay = 1;
+                    let mut decoder = Decoder::with_settings(settings).unwrap();
+                    let mut retained = Vec::new();
+                    for _ in 0..8 {
+                        tx.send(()).unwrap();
+                        rx.recv_timeout(std::time::Duration::from_secs(10))
+                            .expect("peer decoder made no progress");
+                        let frame = decoder.decode(STREAM).unwrap().expect("still frame");
+                        assert_picture_policy(&frame, threads);
+                        assert_eq!(hash(&frame), "51b9c3ab246fda65e2c0a2155588e9a5");
+                        retained.push((frame, threads));
+                    }
+                    retained
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(retained.len(), 16);
+    for (frame, threads) in &retained {
+        assert_picture_policy(frame, *threads);
+    }
+}
+
 fn hash(frame: &Frame) -> String {
     let mut hash = md5::Context::new();
     match frame.planes() {

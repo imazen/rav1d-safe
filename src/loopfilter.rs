@@ -962,9 +962,7 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
         stride: isize,
         h: usize,
     ) {
-        if (!crate::include::dav1d::picture::tile_threading_active() || lf_hull_reads())
-            && !lf_force_per_row()
-        {
+        if (!origin.data.uses_row_guards() || lf_hull_reads()) && !lf_force_per_row() {
             return Self::fill_hull::<W>(scratch, origin, stride, h);
         }
         // Everything reachable only under tile threading lives in ONE

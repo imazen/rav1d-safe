@@ -234,3 +234,31 @@ fn global_hints_cannot_remap_a_live_tracker() {
         assert!(attempt(&t, 17..33, true).is_some());
     });
 }
+
+#[test]
+fn local_policy_survives_concurrent_global_changes_and_retirement() {
+    for threads in [1, 8] {
+        model(move || {
+            let mut tracker = BorrowTracker::new(1 << 20);
+            tracker.configure_parallelism(1 << 20, threads, 4);
+            let mapping = (tracker.mask, tracker.shift);
+            let t = Arc::new(tracker);
+            let lease = Lease(&t, t.add_mut(&b(17..33)));
+            let tc = t.clone();
+            let update = thread::spawn(move || {
+                set_parallelism(24);
+                set_tile_concurrency(32);
+                assert!(attempt(&tc, 20..21, false).is_none());
+            });
+            update.join().unwrap();
+            assert_eq!((t.mask, t.shift), mapping);
+            drop(lease);
+            let mut t = match Arc::try_unwrap(t) {
+                Ok(t) => t,
+                Err(_) => panic!("live owner"),
+            };
+            t.configure_parallelism(1 << 20, if threads == 1 { 8 } else { 1 }, 1);
+            assert!(attempt(&t, 17..33, true).is_some());
+        });
+    }
+}

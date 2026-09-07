@@ -1,0 +1,10 @@
+{
+  "format": "cargo fmt -p rav1d-safe -p rav1d-disjoint-mut -- --check: pass",
+  "diff": "git diff --check: pass",
+  "simd_modes": {
+    "command": "cargo nextest run --release -p rav1d-safe --lib -E test(mc_reference_windows_cover_all) --success-output immediate",
+    "result": "pass; modes {false, true}; 53760 cases per mode"
+  },
+  "shiftpin_clippy": "cargo clippy -p rav1d-safe -p rav1d-disjoint-mut --lib --features probe-shiftpin -- -D warnings: pass",
+  "remote_fetch": "origin unchanged since synchronized b31692de"
+}

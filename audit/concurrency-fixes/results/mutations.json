@@ -1,0 +1,41 @@
+[
+  {
+    "arm": "mutant",
+    "exit": 100,
+    "expected_failed_tests": 5,
+    "mutations": [
+      "use process-global policy for every picture",
+      "omit last reserved source pixel"
+    ],
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--release",
+      "-p",
+      "rav1d-safe",
+      "--lib",
+      "-E",
+      "test(picture_policy) | test(reference_window)",
+      "--test-threads",
+      "1"
+    ]
+  },
+  {
+    "arm": "restored",
+    "exit": 0,
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--release",
+      "-p",
+      "rav1d-safe",
+      "--lib",
+      "-E",
+      "test(picture_policy) | test(reference_window)",
+      "--test-threads",
+      "1"
+    ]
+  }
+]

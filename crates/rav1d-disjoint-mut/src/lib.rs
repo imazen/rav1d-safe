@@ -2054,6 +2054,33 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         }
     }
 
+    /// Set placement hints for this buffer independently of process-global hints.
+    ///
+    /// `threads` is the expected number of concurrent borrowers; `tiles` is the
+    /// expected number of independently processed picture tiles. Zero counts
+    /// are treated as one. These are performance hints: underestimating either
+    /// count does not disable checking or permit overlapping mutable borrows.
+    /// The hints persist across resizing and row-stride declarations.
+    ///
+    /// Exclusive access prevents changing the mapping while a usable guard
+    /// exists. This method does not clear poison or retire outstanding records.
+    ///
+    /// ```compile_fail
+    /// use rav1d_disjoint_mut::DisjointMut;
+    /// let mut data = DisjointMut::new([0u8; 64]);
+    /// let mut guard = data.index_mut(..);
+    /// data.configure_parallelism(4, 4);
+    /// guard[0] = 1;
+    /// ```
+    #[inline]
+    pub fn configure_parallelism(&mut self, threads: usize, tiles: usize) {
+        let len = self.as_mut_slice().len();
+        self.tracker.get_or_init(|| len);
+        if let Some(tracker) = self.tracker.get_mut() {
+            tracker.configure_parallelism(len, threads, tiles);
+        }
+    }
+
     /// Declare this buffer's picture row stride in `T::Target` ELEMENTS — bytes
     /// for the `u8` picture buffers this exists for — so the tracker can size
     /// its blocks in picture ROWS instead of in blocks-per-buffer, and so a

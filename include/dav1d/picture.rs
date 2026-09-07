@@ -3,8 +3,9 @@
 use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Global latch: true once any decoder in this process has used tile threading
-/// (n_tc > 1). When true, compact_read/compact_write_back and
+/// Fallback latch for components without explicit picture-local policy:
+/// true once any decoder has used tile threading (n_tc > 1).
+/// When true, compact_read/compact_write_back and
 /// `with_pixel_guard_*` use per-row guards to avoid stride-padding overlap.
 /// When false, they use a single wide guard, which is only sound with no
 /// concurrent tile workers.
@@ -29,10 +30,9 @@ static TILE_THREADING: AtomicBool = AtomicBool::new(false);
 /// `multi_threaded_cdef_lpf_race`'s threaded ones) panicked in 8-9 of 24
 /// runs. After: 0 of 24. See `benchmarks/p2_kernels_2026-08-07.meta`.
 ///
-/// The cost of latching instead of tracking per decoder is that a process
-/// which has ever opened a threaded decoder keeps the per-row path for its
-/// single-threaded ones too. That is the correct direction to be wrong in,
-/// and a purely single-threaded process never sets the latch at all.
+/// Decoder-owned pictures now carry their own policy, installed before
+/// publication and retained across copies. This conservative fallback remains
+/// for raw/legacy components whose scheduling context is unknown.
 pub fn set_tile_threading(active: bool) {
     if active {
         TILE_THREADING.store(true, Ordering::Relaxed);
@@ -323,6 +323,11 @@ pub fn pic_extent_ceiling(file: &str, row_bytes: usize) -> usize {
 ///   concurrent foreign write at any distance**, because they read reference
 ///   frames that are immutable for the whole decode. They are a tracker-COST
 ///   question, not a conflict question.
+/// * **Bounded reference-source reads** in `safe_simd/mc_reference.rs`. These
+///   narrow the formerly whole-component x86 MC reads to at most 135x135
+///   pixels including taps. Their complete contiguous hull remains tracked,
+///   including row gaps; see `audit/concurrency-fixes/README.md`. They use a
+///   separate private helper and cannot widen reconstruction writes.
 /// * **Single-element access** (`index`, `index_mut`). One element is the
 ///   smallest reservation expressible; there is nothing to widen.
 /// * **Everything at t=1.** The hull paths deliberately over-reserve by
@@ -337,14 +342,13 @@ pub fn pic_extent_ceiling(file: &str, row_bytes: usize) -> usize {
 #[cfg(any(debug_assertions, feature = "probe-sites"))]
 #[inline]
 #[track_caller]
-pub(crate) fn note_pic_extent(bytes: usize, whole_component: bool, row_bytes: usize) {
+pub(crate) fn note_pic_extent(bytes: usize, whole_component: bool, row_bytes: usize, tt: bool) {
     {
         if whole_component {
             #[cfg(feature = "probe-sites")]
             extent_budget::record_whole();
             return;
         }
-        let tt = tile_threading_active();
         let loc = core::panic::Location::caller();
         let rows = if row_bytes == 0 {
             1
@@ -500,7 +504,7 @@ pub fn with_pixel_guard_immut<BD: BitDepth, R>(
 ) -> R {
     use crate::src::strided::Strided as _;
     let pixel_size = core::mem::size_of::<BD::Pixel>();
-    if tile_threading_active() && !rect_hull_arm() {
+    if pic.data.uses_row_guards() && !rect_hull_arm() {
         let (buf, byte_stride) = pic.compact_read_per_row::<BD>(w, h);
         let result = f(&buf, 0, byte_stride as isize);
         recycle_compact_scratch(buf);
@@ -859,6 +863,23 @@ unsafe impl ExternalAsMutPtr for Rav1dPictureDataComponentInner {
     }
 }
 
+/// Immutable scheduling hints carried by a picture, including retained copies.
+/// They select reservation granularity, never disable overlap checking.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PictureThreading {
+    pub(crate) parallel: bool,
+    multi_tile: bool,
+}
+
+impl PictureThreading {
+    pub(crate) fn new(threads: usize, tiles: usize) -> Self {
+        Self {
+            parallel: threads > 1,
+            multi_tile: tiles > 1,
+        }
+    }
+}
+
 /// A picture data component: a disjoint-tracked buffer with stride.
 ///
 /// For c-ffi: stride is stored inside the inner type.
@@ -866,15 +887,37 @@ unsafe impl ExternalAsMutPtr for Rav1dPictureDataComponentInner {
 #[cfg(feature = "c-ffi")]
 pub struct Rav1dPictureDataComponent {
     data: DisjointMut<Rav1dPictureDataComponentInner>,
+    threading: Option<PictureThreading>,
 }
 
 #[cfg(not(feature = "c-ffi"))]
 pub struct Rav1dPictureDataComponent {
     data: DisjointMut<Rav1dPictureDataComponentInner>,
     stride: isize,
+    threading: Option<PictureThreading>,
 }
 
 impl Rav1dPictureDataComponent {
+    /// Legacy/raw components retain the monotone process fallback. Decoder
+    /// allocations install a policy while still exclusively owned.
+    #[inline(always)]
+    pub(crate) fn uses_row_guards(&self) -> bool {
+        self.threading
+            .map_or_else(tile_threading_active, |p| p.parallel)
+    }
+
+    pub(crate) fn threading_policy(&self) -> Option<PictureThreading> {
+        self.threading
+    }
+
+    pub(crate) fn set_threading_policy(&mut self, policy: PictureThreading) {
+        self.data.configure_parallelism(
+            if policy.parallel { 2 } else { 1 },
+            if policy.multi_tile { 2 } else { 1 },
+        );
+        self.threading = Some(policy);
+    }
+
     /// Access the inner [`DisjointMut`].
     #[inline(always)]
     pub(crate) fn dm(&self) -> &DisjointMut<Rav1dPictureDataComponentInner> {
@@ -887,6 +930,7 @@ impl Rav1dPictureDataComponent {
     fn from_parts(inner: Rav1dPictureDataComponentInner, _stride: isize) -> Self {
         let mut this = Self {
             data: crate::src::disjoint_mut::dm_new(inner),
+            threading: None,
         };
         // The tracker's block shift is fixed at construction, so the stride has
         // to reach it here — while `data` is still local and no borrow can
@@ -898,9 +942,10 @@ impl Rav1dPictureDataComponent {
     }
 
     #[cfg(not(feature = "c-ffi"))]
-    fn from_parts(inner: Rav1dPictureDataComponentInner, stride: isize) -> Self {
+    pub(crate) fn from_parts(inner: Rav1dPictureDataComponentInner, stride: isize) -> Self {
         let mut this = Self {
             data: crate::src::disjoint_mut::dm_new(inner),
+            threading: None,
             stride,
         };
         // See the c-ffi twin: the block shift is chosen once, at construction.
@@ -1125,6 +1170,7 @@ impl Rav1dPictureDataComponent {
                     use crate::src::strided::Strided as _;
                     self.pixel_stride::<BD>().unsigned_abs() * mem::size_of::<BD::Pixel>()
                 },
+                self.uses_row_guards(),
             );
         }
         self.dm().slice_as(index)
@@ -1154,6 +1200,7 @@ impl Rav1dPictureDataComponent {
                     use crate::src::strided::Strided as _;
                     self.pixel_stride::<BD>().unsigned_abs() * mem::size_of::<BD::Pixel>()
                 },
+                self.uses_row_guards(),
             );
         }
         self.dm().mut_slice_as(index)
@@ -1270,7 +1317,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         track_caller
     )]
     pub fn block_mut<BD: BitDepth>(&self, w: usize, h: usize) -> BlockMut<'a, BD> {
-        if tile_threading_active() && !rect_hull_arm() {
+        if self.data.uses_row_guards() && !rect_hull_arm() {
             #[cfg(feature = "held-row-guards")]
             if w != 0 && h != 0 && h <= MAX_HELD_ROWS {
                 return self.block_mut_held::<BD>(w, h);
@@ -1464,15 +1511,14 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
     /// workers routinely write the same rows at different columns and the gap
     /// reservation turns a genuinely disjoint pair into a false positive.
     ///
-    /// So the choice is made by [`tile_threading_active`] — process-global,
-    /// monotone, and never storing `false` — exactly as it is in `block_mut`,
-    /// [`with_pixel_guard_immut`] and [`Self::compact_read`]. This helper adds
-    /// callers to that policy; it does not introduce one.
+    /// Decoder-owned pictures carry their worker policy from allocation through
+    /// their last retained copy. Raw/legacy components use the monotone
+    /// [`tile_threading_active`] fallback. `block_mut`, [`with_pixel_guard_immut`]
+    /// and [`Self::compact_read`] use the same per-component decision.
     ///
     /// Neither branch can MISS an overlap: the hull is a superset of the `h`
     /// row ranges, and a superset registration conflicts with strictly more.
-    /// The only thing at stake is false positives, and the latch is what rules
-    /// those out.
+    /// The choice prevents false conflicts with neighbouring tile workers.
     ///
     /// # Why it exists
     ///
@@ -1497,7 +1543,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             return;
         }
         let pxstride = self.data.pixel_stride::<BD>();
-        if tile_threading_active() {
+        if self.data.uses_row_guards() {
             let ps = mem::size_of::<BD::Pixel>();
             self.data.dm().probe_eval_rect(
                 core::panic::Location::caller(),
@@ -1565,7 +1611,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         track_caller
     )]
     pub fn dup_rows<BD: BitDepth>(&self, w: usize, h: usize) {
-        if !cdef_double_reads() || w == 0 || h == 0 || !tile_threading_active() {
+        if !cdef_double_reads() || w == 0 || h == 0 || !self.data.uses_row_guards() {
             return;
         }
         use crate::src::strided::Strided as _;
@@ -1586,7 +1632,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         track_caller
     )]
     pub fn dup_rows_mut<BD: BitDepth>(&self, w: usize, h: usize) {
-        if !cdef_double_reads() || w == 0 || h == 0 || !tile_threading_active() {
+        if !cdef_double_reads() || w == 0 || h == 0 || !self.data.uses_row_guards() {
             return;
         }
         use crate::src::strided::Strided as _;
@@ -1615,7 +1661,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             return;
         }
         let pxstride = self.data.pixel_stride::<BD>();
-        if tile_threading_active() {
+        if self.data.uses_row_guards() {
             let ps = mem::size_of::<BD::Pixel>();
             self.data.dm().probe_eval_rect(
                 core::panic::Location::caller(),
@@ -1678,7 +1724,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         // stride, which a caller can only address when row 0 comes first — a
         // positive stride. A negative stride takes the compact, row-0-first
         // path whatever the threading mode (#520).
-        if tile_threading_active() || self.data.pixel_stride::<BD>() < 0 {
+        if self.data.uses_row_guards() || self.data.pixel_stride::<BD>() < 0 {
             self.compact_read_per_row::<BD>(w, h)
         } else {
             self.compact_read_fast::<BD>(w, h)
@@ -1763,7 +1809,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         use crate::src::strided::Strided as _;
         // Mirrors `compact_read`: a negative stride's buffer is compact and
         // row-0-first, so it must be written back per row (#520).
-        if tile_threading_active() || self.data.pixel_stride::<BD>() < 0 {
+        if self.data.uses_row_guards() || self.data.pixel_stride::<BD>() < 0 {
             self.compact_write_back_per_row::<BD>(w, h, buf);
         } else {
             self.compact_write_back_fast::<BD>(w, h, buf);
@@ -2694,6 +2740,25 @@ mod row_guard_policy_tests {
         // `wrap_buf` asserts the byte length is a multiple of 64.
         let mut buf = vec![0u8; STRIDE * ROWS];
         Rav1dPictureDataComponent::wrap_buf::<BitDepth8>(&mut buf, STRIDE)
+    }
+
+    #[test]
+    fn explicit_picture_policy_controls_gap_reservations_after_global_promotion() {
+        set_tile_threading(true);
+        for threads in [1, 8] {
+            let mut pic = plane();
+            pic.set_threading_policy(super::PictureThreading::new(threads, 4));
+            let held = pic.slice_mut::<BitDepth8, _>((W.., ..1));
+            let at = WithOffset {
+                data: &pic,
+                offset: 0,
+            };
+            let result = panic::catch_unwind(AssertUnwindSafe(|| {
+                at.for_rows_mut::<BitDepth8, _>(W, ROWS, |_, row| row.fill(1));
+            }));
+            assert_eq!(result.is_err(), threads == 1, "workers={threads}");
+            drop(held);
+        }
     }
 
     /// Does `for_rows_mut` over the `W x ROWS` block at offset 0 conflict with a

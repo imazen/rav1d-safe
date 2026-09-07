@@ -39,6 +39,10 @@ use crate::src::strided::Strided as _;
 
 use std::cell::Cell;
 
+#[cfg(target_arch = "x86_64")]
+#[path = "mc_reference.rs"]
+mod reference;
+
 type Mid16x135 = Box<[[i16; MID_STRIDE]; 135]>;
 type Mid32x135 = Box<[[i32; MID_STRIDE]; 135]>;
 type Mid16x130 = Box<[[i16; MID_STRIDE]; 130]>;
@@ -12158,7 +12162,7 @@ pub(crate) fn mc_put_dispatch_inner<BD: BitDepth>(
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     match BD::BPC {
         BPC::BPC8 => {
-            let (src_guard, src_base) = src.full_guard::<BD>();
+            let (src_guard, src_base) = reference::filter_guard::<BD>(src, filter, w, h, mx, my);
             match filter {
                 Filter2d::Bilinear => {
                     // Bilinear only accesses current + next row, no negative offsets
@@ -12176,7 +12180,7 @@ pub(crate) fn mc_put_dispatch_inner<BD: BitDepth>(
                     );
                 }
                 _ => {
-                    // 8-tap needs rows above the block; pass full buffer + base offset
+                    // 8-tap needs preceding taps; pass the bounded window and its origin
                     let src_bytes = src_guard.as_bytes();
                     let (h_filter, v_filter) = filter.hv();
                     put_8tap_8bpc_dispatch_inner(
@@ -12201,7 +12205,7 @@ pub(crate) fn mc_put_dispatch_inner<BD: BitDepth>(
                 zerocopy::Ref::<_, [u16]>::new_slice(&mut dst_bytes[dst_offset..])
                     .expect("u16 alignment")
                     .into_mut_slice();
-            let (src_guard, src_base) = src.full_guard::<BD>();
+            let (src_guard, src_base) = reference::filter_guard::<BD>(src, filter, w, h, mx, my);
             let bd_c = bd.into_c();
             match filter {
                 Filter2d::Bilinear => {
@@ -12239,7 +12243,7 @@ pub(crate) fn mc_put_dispatch_inner<BD: BitDepth>(
                     }
                 }
                 _ => {
-                    // 8-tap needs rows above the block; pass full buffer + base offset
+                    // 8-tap needs preceding taps; pass the bounded window and its origin
                     let src_all_bytes = src_guard.as_bytes();
                     let src_u16: &[u16] = zerocopy::Ref::<_, [u16]>::new_slice(src_all_bytes)
                         .expect("u16 alignment")
@@ -12276,7 +12280,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
     let pixel_size = std::mem::size_of::<BD::Pixel>();
     match BD::BPC {
         BPC::BPC8 => {
-            let (src_guard, src_base) = src.full_guard::<BD>();
+            let (src_guard, src_base) = reference::filter_guard::<BD>(src, filter, w, h, mx, my);
             match filter {
                 Filter2d::Bilinear => {
                     // Bilinear only accesses current + next row, no negative offsets
@@ -12284,7 +12288,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
                     prep_bilin_8bpc_dispatch_inner(token, tmp, src_bytes, src_stride, w, h, mx, my);
                 }
                 _ => {
-                    // 8-tap needs rows above the block; pass full buffer + base offset
+                    // 8-tap needs preceding taps; pass the bounded window and its origin
                     let src_bytes = src_guard.as_bytes();
                     let (h_filter, v_filter) = filter.hv();
                     prep_8tap_8bpc_dispatch_inner(
@@ -12304,7 +12308,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
             }
         }
         BPC::BPC16 => {
-            let (src_guard, src_base) = src.full_guard::<BD>();
+            let (src_guard, src_base) = reference::filter_guard::<BD>(src, filter, w, h, mx, my);
             let bd_c = bd.into_c();
             match filter {
                 Filter2d::Bilinear => {
@@ -12340,7 +12344,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
                     }
                 }
                 _ => {
-                    // 8-tap needs rows above the block; pass full buffer + base offset
+                    // 8-tap needs preceding taps; pass the bounded window and its origin
                     let src_all_bytes = src_guard.as_bytes();
                     let src_u16: &[u16] = zerocopy::Ref::<_, [u16]>::new_slice(src_all_bytes)
                         .expect("u16 alignment")
@@ -12844,7 +12848,7 @@ pub fn warp8x8_dispatch<BD: BitDepth>(
     let src_stride = src.stride();
     let pixel_size = std::mem::size_of::<BD::Pixel>();
 
-    let (src_guard, src_base) = src.full_guard::<BD>();
+    let (src_guard, src_base) = reference::read_guard::<BD>(src, 8, 8, [(3, 4), (3, 4)]);
     let src_bytes = src_guard.as_bytes();
 
     crate::include::dav1d::picture::with_pixel_guard_mut::<BD, _>(
@@ -12906,7 +12910,7 @@ pub fn warp8x8t_dispatch<BD: BitDepth>(
     let src_stride = src.stride();
     let pixel_size = std::mem::size_of::<BD::Pixel>();
 
-    let (src_guard, src_base) = src.full_guard::<BD>();
+    let (src_guard, src_base) = reference::read_guard::<BD>(src, 8, 8, [(3, 4), (3, 4)]);
     let src_bytes = src_guard.as_bytes();
 
     match BD::BPC {

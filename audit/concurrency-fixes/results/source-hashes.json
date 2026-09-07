@@ -1,0 +1,18 @@
+{
+  "crates/rav1d-disjoint-mut/src/lib.rs": "a729fac76d68916a32ac30a920ce28814ac9569e4c7555b2cd7bbf07009d7c5b",
+  "crates/rav1d-disjoint-mut/src/loom_protocol.rs": "c7e9219bcd39721d15ddc67ef1db3893fac3aa5b30dcafaf55b358f5a5ee032a",
+  "crates/rav1d-disjoint-mut/src/tracker_legacy.rs": "be00a79eb6a976088cd424786dfc9f72b6f157752b265b536f2b361728365643",
+  "crates/rav1d-disjoint-mut/src/tracker_shard.rs": "32d8eeb179f861998e341d50afda5734952742c58c8607b6be7023c58056ae90",
+  "crates/rav1d-disjoint-mut/src/usage_probe.rs": "5b844f757629245836ff9deb758dbf75028d02c5449b819d6ea84d2a41497b67",
+  "crates/rav1d-disjoint-mut/tests/adversarial_api.rs": "0cfa5bb509c430008b933fec8e1e6a113e3112d345e4c46d91c12f5ffc52a9a5",
+  "docs/RELEASE_SOUNDNESS_PROTOCOL.md": "8f520bbe51f23c2c1d9c93e295c3df149d2ec3244c8370ca77c413525c151721",
+  "include/dav1d/picture.rs": "8fc15d7c5032709ff4d2d5e4707af6189f88c22701447e1345ca87c434df7bd8",
+  "src/decode.rs": "70accea9f37ea86af9c6b6368cfb067a350581c669e9e4e4ccb10a7f8fb48d8e",
+  "src/loopfilter.rs": "a72632607dd3870a89a53422c25a42a6f73409c6ea13091f81b2b6de94aecc5c",
+  "src/managed/frame_tile_tests.rs": "d7e8fca32dc076812680c16ebdcaf3b855e0db5cd1666d6932396d19e48755a2",
+  "src/picture.rs": "80ee9ab721a47942320847bbc5ba8636bcb3982ad0f91546608b3d75a8a1108a",
+  "src/safe_simd/loopfilter.rs": "d7fbb64c45d60e745771053c538ea7b9a65729349b9ad7698915d7943d407fc4",
+  "src/safe_simd/mc.rs": "97fc945c03077350d4aa40e0d0d46af205265edda70d0cc054093909336a0e5f",
+  "src/safe_simd/mc_reference.rs": "8e3fea5be8d00c5bba9a2a329581ebc263f6382ed8ea88d7104c1e003f339a06",
+  "tests/guard_extent_budget.rs": "deea41840f34e329c35aeed330827107a2e1f103864560bdbadaebbcfd9e4b9a"
+}

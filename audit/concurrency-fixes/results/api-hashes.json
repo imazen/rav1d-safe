@@ -1,0 +1,6 @@
+{
+  "prior_api_sha256": "f262610e03dcfd13881bf3f9c3cf32c2ba5cb7ce4d1fe4b82a4ba63fd7e1ebbc",
+  "current_api_sha256": "09f4edbb105ae7995e25d2ee03c9dcb51531ab9ec276d9bcd0d5633701fa8d9e",
+  "raw_current_combined_log_sha256": "52e5a3592292a58e08e4a883d3ceb4d561c20e84a2ae4c12c679647fb5ca67d8",
+  "normalization": "Remove cargo build progress before the first pub mod line; preserve the entire API including impl grouping, auto traits, const qualifiers."
+}

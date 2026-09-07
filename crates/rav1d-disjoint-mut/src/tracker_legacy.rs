@@ -302,6 +302,9 @@ unsafe impl Send for BorrowTracker {}
 unsafe impl Sync for BorrowTracker {}
 
 impl BorrowTracker {
+    /// The legacy tracker has one exclusion domain regardless of these hints.
+    pub fn configure_parallelism(&mut self, _len: usize, _threads: usize, _tiles: usize) {}
+
     pub fn new(_len: usize) -> Self {
         Self {
             lock: TinyLock::new(),

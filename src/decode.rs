@@ -5269,6 +5269,7 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
     let itut_t35 = mem::take(&mut state.itut_t35);
     let res = rav1d_thread_picture_alloc(
         &c.fc,
+        c.tc.len(),
         &c.logger,
         &c.allocator,
         state.content_light.clone(),

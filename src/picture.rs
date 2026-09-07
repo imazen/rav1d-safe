@@ -16,9 +16,9 @@ use crate::include::dav1d::headers::Rav1dSequenceHeader;
 use crate::include::dav1d::picture::Dav1dPicture;
 #[cfg(feature = "c-ffi")]
 use crate::include::dav1d::picture::RAV1D_PICTURE_ALIGNMENT;
-use crate::include::dav1d::picture::Rav1dPicAllocator;
 use crate::include::dav1d::picture::Rav1dPicture;
 use crate::include::dav1d::picture::Rav1dPictureParameters;
+use crate::include::dav1d::picture::{PictureThreading, Rav1dPicAllocator};
 #[cfg(feature = "c-ffi")]
 use crate::src::error::Dav1dResult;
 use crate::src::error::Rav1dError::{EGeneric, ENOMEM};
@@ -253,13 +253,23 @@ fn picture_alloc_with_edges(
     frame_hdr: Option<Arc<DRav1d<Rav1dFrameHeader, Dav1dFrameHeader>>>,
     bpc: u8,
     p_allocator: &Rav1dPicAllocator,
+    threading: Option<PictureThreading>,
 ) -> Rav1dResult {
     if p.data.is_some() {
         writeln!(logger, "Picture already allocated!",);
         return Err(EGeneric);
     }
     assert!(bpc > 0 && bpc <= 16);
-    let pic = p_allocator.alloc_picture_data(w, h, seq_hdr.unwrap(), frame_hdr)?;
+    let mut pic = p_allocator.alloc_picture_data(w, h, seq_hdr.unwrap(), frame_hdr)?;
+    if let Some(threading) = threading {
+        // A fresh allocation owns this Arc exclusively. Publish the policy and
+        // tracker mapping before returning any picture or reference to workers.
+        let data = Arc::get_mut(pic.data.as_mut().expect("allocated picture data"))
+            .expect("new picture data must be uniquely owned");
+        for plane in &mut data.data {
+            plane.set_threading_policy(threading);
+        }
+    }
     *p = pic;
 
     Ok(())
@@ -282,6 +292,7 @@ pub fn rav1d_picture_copy_props(
 // borrowing rules so we need to pass it to this function explicitly.
 pub(crate) fn rav1d_thread_picture_alloc(
     fc: &[Rav1dFrameContext],
+    threads: usize,
     logger: &Option<Rav1dLogger>,
     allocator: &Rav1dPicAllocator,
     content_light: Option<Arc<Rav1dContentLightLevel>>,
@@ -305,6 +316,10 @@ pub(crate) fn rav1d_thread_picture_alloc(
         f.frame_hdr.clone(),
         bpc,
         allocator,
+        Some(PictureThreading::new(
+            threads,
+            frame_hdr.tiling.cols as usize * frame_hdr.tiling.rows as usize,
+        )),
     )?;
 
     rav1d_picture_copy_props(
@@ -351,6 +366,7 @@ pub(crate) fn rav1d_picture_alloc_copy(
         src.frame_hdr.clone(),
         src.p.bpc,
         &src.data.as_ref().unwrap().allocator,
+        src.data.as_ref().unwrap().data[0].threading_policy(),
     )?;
 
     rav1d_picture_copy_props(

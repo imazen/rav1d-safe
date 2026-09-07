@@ -35,6 +35,10 @@
 //!    change that routes every reservation through the exemption is visible
 //!    rather than silently disarming the gate.
 //!
+//! Bounded x86 MC reads no longer exercise that exemption. Reading each decoded
+//! frame through its public plane-view API now checks exemption liveness;
+//! reconstruction still supplies the partial-reservation and threading counts.
+//!
 //! # Running
 //!
 //! ```text
@@ -68,15 +72,35 @@ fn decode_all(data: &[u8], threads: u32) -> Result<usize, String> {
     let mut decoder = Decoder::with_settings(settings).map_err(|e| format!("create: {e:?}"))?;
     let mut frames = 0usize;
     match decoder.decode(data) {
-        Ok(Some(_)) => frames += 1,
+        Ok(Some(frame)) => {
+            inspect_output(&frame);
+            frames += 1;
+        }
         Ok(None) => {}
         Err(e) => return Err(format!("decode: {e:?}")),
     }
     match decoder.flush() {
-        Ok(rest) => frames += rest.len(),
+        Ok(rest) => {
+            for frame in &rest {
+                inspect_output(frame);
+            }
+            frames += rest.len();
+        }
         Err(e) => return Err(format!("flush: {e:?}")),
     }
     Ok(frames)
+}
+
+// Output plane views remain deliberate whole-component reads after MC was
+// narrowed. Exercise the public consumer path rather than depending on an
+// interpolation implementation detail to keep the exemption alive.
+fn inspect_output(frame: &rav1d_safe::src::managed::Frame) {
+    use rav1d_safe::src::managed::Planes;
+    let pixels = match frame.planes() {
+        Planes::Depth8(p) => p.y().rows().map(|r| r.len()).sum::<usize>(),
+        Planes::Depth16(p) => p.y().rows().map(|r| r.len()).sum::<usize>(),
+    };
+    assert_eq!(pixels, frame.width() as usize * frame.height() as usize);
 }
 
 fn committed_vectors() -> Vec<PathBuf> {

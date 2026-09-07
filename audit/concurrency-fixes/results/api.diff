@@ -1,0 +1,10 @@
+--- const-compatible-0.3.2
++++ scoped-policy-0.3.2
+@@ -157,6 +157,7 @@
+ pub fn rav1d_disjoint_mut::DisjointMut<T>::probe_declare_stride(&self, isize)
+ pub fn rav1d_disjoint_mut::DisjointMut<T>::probe_eval_rect(&self, &'static core::panic::location::Location<'static>, bool, usize, usize, usize, isize)
+ impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr> rav1d_disjoint_mut::DisjointMut<T>
++pub fn rav1d_disjoint_mut::DisjointMut<T>::configure_parallelism(&mut self, usize, usize)
+ pub fn rav1d_disjoint_mut::DisjointMut<T>::declare_row_stride(&mut self, usize)
+ impl<T: ?core::marker::Sized + rav1d_disjoint_mut::AsMutPtr> rav1d_disjoint_mut::DisjointMut<T>
+ pub fn rav1d_disjoint_mut::DisjointMut<T>::index_rect<'a>(&'a self, usize, usize, usize, isize) -> core::option::Option<rav1d_disjoint_mut::DisjointImmutRectGuard<'a, T, <T as rav1d_disjoint_mut::AsMutPtr>::Target>>
