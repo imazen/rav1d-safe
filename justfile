@@ -36,6 +36,7 @@ test-integration: download-vectors
 # needs in-process parallel decode pressure) + the induced-worker-panic
 # error-not-hang tests (private __test_induce_worker_panic feature).
 test-threading-races:
+    cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --test decode_concurrent_md5
     cargo test --release --no-default-features --features "bitdepth_8,bitdepth_16" --test tile_threading_overlap -- --ignored --test-threads 1
     cargo test --release --no-default-features --features "bitdepth_8,bitdepth_16,__test_induce_worker_panic" --test worker_panic_recovery -- --ignored --test-threads 1
 

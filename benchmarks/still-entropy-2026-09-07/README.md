@@ -135,10 +135,11 @@ The initial baseline run failed an invented coverage-count assertion; adding
 more rounding-boundary input states made it meaningful. No pixel or coder
 state mismatch caused that failure, and no expectation was weakened.
 
-Full conformance, token-fallback, debug-overflow, thread lifecycle, video,
-expanded still corpus, and untouched holdout gates remain outstanding for
-any retained implementation. The changes add no public API, unsafe block,
-dependency, borrow policy, or constructor change.
+The checkpoint below records conformance, token-fallback, debug-overflow,
+and selected lifecycle results. Video, the expanded still corpus, untouched
+holdouts, and the full performance acceptance matrix remain outstanding.
+The entropy change adds no public API, unsafe block, dependency, borrow
+policy, or constructor change.
 
 ## Leaf CDF kernel argument
 
@@ -198,9 +199,24 @@ private arithmetic change; conformance and dispatch gates still apply.
   and no manifest, lockfile, or disjoint-mut edits. It is not presented as a
   cargo-semver-checks run.
 
-CI on the preceding experimental checkpoint exposed two additional issues:
-`__simd_test`'s existing whole-plane save/restore harness collides with the
-new concurrent committed-vector test; assembly unit tests also crash in
-`picture_policy_is_local_and_survives_decoder_lifetimes`. The assembly test
-fails in code where the entropy candidates are compiled out. Both issues
-are being investigated; the draft is not ready to merge or release.
+CI exposed two independent issues, repaired in separate commits:
+
+- The default C-FFI allocator cookie pointed into a dropped decoder. Its
+  internal allocator clones now retain the pool Arc and borrow a live Arc
+  slot only during a callback. All 21 assembly library tests and four C-FFI
+  lifecycle tests pass, including the former SIGSEGV and a 16-generation
+  retained-picture copy chain. The default checked allocator already owned
+  its pool. The public C ABI is unchanged. See
+  [the lifetime argument](../../docs/FFI_ALLOCATOR_LIFETIME.md).
+- The whole-plane `__simd_test` save/restore protocol requires serial
+  decodes. The same-process concurrency test now has its own binary and
+  explicit regular-feature release/debug CI invocations. Its worker counts,
+  repeated decodes, fixtures, and reference hashes are preserved. Locally,
+  all 76 checked release library/integration tests, all five debug fixture
+  tests, all five assembly fixture tests, and all three serial
+  `__simd_test` tests pass. No failing hash
+  assertion or concurrent workload was removed. See the protocol in
+  [the ownership ledger](../../docs/OWNERSHIP_MODELS.md#7e-the-whole-plane-guard-audit-479-and-why-only-one-of-the-three-sites-was-a-bug).
+
+Cross-platform CI and the remaining performance gates are still required;
+the draft is not ready to merge or release.

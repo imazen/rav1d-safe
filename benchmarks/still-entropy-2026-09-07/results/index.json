@@ -372,10 +372,58 @@
     "sha256": "8759dd2f502e07ebf82565f6749e811c7562c1c6d48c4ee39d5c1e6b8a83bf34"
   },
   {
+    "file": "ci-protocol-asm-release.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ci-protocol-asm-release.log",
+    "bytes": 69552,
+    "sha256": "decd176a7293e299384e071927b629c7c72b73ae24307c057699ce82104b862b"
+  },
+  {
+    "file": "ci-protocol-checked-debug.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ci-protocol-checked-debug.log",
+    "bytes": 1519,
+    "sha256": "58ba57943f9ce4323c5cb50ad954a36a882c5941e2f65e593f6eba355143dbff"
+  },
+  {
+    "file": "ci-protocol-checked-release.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ci-protocol-checked-release.log",
+    "bytes": 14136,
+    "sha256": "57d54f525e142e47c951c2fda533e778ee6660cd0eca4b4fa1e109c0ce18a99f"
+  },
+  {
+    "file": "ci-protocol-simd-test.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ci-protocol-simd-test.log",
+    "bytes": 1208,
+    "sha256": "4c80d0e24f2e562b9e22cb425913f7d85757ff6c024b14e5a22486321f7984ac"
+  },
+  {
     "file": "corpus.json.gz",
     "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/corpus.json",
     "bytes": 13107,
     "sha256": "32c8a02d513ba044b949080d705de2d12fb62749fb43d7532e412402d89805e7"
+  },
+  {
+    "file": "ffi-pool-asm-all-lib.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-asm-all-lib.log",
+    "bytes": 72053,
+    "sha256": "27b35115d831c4b9e43f4b0c2d33de33bf1157551163eceebe3ceb18a44f4cae"
+  },
+  {
+    "file": "ffi-pool-c-ffi-lifecycle.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-c-ffi-lifecycle.log",
+    "bytes": 2440,
+    "sha256": "d4c3be52367de74af9b823b37869997432b1119baee9e0aa6cf05efa70b79452"
+  },
+  {
+    "file": "ffi-pool-lifetime-fixed-import.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-lifetime-fixed-import.log",
+    "bytes": 68806,
+    "sha256": "42eec8db8e92087c5ad15bec3f38dee6583b1572a694b3d2b9ae4241760b5e36"
+  },
+  {
+    "file": "ffi-pool-lifetime-fixed.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-lifetime-fixed.log",
+    "bytes": 5599,
+    "sha256": "7d110c8e3bf1b8796245d5ec2dd78804c9bf4b1f9791e29563f66e03f8be5e02"
   },
   {
     "file": "source-versions.json.gz",

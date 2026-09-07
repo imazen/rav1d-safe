@@ -445,10 +445,17 @@ existing:    & _[0..983040]        <- the harness's whole-plane save
 harness *semantically* needs the whole plane (it saves it, restores it, runs the scalar reference
 over it, then writes the SIMD output back), so under concurrency it would clobber other workers'
 pixels even with tracking off. The correct answer is the one already in the tree — keep it
-single-threaded: `tests/decode_md5_committed.rs`'s only threaded test is
-`#[cfg(not(feature = "__simd_test"))]`, and CI's `__simd_test` step runs only that file (verified
-passing). `examples/md5_inventory` now **fails loud** on `--threads > 1` under `__simd_test` rather
-than emitting a TSV of errors that reads as a decoder regression.
+single-threaded: `tests/decode_md5_committed.rs`'s LR threaded test is
+`#[cfg(not(feature = "__simd_test"))]`, and CI's `__simd_test` step selects only that binary.
+PR #528 moved the same-process concurrent-decoder gate into `tests/decode_concurrent_md5.rs`.
+It still runs 1-, 2-, and 4-worker clients together, with three repetitions and the same pinned
+hashes. CI explicitly runs it in both release and debug for every regular matrix configuration;
+`just test-threading-races` includes it too. Shared fixtures live in
+`tests/common/committed_vectors.rs` so the two protocols cannot drift to different reference
+hashes. An explicit assertion rejects `__simd_test` before starting concurrent workers.
+No concurrent hash check or thread count was removed. `examples/md5_inventory` also **fails
+loud** on `--threads > 1` under `__simd_test` rather than emitting a TSV of errors that reads as
+a decoder regression.
 
 **Why the `mc` sites are safe.** They are immutable, so they cannot conflict with each other; the
 question is only whether a *mutable* borrow of the same allocation can be live. It cannot:
