@@ -1,0 +1,222 @@
+[
+  {
+    "input": "multi",
+    "threads": 1,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.516543,
+      "solution": 0.515799,
+      "upstream": 0.359526
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 8,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.462954,
+      "solution": 0.327704,
+      "upstream": 0.242779
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 24,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.639265,
+      "solution": 0.393242,
+      "upstream": 0.28186
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 8,
+    "instances": 4,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.152191,
+      "solution": 0.09807,
+      "upstream": 0.069819
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 1,
+    "instances": 1,
+    "prime": 24,
+    "medians": {
+      "baseline": 0.518707,
+      "solution": 0.513514,
+      "upstream": 0.360195
+    }
+  },
+  {
+    "input": "first",
+    "threads": 1,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.755893,
+      "solution": 1.770537,
+      "upstream": 1.385957
+    }
+  },
+  {
+    "input": "first",
+    "threads": 8,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.978067,
+      "solution": 0.975013,
+      "upstream": 0.711974
+    }
+  },
+  {
+    "input": "first",
+    "threads": 24,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.992024,
+      "solution": 1.015646,
+      "upstream": 0.729517
+    }
+  },
+  {
+    "input": "first",
+    "threads": 8,
+    "instances": 4,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.277471,
+      "solution": 0.28093,
+      "upstream": 0.200501
+    }
+  },
+  {
+    "input": "first",
+    "threads": 1,
+    "instances": 1,
+    "prime": 24,
+    "medians": {
+      "baseline": 1.764215,
+      "solution": 1.761117,
+      "upstream": 1.423304
+    }
+  },
+  {
+    "input": "stress",
+    "threads": 1,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 4.083629,
+      "solution": 4.016332,
+      "upstream": 3.032242
+    }
+  },
+  {
+    "input": "stress",
+    "threads": 8,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.99915,
+      "solution": 0.9896,
+      "upstream": 0.749452
+    }
+  },
+  {
+    "input": "stress",
+    "threads": 24,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.212411,
+      "solution": 0.816239,
+      "upstream": 0.732761
+    }
+  },
+  {
+    "input": "stress",
+    "threads": 8,
+    "instances": 4,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.445743,
+      "solution": 0.435232,
+      "upstream": 0.316894
+    }
+  },
+  {
+    "input": "stress",
+    "threads": 1,
+    "instances": 1,
+    "prime": 24,
+    "medians": {
+      "baseline": 4.095725,
+      "solution": 4.045079,
+      "upstream": 3.032121
+    }
+  },
+  {
+    "input": "single10",
+    "threads": 1,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.895802,
+      "solution": 0.895428,
+      "upstream": 0.874288
+    }
+  },
+  {
+    "input": "single10",
+    "threads": 8,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.965162,
+      "solution": 0.95682,
+      "upstream": 0.920493
+    }
+  },
+  {
+    "input": "single10",
+    "threads": 24,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.055368,
+      "solution": 1.062524,
+      "upstream": 1.012397
+    }
+  },
+  {
+    "input": "single10",
+    "threads": 8,
+    "instances": 4,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.251102,
+      "solution": 0.253477,
+      "upstream": 0.241015
+    }
+  },
+  {
+    "input": "single10",
+    "threads": 1,
+    "instances": 1,
+    "prime": 24,
+    "medians": {
+      "baseline": 0.896982,
+      "solution": 0.899857,
+      "upstream": 0.886788
+    }
+  }
+]

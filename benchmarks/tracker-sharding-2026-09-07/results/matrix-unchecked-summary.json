@@ -1,0 +1,202 @@
+[
+  {
+    "input": "multi",
+    "threads": 1,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.78438,
+      "shard1k": 1.785235
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 8,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.402446,
+      "shard1k": 1.170571
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 24,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.686893,
+      "shard1k": 1.265613
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 8,
+    "instances": 4,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.418773,
+      "shard1k": 0.333547
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 1,
+    "instances": 1,
+    "prime": 24,
+    "medians": {
+      "baseline": 1.803481,
+      "shard1k": 1.804423
+    }
+  },
+  {
+    "input": "first",
+    "threads": 1,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 3.635515,
+      "shard1k": 3.634643
+    }
+  },
+  {
+    "input": "first",
+    "threads": 8,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.703385,
+      "shard1k": 1.698212
+    }
+  },
+  {
+    "input": "first",
+    "threads": 24,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.805719,
+      "shard1k": 1.777734
+    }
+  },
+  {
+    "input": "first",
+    "threads": 8,
+    "instances": 4,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.510653,
+      "shard1k": 0.513168
+    }
+  },
+  {
+    "input": "first",
+    "threads": 1,
+    "instances": 1,
+    "prime": 24,
+    "medians": {
+      "baseline": 3.636952,
+      "shard1k": 3.648502
+    }
+  },
+  {
+    "input": "stress",
+    "threads": 1,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 10.454081,
+      "shard1k": 10.445228
+    }
+  },
+  {
+    "input": "stress",
+    "threads": 8,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 2.68608,
+      "shard1k": 2.571418
+    }
+  },
+  {
+    "input": "stress",
+    "threads": 24,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 2.495509,
+      "shard1k": 2.398469
+    }
+  },
+  {
+    "input": "stress",
+    "threads": 8,
+    "instances": 4,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.194989,
+      "shard1k": 1.195747
+    }
+  },
+  {
+    "input": "stress",
+    "threads": 1,
+    "instances": 1,
+    "prime": 24,
+    "medians": {
+      "baseline": 10.451845,
+      "shard1k": 10.455404
+    }
+  },
+  {
+    "input": "single10",
+    "threads": 1,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.77287,
+      "shard1k": 1.764784
+    }
+  },
+  {
+    "input": "single10",
+    "threads": 8,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.639304,
+      "shard1k": 1.63357
+    }
+  },
+  {
+    "input": "single10",
+    "threads": 24,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.850357,
+      "shard1k": 1.812114
+    }
+  },
+  {
+    "input": "single10",
+    "threads": 8,
+    "instances": 4,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.436192,
+      "shard1k": 0.442101
+    }
+  },
+  {
+    "input": "single10",
+    "threads": 1,
+    "instances": 1,
+    "prime": 24,
+    "medians": {
+      "baseline": 1.753689,
+      "shard1k": 1.761106
+    }
+  }
+]

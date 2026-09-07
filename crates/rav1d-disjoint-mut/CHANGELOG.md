@@ -10,6 +10,14 @@ needed: removal of const construction is deferred. See
 `audit/disjoint-032-current` in the repository for this candidate's evidence.
 
 ### Changed
+- Lower the concurrent-sharding threshold from 65,536 to 1,024 container
+  elements. Medium-sized shared scratch buffers can spread registrations
+  without exhausting a single shard; tiny and explicitly serial buffers keep
+  one shard. All overlap checks and the publication/retirement protocol remain
+  intact. The borrowing API and `const new()` are unchanged. See the parent
+  repository's `benchmarks/tracker-sharding-2026-09-07` for A/B evidence and
+  adversarial tests. This work on main does not advance the separate 0.3
+  release bookmark.
 - `DisjointMut::new` remains `const`. It initializes one boxed tracker on first
   use via `spin::Once` (no_std compatible); all concurrent first callers share
   that tracker. `is_checked` remains const and returns true before initialization.

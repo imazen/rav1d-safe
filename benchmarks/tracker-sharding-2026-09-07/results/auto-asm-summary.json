@@ -1,0 +1,35 @@
+[
+  {
+    "input": "multi",
+    "threads": 8,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.290757,
+      "solution": 0.211714,
+      "upstream": 0.149295
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 24,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.345075,
+      "solution": 0.241619,
+      "upstream": 0.188909
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 8,
+    "instances": 4,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.119024,
+      "solution": 0.076961,
+      "upstream": 0.054112
+    }
+  }
+]

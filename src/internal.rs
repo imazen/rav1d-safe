@@ -902,6 +902,30 @@ pub(crate) struct Rav1dFrameData {
 }
 
 impl Rav1dFrameData {
+    /// Choose placement while frame setup holds exclusive access. Resizing
+    /// preserves this local policy; other decoders cannot promote our scratch
+    /// buffers to concurrent tracking through the process-wide fallback hints.
+    pub fn configure_scratch_parallelism(&mut self, threads: usize, tiles: usize) {
+        for buffer in [
+            &mut self.ipred_edge,
+            &mut self.lf.cdef_line_buf,
+            &mut self.lf.lr_line_buf,
+            &mut self.frame_thread.pal.data,
+            &mut self.frame_thread.pal_idx,
+            &mut self.frame_thread.cf,
+        ] {
+            buffer.configure_parallelism(threads, tiles);
+        }
+        self.rf.r.configure_parallelism(threads, tiles);
+        self.rf.rp_proj.configure_parallelism(threads, tiles);
+        self.frame_thread.b.configure_parallelism(threads, tiles);
+        self.lowest_pixel_mem.configure_parallelism(threads, tiles);
+        self.lf
+            .tx_lpf_right_edge
+            .inner
+            .configure_parallelism(threads, tiles);
+    }
+
     pub fn bd_fn(&self) -> &'static Rav1dFrameContextBdFn {
         let bpc = BPC::from_bitdepth_max(self.bitdepth_max);
         Rav1dFrameContextBdFn::get(bpc)

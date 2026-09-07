@@ -45,6 +45,15 @@ changes that reduce shared metadata without widening references. These are
 investigation candidates, not measured wins. The detailed prior records above
 take precedence over generic ownership advice.
 
+**2026-09-07 follow-up:** the inter-frame workload found contention in shared
+motion-vector scratch below the old 65,536-element sharding threshold. Lowering
+that threshold spreads the existing exact records; it requires no copying or
+new ownership model. Frame scratch, freshly published reference arrays, and
+temporary scratch-picture wrappers now receive local placement policy so
+another decoder cannot impose unnecessary sharding on serial work. The first
+threshold-only arm regressed primed serial decoding, which is why these changes
+are paired. See the [experiment and validation record](../benchmarks/tracker-sharding-2026-09-07/README.md).
+
 ---
 
 ## 1. `split_at_mut` on the shared picture — unavailable through the current worker API

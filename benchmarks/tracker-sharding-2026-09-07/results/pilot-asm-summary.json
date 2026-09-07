@@ -1,0 +1,32 @@
+[
+  {
+    "input": "multi",
+    "threads": 1,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.515515,
+      "shard1k": 0.519432
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 8,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.535748,
+      "shard1k": 0.373871
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 24,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.645446,
+      "shard1k": 0.394057
+    }
+  }
+]

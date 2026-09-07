@@ -1866,12 +1866,17 @@ const ADAPTIVE_WHEN_SERIAL: bool = cfg!(feature = "__blockshift_adaptive");
 /// Instances below this many elements get a single shard.
 ///
 /// Sharding only pays when concurrent workers touch *different* addresses of
-/// the same instance; a buffer smaller than this cannot spread far enough to
-/// matter, and giving it one shard keeps its tracker to a single cache line.
-/// Measured: 12 instances (the picture planes, 8.3 MB each) carry 89.8% of all
-/// borrows and 100% of the contention, while 1,027 smaller ones see zero
-/// contended acquisitions.
-const SHARD_MIN_LEN: usize = 64 * 1024;
+/// the same instance. Keep tiny context arrays on one shard, but allow shared
+/// scratch to spread: 1024 elements can occupy 16 of the smallest (64-element)
+/// blocks. Coordinates are container elements, not necessarily bytes.
+///
+/// The former 64K-element threshold came from a large still-image census. It
+/// forced the tiled video's 26,881-element motion-vector buffer (322,572 bytes)
+/// and 6,144-element projection buffer onto one lock. Simultaneous row guards
+/// then exhausted its seven slots and promoted to the wide path. See
+/// `benchmarks/tracker-sharding-2026-09-07` for decoder A/B and usage evidence.
+/// This changes placement only: all registrations and conflict checks remain.
+const SHARD_MIN_LEN: usize = 1024;
 
 /// Fibonacci hashing: the multiplicative constant is `2^64 / phi`. Taking the
 /// *high* bits mixes the low block bits (the x position within a picture row)
@@ -3070,6 +3075,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn medium_shared_storage_spreads_simultaneous_row_guards() {
+        for len in [1024, 1536, 6144, 6721, 11520, 26881] {
+            let mut tracker = BorrowTracker::new(len);
+            tracker.configure_parallelism(len, 8, 4);
+            assert_eq!(tracker.mask, SHARDS_CONCURRENT - 1);
+            // Eight simultaneously held rows overflow a single seven-slot
+            // shard. They should remain narrow when distributed across blocks.
+            let ids: Vec<_> = (0..8)
+                .map(|row| tracker.add_mut(&b(row * 128..row * 128 + 32)))
+                .collect();
+            assert!(ids.iter().all(|id| id.kind() == KIND_NARROW));
+            assert_eq!(tracker.state.load(Ordering::Acquire), 0);
+            for id in ids {
+                tracker.remove(id);
+            }
+            tracker.configure_parallelism(len, 1, 1);
+            assert_eq!(tracker.mask, 0, "serial storage needs no sharding");
+        }
+        assert_eq!(mask_for_policy(32, SHARDS_CONCURRENT), 0);
+    }
+
+    #[test]
     fn local_policy_survives_global_promotions_stride_and_resize() {
         let mut serial = BorrowTracker::new(1 << 20);
         serial.configure_parallelism(1 << 20, 0, 0);
@@ -3321,12 +3348,13 @@ mod tests {
             "issue #458: serial instances must get ONE shard, or strided block \
              guards promote to the wide path on the single-threaded decode path"
         );
-        // Behavioral half on an instance that is mask-0 by CONSTRUCTION
-        // (below SHARD_MIN_LEN), immune to process state: a multi-block span
+        // Behavioral half with explicit serial policy, immune to process
+        // state: a multi-block span
         // must stay narrow, keep the wide list empty, and still detect
         // overlap.
-        let t = BorrowTracker::new(32 * 1024);
-        assert_eq!(t.mask, 0, "sub-SHARD_MIN_LEN instances are single-shard");
+        let mut t = BorrowTracker::new(32 * 1024);
+        t.configure_parallelism(32 * 1024, 1, 1);
+        assert_eq!(t.mask, 0, "serial instances are single-shard");
         let bs = 1usize << t.block_shift();
         // The shape of a strided block guard: ~15 blocks.
         let id = t.add_mut(&b(bs..7 * bs + 3));

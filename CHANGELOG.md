@@ -5,6 +5,12 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Changed
+- Let medium-sized shared scratch buffers use the existing sharded borrow
+  tracker, reducing motion-vector contention in tiled video. Frame setup now
+  assigns scratch placement from its own decoder's concurrency, preventing
+  process-history overhead in later serial decoders. Runtime checking and
+  borrowing APIs are unchanged. Evidence and tests:
+  [shared scratch sharding](benchmarks/tracker-sharding-2026-09-07/README.md).
 - **`sgr_ab_{8,16}bpc` now state their box-sum range invariant** under
   `#[cfg(debug_assertions)]` (`b2d76b7`): `a` in `[0, n * px_max^2]`, `b` in
   `[0, n * px_max]`, checked over the row `boxsum_*` just wrote. That invariant

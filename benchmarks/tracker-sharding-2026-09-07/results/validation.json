@@ -1,0 +1,197 @@
+[
+  {
+    "name": "disjoint",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--features",
+      "aligned,pic-buf,zerocopy",
+      "--test-threads",
+      "1"
+    ],
+    "env": {},
+    "exit": 0,
+    "seconds": 6.53
+  },
+  {
+    "name": "docs",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--features",
+      "aligned,pic-buf,zerocopy",
+      "--doc"
+    ],
+    "env": {},
+    "exit": 0,
+    "seconds": 0.23
+  },
+  {
+    "name": "decoder",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "--release",
+      "-p",
+      "rav1d-safe",
+      "--lib",
+      "--test",
+      "decode_md5_verify",
+      "--test",
+      "filmgrain_threads",
+      "--test",
+      "strictness",
+      "--test",
+      "decode_md5_committed",
+      "--test",
+      "safe_simd_crashes",
+      "--test",
+      "fuzz_regression",
+      "--test-threads",
+      "1"
+    ],
+    "env": {
+      "RAV1D_MD5_THREADS": "8"
+    },
+    "exit": 0,
+    "seconds": 104.03
+  },
+  {
+    "name": "decoder-debug",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "-p",
+      "rav1d-safe",
+      "--test",
+      "decode_md5_committed",
+      "--test",
+      "safe_simd_crashes",
+      "--test",
+      "fuzz_regression",
+      "--test-threads",
+      "1"
+    ],
+    "env": {},
+    "exit": 0,
+    "seconds": 11.07
+  },
+  {
+    "name": "loom",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--features",
+      "__shards_4",
+      "--lib",
+      "loom_protocol",
+      "--",
+      "--test-threads=1"
+    ],
+    "env": {
+      "RUSTFLAGS": "--cfg disjoint_mut_loom",
+      "CARGO_TARGET_DIR": "target/review-loom"
+    },
+    "exit": 0,
+    "seconds": 0.38
+  },
+  {
+    "name": "miri-stacked",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--test",
+      "medium_buffers"
+    ],
+    "env": {
+      "MIRIFLAGS": ""
+    },
+    "exit": 0,
+    "seconds": 9.27
+  },
+  {
+    "name": "miri-tree",
+    "command": [
+      "cargo",
+      "+nightly",
+      "miri",
+      "test",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--test",
+      "medium_buffers"
+    ],
+    "env": {
+      "MIRIFLAGS": "-Zmiri-tree-borrows"
+    },
+    "exit": 0,
+    "seconds": 15.63
+  },
+  {
+    "name": "no-std",
+    "command": [
+      "cargo",
+      "nextest",
+      "run",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--no-default-features",
+      "--test",
+      "medium_buffers",
+      "--test-threads",
+      "1"
+    ],
+    "env": {},
+    "exit": 0,
+    "seconds": 0.37
+  },
+  {
+    "name": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "-p",
+      "rav1d-safe",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--lib",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "env": {},
+    "exit": 0,
+    "seconds": 2.47
+  },
+  {
+    "name": "semver",
+    "command": [
+      "cargo",
+      "semver-checks",
+      "--manifest-path",
+      "crates/rav1d-disjoint-mut/Cargo.toml",
+      "--baseline-root",
+      "/home/lilith/tmp/rav1d-review-2026-09-05/releases/rav1d-disjoint-mut-0.3.1",
+      "--features",
+      "aligned,pic-buf,zerocopy",
+      "--release-type",
+      "patch"
+    ],
+    "env": {},
+    "exit": 0,
+    "seconds": 1.16
+  }
+]

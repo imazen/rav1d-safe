@@ -4385,6 +4385,10 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
     let mut f = fc.data.try_write().unwrap();
     let f = &mut *f;
 
+    let header = f.frame_hdr.as_ref().ok_or(EINVAL)?;
+    let tiles = header.tiling.cols as usize * header.tiling.rows as usize;
+    f.configure_scratch_parallelism(c.tc.len(), tiles);
+
     f.lf.start_of_tile_row
         .try_resize(f.sbh as usize, 0)
         .map_err(|_| ENOMEM)?;
@@ -5350,10 +5354,12 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
     // ref_mvs
     if frame_hdr.frame_type.is_inter_or_switch() || frame_hdr.allow_intrabc {
         let mvs_sz = f.sb128h as usize * 16 * (f.b4_stride >> 1) as usize;
-        f.mvs = Some(
-            crate::src::disjoint_mut::dm_arc_try_new(mvs_sz, Default::default())
-                .map_err(|_| ENOMEM)?,
-        );
+        let mut mvs = crate::src::disjoint_mut::dm_arc_try_new(mvs_sz, Default::default())
+            .map_err(|_| ENOMEM)?;
+        std::sync::Arc::get_mut(&mut mvs.inner)
+            .expect("new motion-vector storage is exclusively owned")
+            .configure_parallelism(c.tc.len(), cols as usize * rows as usize);
+        f.mvs = Some(mvs);
         if !frame_hdr.allow_intrabc {
             for i in 0..7 {
                 f.refpoc[i] = f.refp[i].p.frame_hdr.as_ref().ok_or(EINVAL)?.frame_offset as c_uint;
@@ -5414,8 +5420,13 @@ pub fn rav1d_submit_frame(c: &Rav1dContext, state: &mut Rav1dState) -> Rav1dResu
                     // Otherwise if there's no previous, we need to make a new map.
                     // Allocate one here and zero it out.
                     let segmap_size = f.b4_stride as usize * 32 * f.sb128h as usize;
-                    crate::src::disjoint_mut::dm_arc_try_new(segmap_size, Default::default())
-                        .map_err(|_| ENOMEM)?
+                    let mut segmap =
+                        crate::src::disjoint_mut::dm_arc_try_new(segmap_size, Default::default())
+                            .map_err(|_| ENOMEM)?;
+                    std::sync::Arc::get_mut(&mut segmap.inner)
+                        .expect("new segmentation storage is exclusively owned")
+                        .configure_parallelism(c.tc.len(), cols as usize * rows as usize);
+                    segmap
                 }
                 (_, Some(prev_segmap)) => {
                     // We're not updating an existing map,

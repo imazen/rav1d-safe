@@ -1,0 +1,12 @@
+[
+  {
+    "input": "first",
+    "threads": 24,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.004053,
+      "solution": 1.010477
+    }
+  }
+]

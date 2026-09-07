@@ -1,0 +1,202 @@
+[
+  {
+    "input": "multi",
+    "threads": 1,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 2.078114,
+      "solution": 2.084088
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 8,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.885605,
+      "solution": 1.598417
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 24,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 2.276999,
+      "solution": 1.768333
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 8,
+    "instances": 4,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.582714,
+      "solution": 0.471697
+    }
+  },
+  {
+    "input": "multi",
+    "threads": 1,
+    "instances": 1,
+    "prime": 24,
+    "medians": {
+      "baseline": 2.136726,
+      "solution": 2.118213
+    }
+  },
+  {
+    "input": "first",
+    "threads": 1,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 4.072444,
+      "solution": 4.127156
+    }
+  },
+  {
+    "input": "first",
+    "threads": 8,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 2.042136,
+      "solution": 2.036629
+    }
+  },
+  {
+    "input": "first",
+    "threads": 24,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 2.331312,
+      "solution": 2.140864
+    }
+  },
+  {
+    "input": "first",
+    "threads": 8,
+    "instances": 4,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.614664,
+      "solution": 0.620697
+    }
+  },
+  {
+    "input": "first",
+    "threads": 1,
+    "instances": 1,
+    "prime": 24,
+    "medians": {
+      "baseline": 4.137256,
+      "solution": 4.111005
+    }
+  },
+  {
+    "input": "stress",
+    "threads": 1,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 12.900203,
+      "solution": 12.952584
+    }
+  },
+  {
+    "input": "stress",
+    "threads": 8,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 3.879366,
+      "solution": 3.890213
+    }
+  },
+  {
+    "input": "stress",
+    "threads": 24,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 3.547949,
+      "solution": 3.490859
+    }
+  },
+  {
+    "input": "stress",
+    "threads": 8,
+    "instances": 4,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.809234,
+      "solution": 1.797026
+    }
+  },
+  {
+    "input": "stress",
+    "threads": 1,
+    "instances": 1,
+    "prime": 24,
+    "medians": {
+      "baseline": 13.014219,
+      "solution": 12.974023
+    }
+  },
+  {
+    "input": "single10",
+    "threads": 1,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.771529,
+      "solution": 1.784278
+    }
+  },
+  {
+    "input": "single10",
+    "threads": 8,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.614315,
+      "solution": 1.646953
+    }
+  },
+  {
+    "input": "single10",
+    "threads": 24,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.896089,
+      "solution": 1.883329
+    }
+  },
+  {
+    "input": "single10",
+    "threads": 8,
+    "instances": 4,
+    "prime": 0,
+    "medians": {
+      "baseline": 0.448894,
+      "solution": 0.446761
+    }
+  },
+  {
+    "input": "single10",
+    "threads": 1,
+    "instances": 1,
+    "prime": 24,
+    "medians": {
+      "baseline": 1.784315,
+      "solution": 1.789887
+    }
+  }
+]

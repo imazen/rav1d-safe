@@ -993,14 +993,20 @@ impl Rav1dPictureDataComponent {
         let stride_bytes = (stride * mem::size_of::<BD::Pixel>()) as isize;
         cfg_if::cfg_if! {
             if #[cfg(feature = "c-ffi")] {
-                Self::from_parts(Rav1dPictureDataComponentInner::wrap_buf::<BD>(buf, stride), stride_bytes)
+                let inner = Rav1dPictureDataComponentInner::wrap_buf::<BD>(buf, stride);
             } else {
                 let buf_bytes = IntoBytes::as_bytes(buf);
                 assert!(buf_bytes.len() % RAV1D_PICTURE_GUARANTEED_MULTIPLE == 0);
                 let inner = PicBuf::from_slice_copy(buf_bytes);
-                Self::from_parts(inner, stride_bytes)
             }
         }
+        let mut this = Self::from_parts(inner, stride_bytes);
+        // These temporary scratch wrappers are used within one worker. Keep
+        // their tracker local even after another decoder enabled parallelism.
+        // This is only placement: concurrent clients still get full overlap
+        // checking, and the existing row-guard selection remains unchanged.
+        this.data.configure_parallelism(1, 1);
+        this
     }
 
     /// Copy pixels from this component back into a scratch buffer.

@@ -1,0 +1,30 @@
+[
+  {
+    "mode": "unchecked",
+    "command": [
+      "cargo",
+      "build",
+      "--locked",
+      "--release",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-perf-solution-2026-09-07/solution-auto-driver/Cargo.toml",
+      "--features",
+      "unchecked"
+    ],
+    "sha256": "2a921788c32d026ffed4239fab23b3e2cfcb8fda318559617eda915336e825d1"
+  },
+  {
+    "mode": "asm",
+    "command": [
+      "cargo",
+      "build",
+      "--locked",
+      "--release",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-perf-solution-2026-09-07/solution-auto-driver/Cargo.toml",
+      "--features",
+      "asm"
+    ],
+    "sha256": "ee028e771e2c1b32a415767be8e160401c29fbc71d5f57f406a5d1559e7d3e8d"
+  }
+]

@@ -1,0 +1,12 @@
+[
+  {
+    "input": "single10",
+    "threads": 8,
+    "instances": 1,
+    "prime": 0,
+    "medians": {
+      "baseline": 1.633022,
+      "solution": 1.637163
+    }
+  }
+]

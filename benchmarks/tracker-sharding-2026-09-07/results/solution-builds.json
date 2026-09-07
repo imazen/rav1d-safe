@@ -1,0 +1,42 @@
+[
+  {
+    "arm": "solution-checked",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-release-perf-2026-09-07/current-driver/Cargo.toml"
+    ],
+    "exit": 0,
+    "seconds": 27.942341542919166
+  },
+  {
+    "arm": "solution-unchecked",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-release-perf-2026-09-07/current-driver/Cargo.toml",
+      "--features",
+      "unchecked"
+    ],
+    "exit": 0,
+    "seconds": 27.76377808104735
+  },
+  {
+    "arm": "solution-asm",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-release-perf-2026-09-07/current-driver/Cargo.toml",
+      "--features",
+      "asm"
+    ],
+    "exit": 0,
+    "seconds": 17.21377904806286
+  }
+]

@@ -1,0 +1,42 @@
+[
+  {
+    "arm": "shard1k-checked",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-release-perf-2026-09-07/current-driver/Cargo.toml"
+    ],
+    "exit": 0,
+    "seconds": 27.598646939964965
+  },
+  {
+    "arm": "shard1k-unchecked",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-release-perf-2026-09-07/current-driver/Cargo.toml",
+      "--features",
+      "unchecked"
+    ],
+    "exit": 0,
+    "seconds": 27.672176155028865
+  },
+  {
+    "arm": "shard1k-usage",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--manifest-path",
+      "/home/lilith/tmp/rav1d-release-perf-2026-09-07/current-driver/Cargo.toml",
+      "--features",
+      "asm,probe-usage,probe-wide"
+    ],
+    "exit": 0,
+    "seconds": 17.374080731067806
+  }
+]

@@ -1,0 +1,15 @@
+{
+  "command": [
+    "cargo",
+    "nextest",
+    "run",
+    "-p",
+    "rav1d-disjoint-mut",
+    "--lib",
+    "-E",
+    "test(medium_shared_storage_spreads_simultaneous_row_guards)"
+  ],
+  "mutant_exit": 100,
+  "restored_exit": 0,
+  "restored_sha256": "cd11d67d7d79a04447b0489c273d2cf111f4fcd58ee999d16071ace7c3f34a72"
+}
