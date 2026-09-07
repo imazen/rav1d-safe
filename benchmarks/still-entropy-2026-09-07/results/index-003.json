@@ -1,110 +1,242 @@
 [
   {
-    "file": "mage-sse2-screen-frame-reference.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen-frame-reference.json",
-    "bytes": 263,
-    "sha256": "607144a3f9e04d44e120f7deb883341d265bcef4c95ea35b9c7705ae04f0ca96"
+    "file": "entropy-probe-map-2k-min-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-map-2k-min-t8.json",
+    "bytes": 7807,
+    "sha256": "782a3ad82cdf2e59c21ea8a169ffba954628fd5201118ddbc293ac7a7f18ec7a"
   },
   {
-    "file": "mage-sse2-screen-provenance.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen-provenance.json",
-    "bytes": 2115,
-    "sha256": "b7c7f69d79280f4bccbc837c09be30cbb186b46e521b35fd5031855e71e78717"
+    "file": "entropy-probe-map-2k-t8-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-map-2k-t8-t1.json",
+    "bytes": 52164,
+    "sha256": "20681827d0032db22f96aad5657f428cac14378de58c9d52356c11bc2237ef49"
   },
   {
-    "file": "mage-sse2-screen-summary.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen-summary.json",
-    "bytes": 5559,
-    "sha256": "66d2d4b01cfd279c4383c4e5a78585cd9f26f30ab3be83eadf9e08664a5ad304"
+    "file": "entropy-probe-map-2k-t8-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-map-2k-t8-t8.json",
+    "bytes": 52164,
+    "sha256": "de5ec4ec02342aa951efc9366d9993b0880cc4aeba9e46a9fcfc2be2ff443816"
   },
   {
-    "file": "mage-sse2-screen-000.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen.jsonl",
-    "bytes": 24516,
-    "sha256": "942dfaa7bf7959cb8ad85fee3bf5b42b66a6c7acb40b220fda4f9359ee9e58a8"
+    "file": "entropy-probe-map-4k-min-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-map-4k-min-t1.json",
+    "bytes": 8090,
+    "sha256": "6e5cc74cbbac34c6b00173e5b9ca487042084b1424ce044d4d86f0314a3fa271"
   },
   {
-    "file": "mage-sse2-screen-001.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen.jsonl",
-    "bytes": 24468,
-    "sha256": "76e4971ef74517360268c17f89d1b50936179c5257aa2d4128d907a4b33f317a"
+    "file": "entropy-probe-map-4k-min-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-map-4k-min-t8.json",
+    "bytes": 8090,
+    "sha256": "2aacb010cb183ebdff3ef40b28181f06781540ddf98b03138277ac9780546ec4"
   },
   {
-    "file": "mage-sse2-screen-002.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen.jsonl",
-    "bytes": 24507,
-    "sha256": "f2976c81748784762c94f78fea11bc79bf4f0207f67ed3a5ef5687ffe402bb32"
+    "file": "entropy-probe-map-4k-t8-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-map-4k-t8-t1.json",
+    "bytes": 53871,
+    "sha256": "bbefb80150a1a9ee8a9a01e446e9c8d010847475824c1d27ab11ce7bc0524678"
   },
   {
-    "file": "mage-sse2-screen-003.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen.jsonl",
-    "bytes": 21983,
-    "sha256": "b442d776b384b78f4bc133557b5c91dec04fc1ce783038d61e3a70e9966472b1"
+    "file": "entropy-probe-map-4k-t8-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-map-4k-t8-t8.json",
+    "bytes": 53868,
+    "sha256": "41a7454e92ff902d9484bd8598c12c974436690cee3ad26971a1dcbd2c6cd41e"
   },
   {
-    "file": "mage-sse2-screen.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen.log",
-    "bytes": 1064,
-    "sha256": "73ef27ad5c5ce16d056271c7034e4f2b4f3aa46d0db427da789f95f94a75d9b6"
+    "file": "entropy-probe-map-8k-min-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-map-8k-min-t1.json",
+    "bytes": 29406,
+    "sha256": "fe0036f67f719761320d9062842bde750e6a244ffcb1e1668c15953b814c2de9"
   },
   {
-    "file": "source-versions.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/source-versions.json",
-    "bytes": 1480,
-    "sha256": "7614e95dbf3f329cb583a87da8bbe6fa31c60ea805090f41100991e341fb17ba"
+    "file": "entropy-probe-map-8k-min-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-map-8k-min-t8.json",
+    "bytes": 29406,
+    "sha256": "23bb1dc097347bd93e86b8a239db6ac56303dd75eabb0e4a1fae8d7d21fafcc5"
   },
   {
-    "file": "sources.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/sources.json",
-    "bytes": 1666,
-    "sha256": "1a65deb80feb08f451456cbdc17b722d0751988995d021465b7dae4a565b4b1a"
+    "file": "entropy-probe-map-8k-t8-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-map-8k-t8-t1.json",
+    "bytes": 56323,
+    "sha256": "d6836ff6fd10a67bacf09bb858725aca8487ff6c6851c0d044d3246d87e45b78"
   },
   {
-    "file": "specialized-builds.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/specialized-builds.json",
-    "bytes": 317,
-    "sha256": "4ff0440bceb8f1c0b7fb659c26f882dd5292f8539bebd12d4322e0765004f5e3"
+    "file": "entropy-probe-map-8k-t8-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-map-8k-t8-t8.json",
+    "bytes": 56323,
+    "sha256": "cf56d304e52ff5976d23ff83a2b338f64815ac06a716b4066eb3f3b9236b75e4"
   },
   {
-    "file": "specialized-checked-build.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/specialized-checked-build.log",
-    "bytes": 1635,
-    "sha256": "974f24334604810232db6efc887da5f9f1304d7a44b6b0bd9ae9b5aed290e3c9"
+    "file": "entropy-probe-photo-2k-min-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-photo-2k-min-t1.json",
+    "bytes": 7773,
+    "sha256": "969fb24cabd2d137f8c3294bb5f12ddef33cc57c67ffa3be96174ea59b73d4e9"
   },
   {
-    "file": "split-builds.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/split-builds.json",
-    "bytes": 311,
-    "sha256": "d902eabcf205748f32556d4666374fdf049f55582c352e4c7bfeb0c0756fbecc"
+    "file": "entropy-probe-photo-2k-min-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-photo-2k-min-t8.json",
+    "bytes": 7773,
+    "sha256": "417d282d3a0ab6104f900addba202e5b3983b8749cbcb868fa113552ed0db9d3"
   },
   {
-    "file": "split-checked-build.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/split-checked-build.log",
-    "bytes": 253,
-    "sha256": "5d675a0ee37d1fe675facb7708e6e0a14744ffd15e41896e70fbc3761d63cae9"
+    "file": "entropy-probe-photo-2k-t8-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-photo-2k-t8-t1.json",
+    "bytes": 52278,
+    "sha256": "07ca2664ed32c8e8cf2002869e7f468684557db671a79b50b75f26ec599da9b1"
   },
   {
-    "file": "profile-commands.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/profiles/commands.json",
-    "bytes": 5444,
-    "sha256": "3208771fc6a659246b33ec42aecd2e6c1c50015148ed627a547fe10d64ca572d"
+    "file": "entropy-probe-photo-2k-t8-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-photo-2k-t8-t8.json",
+    "bytes": 52278,
+    "sha256": "72e55c085e6f31ac2ab689afa164ef606a5fe9baade3d28170ae0af99f8bb20c"
   },
   {
-    "file": "profile-map-4k-t8-t8-candidate.txt.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/profiles/map-4k-t8-t8-candidate.txt",
-    "bytes": 20887,
-    "sha256": "69b999c589d03bbd98433cceb85b798c71a9f5acbcae9c9d9b71bfa49efe9f05"
+    "file": "entropy-probe-photo-4k-min-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-photo-4k-min-t1.json",
+    "bytes": 8056,
+    "sha256": "4ee329e245ca0079bc2c050e1f236225f4fafdde59146b1f8a43f3ed770a484b"
   },
   {
-    "file": "profile-photo-4k-min-t1-baseline.txt.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/profiles/photo-4k-min-t1-baseline.txt",
-    "bytes": 20628,
-    "sha256": "b02457a6fe20f85c42525919a8f296172b24d8b32a9de15cdc4200915e33b458"
+    "file": "entropy-probe-photo-4k-min-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-photo-4k-min-t8.json",
+    "bytes": 8056,
+    "sha256": "41f395bf7434e766cd267c466385834ba253e9e2a1b1f7f55c7328ca20e7ec8b"
   },
   {
-    "file": "profile-photo-4k-min-t1-candidate.txt.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/profiles/photo-4k-min-t1-candidate.txt",
-    "bytes": 21660,
-    "sha256": "2839972488d952bf22503cb2b149c38042bd4a241f9d37f403a99218cc7b6ebe"
+    "file": "entropy-probe-photo-4k-t8-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-photo-4k-t8-t1.json",
+    "bytes": 53929,
+    "sha256": "d5e15003df04dba56f20a897fe06b189c7a65204b35fd3abacdf9d1cf0497304"
+  },
+  {
+    "file": "entropy-probe-photo-4k-t8-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-photo-4k-t8-t8.json",
+    "bytes": 53926,
+    "sha256": "e3019a10b2778ae4e8b93f15c31bbb6a6ad9930a7f9fc446c52a2c5a441e1adf"
+  },
+  {
+    "file": "entropy-probe-photo-8k-min-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-photo-8k-min-t1.json",
+    "bytes": 28636,
+    "sha256": "66aa7d615743e35292ef6d92b38fd2f4739864737d44b1c63e0e1a416ab44869"
+  },
+  {
+    "file": "entropy-probe-photo-8k-min-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-photo-8k-min-t8.json",
+    "bytes": 28636,
+    "sha256": "1700d510eac5547b616898346ae2bb7c93e4f2ffd2b20d00645f39aa75628dc3"
+  },
+  {
+    "file": "entropy-probe-photo-8k-t8-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-photo-8k-t8-t1.json",
+    "bytes": 55145,
+    "sha256": "3267df524a99c55db58d79374cac367333ce14684e4a9bda4d1b19a90eaae32e"
+  },
+  {
+    "file": "entropy-probe-photo-8k-t8-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-photo-8k-t8-t8.json",
+    "bytes": 55142,
+    "sha256": "fe4dbea7aad07b9b6de0c66e3a394d41cf913e51754438dab7739e19631d9d3b"
+  },
+  {
+    "file": "entropy-probe-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe-summary.json",
+    "bytes": 185683,
+    "sha256": "fb3456bcf10ada72e50f3f573d7b6a2598be5e52f4a52a6b34a87c6f7526f5db"
+  },
+  {
+    "file": "entropy-probe.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/entropy-probe.log",
+    "bytes": 3103,
+    "sha256": "6b26a282b446df7f3a7f6d3846a7b42c8c016092ab43638d02c050af4f1caceb"
+  },
+  {
+    "file": "ffi-pool-asm-all-lib.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-asm-all-lib.log",
+    "bytes": 72053,
+    "sha256": "27b35115d831c4b9e43f4b0c2d33de33bf1157551163eceebe3ceb18a44f4cae"
+  },
+  {
+    "file": "ffi-pool-c-ffi-lifecycle.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-c-ffi-lifecycle.log",
+    "bytes": 2440,
+    "sha256": "d4c3be52367de74af9b823b37869997432b1119baee9e0aa6cf05efa70b79452"
+  },
+  {
+    "file": "ffi-pool-lifetime-fixed-import.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-lifetime-fixed-import.log",
+    "bytes": 68806,
+    "sha256": "42eec8db8e92087c5ad15bec3f38dee6583b1572a694b3d2b9ae4241760b5e36"
+  },
+  {
+    "file": "ffi-pool-lifetime-fixed.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-lifetime-fixed.log",
+    "bytes": 5599,
+    "sha256": "7d110c8e3bf1b8796245d5ec2dd78804c9bf4b1f9791e29563f66e03f8be5e02"
+  },
+  {
+    "file": "ffi-pool-miri-stacked-final.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-stacked-final.log",
+    "bytes": 1124,
+    "sha256": "bd8d4d54b105f8bf3854b9ab876c2d454e2bd229c50b488aa5a254abcbe023de"
+  },
+  {
+    "file": "ffi-pool-miri-stacked-owned-helper.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-stacked-owned-helper.log",
+    "bytes": 1123,
+    "sha256": "5c5f27e6ea20a132ce9b682283ac00a1534f652cac8e79c88df28894d72299e6"
+  },
+  {
+    "file": "ffi-pool-miri-stacked-owned.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-stacked-owned.log",
+    "bytes": 4194,
+    "sha256": "fe8159b68e6db3d179ccad449cb1ede02378066350152bfcb9b56320fa2301c0"
+  },
+  {
+    "file": "ffi-pool-miri-stacked-parsed.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-stacked-parsed.log",
+    "bytes": 18145,
+    "sha256": "3755adc1c0835f1244c012fbea1d431edabc1bbd9dff29612913511aecec3c61"
+  },
+  {
+    "file": "ffi-pool-miri-stacked.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-stacked.log",
+    "bytes": 5805,
+    "sha256": "bdc40456509519a217078c964a7232401520e7c2e6991c88b93021fac236b1f7"
+  },
+  {
+    "file": "ffi-pool-miri-tree-final.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-tree-final.log",
+    "bytes": 1045,
+    "sha256": "dce4c4785a19e2417e4cedb8c049a453f188859ce5777f6e40ad471eb2969dd7"
+  },
+  {
+    "file": "ffi-pool-owned-asm-final.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-owned-asm-final.log",
+    "bytes": 73355,
+    "sha256": "a9f2372d5688b3c3baf73c807e020c66fd22f6b908139e953fdd37ac10579784"
+  },
+  {
+    "file": "ffi-pool-owned-c-ffi-final.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-owned-c-ffi-final.log",
+    "bytes": 11183,
+    "sha256": "43074aada38947eace89b87fa4d670e01148acf508948a5248964b7cde9bf3f5"
+  },
+  {
+    "file": "ffi-pool-owned-clippy.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-owned-clippy.log",
+    "bytes": 514,
+    "sha256": "0d34fe35427b1c8ef788342b333a086015b0a89f8a7f46af04b530a5a8db5650"
+  },
+  {
+    "file": "ffi-public-abi-audit.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-public-abi-audit.json",
+    "bytes": 783,
+    "sha256": "b000124a77a79ada7e43110faff276096daee5f7a7339883212b60d57661373e"
+  },
+  {
+    "file": "interval-cmov-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/interval-cmov-builds.json",
+    "bytes": 501,
+    "sha256": "d605c91dbf41fd5a65c397dd1247e129e7988469f246a76f58fca9fa63039196"
   }
 ]

@@ -1,5 +1,101 @@
 [
   {
+    "file": "block-v3-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-checked-build.log",
+    "bytes": 256,
+    "sha256": "77a303b37c97903fd2c5c023c5cd166df19e558b541bf10eea598be9e9313fcb"
+  },
+  {
+    "file": "block-v3-codegen.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-codegen.json",
+    "bytes": 2440,
+    "sha256": "9aa0623ba206d95b1322c7f3f9509dfea2e93d1ec731b2055cbfe45ec12e459e"
+  },
+  {
+    "file": "block-v3-decoder-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-decoder-tests.log",
+    "bytes": 14145,
+    "sha256": "9a64eee3d8436721b67d878d5cc08f109586a759fa1f8cb9ea476cfeddd08c57"
+  },
+  {
+    "file": "block-v3-inline-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-inline-builds.json",
+    "bytes": 503,
+    "sha256": "8873262c01fedbc9a4b06d94fd2ac8e136f154417549eef9933474c1c7e08e07"
+  },
+  {
+    "file": "block-v3-inline-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-inline-checked-build.log",
+    "bytes": 263,
+    "sha256": "cdd046ecfae031609ef4114e6f81085b24a94624e78bdbd5fc3b930d4e2463d5"
+  },
+  {
+    "file": "block-v3-inline-decoder-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-inline-decoder-tests.log",
+    "bytes": 14145,
+    "sha256": "4ddca90813b91feb630c8d90df900a40f3431b593d1260b554984d6f9d8d686f"
+  },
+  {
+    "file": "block-v3-screen-frame-reference.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-screen-frame-reference.json",
+    "bytes": 263,
+    "sha256": "607144a3f9e04d44e120f7deb883341d265bcef4c95ea35b9c7705ae04f0ca96"
+  },
+  {
+    "file": "block-v3-screen-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-screen-provenance.json",
+    "bytes": 1823,
+    "sha256": "ad524cca78cfdf75da67931f660d75858a9a5c3c5cac92e63162b34db65a6f40"
+  },
+  {
+    "file": "block-v3-screen-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-screen-summary.json",
+    "bytes": 4606,
+    "sha256": "fb884616981da58a8b8d61184edb35d9e9c06552d35b3a205e3c4b87eb49e494"
+  },
+  {
+    "file": "block-v3-screen-000.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-screen.jsonl",
+    "bytes": 24481,
+    "sha256": "ff61d12d208b6087a4fe13c3f49c6ee6e0ba84cb322187c53c14142970de7176"
+  },
+  {
+    "file": "block-v3-screen-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-screen.jsonl",
+    "bytes": 24492,
+    "sha256": "45b1c866cb359ac0f31167544b668a5098bbf48cd1c43f410bbb565e7791b849"
+  },
+  {
+    "file": "block-v3-screen-002.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-screen.jsonl",
+    "bytes": 24363,
+    "sha256": "1ef23cbcf2409603052fb9ad5671140fb27f5632900c548d196c8902c85b3d94"
+  },
+  {
+    "file": "block-v3-screen-003.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-screen.jsonl",
+    "bytes": 3658,
+    "sha256": "cf881728122c96ce67e3ef0a00e19300f45cb8f24e3449ad3db854bd9717a523"
+  },
+  {
+    "file": "block-v3-screen.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/block-v3-screen.log",
+    "bytes": 978,
+    "sha256": "180ca3017cf729346fec2a44750530edb9a6d4f537d7bee03b4ef16a359c3966"
+  },
+  {
+    "file": "candidate-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/candidate-builds.json",
+    "bytes": 315,
+    "sha256": "834632c035faa3aa1e8c0a6f0b19aa696c4e9bd20eb0ef073298d0e487ba0b6a"
+  },
+  {
+    "file": "candidate-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/candidate-checked-build.log",
+    "bytes": 257,
+    "sha256": "f897b95dd611aa46b1aacb4b566217762331e23f5810005e13c184ccacd9ff08"
+  },
+  {
     "file": "cdf-auto-codegen.log.gz",
     "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-auto-codegen.log",
     "bytes": 353,
@@ -10,6 +106,30 @@
     "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-count-lane-mutation.log",
     "bytes": 2565,
     "sha256": "3654eebacb22c380c048a23425e00458afd8cfbb90de40f6d5c98392c12b4d13"
+  },
+  {
+    "file": "cdf-mask-table-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-mask-table-builds.json",
+    "bytes": 502,
+    "sha256": "e924244e97b25426799aba3dff5bfb14870a819ce062b620309129c92156e94c"
+  },
+  {
+    "file": "cdf-mask-table-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-mask-table-checked-build.log",
+    "bytes": 262,
+    "sha256": "9d422fab9eff80b9b35ddacba9934aaec2048bb009c655a1b46c695719bd7031"
+  },
+  {
+    "file": "cdf-mask-table-codegen.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-mask-table-codegen.json",
+    "bytes": 1517,
+    "sha256": "cf346e521dff4ff7cd3856fd7f1625537bf882f8adac01cb936ea16d08e227c2"
+  },
+  {
+    "file": "cdf-mask-table-decoder-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-mask-table-decoder-tests.log",
+    "bytes": 14145,
+    "sha256": "f49e377e312c09a55c32c06a6438075433bd78af7f1f61c04959b6ae6a50513a"
   },
   {
     "file": "cdf-select-builds.json.gz",
@@ -118,125 +238,5 @@
     "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-confirm.jsonl",
     "bytes": 24449,
     "sha256": "1f4f2051ac935aa5a4ae07ab8693b825e1c9e97665e90792ce0ab455e4cb1bf3"
-  },
-  {
-    "file": "cdf-simd-confirm-003.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-confirm.jsonl",
-    "bytes": 24413,
-    "sha256": "752c705762170282dc2cc84fd5644a6ef461c7aa6bd19b677fd9f110c4264776"
-  },
-  {
-    "file": "cdf-simd-confirm-004.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-confirm.jsonl",
-    "bytes": 24232,
-    "sha256": "1422ab304d9ab7774185c306a6e4fbe33ae520962c172e3d9e93907252bf6385"
-  },
-  {
-    "file": "cdf-simd-confirm-005.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-confirm.jsonl",
-    "bytes": 14617,
-    "sha256": "f91d680bb1816f666745c16dcc8543d0cf22441489ed8214b1e15381c307f241"
-  },
-  {
-    "file": "cdf-simd-conformance-t1.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-conformance-t1.log",
-    "bytes": 7134,
-    "sha256": "1469841fd9da5ba15aa692b73696980bcc7ae7d0569b3483696bc70e6f2d57a0"
-  },
-  {
-    "file": "cdf-simd-conformance-t8.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-conformance-t8.log",
-    "bytes": 2430,
-    "sha256": "c56f11a5ce2bb3895e554040b43819cb8161172525c74e9e0fcc8b7132b41c8a"
-  },
-  {
-    "file": "cdf-simd-debug-tests.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-debug-tests.log",
-    "bytes": 2737,
-    "sha256": "d854b8f6e77ed3d1057c213f2b839659fd6632697bd13b422030dfc2483c7de9"
-  },
-  {
-    "file": "cdf-simd-final-lib-tests.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-final-lib-tests.log",
-    "bytes": 13171,
-    "sha256": "85b61d8239117c0069caa20c7b54f3b84106eed490ace9e25780fb39f0eb0540"
-  },
-  {
-    "file": "cdf-simd-screen-frame-reference.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-screen-frame-reference.json",
-    "bytes": 263,
-    "sha256": "607144a3f9e04d44e120f7deb883341d265bcef4c95ea35b9c7705ae04f0ca96"
-  },
-  {
-    "file": "cdf-simd-screen-provenance.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-screen-provenance.json",
-    "bytes": 1518,
-    "sha256": "6a4e1d65548ceb0e03a6eb363cc57676a60341815bd406abe660ccb09ee720de"
-  },
-  {
-    "file": "cdf-simd-screen-summary.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-screen-summary.json",
-    "bytes": 3590,
-    "sha256": "347d86785c803db7c2ebcdd2fe90a0114dedd8374772555a32c67662badeec54"
-  },
-  {
-    "file": "cdf-simd-screen-000.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-screen.jsonl",
-    "bytes": 24313,
-    "sha256": "26f076a149d6a0d3721bdb20f0888d1116781c889142cbcd12f4122925f79bd5"
-  },
-  {
-    "file": "cdf-simd-screen-001.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-screen.jsonl",
-    "bytes": 24275,
-    "sha256": "970352c43d9de8e0ec73c909ecebf7a9371d5197648073ce9f212abffabaac63"
-  },
-  {
-    "file": "cdf-simd-screen-002.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-screen.jsonl",
-    "bytes": 9716,
-    "sha256": "3a9ee73a3d5db652783e40b8cb85f37dd7283b052b9c0dd8d40b18cb8d2dbaea"
-  },
-  {
-    "file": "cdf-simd-tests-fixed.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-tests-fixed.log",
-    "bytes": 1806,
-    "sha256": "05e4e3d6c9cdda677c024c7dc69790ae64ef01e26c74adabb3f62b704e2712dd"
-  },
-  {
-    "file": "cdf-simd-tests.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-tests.log",
-    "bytes": 2046,
-    "sha256": "c1af4239d08414b05688a159f181422c9bcc0c3d03d7df51b13d2019a2adf4b2"
-  },
-  {
-    "file": "checked-doctests-final.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/checked-doctests-final.log",
-    "bytes": 2459,
-    "sha256": "9b2828766a68c94cd1027489ff9334802dd7b9b1d9a28da877f1f1fece61dcbc"
-  },
-  {
-    "file": "ci-asm-lifetime-local.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ci-asm-lifetime-local.log",
-    "bytes": 68900,
-    "sha256": "906591d17e7cc57f31bff3544587cf8ef23f072884feac8df18657539ed25e4c"
-  },
-  {
-    "file": "ci-c08042b7-ubuntu-asm.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ci-c08042b7-ubuntu-asm.log",
-    "bytes": 153855,
-    "sha256": "1e3a8a86c7d6e5c231c06433d54f3712b2b607b5b442cc204472017af9b0657a"
-  },
-  {
-    "file": "ci-c08042b7-ubuntu-safe.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ci-c08042b7-ubuntu-safe.log",
-    "bytes": 43030,
-    "sha256": "8759dd2f502e07ebf82565f6749e811c7562c1c6d48c4ee39d5c1e6b8a83bf34"
-  },
-  {
-    "file": "ci-protocol-asm-release.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ci-protocol-asm-release.log",
-    "bytes": 69552,
-    "sha256": "decd176a7293e299384e071927b629c7c72b73ae24307c057699ce82104b862b"
   }
 ]
