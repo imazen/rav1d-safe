@@ -45,8 +45,6 @@ use crate::src::mem::try_arc;
 use crate::src::obu::rav1d_parse_obus;
 use crate::src::picture::PictureFlags;
 use crate::src::picture::rav1d_picture_alloc_copy;
-#[cfg(feature = "c-ffi")]
-use crate::src::send_sync_non_null::SendSyncNonNull;
 use crate::src::thread_task::FRAME_ERROR;
 use crate::src::thread_task::rav1d_task_delayed_fg;
 use crate::src::thread_task::rav1d_worker_task;
@@ -54,8 +52,6 @@ use parking_lot::Mutex;
 use std::cmp;
 #[cfg(feature = "c-ffi")]
 use std::ffi::CStr;
-#[cfg(feature = "c-ffi")]
-use std::ffi::c_void;
 use std::mem;
 use std::sync::Arc;
 use std::sync::Once;
@@ -266,10 +262,9 @@ pub(crate) fn rav1d_open(
     #[cfg(feature = "c-ffi")]
     if c.allocator.is_default() {
         let c = Arc::get_mut(&mut c).unwrap();
-        // SAFETY: When `allocator.is_default()`, `allocator.cookie` should be a `&c.picture_pool`.
-        // See `Rav1dPicAllocator::cookie` docs for more, including an analysis of the lifetime.
-        // Note also that we must do this after we created the `Arc` so that `c` has a stable address.
-        c.allocator.cookie = Some(SendSyncNonNull::from_ref(&c.picture_pool).cast::<c_void>());
+        // Pictures retain allocator clones and can allocate copies after c is
+        // dropped. Own the pool, and borrow its Arc slot only for each callback.
+        c.allocator.default_pool = Some(c.picture_pool.clone());
     }
     let c = c;
 

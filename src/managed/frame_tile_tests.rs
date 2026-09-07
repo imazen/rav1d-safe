@@ -51,6 +51,33 @@ fn picture_policy_is_local_and_survives_decoder_lifetimes() {
 }
 
 #[test]
+fn copied_picture_can_allocate_after_decoder_and_source_drop() {
+    let mut settings = Settings::default();
+    settings.threads = 4;
+    settings.max_frame_delay = 1;
+    let mut decoder = Decoder::with_settings(settings).unwrap();
+    let mut frame = decoder.decode(STREAM).unwrap().expect("still frame");
+    drop(decoder);
+
+    // Each generation must own enough allocator state to allocate the next.
+    // Retaining a pointer into either the decoder or the previous picture
+    // would leave a dangling cookie after these explicit drops.
+    for _ in 0..16 {
+        let mut copy = Rav1dPicture::default();
+        crate::src::picture::rav1d_picture_alloc_copy(
+            &None,
+            &mut copy,
+            frame.inner.p.w,
+            &frame.inner,
+        )
+        .unwrap();
+        drop(frame);
+        frame = Frame { inner: copy };
+        assert_picture_policy(&frame, 4);
+    }
+}
+
+#[test]
 fn serial_and_threaded_decoders_run_concurrently_with_local_policies() {
     let (a_tx, a_rx) = std::sync::mpsc::sync_channel(1);
     let (b_tx, b_rx) = std::sync::mpsc::sync_channel(1);
