@@ -1,0 +1,9 @@
+# started on Sun Sep  6 21:51:30 2026
+
+859.25;msec;task-clock;859247704;100.00;;
+4713723664;;cycles:u;859247704;100.00;;
+19033915885;;instructions:u;859247704;100.00;;
+252207014;;cache-references:u;859247704;100.00;;
+2360225;;cache-misses:u;859247704;100.00;;
+11;;context-switches;859247704;100.00;;
+2;;cpu-migrations;859247704;100.00;;

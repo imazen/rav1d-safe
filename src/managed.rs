@@ -776,6 +776,13 @@ pub struct Frame {
 }
 
 impl Frame {
+    /// Diagnostic output header census, absent from normal builds.
+    #[cfg(feature = "probe-tasktime")]
+    pub fn probe_geometry(&self) -> (u8, u8, u8, u8) {
+        let h = &self.inner.frame_hdr.as_ref().expect("frame header").rav1d;
+        (h.tiling.cols, h.tiling.rows, h.frame_type as u8, h.show_existing_frame)
+    }
+
     /// Frame width in pixels
     pub fn width(&self) -> u32 {
         self.inner.p.w as u32

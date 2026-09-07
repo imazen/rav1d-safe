@@ -1,0 +1,203 @@
+[1m[92m   Compiling[0m rav1d-disjoint-mut v0.3.2 (/home/lilith/work/zen/rav1d-safe/crates/rav1d-disjoint-mut)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 8.33s
+[1m[92m     Running[0m unittests src/lib.rs (target/release/deps/rav1d_disjoint_mut-49783cd917b64c1c)
+
+running 55 tests
+test align::tests::align_array_default ... ok
+test align::tests::align_constructor_and_deref ... ok
+test align::tests::align_copy ... ok
+test align::tests::align_in_repr_c_struct ... ok
+test align::tests::align_disjoint_mut ... ok
+test align::tests::align_type_alias_layout ... ok
+test align::tests::aligned_vec64_basic ... ok
+test align::tests::aligned_vec64_default ... ok
+test align::tests::aligned_vec64_disjoint_mut ... ok
+test align::tests::aligned_vec64_resizable ... ok
+test align::tests::deref_to_inner ... ok
+test test_dangerously_unchecked_skips_tracking ... ok
+test test_new_always_tracked ... ok
+test test_overlapping_immut ... ok
+test test_range_inclusive_mul ... ok
+test test_overlapping_mut - should panic ... ok
+test test_range_to_inclusive_mul ... ok
+test test_range_overlap ... ok
+test tracker_shard::tests::a_fixed_rung_overrides_the_adaptive_rule ... ok
+test tracker_shard::tests::adaptive_shift_keeps_the_block_count_near_target ... ok
+test tracker_shard::tests::block_boundary_neighbours_do_not_collide ... ok
+test tracker_shard::tests::coarser_blocks_collapse_a_strided_access_onto_fewer_shards ... ok
+test tracker_shard::tests::declaring_a_stride_installs_the_derived_shift ... ok
+test tracker_shard::tests::immutable_sharing_then_mutable_conflict ... ok
+test tracker_shard::tests::narrow_borrow_is_visible_to_wide_registrant ... ok
+test tracker_shard::tests::one_tile_does_not_get_the_coarse_shift ... ok
+test tracker_shard::tests::overlap_in_a_later_block_is_caught - should panic ... ok
+test tracker_shard::tests::poison_blocks_everything ... ok
+test tracker_shard::tests::rect_decode_is_the_exact_inverse_of_the_hull ... ok
+test tracker_shard::tests::rect_overlap_in_a_later_block_is_caught - should panic ... ok
+test tracker_shard::tests::rect_records_are_retired ... ok
+test tracker_shard::tests::rect_registrations_reach_both_the_one_shard_and_the_multi_shard_path ... ok
+test tracker_shard::tests::cross_shard_overlaps_are_all_caught ... ok
+test tracker_shard::tests::rect_vs_range_in_a_gap_is_permitted_and_the_hull_would_have_refused_it ... ok
+test tracker_shard::tests::rect_vs_range_on_a_row_is_caught - should panic ... ok
+test tracker_shard::tests::rect_vs_rect_interleaved_rows_is_permitted ... ok
+test tracker_shard::tests::rect_vs_rect_same_rows_disjoint_columns_is_permitted ... ok
+test tracker_shard::tests::rows_rule_targets_picture_rows_not_block_count ... ok
+test tracker_shard::tests::rect_vs_rect_same_rows_overlapping_columns_is_caught - should panic ... ok
+test tracker_shard::tests::same_block_overlap_is_caught - should panic ... ok
+test tracker_shard::tests::set_parallelism_is_monotone ... ok
+test tracker_shard::tests::serial_big_instance_keeps_strided_guards_narrow ... ok
+test tracker_shard::tests::set_tile_concurrency_is_monotone ... ok
+test tracker_shard::tests::shard_overflow_promotes_and_still_detects ... ok
+test tracker_shard::tests::unrepresentable_rectangles_are_declined_not_approximated ... ok
+test tracker_shard::tests::wide_and_narrow_still_see_each_other_at_full_width ... ok
+test tracker_storage::tests::eager_storage_never_calls_the_lazy_initializer ... ok
+test tracker_shard::tests::wide_borrow_is_visible_to_narrow_registrants ... ok
+test tracker_shard::tests::wide_and_narrow_still_see_each_other_on_a_one_shard_instance ... ok
+test tracker_storage::tests::concurrent_first_call_publishes_exactly_one_tracker ... ok
+test tracker_shard::tests::threaded_disjoint_is_clean ... ok
+test tracker_shard::tests::a_rectangle_and_its_per_row_control_give_the_same_verdicts ... ok
+test tracker_shard::tests::rect_hit_range_matches_a_brute_force_byte_set_oracle ... ok
+test tracker_shard::tests::threaded_churn_leaks_no_slots ... ok
+test tracker_shard::tests::rect_vs_rect_agrees_with_the_byte_set_oracle_through_the_tracker ... ok
+
+test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+[1m[92m     Running[0m tests/adversarial_api.rs (target/release/deps/adversarial_api-2a9a01813ba3b8fb)
+
+running 6 tests
+test extreme_rectangle_geometry_never_wraps_into_an_accepted_view ... ok
+test moved_borrowed_storage_and_guards_keep_their_reference_authority ... ok
+test unwind_with_a_live_guard_poisoning_cannot_be_cleared_by_hints ... ok
+test typed_views_and_byte_views_agree_at_inclusive_endpoints ... ok
+test forgotten_guard_survives_unrelated_slot_reuse ... ok
+test rectangles_and_ranges_match_an_element_set_oracle_in_both_orders ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/aligned_miri.rs (target/release/deps/aligned_miri-8e92165d5cab5d6d)
+
+running 2 tests
+test test_aligned_immut_and_mut_disjoint ... ok
+test test_aligned_two_disjoint_mut_guards ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/const_constructor.rs (target/release/deps/const_constructor-1ef9df96a42f6f18)
+
+running 5 tests
+test resize_and_stride_before_and_after_first_borrow ... ok
+test exclusive_storage_mutation_before_initialization_uses_current_length ... ok
+test const_static_concurrent_first_use_stays_checked ... ok
+test moved_initialized_buffer_preserves_poison_and_leaked_reservations ... ok
+test both_constructors_preserve_live_leases_when_global_hints_change ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/guard_move_release.rs (target/release/deps/guard_move_release-77b8bf8f0d693a85)
+
+running 2 tests
+test moving_a_mut_guard_into_drop_is_not_ub ... ok
+test moving_a_shared_guard_into_drop_is_not_ub ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.73s
+
+[1m[92m     Running[0m tests/narrow_release.rs (target/release/deps/narrow_release-f56bdde5bb5bd4c9)
+
+running 1 test
+test a_lock_free_release_never_retires_a_live_neighbour ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.93s
+
+[1m[92m     Running[0m tests/pic_buf_overflow.rs (target/release/deps/pic_buf_overflow-2ac5270a192c7d54)
+
+running 3 tests
+test accepts_valid_aligned_region ... ok
+test rejects_oversized_usable_len - should panic ... ok
+test rejects_overflowing_usable_len - should panic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/rect_units.rs (target/release/deps/rect_units-428485a1b9b91a18)
+
+running 8 tests
+test u16_negative_stride_rect_covers_the_low_row - should panic ... ok
+test u16_range_then_overlapping_rect_mut_panics - should panic ... ok
+test u16_rect_in_the_upper_half_is_representable ... ok
+test u16_rect_then_mut_range_over_a_row_panics - should panic ... ok
+test u16_rect_mut_and_gap_range_coexist ... ok
+test u16_rect_mut_then_overlapping_range_panics - should panic ... ok
+test u8_buffer_rect_as_u16_gap_is_free ... ok
+test u8_buffer_rect_as_u16_still_collides_with_slice_as_u16 - should panic ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/shard_liveness.rs (target/release/deps/shard_liveness-268ff372f6b669b2)
+
+running 5 tests
+test wide_and_narrow_see_each_other ... ok
+test open_ended_ranges_are_still_tracked ... ok
+test concurrent_overlaps_are_caught ... ok
+test concurrent_disjoint_is_never_refused ... ok
+test exhaustive_pairs_match_the_interval_predicate ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+[1m[92m     Running[0m tests/soundness.rs (target/release/deps/soundness-1c218bd49883e17b)
+
+running 27 tests
+test test_adjacent_element_guards ... ok
+test test_borrowed_slice_immut_and_mut_disjoint ... ok
+test test_borrowed_slice_two_disjoint_mut_guards ... ok
+test test_borrowed_slice_zerocopy_cast_disjoint ... ok
+test test_arc_slice_concurrent ... ok
+test test_concurrent_disjoint_array ... ok
+test test_borrowed_slice_scoped_threads ... ok
+test test_empty_range_no_conflict ... ok
+test test_mut_overlapping_immut_panics - should panic ... ok
+test test_concurrent_reads ... ok
+test test_concurrent_disjoint_box_slice ... ok
+test test_concurrent_disjoint_mut_access ... ok
+test test_oob_panic_poisons ... ok
+test test_cross_thread_mut_immut_disjoint ... ok
+test test_overflow_beyond_64_borrows ... ok
+test test_overflow_slot_reuse ... ok
+test test_disjoint_immut_and_mut_single_thread ... ok
+test test_overlapping_immut_guards ... ok
+test test_overflow_overlap_detected - should panic ... ok
+test test_immut_overlapping_mut_panics - should panic ... ok
+test test_overlapping_mut_panics - should panic ... ok
+test test_two_disjoint_mut_guards_single_thread ... ok
+test test_guard_drop_enables_reborrow ... ok
+test test_panic_during_immut_guard_no_poison ... ok
+test test_panic_during_mut_guard_poisons ... ok
+test test_two_empty_ranges_same_position ... ok
+test test_zerocopy_cast_disjoint ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/wide_exclusion.rs (target/release/deps/wide_exclusion-2fa37a0eb5c38ccd)
+
+running 1 test
+test a_wide_borrow_excludes_every_narrow_shard ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+[1m[92m   Doc-tests[0m rav1d_disjoint_mut
+
+running 4 tests
+test crates/rav1d-disjoint-mut/src/lib.rs - ExternalAsMutPtr::as_mut_slice (line 796) ... ignored
+test crates/rav1d-disjoint-mut/src/lib.rs - ExternalAsMutPtr::as_mut_slice (line 808) ... ignored
+test crates/rav1d-disjoint-mut/src/lib.rs - (line 22) ... ok
+test crates/rav1d-disjoint-mut/src/lib.rs - DisjointMut<T>::new (line 267) ... ok
+
+test result: ok. 2 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 4 tests
+test crates/rav1d-disjoint-mut/src/lib.rs - (line 57) - compile fail ... ok
+test crates/rav1d-disjoint-mut/src/lib.rs - (line 36) - compile fail ... ok
+test crates/rav1d-disjoint-mut/src/lib.rs - (line 47) - compile fail ... ok
+test crates/rav1d-disjoint-mut/src/lib.rs - (line 69) - compile fail ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+all doctests ran in 1.10s; merged doctests compilation took 1.08s

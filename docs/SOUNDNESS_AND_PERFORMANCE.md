@@ -184,3 +184,12 @@ global-state isolation, verified pixels and frame counts, and separate thread
 curves for photographic, screen, narrow/tall, inter, high-bit-depth and
 film-grain content. Keep a local benchmark of the tracker for diagnosis; use
 whole-decoder results to decide whether a change helps.
+
+## Concurrency profiling follow-up (2026-09-06)
+
+The [30-minute profiling record](../audit/concurrency-profile/README.md) covers
+48 baseline concurrency cells, real inter-frame input, tiled stills, a single-tile
+10-bit still, production-tracker usage counters, native perf samples, and
+process-history controls. It identifies repeated full-plane motion-compensation
+reads and persistent global threading policy as the strongest new leads.
+No production optimization or release publication is part of that experiment.

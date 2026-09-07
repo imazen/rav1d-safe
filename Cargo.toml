@@ -81,6 +81,7 @@ unchecked = []
 # THROWAWAY measurement probes (recon/tracker-profile branch). Never merge.
 probe-count = ["rav1d-disjoint-mut/__probe_count"]
 probe-wide = ["rav1d-disjoint-mut/__probe_wide"]
+probe-usage = ["rav1d-disjoint-mut/__probe_usage"]
 probe-sites = ["rav1d-disjoint-mut/__probe_sites"]
 # THROWAWAY guard-extent / footprint / concurrency map. Implies `probe-sites`
 # so BOTH instruments run in one binary and reconcile registration for

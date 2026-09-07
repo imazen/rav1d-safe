@@ -1,0 +1,22 @@
+[
+  {
+    "path": "/home/lilith/work/zen/rav1d-safe/test-vectors/dav1d-test-data/8-bit/features/non_uniform_tiling.ivf",
+    "bytes": 37986,
+    "sha256": "c2bf1ba280ea19373a3a001b86b5ea4dbd0eacfb92011917b74866cb49ec90a7"
+  },
+  {
+    "path": "/home/lilith/tmp/rav1d-concurrency-2026-09-06/inputs/non_uniform_first.obu",
+    "bytes": 17051,
+    "sha256": "55102c193c9d4b81bc916f421aa8ade73e2c0dfd5b9c5e1f14cc42aa0ffd672b"
+  },
+  {
+    "path": "/home/lilith/work/zen/rav1d-safe/tests/crash_vectors/tile_threading_cdef_lpf_race.obu",
+    "bytes": 8335,
+    "sha256": "176c78827d13b95eee32eb6bf65dfb7b613c70759a677fd4e2800399bf9d25c0"
+  },
+  {
+    "path": "/home/lilith/work/zen/rav1d-safe/tests/crash_vectors/lr_sgr_10bpc_noisy_nocdef.obu",
+    "bytes": 20477,
+    "sha256": "beeb24da9e3c8fefbf081b8273f18e4292a2b6b9c865f54863bd75dee3806c42"
+  }
+]

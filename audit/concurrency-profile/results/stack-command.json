@@ -1,0 +1,20 @@
+[
+  "perf",
+  "record",
+  "-e",
+  "cycles:u",
+  "-F",
+  "499",
+  "--call-graph",
+  "dwarf,65528",
+  "--delay=-1",
+  "--control=fifo:/home/lilith/tmp/rav1d-concurrency-2026-09-06/deep-stack/ctl,/home/lilith/tmp/rav1d-concurrency-2026-09-06/deep-stack/ack",
+  "-o",
+  "/home/lilith/tmp/rav1d-concurrency-2026-09-06/deep-stack/multi-t8-i1.data",
+  "--",
+  "/home/lilith/tmp/rav1d-concurrency-2026-09-06/bin/base",
+  "test-vectors/dav1d-test-data/8-bit/features/non_uniform_tiling.ivf",
+  "8",
+  "1",
+  "24"
+]

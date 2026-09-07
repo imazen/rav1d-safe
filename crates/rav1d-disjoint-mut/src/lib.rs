@@ -98,7 +98,14 @@ compile_error!("unsound measurement probes are disabled; use a historical benchm
 ))]
 compile_error!("Loom must exercise the production sharded tracker and its instrumented spin lock");
 
+#[cfg(all(feature = "__probe_usage", any(feature = "__probe_count", feature = "__tracker_legacy")))]
+compile_error!("usage census requires the production sharded tracker");
+
 extern crate alloc;
+
+/// Diagnostic thread-local usage census. Requires all decoder workers joined before reporting.
+#[cfg(feature = "__probe_usage")]
+pub mod usage_probe;
 // `std` is a FEATURE of the library and a REQUIREMENT of its unit tests: they
 // spawn threads and `catch_unwind` to prove the tracker catches overlaps, and
 // neither exists in `core`. Without the `cfg(test)` arm,

@@ -1,0 +1,42 @@
+[
+  {
+    "arm": "base",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--locked",
+      "--example",
+      "profile_concurrency"
+    ],
+    "sha256": "5380fba00d41527da4389298fb9fe8861ff27c8977e93c136416c3a28b540fff"
+  },
+  {
+    "arm": "usage",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--locked",
+      "--example",
+      "profile_concurrency",
+      "--features",
+      "probe-usage,probe-tasktime,probe-wide"
+    ],
+    "sha256": "276d231d49d9f96f0b940aa2f242c2567fac55935af6716fc94c9007191294f9"
+  },
+  {
+    "arm": "tasks",
+    "command": [
+      "cargo",
+      "build",
+      "--release",
+      "--locked",
+      "--example",
+      "profile_concurrency",
+      "--features",
+      "probe-tasktime,probe-wide"
+    ],
+    "sha256": "2d41f3f171dc09508bd43d64144e048ffbdc9aa3d37424ced6a84982e0549c2b"
+  }
+]

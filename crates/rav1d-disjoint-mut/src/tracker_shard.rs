@@ -500,6 +500,9 @@ pub mod wide_probe {
     /// mean depth of a wait, which separates "many short waits" (a granularity
     /// problem) from "few long ones" (a scheduling problem).
     pub static N_SPINS: AtomicU64 = AtomicU64::new(0);
+    /// Elapsed contended-wait time, including descheduling; diagnostic only.
+    pub static WAIT_NS: AtomicU64 = AtomicU64::new(0);
+    pub static WAIT_MAX_NS: AtomicU64 = AtomicU64::new(0);
     /// Total registrations — NOT counted. One shared `fetch_add` per `add`, at
     /// 136 M adds per 4K frame from eight threads, serialises the decoder hard
     /// enough that slot pressure disappears and `WIDE_FULL` reads zero for the
@@ -550,6 +553,7 @@ pub mod wide_probe {
             N_RECT_DECLINED.load(Relaxed),
             N_RECT_MULTI.load(Relaxed),
         );
+        let _ = writeln!(out, "WAIT\t{}\t{}", WAIT_NS.load(Relaxed), WAIT_MAX_NS.load(Relaxed));
         out
     }
 
@@ -564,6 +568,11 @@ pub mod wide_probe {
             &N_CONTENDED,
             &N_LOCKSLOW,
             &N_SPINS,
+            &N_RECT,
+            &N_RECT_DECLINED,
+            &N_RECT_MULTI,
+            &WAIT_NS,
+            &WAIT_MAX_NS,
         ] {
             a.store(0, Relaxed);
         }
@@ -657,6 +666,8 @@ impl TinyLock {
     #[cold]
     #[inline(never)]
     fn lock_slow(&self) {
+        #[cfg(feature = "__probe_wide")]
+        let wait_start = std::time::Instant::now();
         #[cfg(feature = "__probe_lock_backoff")]
         let mut spins = 0u32;
         #[cfg(feature = "__probe_lock_relax")]
@@ -700,6 +711,9 @@ impl TinyLock {
                 {
                     wide_probe::N_LOCKSLOW.fetch_add(1, Ordering::Relaxed);
                     wide_probe::N_SPINS.fetch_add(total, Ordering::Relaxed);
+                    let ns = wait_start.elapsed().as_nanos() as u64;
+                    wide_probe::WAIT_NS.fetch_add(ns, Ordering::Relaxed);
+                    wide_probe::WAIT_MAX_NS.fetch_max(ns, Ordering::Relaxed);
                 }
                 return;
             }
@@ -1098,6 +1112,8 @@ impl ShardRecs {
         end: usize,
         loc: Loc,
     ) -> Option<u8> {
+        #[cfg(feature = "__probe_usage")]
+        crate::usage_probe::occupancy(occupied.count_ones() as usize);
         // Empty shard: slot 0, with no `rbit`/`clz` and constant store offsets.
         // Measured mean occupancy is 0.02 and measured max is 1, so this is the
         // case essentially always, and `trailing_ones` sits on the dependency
@@ -2012,6 +2028,8 @@ fn tile_concurrency() -> usize {
 
 impl BorrowTracker {
     pub fn new(len: usize) -> Self {
+        #[cfg(feature = "__probe_usage")]
+        crate::usage_probe::policy("new", len, mask_for(len), block_shift_for(len), 0, core::mem::size_of::<Self>());
         Self {
             #[cfg(not(disjoint_mut_loom))]
             shards: [const { Shard::new() }; N_SHARDS],
@@ -2042,6 +2060,8 @@ impl BorrowTracker {
         // per-row path to fall back to, so this is a performance question and
         // never a correctness one.
         self.row_stride = 0;
+        #[cfg(feature = "__probe_usage")]
+        crate::usage_probe::policy("resize", len, self.mask, self.shift, 0, 0);
         #[cfg(feature = "__probe_tinynop")]
         {
             self.tiny = len < SHARD_MIN_LEN;
@@ -2072,6 +2092,8 @@ impl BorrowTracker {
             return;
         }
         self.shift = block_shift_rule_rows(len, active_shards(), tile_concurrency(), stride);
+        #[cfg(feature = "__probe_usage")]
+        crate::usage_probe::policy("stride", len, self.mask, self.shift, stride, 0);
     }
 
     /// The prefix of [`Self::shards`] this instance can actually reach.
@@ -2207,6 +2229,8 @@ impl BorrowTracker {
     fn add<const IS_MUT: bool>(&self, bounds: &Bounds) -> BorrowId {
         let start = bounds.range.start;
         let end = bounds.range.end;
+        #[cfg(feature = "__probe_usage")]
+        crate::usage_probe::borrow(Location::caller(), IS_MUT, end.saturating_sub(start), 1, end.saturating_sub(start), self.mask, self.shift);
         #[cfg(feature = "__probe_sites")]
         crate::site_probe::record(Location::caller(), IS_MUT, end.saturating_sub(start));
         // THROWAWAY (`__probe_tinynop`): price the sub-`SHARD_MIN_LEN` instance
@@ -2795,6 +2819,8 @@ impl BorrowTracker {
                 wide_probe::N_RECT_MULTI.fetch_add(1, Ordering::Relaxed);
             }
         }
+        #[cfg(feature = "__probe_usage")]
+        crate::usage_probe::borrow(Location::caller(), IS_MUT, seg * rows, rows, span, self.mask, self.shift);
         Some(if n == 1 {
             BorrowId::narrow1(set[0] as usize, slots[0])
         } else {

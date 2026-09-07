@@ -20,8 +20,9 @@
 //! frame against a ~330 ms frame — unmeasurable. This is deliberately unlike
 //! the tracker probes, which sit on a 50-million-per-frame path.
 //!
-//! Counters are process-global and never reset between reps; the driver prints
-//! and divides by the frame count.
+//! Counters are process-global. Reset after warmup with workers quiescent.
+//! Park intervals crossing reset can include warmup; stage totals are the
+//! useful quantity. The serial decode path bypasses these task hooks.
 
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::AtomicUsize;
@@ -201,6 +202,7 @@ pub fn reset() {
 
 /// Dump every counter as `PROBE <key> <value>` lines on stdout.
 pub fn report(frames: u64) {
+    assert!(NEXT_SLOT.load(Ordering::Relaxed) <= MAX_WORKERS, "task probe worker slot overflow");
     let f = frames.max(1) as f64;
     let mut per_stage_total = [0u64; N_STAGE];
     let mut per_worker_total = [0u64; MAX_WORKERS];

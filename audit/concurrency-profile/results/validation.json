@@ -1,0 +1,131 @@
+[
+  {
+    "input": "multi",
+    "command": [
+      "dav1d",
+      "-i",
+      "/home/lilith/work/zen/rav1d-safe/test-vectors/dav1d-test-data/8-bit/features/non_uniform_tiling.ivf",
+      "--threads",
+      "1",
+      "--framedelay",
+      "1",
+      "--filmgrain",
+      "1",
+      "--muxer",
+      "framemd5",
+      "-o",
+      "/home/lilith/tmp/rav1d-concurrency-2026-09-06/oracle/multi/%n.md5"
+    ],
+    "md5": [
+      "a9d3dff1915dbcbb9baacc5182e70d36",
+      "e9a41049b3b5f2180610579e802bc2c4",
+      "d6a7593a1908ba7228c553de38d20373",
+      "4651536654025d0dbb7dc802e58083ec",
+      "5cb1ba2b53d6e52a7380a7b48b3dd66c",
+      "38d725503945ce1c2e409e6488b9ea4f",
+      "8556dc3071bae174df06c302b8ddc263",
+      "cf60030bab9dda0d8f83db6571c5afad",
+      "d17cbbea8e483628de288f27d2919cea",
+      "6a3c0e8962a2eb23c4ed98432750554e",
+      "df2bdaf9698a790ea041e392791fbe5b",
+      "a246e428599654118e96386232440a8d",
+      "d5aa16b53f229b3e02fa9f721c58160a",
+      "04f76c4ae46391c34d89be129b07b697",
+      "7353e32f32817f8d83c6bf2af8d017d6",
+      "dd7caf4c7c147a7410187f303da379e0",
+      "bd279bbb77e3fddc1528373a84dc4b7e",
+      "ade495812f5b52da5afea6c8e02f364a",
+      "6d4fb68253a40b797415328d85fdf076",
+      "b1d859fe6e15f11b18bf2797b58f3644",
+      "3894d78a924b68edf287339edb4fea45",
+      "7c6bb5b266c984201d99f968f056a0bb",
+      "f9316329988a65ba182bb42202a25391",
+      "ff6c814b5a3b237d88aa1db136a2a72a"
+    ],
+    "matched": true
+  },
+  {
+    "input": "tiled_first",
+    "command": [
+      "dav1d",
+      "-i",
+      "/home/lilith/tmp/rav1d-concurrency-2026-09-06/inputs/non_uniform_first.obu",
+      "--threads",
+      "1",
+      "--framedelay",
+      "1",
+      "--filmgrain",
+      "1",
+      "--muxer",
+      "framemd5",
+      "-o",
+      "/home/lilith/tmp/rav1d-concurrency-2026-09-06/oracle/tiled_first/%n.md5"
+    ],
+    "md5": [
+      "a9d3dff1915dbcbb9baacc5182e70d36"
+    ],
+    "matched": true
+  },
+  {
+    "input": "tiled_stress",
+    "command": [
+      "dav1d",
+      "-i",
+      "/home/lilith/work/zen/rav1d-safe/tests/crash_vectors/tile_threading_cdef_lpf_race.obu",
+      "--threads",
+      "1",
+      "--framedelay",
+      "1",
+      "--filmgrain",
+      "1",
+      "--muxer",
+      "framemd5",
+      "-o",
+      "/home/lilith/tmp/rav1d-concurrency-2026-09-06/oracle/tiled_stress/%n.md5"
+    ],
+    "md5": [
+      "51b9c3ab246fda65e2c0a2155588e9a5"
+    ],
+    "matched": true
+  },
+  {
+    "input": "single_10b",
+    "command": [
+      "dav1d",
+      "-i",
+      "/home/lilith/work/zen/rav1d-safe/tests/crash_vectors/lr_sgr_10bpc_noisy_nocdef.obu",
+      "--threads",
+      "1",
+      "--framedelay",
+      "1",
+      "--filmgrain",
+      "1",
+      "--muxer",
+      "framemd5",
+      "-o",
+      "/home/lilith/tmp/rav1d-concurrency-2026-09-06/oracle/single_10b/%n.md5"
+    ],
+    "md5": [
+      "bafc939f19adc1451c122baa7a8c828d"
+    ],
+    "matched": true
+  },
+  {
+    "input": "partial_packet_header",
+    "rejected": true,
+    "returncode": 1,
+    "stderr": "\nthread 'main' (3631381) panicked at examples/profile_concurrency.rs:67:9:\npartial IVF packet header\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+  },
+  {
+    "input": "truncated_packet",
+    "rejected": true,
+    "returncode": 1,
+    "stderr": "\nthread 'main' (3631382) panicked at examples/profile_concurrency.rs:70:9:\ntruncated or empty IVF packet\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+  },
+  {
+    "input": "invalid_obu",
+    "rejected": true,
+    "returncode": 1,
+    "stderr": "\nthread '<unnamed>' (3631384) panicked at examples/profile_concurrency.rs:88:56:\ndecode packet: Error: InvalidData\n\n    at src/managed.rs:627\n\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+  }
+]
