@@ -1,242 +1,242 @@
 [
   {
-    "file": "packed6-confirm-provenance.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm-provenance.json",
-    "bytes": 1596,
-    "sha256": "c04270d2f530c9d9714065c16fcc4fb651a66ff4020fcc61ffc49a7a5f91862f"
+    "file": "packed16-confirm-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-confirm-summary.json",
+    "bytes": 9901,
+    "sha256": "f28feab45878718d713c77ac2a9ed9ea8e3c9c8b7bf075d8864fe28c9ca865b2"
   },
   {
-    "file": "packed6-confirm-summary.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm-summary.json",
-    "bytes": 9865,
-    "sha256": "3f1d82ba68b6a429c50a3bd9ad40fdbfa0b0a5f03d2310baa7558337c04449fe"
+    "file": "packed16-confirm-000.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-confirm.jsonl",
+    "bytes": 24606,
+    "sha256": "6ee2641e04c738ae3e4c1cfd29cddeeaa0904a18e07deeeeb1123b8a69b72184"
   },
   {
-    "file": "packed6-confirm-000.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
-    "bytes": 24604,
-    "sha256": "faa0997925747d69cb78e42f5dbd7127948e321b559c76eda102dbb6c454d4c7"
+    "file": "packed16-confirm-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-confirm.jsonl",
+    "bytes": 24505,
+    "sha256": "69bedac0bca7287b5351b3b7321e2e975fd309ce6eebba89c014ec67cd67d257"
   },
   {
-    "file": "packed6-confirm-001.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
-    "bytes": 24508,
-    "sha256": "99b2f77f4f54c505641168a4c1bab86c6b8c2e50d0fb574bca1c3c878b9ad641"
+    "file": "packed16-confirm-002.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-confirm.jsonl",
+    "bytes": 24414,
+    "sha256": "8ca689ff4745528efa1993a3243a86f94f79958fe1f1bce0055365bf3584d2f2"
   },
   {
-    "file": "packed6-confirm-002.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
-    "bytes": 24410,
-    "sha256": "d0ef80ae20a7ec22cd392f24ced79a60314a976046323d896aa4e3ddbfbb8202"
+    "file": "packed16-confirm-003.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-confirm.jsonl",
+    "bytes": 24449,
+    "sha256": "93ff1b2be3420d66a1760f715bf6bccdad4537d40c44e5ecf57cc8fcb07eb00f"
   },
   {
-    "file": "packed6-confirm-003.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
-    "bytes": 24451,
-    "sha256": "2b574c1bfc4b987d3aec011160f908a5b4c242e6a68b794ea7759e3efa2dfbfa"
+    "file": "packed16-confirm-004.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-confirm.jsonl",
+    "bytes": 24394,
+    "sha256": "9104126823bff3f84c955b1cd00097675db8c5923261961d6c57fb456d8bfc20"
   },
   {
-    "file": "packed6-confirm-004.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
-    "bytes": 24392,
-    "sha256": "94a8983ce447fe702eb64e4847a818fd03348e7c726c96cbe5671b41e51d576d"
-  },
-  {
-    "file": "packed6-confirm-005.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
+    "file": "packed16-confirm-005.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-confirm.jsonl",
     "bytes": 24411,
-    "sha256": "6ac3b448397899473d3ffd1445eaa2548f6891b811136e75f25db44cf58a98ee"
+    "sha256": "99b8b5107455dd728bc7c43f40679f8d9b2d6d76d8d0579759575835023ad64d"
   },
   {
-    "file": "packed6-confirm-006.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
+    "file": "packed16-confirm-006.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-confirm.jsonl",
     "bytes": 24362,
-    "sha256": "7a6d138b870d66aef9fe895e819421aafce35a7d896bdc85050db3992a885c35"
+    "sha256": "ff8105b872feedb54f9e4e48ee10ad0a6ee54bb9f7eb18dc8400292967e03286"
   },
   {
-    "file": "packed6-confirm-007.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
-    "bytes": 24282,
-    "sha256": "95723b9479369e636590656a1714c207e33008eb2de463bae6951d49907d136e"
+    "file": "packed16-confirm-007.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-confirm.jsonl",
+    "bytes": 24284,
+    "sha256": "c0ebb211fd6b7f08d568cb2f46c053da18beeb6b1ce5dccec2ff9cf6acd1820b"
   },
   {
-    "file": "packed6-confirm-008.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-confirm.jsonl",
-    "bytes": 9782,
-    "sha256": "bfbdaef682cc5f4edea5cffe19196e5f4faca2e8502c30995a89fab33fb2371f"
+    "file": "packed16-confirm-008.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-confirm.jsonl",
+    "bytes": 9780,
+    "sha256": "d6c7da5bc7cd9e73670eb93af28193cfd0c1d4a4e585a1e8b17df7c0fb8ee3df"
   },
   {
-    "file": "packed6-conformance-env-audit.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-conformance-env-audit.json",
-    "bytes": 457,
-    "sha256": "6a28f33397a39b2de05e2aafc557fe5df4f891e307457f4cc8543676c48bd52f"
+    "file": "packed16-conformance-t1.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-conformance-t1.log",
+    "bytes": 2187,
+    "sha256": "cc07df54f9496c872ccd42b10950e2f07825dbad340585cf2a9af026cc404cb8"
   },
   {
-    "file": "packed6-conformance-explicit-t8.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-conformance-explicit-t8.json",
-    "bytes": 573,
-    "sha256": "d75b44310feea693b8bc1310a095187360b57c680917704e7b3517f446696220"
+    "file": "packed16-conformance-t8.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-conformance-t8.log",
+    "bytes": 2107,
+    "sha256": "d4586e19c9d350134cffafb8111bdffa346ffa832802ea3abc823a502e8d4380"
   },
   {
-    "file": "packed6-conformance-explicit-t8.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-conformance-explicit-t8.log",
-    "bytes": 2463,
-    "sha256": "8c8d3eb739730dfa0afcfddaf635e2d0b665c67adf5b9f268f74589e11d24906"
+    "file": "packed16-debug-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-debug-tests.log",
+    "bytes": 12910,
+    "sha256": "3c7721ddb7db9f83f8ae0ea29f99f0adc59352d6665384298b2030b6b7387b6f"
   },
   {
-    "file": "packed6-conformance-t1.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-conformance-t1.log",
-    "bytes": 2519,
-    "sha256": "b50cb3663805fbb3f279206f1d3cb3049e0317f1b653503a0c730232d82d6e78"
+    "file": "packed16-decoder-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-decoder-tests.log",
+    "bytes": 59505,
+    "sha256": "5f27d077e926daaceb69cfd717e53f00fb20bed302adc2dc01a0992bf815d68e"
   },
   {
-    "file": "packed6-conformance-t8.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-conformance-t8.log",
-    "bytes": 2439,
-    "sha256": "a2f4b99aa5ad7c7510749e296af32d9d92608952d48bc232bd3be958809f2aaa"
+    "file": "packed16-evaluation-commands.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-evaluation-commands.json",
+    "bytes": 8338,
+    "sha256": "c19dde9e69d8a6cf0293313ddf86bb93daeccab453bbdb06295dc5d63ac5ffb8"
   },
   {
-    "file": "packed6-debug-tests.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-debug-tests.log",
-    "bytes": 5233,
-    "sha256": "0b70aa3a81b0726d0ce024153fe90116504f8932e855f6e5dd69ff2a57a4ee6f"
+    "file": "packed16-final-commands.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-final-commands.json",
+    "bytes": 1904,
+    "sha256": "5aa47d10204496aff3a94097ec92500b8879d4410194d061846c7f43b8b807d0"
   },
   {
-    "file": "packed6-decoder-tests.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-decoder-tests.log",
-    "bytes": 51559,
-    "sha256": "31f35fa687eaee24103243182121f6cd2c089ff0b303ee150b424aec5963db0f"
+    "file": "packed16-followup-commands.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-followup-commands.json",
+    "bytes": 3196,
+    "sha256": "d48d7280badd6b17da177e39d4918db7dce1c247ac0258b3a725e76882fb7190"
   },
   {
-    "file": "packed6-final-commands.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-final-commands.json",
-    "bytes": 1913,
-    "sha256": "2e54214882b308badfbfbcf77ebdc7d19d0038259c21da8d3b4b1d4869fd880d"
+    "file": "packed16-footprint.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-footprint.json",
+    "bytes": 2224,
+    "sha256": "561a975d004c3e41b2832e72c02d10419e969a80d36bb6a64c7959255d0a87cd"
   },
   {
-    "file": "packed6-fixture-correction.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-fixture-correction.json",
-    "bytes": 373,
-    "sha256": "bfdb7c1c0d2b0b7645a84a10fafa2ad16e5c9757d94a3d6cac54f53e8f1897db"
-  },
-  {
-    "file": "packed6-followup-commands.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-followup-commands.json",
-    "bytes": 3160,
-    "sha256": "b5982a7fbd5232d9ac9577cce0c7a161100a4a71ec1abc43eeded06f3ab44ee8"
-  },
-  {
-    "file": "packed6-footprint.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-footprint.json",
-    "bytes": 2226,
-    "sha256": "712308af6940315939a6f8969fce0480ea99d7a6d939c2f45352d2cf582c438f"
-  },
-  {
-    "file": "packed6-format.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-format.log",
+    "file": "packed16-format.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-format.log",
     "bytes": 0,
     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   {
-    "file": "packed6-grouping-fixed-tests.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-grouping-fixed-tests.log",
-    "bytes": 2119,
-    "sha256": "855da027b4cd0ef4557ca515ae734dbd9fae2ce4fc132204092d38d3f582e3a3"
-  },
-  {
-    "file": "packed6-grouping-tests.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-grouping-tests.log",
-    "bytes": 4795,
-    "sha256": "3b0344ccd85635f66e59d935f7bc599378d64c9282ec6ff99948f5a2a23e0732"
-  },
-  {
-    "file": "packed6-included-format.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-included-format.log",
+    "file": "packed16-included-format.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-included-format.log",
     "bytes": 0,
     "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   },
   {
-    "file": "packed6-level-mutation.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-level-mutation.log",
-    "bytes": 2184,
-    "sha256": "646b60dd9b0ade396a4934dcb121f29e7f71333b12970b5c0506337a7bc16883"
+    "file": "packed16-leaf-first.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-leaf-first.json",
+    "bytes": 638,
+    "sha256": "67936d923046622f0c794c72d156f11b3c9498a24de205899f4a48f04a771570"
   },
   {
-    "file": "packed6-permutation-smoke.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-permutation-smoke.log",
+    "file": "packed16-leaf-first.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-leaf-first.log",
+    "bytes": 1595,
+    "sha256": "2c3e8c174e120ca97e0e24155d7e97fb11bbd96d6849877ea30eb313af8ca9bf"
+  },
+  {
+    "file": "packed16-level-mutation.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-level-mutation.log",
+    "bytes": 2502,
+    "sha256": "e8c84bb007546fc485ba2f8ca731512620a51d8bdb2f362e08f590ab2ef2830b"
+  },
+  {
+    "file": "packed16-linear-bounds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-linear-bounds.json",
+    "bytes": 18051,
+    "sha256": "c814da236ff03fea29eb4352f84c258ce32f1805c40308c87c1f3a17fce98d0c"
+  },
+  {
+    "file": "packed16-permutation-smoke.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-permutation-smoke.log",
     "bytes": 1547,
-    "sha256": "bf56c5874e2464e4c5d282cbd79a19f02c47229bfbc2c0bf374eccfc8ddf7362"
+    "sha256": "4ffe6e064047f93b0096da60bb35fc0cc945f1b5135fdd075aa0601aa8f53f7c"
   },
   {
-    "file": "packed6-placement-align5-sources.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-align5-sources.json",
-    "bytes": 2104,
-    "sha256": "62ae4d2e830378cbcad18d71b983e6450c2613f4de7ea56bf05c0fe55fed54e7"
+    "file": "packed16-placement-align5-sources.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-placement-align5-sources.json",
+    "bytes": 2448,
+    "sha256": "7425b110bda3fece8d6d71cb30fba6f46d74a24d27e6fb6a3243405488a535fc"
   },
   {
-    "file": "packed6-placement-analyze.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-analyze.log",
+    "file": "packed16-placement-analyze.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-placement-analyze.log",
     "bytes": 488,
-    "sha256": "973b62897bfe6538f9fd98d1c62377105bee49296081d0934e7770549f8ac83e"
+    "sha256": "c3ca301aa34a1a98041a9ba1585722a6b147f9bc68f908da02d5771c81a8856d"
   },
   {
-    "file": "packed6-placement-build.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-build.log",
-    "bytes": 250,
-    "sha256": "7e16bba56bb0d0657726c207da46ebb411682d9b6b721745a3209bd5e686006d"
+    "file": "packed16-placement-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-placement-build.log",
+    "bytes": 254,
+    "sha256": "6b06856a7168649273bd4a1e64ff3862c0ed811fb14cafc0b63989befa4a5a90"
   },
   {
-    "file": "packed6-placement-compare.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-compare.log",
-    "bytes": 388,
-    "sha256": "f48c1071aa3c73c3ab1598617c1baa8071e8e4d2ce6d44e31e1a7f1f152b7219"
+    "file": "packed16-placement-compare.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-placement-compare.log",
+    "bytes": 389,
+    "sha256": "1f17f9e2d51f4158357c18f7d6d15d209ad2f3ea13bd2d71d7a322bab885c355"
   },
   {
-    "file": "packed6-placement-confidence.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-confidence.json",
-    "bytes": 8451,
-    "sha256": "3ea67285bb6af4f7a8bfd028aaf9294c06e34a6ad774d43ca81653ac5afba235"
+    "file": "packed16-placement-confidence.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-placement-confidence.json",
+    "bytes": 8455,
+    "sha256": "96b5477d3340126accf075a6539552fc7ceca0eb65443dbdce9b486de8d34f31"
   },
   {
-    "file": "packed6-placement-frame-reference.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-frame-reference.json",
+    "file": "packed16-placement-frame-reference.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-placement-frame-reference.json",
     "bytes": 523,
     "sha256": "6c5a16c3f6bdadf1936d3d92d884a486be0e2bcd86fde66efe2900c39309cd05"
   },
   {
-    "file": "packed6-placement-provenance.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-provenance.json",
-    "bytes": 1377,
-    "sha256": "3ae25a879cb4f0f092f8b1deb061000ea029ee4f8960d5c09c6bc5e891b4669b"
+    "file": "packed16-placement-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-placement-provenance.json",
+    "bytes": 1384,
+    "sha256": "bf894f2e8ac351e5b0af406239c3543167158e3df6c52b41c8980d8cd3b0193e"
   },
   {
-    "file": "packed6-placement-summary.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement-summary.json",
-    "bytes": 7117,
-    "sha256": "1e6900f3fe7760ed1d5fa4f139511d8afcc9b13b421946bac4dd1a1f27f43f67"
+    "file": "packed16-placement-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-placement-summary.json",
+    "bytes": 7139,
+    "sha256": "e527295d4f159dce7945182426ca281994943413110f5ce21152bb2a4808a8fd"
   },
   {
-    "file": "packed6-placement-000.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement.jsonl",
-    "bytes": 25133,
-    "sha256": "37699c23e94e4239205be7c8d886f1058e9fc530ff0ef6259387fd0ccf73cb88"
+    "file": "packed16-placement-000.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-placement.jsonl",
+    "bytes": 25188,
+    "sha256": "326d61c0a11ec8c19cf367bab1292252544c296210beeacd520663751a1a3777"
   },
   {
-    "file": "packed6-placement-001.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement.jsonl",
-    "bytes": 24967,
-    "sha256": "fa8c56985fb697621172a9acbcc33111154aa92bc4f2a348ae888cd29bb800eb"
+    "file": "packed16-placement-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-placement.jsonl",
+    "bytes": 25022,
+    "sha256": "dae5ec9476658dccfff509f9d53b0412ed1dea4c2ba4e5b3de0dfa254f9fff4d"
   },
   {
-    "file": "packed6-placement-002.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement.jsonl",
-    "bytes": 24977,
-    "sha256": "a5d73a3116f59d0f0e3596efaec95d00ce10275e6f1020afef05292bf214c333"
+    "file": "packed16-placement-002.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-placement.jsonl",
+    "bytes": 25034,
+    "sha256": "323043982ed3326be7363085f5912b3483aa38d6ee15c5f29cbed0cf89647d7e"
   },
   {
-    "file": "packed6-placement-003.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed6-placement.jsonl",
-    "bytes": 24951,
-    "sha256": "4018b0239db61f3d5344035d0716b165f8c2412ecd08b21576c831d63d4d014d"
+    "file": "packed16-placement-003.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-placement.jsonl",
+    "bytes": 25008,
+    "sha256": "ce4e454e841b9bd7acf055ce62640a669a25a500662fc1a2eae83c9126676a0d"
+  },
+  {
+    "file": "packed16-placement-004.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-placement.jsonl",
+    "bytes": 24939,
+    "sha256": "2b32094964930b2be95ae6c1a549849827aa09e2347b79764477f324ab4371a4"
+  },
+  {
+    "file": "packed16-placement-005.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-placement.jsonl",
+    "bytes": 17494,
+    "sha256": "2ee425eb2e2310d1621770bb906c146adc0cdbd35da7bef50f47871882685eb7"
+  },
+  {
+    "file": "packed16-preceding-head-ci.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/packed16-preceding-head-ci.json",
+    "bytes": 9735,
+    "sha256": "21a3107367908a60eda5c509d2c6e44161fba3f2b8112418c4f8f5198ef1ca8d"
   }
 ]

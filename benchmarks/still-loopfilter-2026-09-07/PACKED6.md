@@ -217,3 +217,9 @@ sums also normalize correctly, with every weighted intermediate at most
 4,088, but that does not establish its machine correctness or speed. This
 proposal is archived separately so its status cannot be mistaken for a
 validated implementation.
+
+
+That proposal's subsequent implementation, exact-span/mutation validation,
+confirmation timings, and retention decision are now recorded in
+[PACKED16.md](PACKED16.md). The paragraph above describes its historical
+status at the six-tap checkpoint; it does not describe the current PR head.

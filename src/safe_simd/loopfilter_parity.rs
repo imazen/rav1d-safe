@@ -6,7 +6,7 @@ mod mask_parity_tests {
 
     // Index order matches the mask census, with each SIMD lane processing one
     // independent edge position. The x16 leaf requires the AVX-512 token.
-    const KERNELS: [(usize, bool, usize); 15] = [
+    const KERNELS: [(usize, bool, usize); 16] = [
         (6, false, 4),
         (8, false, 4),
         (8, false, 8),
@@ -22,6 +22,7 @@ mod mask_parity_tests {
         (4, false, 8),
         (6, false, 8),
         (6, true, 8),
+        (16, true, 8),
     ];
 
     fn run_simd(
@@ -57,6 +58,7 @@ mod mask_parity_tests {
             12 => loop_filter_4_8bpc_narrow_simd_v_x8(token, buf, base, e, i, h, stride),
             13 => packed6::apply::<false>(token, buf, base, stride, levels),
             14 => packed6::apply::<true>(token, buf, base, stride, levels),
+            15 => packed16::apply_h(token, buf, base, stride, levels),
             _ => unreachable!(),
         }
         true
@@ -125,6 +127,21 @@ mod mask_parity_tests {
                         }
                     }
                     9 => next(&mut state),
+                    // Narrow HEV corrections cross zero / 255 before clipping.
+                    10 => {
+                        if k >= 1 {
+                            8
+                        } else {
+                            0
+                        }
+                    }
+                    11 => {
+                        if k <= -2 {
+                            247
+                        } else {
+                            255
+                        }
+                    }
                     _ => unreachable!(),
                 };
                 buf[base
@@ -147,7 +164,7 @@ mod mask_parity_tests {
             }
             for stride in [32, 67, -32, -67] {
                 for offset in [0, 3] {
-                    for pattern in 0..10 {
+                    for pattern in 0..12 {
                         for levels in [
                             [0, 0, 0],
                             [8, 4, 0],
@@ -178,7 +195,8 @@ mod mask_parity_tests {
                             // cases prevent an all-lanes/any-lane predicate mixup.
                             if pattern == 0 {
                                 assert_eq!(actual, pixels);
-                            } else if matches!(pattern, 1 | 4 | 5) && levels == [16, 8, 1] {
+                            } else if matches!(pattern, 1 | 4 | 5 | 10 | 11) && levels == [16, 8, 1]
+                            {
                                 assert_ne!(actual, pixels);
                             }
                             cells += 1;
@@ -187,7 +205,7 @@ mod mask_parity_tests {
                 }
             }
         }
-        assert_eq!(cells, (usize::from(avx2) * 14 + usize::from(avx512)) * 400);
+        assert_eq!(cells, (usize::from(avx2) * 15 + usize::from(avx512)) * 480);
         eprintln!("loopfilter mask sweep: {cells} live SIMD cells match the scalar decoder");
     }
 
@@ -300,5 +318,156 @@ mod mask_parity_tests {
         }
         assert_eq!(cells, 64);
         eprintln!("packed six-tap grouping: {cells} production-path cases match scalar");
+    }
+
+    #[test]
+    fn test_loopfilter_packed16_production_grouping() {
+        let _lock = crate::src::safe_simd::token_test_lock();
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            return;
+        };
+        let mut lut: Align16<Av1FilterLUT> = crate::src::align::ArrayDefault::default();
+        lut.e.fill(16);
+        lut.i.fill(8);
+        lut.e[33] = 32;
+        let mut cells = 0;
+        for stride in [160, -160] {
+            for byte_idx in [0, 1] {
+                for case in 0..8 {
+                    let (mask, expected_fused) = match case {
+                        0 | 4 => ([0, 0, 0b11], 1),
+                        1 | 5 => ([0, 0, 0b11], 0),
+                        2 => ([0, 0b10, 0b01], 0),
+                        3 => ([0, 0, 0b101], 0),
+                        6 => ([0, 0, 3 << 30], 1),
+                        7 => ([0, 0, 1 << 31], 0),
+                        _ => unreachable!(),
+                    };
+                    let b4_stride = 37usize;
+                    let lvl_base = 64usize;
+                    let mut raw_levels = vec![32u8; (lvl_base + 32 * b4_stride + 1) * 4];
+                    match case {
+                        1 => raw_levels[(lvl_base + b4_stride) * 4 + byte_idx] = 33,
+                        4 => raw_levels[(lvl_base + b4_stride) * 4 + byte_idx] = 0,
+                        5 => {
+                            raw_levels[lvl_base * 4 + byte_idx] = 0;
+                            raw_levels[(lvl_base - 1) * 4 + byte_idx] = 0;
+                        }
+                        _ => {}
+                    }
+                    let levels: Vec<AtomicU8> =
+                        raw_levels.iter().copied().map(AtomicU8::new).collect();
+                    let (pixels, base, stridea, strideb) = input(128, true, stride, 3, 5);
+                    let mut actual = pixels.clone();
+                    let mut expected = pixels;
+                    let before = packed16::calls();
+                    lpf_h_sb_y_8bpc_inner(
+                        token,
+                        &mut actual,
+                        base,
+                        stride,
+                        &mask,
+                        &levels,
+                        lvl_base,
+                        byte_idx,
+                        b4_stride as isize,
+                        &lut,
+                        128,
+                        255,
+                    );
+                    assert_eq!(
+                        packed16::calls() - before,
+                        expected_fused,
+                        "wide fusion liveness: stride={stride}, byte={byte_idx}, case={case}"
+                    );
+                    for bit in 0..32 {
+                        if (mask[0] | mask[1] | mask[2]) & (1 << bit) == 0 {
+                            continue;
+                        }
+                        let at = lvl_base + bit * b4_stride;
+                        let value = raw_levels[at * 4 + byte_idx];
+                        let l = if value != 0 {
+                            value
+                        } else {
+                            raw_levels[(at - 1) * 4 + byte_idx]
+                        };
+                        if l == 0 {
+                            continue;
+                        }
+                        let width = if mask[2] & (1 << bit) != 0 { 16 } else { 8 };
+                        crate::src::loopfilter::loop_filter_scalar_for_test(
+                            &mut expected,
+                            base.checked_add_signed(bit as isize * 4 * stridea).unwrap(),
+                            [stridea, strideb],
+                            4,
+                            [lut.e[l as usize], lut.i[l as usize], l >> 4],
+                            width,
+                        );
+                    }
+                    assert_eq!(
+                        actual.iter().zip(&expected).position(|(a, b)| a != b),
+                        None,
+                        "wide H grouping: stride={stride}, byte={byte_idx}, case={case}"
+                    );
+                    cells += 1;
+                }
+            }
+        }
+        assert_eq!(cells, 32);
+        eprintln!("packed wide H grouping: {cells} production-path cases match scalar");
+    }
+
+    #[test]
+    fn test_loopfilter_packed16_exact_span() {
+        let _lock = crate::src::safe_simd::token_test_lock();
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            return;
+        };
+        let mut cells = 0;
+        for stride in [14, -14, 19, -19] {
+            for offset in [0, 3] {
+                for pattern in [1, 3, 10, 11] {
+                    let (pixels, base, stridea, strideb) = input(8, true, stride, offset, pattern);
+                    let other = base.checked_add_signed(7 * stride).unwrap();
+                    let start = base.min(other) - 7;
+                    let end = base.max(other) + 7;
+                    let levels = [16, 8, 1];
+                    let mut actual = pixels.clone();
+                    let mut expected = pixels.clone();
+                    crate::src::loopfilter::loop_filter_scalar_for_test(
+                        &mut expected,
+                        base,
+                        [stridea, strideb],
+                        8,
+                        levels,
+                        16,
+                    );
+                    packed16::apply_h(token, &mut actual[start..end], base - start, stride, levels);
+                    assert_eq!(
+                        actual, expected,
+                        "exact H span: stride={stride}, offset={offset}, pattern={pattern}"
+                    );
+                    assert_ne!(actual, pixels, "exact-span positive control must filter");
+                    let mut short = pixels.clone();
+                    let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        packed16::apply_h(
+                            token,
+                            &mut short[start..end - 1],
+                            base - start,
+                            stride,
+                            levels,
+                        );
+                    }));
+                    assert!(rejected.is_err(), "short H span accepted");
+                    assert_eq!(
+                        short, pixels,
+                        "short view must fail while loading, before writes"
+                    );
+                    cells += 1;
+                }
+            }
+        }
+        assert_eq!(cells, 32);
+        eprintln!("packed wide H footprint: {cells} exact spans and {cells} short-view rejections");
     }
 }

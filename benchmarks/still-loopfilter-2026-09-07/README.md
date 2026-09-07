@@ -166,3 +166,16 @@ combines adjacent equal-level UV groups in eight signed 16-bit lanes. Its
 6,000 leaf cells, 64 production-grouping cases, arithmetic and memory argument,
 corrected conformance worker-setting record, and independent timing results
 are documented there. This follow-up changes no tracker or picture footprint.
+
+
+## Horizontal wide-filter follow-up
+
+The [eight-position wide-filter record](PACKED16.md) follows the 302,304-call
+8K photo lead with an implemented and retained signed-16-bit kernel. It reads
+exactly fourteen bytes per row, writes twelve, and combines only adjacent
+equal-level width-16 groups. Direct scalar, exact-span, production-grouping,
+mutation, conformance, and checked/unchecked gates are recorded alongside
+all 720 measured runs. Serial gains survive two matched code alignments;
+8K photo improves about 2.5–2.7% serially and 3.0–3.7% at eight workers.
+Most other threaded changes remain unresolved. Picture reservations and
+process-global borrowing policy are unchanged.

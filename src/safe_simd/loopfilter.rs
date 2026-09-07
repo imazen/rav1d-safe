@@ -3804,8 +3804,9 @@ fn lpf_h_sb_y_8bpc_inner(
                     4
                 };
 
-                // Fast path: x8 YMM kernel when next adjacent edge has the
-                // same wd-tier AND the same `l`. Doubles throughput per call.
+                // Eight-position kernels require an adjacent group with the
+                // same width and effective level. The wide H footprint also
+                // requires independent rows, each containing all 14 taps.
                 #[cfg(target_arch = "x86_64")]
                 {
                     let next_xy = xy.wrapping_shl(1);
@@ -3820,13 +3821,23 @@ fn lpf_h_sb_y_8bpc_inner(
                             0
                         };
                         if next_idx == idx
-                            && idx == 8
+                            && (idx == 8 || idx == 16 && stride.unsigned_abs() >= 14)
                             && let Some((l2, _, _, _)) = derive_levels(lvl_offset + b4_stridea)
                             && l2 == l
                         {
-                            loop_filter_4_8bpc_wd8_simd_h_x8(
-                                _token, buf, dst_offset, e, i, h, stridea,
-                            );
+                            if idx == 16 {
+                                packed16::apply_h(
+                                    _token,
+                                    buf,
+                                    dst_offset,
+                                    stride,
+                                    [e as u8, i as u8, h as u8],
+                                );
+                            } else {
+                                loop_filter_4_8bpc_wd8_simd_h_x8(
+                                    _token, buf, dst_offset, e, i, h, stridea,
+                                );
+                            }
                             xy = next_xy << 1;
                             dst_offset = signed_idx(dst_offset, 8 * stridea);
                             lvl_offset += 2 * b4_stridea;
@@ -5853,3 +5864,5 @@ mod tests {
 
 include!("loopfilter_parity.rs");
 include!("loopfilter_packed6.rs");
+
+include!("loopfilter_packed16.rs");
