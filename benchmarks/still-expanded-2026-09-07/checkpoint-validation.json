@@ -1,0 +1,8 @@
+{
+  "membership_split_reproduction": "passed; timestamp excluded",
+  "crop_audit_reproduction": "passed",
+  "python_syntax": "passed",
+  "new_files_below_30000_bytes": true,
+  "sources_manifest_sha256": "167521907e8ad5767853f752e3bb846e5734de8f4ce614aec79cd6031967b3a0",
+  "runtime_changes_since_f423404e": false
+}

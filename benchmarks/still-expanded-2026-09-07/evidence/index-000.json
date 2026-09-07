@@ -1,0 +1,240 @@
+[
+  {
+    "file": "div8k-head-probes.json.gz",
+    "bytes": 146,
+    "sha256": "de45205d5e2156dc1ab5a698c00d86f45e2d0267516cfc3f19f5b48e07612aaa",
+    "compressed_sha256": "6595c2a4d296a4fe1d46c92ba625535d20f709e9a1d719904955e0c4e05ea9eb"
+  },
+  {
+    "file": "div8k-inventory-headers.json.gz",
+    "bytes": 17344,
+    "sha256": "02552869df6072de1f541a79ce10c9852e6bf8f392d4daadc85e5c3161935ce9",
+    "compressed_sha256": "53aba2aa4acc7ec1d47cd7b0472130269eeb358c464fca980cb594ac542a295f"
+  },
+  {
+    "file": "div8k-inventory-ranges.json.gz",
+    "bytes": 38519,
+    "sha256": "8b3ef7e744ba97024c5154e0fe359f557e3564224cf78e3e81d5934e50e75e6b",
+    "compressed_sha256": "d6e46b39f83be71d47da105e5b871eb7ac2e25dc57d034c562e897cbfbad1fde"
+  },
+  {
+    "file": "div8k-inventory-summary.json.gz",
+    "bytes": 644,
+    "sha256": "98c5c949fbc950bc780f79f9beb1e824da4042019214cdaf45cba49a1596c262",
+    "compressed_sha256": "cd5d6112420573c55d03ddbcaff1cf40fdbb472c0f1ac5ced2ad76d4186407f7"
+  },
+  {
+    "file": "div8k-mirror-info.json.gz",
+    "bytes": 1036,
+    "sha256": "ac6498dad685666eba792f375fc159d9edfd761daaf1709db2bd6b96ab7980b9",
+    "compressed_sha256": "e9f1b446c56372770609804cdc202fb17253b6c5f4abd697276ba0e0aa2b6625"
+  },
+  {
+    "file": "div8k-mirror-tree.json.gz",
+    "bytes": 495,
+    "sha256": "002ccfc50b811ab516047ef6ec2fedf1757d89198ca648fb87a38dd6b1f33538",
+    "compressed_sha256": "247d3a6bb26eab70b990175948614401813324cb4ebf29b4757a3001c9e745ca"
+  },
+  {
+    "file": "div8k-range-probe.json.gz",
+    "bytes": 451,
+    "sha256": "68c58c2f96131ccdd266b289540d0d6becf76eaf8534c3ba29fcb9a8caa5f15a",
+    "compressed_sha256": "b89add7aad6b9f6028bb2d7115cfec3aa4b9e63dd3f88f86d2225d2eff3df56d"
+  },
+  {
+    "file": "acquisition-v1-fetch_candidates-used.py.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/fetch_candidates-used.py",
+    "bytes": 6698,
+    "sha256": "5fd864c7c2d1869b5bc361345bbbb5388492f239cd3e2ac01dad2c03dd4745de",
+    "compressed_sha256": "19a826177665fe78e7056b1043d9daf5d2e69358c95b0045b5b550efae67c58b"
+  },
+  {
+    "file": "acquisition-v1-plan.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/plan.json",
+    "bytes": 13575,
+    "sha256": "38e2b83dbf7170aa41d3ec3a7e0b813eb00f7daf2e757fa56e89d7d91942e487",
+    "compressed_sha256": "beff71c0720ae062dc470dcc6c1c3d4ed91a08fe7ca4859e6a3109626d8b1a55"
+  },
+  {
+    "file": "acquisition-v1-progress.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/progress.jsonl",
+    "bytes": 5377,
+    "sha256": "dbc2fe8b68125a803979bd93f2f7b14c0bd1098500673c3e78377c2f23fedbfa",
+    "compressed_sha256": "6cc1f92da1f2513e24ca5eec771e4264d6a1239ee3d65854556ed1fb19e35234"
+  },
+  {
+    "file": "acquisition-v1-requests.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/requests.json",
+    "bytes": 13608,
+    "sha256": "3f364086ca3f80a74f62f03214b818c268cf1660696b846aee4c0d91f21de57c",
+    "compressed_sha256": "735e7fb9f9e4d37e4a38fd31cdd8fc019310a278d68b26a5cc06dac007657a1a"
+  },
+  {
+    "file": "acquisition-v1-script-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/script-provenance.json",
+    "bytes": 336,
+    "sha256": "7d08bebeb159db79fbe3dc09fba0146aadf8d9c4f760d690633a075a015d934e",
+    "compressed_sha256": "1e4b0df999c5ec1d9e23b558581d4ed1bc997fcdba0e5fd90f7bfaf7996f0920"
+  },
+  {
+    "file": "acquisition-v1-sources.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/sources.json",
+    "bytes": 30243,
+    "sha256": "03d2118c0d2d1c0a472b3f90ea2e33aa16f885d4991204fee7f66ff8f0dd692c",
+    "compressed_sha256": "b65bf797117f747b88d791fe4f8874167da1340ddbc1966edd7bbf47bbaae50d"
+  },
+  {
+    "file": "acquisition-v1-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/summary.json",
+    "bytes": 261,
+    "sha256": "3cb281f29fdcae0ff61d370f07dfcff69a2b0f25b79c20cf26e00f1eea25e0d6",
+    "compressed_sha256": "0911098fc28ec7a6f3d9ed9970e0b6bff0e74f13de0e127044b10839c6e4cabe"
+  },
+  {
+    "file": "acquisition-v1.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1.log",
+    "bytes": 5771,
+    "sha256": "9b3ccd0ef8c0991a84f6a2874451a95f925fda22b0751de1e43068f778d13d75",
+    "compressed_sha256": "7628a2c3e5a745d890b089fda9f708e819d5acaa418f435c6f13b50a3be31cf0"
+  },
+  {
+    "file": "validation-v1-commands.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/commands.json",
+    "bytes": 14004,
+    "sha256": "5c502019fe313b1ff03bac34fe8a4185638ea0fb1362f4a4ec7a48731300128b",
+    "compressed_sha256": "87528ab593edf03aaaa9cefd10da4f0d048887d5b03353515e1e285bd6b5b468"
+  },
+  {
+    "file": "validation-v1-progress.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/progress.jsonl",
+    "bytes": 5980,
+    "sha256": "1581f7a27b0007e4438d67be90ce39b31829d4f0a760d62f4436c80918acc91c",
+    "compressed_sha256": "e7eb62414ce06608fa2d37543d61b0becea3288a1cf7ede11c70c6464ec6fce9"
+  },
+  {
+    "file": "validation-v1-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/summary.json",
+    "bytes": 184,
+    "sha256": "71c360c11eb518d77085e04c6fb65006100b63031979f783d2a86a16e0851508",
+    "compressed_sha256": "aa9b38c09f32ba966cc22082267695c2d9c03f2d2c212cbd89e4d95196575e7a"
+  },
+  {
+    "file": "validation-v1.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1.log",
+    "bytes": 6395,
+    "sha256": "c49228673ba1cb31a28af9a7422e4afdbc45a26f0dd3c24fd72e18125fa46b37",
+    "compressed_sha256": "c7f2c779f48a975e6e7275e75a428040d0b7bc4f310590809e1293b3e4ac063f"
+  },
+  {
+    "file": "acquisition-v2-plan.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v2/plan.json",
+    "bytes": 1882,
+    "sha256": "00d1add7e9fe330605b28e7249f4fa89b02d4e1cde99e6d2fe9ab9cc0405a9ae",
+    "compressed_sha256": "42786b12496abdb59394651593ca39506fc3bb84124019677310425dbbabe654"
+  },
+  {
+    "file": "acquisition-v2-progress.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v2/progress.jsonl",
+    "bytes": 845,
+    "sha256": "2b628962548f322b88b91fdfce57f807be8fada5a169a1166d75293cdb2ce3e6",
+    "compressed_sha256": "bea7ce6f408516d2df960c4771de799a3a2ea26917e027b81f52b9eeee854b85"
+  },
+  {
+    "file": "acquisition-v2-requests.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v2/requests.json",
+    "bytes": 1278,
+    "sha256": "133ec340ea829546587f6ace57d360f95dbd7f83a52ab3da0760f55e319b97ea",
+    "compressed_sha256": "ba8de1e38e93bdcc73253c4a1cfbd61b48c421767da05f0853c9d3b94ea36bac"
+  },
+  {
+    "file": "acquisition-v2-sources.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v2/sources.json",
+    "bytes": 3371,
+    "sha256": "2de258af997426e02b86022d3718a850500681ea62142c70670f975002dfdb94",
+    "compressed_sha256": "06255e147fa499a6603c1d21a52cf6ce045c2f09e7433ac7b06b8c95bd57176d"
+  },
+  {
+    "file": "acquisition-v2-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v2/summary.json",
+    "bytes": 258,
+    "sha256": "b3adcd0bac9a1e0d583c4e89bb2ee9c0ce5af9f512bc7cf02a6228fae26c6d8d",
+    "compressed_sha256": "e13e4721c193b7028953127eaa96344bf83a559c4df7f0b0d807c57b52ca08a9"
+  },
+  {
+    "file": "acquisition-v2.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v2.log",
+    "bytes": 1262,
+    "sha256": "699d1c2604e4541ec15e1751b8edcccae5e255e3dbee768ccfbff4fc371d7204",
+    "compressed_sha256": "009503aa0785c6fa8e3f02d412f7dd3281ae4da72589c211ab17df36f227e5c1"
+  },
+  {
+    "file": "validation-v2-commands.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v2/commands.json",
+    "bytes": 1182,
+    "sha256": "66f4c9b333dda9cb43223a50d4feb484dc4613d11834017bb2f5381c273d68ee",
+    "compressed_sha256": "49ded37a38bf98164af9dbd62bd11630893a5e2092c7dbfabdec7ba580ac1af1"
+  },
+  {
+    "file": "validation-v2-progress.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v2/progress.jsonl",
+    "bytes": 884,
+    "sha256": "19cd1fe20ce6ca8598c2ff1349f1230a6e8b4ef1a763d63fc66136bbd94a7f23",
+    "compressed_sha256": "16d1d592819a48648e51e4da5e27ff8d9ef4b03ab65b0da3f6037adb4932cbf4"
+  },
+  {
+    "file": "validation-v2-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v2/summary.json",
+    "bytes": 182,
+    "sha256": "cea368f011818e8611b7c90cdedbcf59c98969fe2d841a3204ddbcdca383f4b8",
+    "compressed_sha256": "53b9ab8ab416bcae18f52d7deb00581d6c0af30bcfaaeae24782180b71d4cc31"
+  },
+  {
+    "file": "validation-v2-validation.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v2/validation.json",
+    "bytes": 7854,
+    "sha256": "8c1c264f38259d7ae142f383c9d88ba3141200fe99adcc330623de8c258e977f",
+    "compressed_sha256": "8f182bdbc987b66fdaeeead03d42546308ad2901258b2f453df79ed7bab3d6b6"
+  },
+  {
+    "file": "validation-v2.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v2.log",
+    "bytes": 1299,
+    "sha256": "78c45baa1d435eec9fdfbef6dfc012bd552db999a482f4fd4f6e5141a4db7093",
+    "compressed_sha256": "2138d75c82190a07f39726e1632e7fd5b0d2c6e8ca47d2d5724f6c3c92ac8f38"
+  },
+  {
+    "file": "acquisition-v3-plan.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v3/plan.json",
+    "bytes": 2836,
+    "sha256": "d375bded98282911e0620e5aafa98fce53240634d9f8a8209d90c0e941e98227",
+    "compressed_sha256": "13ffc2bcd0f5fa2c236752b8271e3f564c63752d987a9deca3eef003505cffd5"
+  },
+  {
+    "file": "acquisition-v3-progress.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v3/progress.jsonl",
+    "bytes": 1024,
+    "sha256": "fde60222829771234e989fdf13f62ab56dedbe8497be3b518fa30a2fc5ffaf13",
+    "compressed_sha256": "6039acd6b1d4fcf9b25ffcd12ea4dfdf8a0580151099a81b21a49d6876c8c920"
+  },
+  {
+    "file": "acquisition-v3-requests.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v3/requests.json",
+    "bytes": 1719,
+    "sha256": "b0e2a2b5dcb0a9d45ba3995ead88fe32e7e42dc94f1024120ea38a8dc7cea6e8",
+    "compressed_sha256": "163c8cdb253e0ed4958a0da6ea33948d17d47d932428597a651fe10ae4bf32da"
+  },
+  {
+    "file": "acquisition-v3-sources.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v3/sources.json",
+    "bytes": 4899,
+    "sha256": "52b155c0217adadabc8711a2f2cd0669d76a60e034c2583ca54de499138a27b8",
+    "compressed_sha256": "32116faaa15e135b62a9e585d6d0e3b6fdb3ec4d04d5ff2a8220c7c0c9bf37a3"
+  },
+  {
+    "file": "acquisition-v3-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v3/summary.json",
+    "bytes": 258,
+    "sha256": "3bad60541a68c2d5d571af51435a720f8c88389a060ae42449b042792181ea51",
+    "compressed_sha256": "37fed37aa95340c259ba71606ca18a626fbb9e9a17ae724ded9249f8f151427a"
+  }
+]

@@ -1,0 +1,247 @@
+[
+  {
+    "file": "acquisition-v3.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v3.log",
+    "bytes": 1437,
+    "sha256": "92b318c578e45a77360e24ba3cb039fd1fd94435981e40f9384a03c346220bc1",
+    "compressed_sha256": "c4ddebeb5c55a205031608f2862eb0276c4f425e999f8a814e3811521f54c3d4"
+  },
+  {
+    "file": "validation-v3-commands.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v3/commands.json",
+    "bytes": 1575,
+    "sha256": "ee8d8eff3a4ed742f7322a4bc18fe711d123804f73a88dec3638e11343cd9798",
+    "compressed_sha256": "64de24df8079c0bd79deef09a09181279841bc10c5a0ba4653085f13c2f88119"
+  },
+  {
+    "file": "validation-v3-progress.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v3/progress.jsonl",
+    "bytes": 1102,
+    "sha256": "ec2a5bc0e9b50a5c8688dab6eb07c3080616a7ebf488bf9473a9760a789061ee",
+    "compressed_sha256": "479b49939e931633fa20042e62790a706d00b9424203a0af40f0e6b71772d798"
+  },
+  {
+    "file": "validation-v3-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v3/summary.json",
+    "bytes": 182,
+    "sha256": "c3fa7f12f1f2d128cd492afdfff0f2752320838ab73b04e20749906b47069bb9",
+    "compressed_sha256": "83b950ed4eb6462a49edea8a6d03bf4859521406c348541c0f7eab03c4064819"
+  },
+  {
+    "file": "validation-v3-validation.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v3/validation.json",
+    "bytes": 6092,
+    "sha256": "af273f95c26ab45f5de9331880572eeba8bed0e1fdad6341a7f65edbac4706f6",
+    "compressed_sha256": "0dfadaa7d0b5f432253f41c8eabe87e0184ed1234878530a2b45932db11f4672"
+  },
+  {
+    "file": "validation-v3.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v3.log",
+    "bytes": 1517,
+    "sha256": "cb01cfe138b8824d30bbff4d7613b9db83489fa59a34559905f4f9e21455ed90",
+    "compressed_sha256": "a0e7c4e7099e587caad7ef9b1a69479bc8a7ba878360fbcb2d7f5845ecf55637"
+  },
+  {
+    "file": "acquisition-v4-plan.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v4/plan.json",
+    "bytes": 1197,
+    "sha256": "524347e4dfa465c94b19ebadc0009b6edda806870d0d1061d1eda8c7f0ed521e",
+    "compressed_sha256": "24e515b71fbdb2df4ff85dea3134cd9696f5a3e7161b680322fdeb66f01e601c"
+  },
+  {
+    "file": "acquisition-v4-progress.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v4/progress.jsonl",
+    "bytes": 665,
+    "sha256": "cfdf8111baeca8ade7a4d7cb07485da0de174062c56b98b5afcecf00f7eb9e31",
+    "compressed_sha256": "abc5cd631dc3839f22a910c047e0a7f14da45d89fcf2a7ee2522995287b015a1"
+  },
+  {
+    "file": "acquisition-v4-requests.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v4/requests.json",
+    "bytes": 856,
+    "sha256": "2f97a4bff0c9ac3c17a879be671ae65c6ab81c4680c84d644f088571c6fc5396",
+    "compressed_sha256": "adf463509b6943f895db4802ce1e9447ae4df0cf0032a8ecf59c591d9283f533"
+  },
+  {
+    "file": "acquisition-v4-sources.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v4/sources.json",
+    "bytes": 2224,
+    "sha256": "5b8d6f23d8a0b65bcbceb4eef55a2e22a1d0d49d314987a104ef8dff4820b300",
+    "compressed_sha256": "bd61cc295fb3b7a61cb167fad4e764fe6e6434c8d6b2341804fb6a6a314461ab"
+  },
+  {
+    "file": "acquisition-v4-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v4/summary.json",
+    "bytes": 258,
+    "sha256": "a7064169bc38fb6bbcd2ffdc3266b1f89b453da4e05267ca4e4f0b3e18750023",
+    "compressed_sha256": "5471d0b867fef15b463b126c771ddf3b04c9796c9b98194708278ff69dc4e290"
+  },
+  {
+    "file": "acquisition-v4.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v4.log",
+    "bytes": 1078,
+    "sha256": "ec110ba7951e060586b64e18238baf58b7ddd32803baabd6cc8ee45fcdb54045",
+    "compressed_sha256": "d2dca9ae7083943750995ef06f92a2a657bc9737d45ec0c9fd64bfa04fa1a5e4"
+  },
+  {
+    "file": "validation-v4-commands.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v4/commands.json",
+    "bytes": 789,
+    "sha256": "40781eef06a250481c7538357a4dbc5d3f2e6ef315a4ee9b8610b3af3383b46d",
+    "compressed_sha256": "de7e5dbafcf40713358fe0f126abaef1a2419950a292fd2e64d9a1684b5bf353"
+  },
+  {
+    "file": "validation-v4-progress.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v4/progress.jsonl",
+    "bytes": 666,
+    "sha256": "f9d6eb2aff8718a61be566552dcf592e7220138868b650e64174ae3f606864e4",
+    "compressed_sha256": "f403218186ab79f7d1c4f00f83afed87f13f3a50688eface95dd0a9e5c7be179"
+  },
+  {
+    "file": "validation-v4-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v4/summary.json",
+    "bytes": 182,
+    "sha256": "8e1dcdef58d43966cacc79fdb5a179e7d20b1d3e68fae9b0838dec4d29c25bc3",
+    "compressed_sha256": "1efb8a24e49b93c230da01587109d4156b39bb89b5f01a04f2015704d7419aaf"
+  },
+  {
+    "file": "validation-v4-validation.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v4/validation.json",
+    "bytes": 5140,
+    "sha256": "0288d73dd657cd5a095cba7cc082c3fdb33a091079d5346aafc066119e740837",
+    "compressed_sha256": "f60947f416c0e2ded4ccdac787f92d3aab208fc04eda3c1834c5b7cdcef053df"
+  },
+  {
+    "file": "validation-v4.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v4.log",
+    "bytes": 1081,
+    "sha256": "2447cefe5dd676f637a094f11252552d92627a4d679c26832e85f1711221efae",
+    "compressed_sha256": "34b0c1c41c8f414c1e8c441c5c69b713da624eface21ff9936ca12569ef5b57b"
+  },
+  {
+    "file": "acquisition-v5-plan.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v5/plan.json",
+    "bytes": 1462,
+    "sha256": "42faf44e4013f876032ed4119de5b42c59178c0037db2c71647f83a0586c4285",
+    "compressed_sha256": "28f8123c5f0c900fa7eecd2503dcdcd8cb3cc499edb2d3bbdf3d7a192d108afe"
+  },
+  {
+    "file": "acquisition-v5-progress.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v5/progress.jsonl",
+    "bytes": 708,
+    "sha256": "50a1f5e4b3735612ebe56a4aa8a651435ba3d49cb0cec0c2e0c6264ccd045088",
+    "compressed_sha256": "0079fd89819b5387a31c548f86aaf609e2da32635177aaf2da22989f9503bbcd"
+  },
+  {
+    "file": "acquisition-v5-requests.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v5/requests.json",
+    "bytes": 1415,
+    "sha256": "09441cfaa8ca54bc459f928132d6e85ba71f02081a7335121aa1c6a9f4114924",
+    "compressed_sha256": "58462dcf0717ed96359df46791027171129737cbc2196bcfb09792121a75047b"
+  },
+  {
+    "file": "acquisition-v5-sources.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v5/sources.json",
+    "bytes": 3281,
+    "sha256": "461158940678c2716a2d0f4cb0983ae6d5f92c79145c3d2c19faf057153300ec",
+    "compressed_sha256": "3e0424ba0efcf3332c53f82c5dd3e2a10824b32d642f59a6996b771edc158380"
+  },
+  {
+    "file": "acquisition-v5-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v5/summary.json",
+    "bytes": 258,
+    "sha256": "224f068a425b9513976e9d9883759e4e15006232cd39e448077096ac137901de",
+    "compressed_sha256": "a0cb49e895590bcb3039b0dd6f0a2e17a0ec5ff7eb7264fce651049ed02319b0"
+  },
+  {
+    "file": "acquisition-v5.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v5.log",
+    "bytes": 1123,
+    "sha256": "2227f0b06e45c51a9ef795e6554845dd4ca559e13a5ee046ef54d62f95949d1d",
+    "compressed_sha256": "149ceaa6d796a15905b141006251258f86acc2a29d99040ce8f415b27ac97f33"
+  },
+  {
+    "file": "validation-v5-commands.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v5/commands.json",
+    "bytes": 3,
+    "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+    "compressed_sha256": "2ca4529576310b626c1bd48352d283b521d029d54f195d8416536872d826e4c6"
+  },
+  {
+    "file": "validation-v5-progress.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v5/progress.jsonl",
+    "bytes": 754,
+    "sha256": "583e17224785d1fe846e04bca41d680f585c55100dd06ddf6f00f921223a8d29",
+    "compressed_sha256": "a2d06fb3dbf54782d20c419fd0d5aeed1817fdd6b4d618dc77af7f106722150b"
+  },
+  {
+    "file": "validation-v5-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v5/summary.json",
+    "bytes": 182,
+    "sha256": "8e1dcdef58d43966cacc79fdb5a179e7d20b1d3e68fae9b0838dec4d29c25bc3",
+    "compressed_sha256": "1efb8a24e49b93c230da01587109d4156b39bb89b5f01a04f2015704d7419aaf"
+  },
+  {
+    "file": "validation-v5-validation.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v5/validation.json",
+    "bytes": 1849,
+    "sha256": "ca7da85ffc3c09aecc25f74cd8dc2311d713814d3cb4218155066e31e97bd0c8",
+    "compressed_sha256": "95322dbd36eb8cbd0a8ad2c3e0a9f21a8f873f37b5f23e90411092f8ab3ea685"
+  },
+  {
+    "file": "validation-v5.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v5.log",
+    "bytes": 1169,
+    "sha256": "a2ddaa8b914b80d30c9581259cf7bfe6db5b83f36f4640a5a1a67a3570c9763e",
+    "compressed_sha256": "684b22e335af28323dc9b54d6057f4242419921e16a7beeda208822acc485c23"
+  },
+  {
+    "file": "rav1d-still-expanded-2026-09-07-commons-candidates.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/commons-candidates.json",
+    "bytes": 16620,
+    "sha256": "f2b8e1deb6b02a36b80b4ef51d022a359c8074219e7dec95e88cedbf771ed80a",
+    "compressed_sha256": "66f69946052bc71d62ffa18e13f7c2d7fbb50d6a47afa4749184563ce70b04f4"
+  },
+  {
+    "file": "rav1d-still-expanded-2026-09-07-commons-candidates-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/commons-candidates-provenance.json",
+    "bytes": 665,
+    "sha256": "6db42e515cf321225e61d7a95fa5ac5452b3a2d1462de5b725cee5ba6671797e",
+    "compressed_sha256": "7de604c68f3974d4b5d45360d1a848a9f63d2a2897458c41959c093ee25beda6"
+  },
+  {
+    "file": "rav1d-still-expanded-2026-09-07-commons-london-candidate.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/commons-london-candidate.json",
+    "bytes": 2450,
+    "sha256": "6c258546bff66a1dca66d37347184021044cce59385a6446a2672e695c3a8126",
+    "compressed_sha256": "92c84a09b63ae740adbc3eef5b3a65ea4a361f2951f026d1a19e6036ca52040b"
+  },
+  {
+    "file": "rav1d-still-expanded-2026-09-07-commons-london-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/commons-london-provenance.json",
+    "bytes": 264,
+    "sha256": "11011de4be6e93175f940e03b5bdf79a52d6531cdcab3840736a4c8c2430f54e",
+    "compressed_sha256": "f8d6d173c47ccc8183a16ead8cc8b48f05e845b86a103c31dd985771d0b8937e"
+  },
+  {
+    "file": "registry-supplement-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/registry-supplement/provenance.json",
+    "bytes": 905,
+    "sha256": "1a0299ee735f93adee843ae589f1040f027672013ad4746500c49a0d14b5d388",
+    "compressed_sha256": "1d3a09f763d555b7fb33a50c331989b0f34a5fc15bac93fdefc819f099edd684"
+  },
+  {
+    "file": "rav1d-still-expanded-2026-09-07-registry-tree-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/registry-tree-provenance.json",
+    "bytes": 216,
+    "sha256": "72b5bbfb80b072ebd2ee67eb9e3076154c2331b650c4c51a77e0d924a0a0bbab",
+    "compressed_sha256": "d46fee22a8a4294387d949bfbb34f86b534ec844e1884baa8c2227c3bb01447a"
+  },
+  {
+    "file": "5000-national-park-service-brochures.md.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/registry-supplement/5000-national-park-service-brochures.md",
+    "bytes": 6742,
+    "sha256": "2585c30d7d3f13437b98c952c85c95d88561b4cd578d82431b4d9ba2629fc51a",
+    "compressed_sha256": "6e2ccc67f23bc099631223bd505299bec86ed4aa4139407760b049f9c71745e5"
+  }
+]

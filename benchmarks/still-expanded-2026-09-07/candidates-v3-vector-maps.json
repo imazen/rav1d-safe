@@ -1,0 +1,58 @@
+{
+  "status": "Conservative PDF source admission before any AV1 work; final source freeze pending",
+  "created_utc": "2026-09-07T18:12:39.937848+00:00",
+  "candidates": [
+    {
+      "id": "map-shen",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-shen",
+      "title": "Bearfence_RoadTrail.pdf",
+      "page_url": "https://www.nps.gov/shen/planyourvisit/upload/Bearfence_RoadTrail.pdf",
+      "asset_url": "https://www.nps.gov/shen/planyourvisit/upload/Bearfence_RoadTrail.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1,
+      "replaces": "map-care",
+      "reason": "Prefer a map page with no embedded raster objects, to keep 8K vector rendering unambiguous. Prior candidate remains archived as a mixed vector/raster source."
+    },
+    {
+      "id": "map-dewa",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-dewa",
+      "title": "DingmansCampgroundMap-1-508-Compliant.pdf",
+      "page_url": "https://www.nps.gov/dewa/planyourvisit/upload/DingmansCampgroundMap-1-508-Compliant.pdf",
+      "asset_url": "https://www.nps.gov/dewa/planyourvisit/upload/DingmansCampgroundMap-1-508-Compliant.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1,
+      "replaces": "map-katm",
+      "reason": "Prefer a map page with no embedded raster objects, to keep 8K vector rendering unambiguous. Prior candidate remains archived as a mixed vector/raster source."
+    },
+    {
+      "id": "map-fova",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-fova",
+      "title": "MCHO-Map-Accessible-PDF.pdf",
+      "page_url": "https://www.nps.gov/fova/planyourvisit/upload/MCHO-Map-Accessible-PDF.pdf",
+      "asset_url": "https://www.nps.gov/fova/planyourvisit/upload/MCHO-Map-Accessible-PDF.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1,
+      "replaces": "map-dena",
+      "reason": "Prefer a map page with no embedded raster objects, to keep 8K vector rendering unambiguous. Prior candidate remains archived as a mixed vector/raster source."
+    },
+    {
+      "id": "map-muwo",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-muwo",
+      "title": "map-muwo-trail-2019-small.pdf",
+      "page_url": "https://www.nps.gov/goga/planyourvisit/upload/map-muwo-trail-2019-small.pdf",
+      "asset_url": "https://www.nps.gov/goga/planyourvisit/upload/map-muwo-trail-2019-small.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1,
+      "replaces": "map-redw",
+      "reason": "Prefer a map page with no embedded raster objects, to keep 8K vector rendering unambiguous. Prior candidate remains archived as a mixed vector/raster source."
+    }
+  ]
+}

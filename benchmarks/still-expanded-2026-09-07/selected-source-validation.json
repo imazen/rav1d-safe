@@ -1,0 +1,485 @@
+[
+  {
+    "id": "texture-apache-winter",
+    "acquisition_status": "failed",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/texture-apache-winter/source.jpg",
+    "sha256": "8952dd16403f0f3da6a4bc499df58e9710bb59eb544ed3bd09fdae6d5ab8f4f7",
+    "bytes": 35231825,
+    "stored_size": [
+      8256,
+      5504
+    ],
+    "mode": "RGB",
+    "exif_orientation": 1,
+    "camera_make": "\u0000IKON CORPORATION",
+    "camera_model": "NIKON D850",
+    "capture_time": "2019:02:28 15:11:37",
+    "pillow_version": "12.1.1",
+    "oriented_size": [
+      8256,
+      5504
+    ],
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/texture-apache-winter.png",
+    "status": "Full JPEG decode and native geometry pass; content review pending",
+    "preview_sha256": "11e96b566722118df15a41d2186279d41d8b891a6047872b39ae0a07fb96b316"
+  },
+  {
+    "id": "photo-london-tram",
+    "acquisition_status": "Native-geometry raster acquired; full pixel/content review outstanding",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v5/photo-london-tram/source.jpg",
+    "sha256": "650b5a70385d8459089b732b931db719c6e0a8c2ba3252bea3b75c1576a0ea27",
+    "bytes": 33829599,
+    "stored_size": [
+      7952,
+      5304
+    ],
+    "mode": "RGB",
+    "exif_orientation": 1,
+    "camera_make": "SONY",
+    "camera_model": "ILCE-7RM3",
+    "capture_time": "2024:02:11 12:12:21",
+    "pillow_version": "12.1.1",
+    "oriented_size": [
+      7952,
+      5304
+    ],
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v5/photo-london-tram.png",
+    "status": "Full JPEG decode and native geometry pass; content review pending",
+    "preview_sha256": "97aec859f21cdb7d2f3688e5ee166d5bcdb65c27156cf6d46a10dcb1f0b4e8f1"
+  },
+  {
+    "id": "photo-brazil-rivers",
+    "acquisition_status": "failed",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/photo-brazil-rivers/source.jpg",
+    "sha256": "f85c2654f57bb646c813e15c7037952e4ff035870ce5cb9c3b7919d90bdbfbda",
+    "bytes": 7382976,
+    "stored_size": [
+      8256,
+      5504
+    ],
+    "mode": "RGB",
+    "exif_orientation": 1,
+    "camera_make": "NIKON CORPORATION",
+    "camera_model": "NIKON Z 9",
+    "capture_time": "2025:06:26 09:56:30",
+    "pillow_version": "12.1.1",
+    "oriented_size": [
+      8256,
+      5504
+    ],
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/photo-brazil-rivers.png",
+    "status": "Full JPEG decode and native geometry pass; content review pending",
+    "preview_sha256": "733397f36e49ad8b00085d75479a834664ed49a4dc4a35b3722030a765836399"
+  },
+  {
+    "id": "photo-kinshasa",
+    "acquisition_status": "failed",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/photo-kinshasa/source.jpg",
+    "sha256": "fc4b106c977d350f19867cef7db7e76aeef5c8a57b36bc940735701de7f49766",
+    "bytes": 8180816,
+    "stored_size": [
+      8256,
+      5504
+    ],
+    "mode": "RGB",
+    "exif_orientation": 1,
+    "camera_make": "NIKON CORPORATION",
+    "camera_model": "NIKON Z 9",
+    "capture_time": "2025:04:23 15:06:17",
+    "pillow_version": "12.1.1",
+    "oriented_size": [
+      8256,
+      5504
+    ],
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/photo-kinshasa.png",
+    "status": "Full JPEG decode and native geometry pass; content review pending",
+    "preview_sha256": "27a8ba3f3f17f178580e08017bacf69ccf792a9a077868f8650cd3ce3461933a"
+  },
+  {
+    "id": "photo-orenburg-snow",
+    "acquisition_status": "Native-geometry raster acquired; full pixel/content review outstanding",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v5/photo-orenburg-snow/source.jpg",
+    "sha256": "65ac70804ad11c0db698c94fc09433375ff85c3f38f28ca00721a0bf814563dc",
+    "bytes": 10589436,
+    "stored_size": [
+      8256,
+      5504
+    ],
+    "mode": "RGB",
+    "exif_orientation": 1,
+    "camera_make": "NIKON CORPORATION",
+    "camera_model": "NIKON D850",
+    "capture_time": "2021:02:22 19:56:59",
+    "pillow_version": "12.1.1",
+    "oriented_size": [
+      8256,
+      5504
+    ],
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v5/photo-orenburg-snow.png",
+    "status": "Full JPEG decode and native geometry pass; content review pending",
+    "preview_sha256": "46667608800f884bbe621d9e70a9487671a1d2e8d967312fda2c88219600e1c6"
+  },
+  {
+    "id": "photo-new-orleans",
+    "acquisition_status": "failed",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/photo-new-orleans/source.jpg",
+    "sha256": "c3d4846b8f584657cbe2f4dc286c138654266a31fdd5abaea0dfdc0d5835a10a",
+    "bytes": 7864082,
+    "stored_size": [
+      8256,
+      5504
+    ],
+    "mode": "RGB",
+    "exif_orientation": 1,
+    "camera_make": "NIKON CORPORATION",
+    "camera_model": "NIKON D850",
+    "capture_time": "2021:03:09 16:43:31",
+    "pillow_version": "12.1.1",
+    "oriented_size": [
+      8256,
+      5504
+    ],
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/photo-new-orleans.png",
+    "status": "Full JPEG decode and native geometry pass; content review pending",
+    "preview_sha256": "ca952dc70c99c53f43e04a9648a3014d57c4cb897755ea2c908645bd9fbac408"
+  },
+  {
+    "id": "photo-naples",
+    "acquisition_status": "failed",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/photo-naples/source.jpg",
+    "sha256": "97d23e950bda7d06b63728081e7080c9d803bd64c26011df30970f98be763af3",
+    "bytes": 10317837,
+    "stored_size": [
+      8256,
+      5504
+    ],
+    "mode": "RGB",
+    "exif_orientation": 1,
+    "camera_make": "NIKON CORPORATION",
+    "camera_model": "NIKON D850",
+    "capture_time": "2021:03:09 16:43:09",
+    "pillow_version": "12.1.1",
+    "oriented_size": [
+      8256,
+      5504
+    ],
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/photo-naples.png",
+    "status": "Full JPEG decode and native geometry pass; content review pending",
+    "preview_sha256": "5eded11d7c2792a94fc822c92a488e72b0d8796854d3a1268a72f3de9c352a81"
+  },
+  {
+    "id": "photo-emi-koussi",
+    "acquisition_status": "failed",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/photo-emi-koussi/source.jpg",
+    "sha256": "477049fafcc721c730303cbfe8fbb003892bf67ba9cca18eca41714d593f6030",
+    "bytes": 8270919,
+    "stored_size": [
+      8256,
+      5504
+    ],
+    "mode": "RGB",
+    "exif_orientation": 1,
+    "camera_make": "NIKON CORPORATION",
+    "camera_model": "NIKON Z 9",
+    "capture_time": "2025:01:07 08:04:56",
+    "pillow_version": "12.1.1",
+    "oriented_size": [
+      8256,
+      5504
+    ],
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/photo-emi-koussi.png",
+    "status": "Full JPEG decode and native geometry pass; content review pending",
+    "preview_sha256": "fa46da7767de95d16f4ba2e605de20c75c28404126c741165ff9c54b49182ce1"
+  },
+  {
+    "id": "texture-coleus",
+    "acquisition_status": "failed",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/texture-coleus/source.jpg",
+    "sha256": "0c268763eda48814e43d8a9d31549762ea6e17604fea40cbe8920333cc61d5d9",
+    "bytes": 43187417,
+    "stored_size": [
+      8256,
+      5504
+    ],
+    "mode": "RGB",
+    "exif_orientation": 1,
+    "camera_make": "NIKON CORPORATION",
+    "camera_model": "NIKON Z 7_2",
+    "capture_time": "2022:08:18 12:44:50",
+    "pillow_version": "12.1.1",
+    "oriented_size": [
+      8256,
+      5504
+    ],
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/texture-coleus.png",
+    "status": "Full JPEG decode and native geometry pass; content review pending",
+    "preview_sha256": "d9c63ad7664a11669feff32549ac09e7e66ad5a0bc593b910a55543445962675"
+  },
+  {
+    "id": "texture-galium",
+    "acquisition_status": "failed",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/texture-galium/source.jpg",
+    "sha256": "1cc1ff429913cd031c6a700f85afefd4adbcda3610890d919b126c25d64992e2",
+    "bytes": 15787852,
+    "stored_size": [
+      7952,
+      5304
+    ],
+    "mode": "RGB",
+    "exif_orientation": 1,
+    "camera_make": "SONY",
+    "camera_model": "ILCE-7RM2",
+    "capture_time": "2018:08:07 23:15:47",
+    "pillow_version": "12.1.1",
+    "oriented_size": [
+      7952,
+      5304
+    ],
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/texture-galium.png",
+    "status": "Full JPEG decode and native geometry pass; content review pending",
+    "preview_sha256": "1d264e63345578e1c5f62ce442fb2cc2375bb1873ae4112d6e7bd797dc6beec2"
+  },
+  {
+    "id": "texture-wood-wall",
+    "acquisition_status": "failed",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/texture-wood-wall/source.jpg",
+    "sha256": "7c28b9294226f11afb00e6e86f81c17e1b15aeccff20300ad9ae5381cb38bd04",
+    "bytes": 23797918,
+    "stored_size": [
+      8256,
+      5208
+    ],
+    "mode": "RGB",
+    "exif_orientation": 1,
+    "camera_make": "NIKON CORPORATION",
+    "camera_model": "NIKON Z 8",
+    "capture_time": "2026:04:15 20:46:36",
+    "pillow_version": "12.1.1",
+    "oriented_size": [
+      8256,
+      5208
+    ],
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/texture-wood-wall.png",
+    "status": "Full JPEG decode and native geometry pass; content review pending",
+    "preview_sha256": "11e72b1ecfe99ff162afbba61a2bc737a652e2454607839d399d4ba9d06c02ce"
+  },
+  {
+    "id": "texture-armeria",
+    "acquisition_status": "failed",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/texture-armeria/source.jpg",
+    "sha256": "cd29684f11e97cecdd8dbd7ffc034793cabcd2b4e62a0e7123c587474a90ab24",
+    "bytes": 21673158,
+    "stored_size": [
+      7952,
+      5304
+    ],
+    "mode": "RGB",
+    "exif_orientation": 1,
+    "camera_make": "SONY",
+    "camera_model": "ILCE-7RM2",
+    "capture_time": "2016:12:16 21:52:26",
+    "pillow_version": "12.1.1",
+    "oriented_size": [
+      7952,
+      5304
+    ],
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/texture-armeria.png",
+    "status": "Full JPEG decode and native geometry pass; content review pending",
+    "preview_sha256": "d1c17cb228567e149d49a515e154255d2e39e29bb0b34e63a1af52fd6c76835a"
+  },
+  {
+    "id": "photo-el-salvador",
+    "acquisition_status": "failed",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/photo-el-salvador/source.jpg",
+    "sha256": "0c0f9c7093938f0fdf91a8b52182c8a759e8cfc67cb6a6ba12749c731639b123",
+    "bytes": 10077681,
+    "stored_size": [
+      8256,
+      5504
+    ],
+    "mode": "RGB",
+    "exif_orientation": 1,
+    "camera_make": "NIKON CORPORATION",
+    "camera_model": "NIKON D850",
+    "capture_time": "2021:03:09 16:45:28",
+    "pillow_version": "12.1.1",
+    "oriented_size": [
+      8256,
+      5504
+    ],
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/photo-el-salvador.png",
+    "status": "Full JPEG decode and native geometry pass; content review pending",
+    "preview_sha256": "c439f7d1fba7060a13023e6c0072538908792f57f882ffd1d9797d6cd3f2e6db"
+  },
+  {
+    "id": "texture-bergen-forest",
+    "acquisition_status": "failed",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/texture-bergen-forest/source.jpg",
+    "sha256": "ad4f0878f0ef79c85d4efe58d3b9b3de986e8d89d97f41a2dbe60bd42ea161bd",
+    "bytes": 36265377,
+    "stored_size": [
+      8256,
+      5504
+    ],
+    "mode": "RGB",
+    "exif_orientation": 1,
+    "camera_make": "NIKON CORPORATION",
+    "camera_model": "NIKON Z 7_2",
+    "capture_time": "2026:04:21 18:09:22",
+    "pillow_version": "12.1.1",
+    "oriented_size": [
+      8256,
+      5504
+    ],
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/texture-bergen-forest.png",
+    "status": "Full JPEG decode and native geometry pass; content review pending",
+    "preview_sha256": "9a6926a90053610bb23ab7c2dc36659685b7b6cf55c8ba924c1c4c329cf92cb2"
+  },
+  {
+    "id": "map-choh",
+    "acquisition_status": "PDF acquired; vector/content review and rasterization outstanding",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v2/map-choh/source.pdf",
+    "sha256": "caa298fc96b5b5118ef9f7289b271054b693631b9b0d9816622eb7ee0d8f9eab",
+    "bytes": 213286,
+    "pdf_page": 1,
+    "raster_objects": 0,
+    "raster_object_records": [],
+    "text_characters": 25148,
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v2/map-choh.png",
+    "status": "PDF page rendered; content review pending",
+    "preview_sha256": "a7bc82c312d2114ee43496ab60da502e42990329882ea8e721609ccbed5412aa"
+  },
+  {
+    "id": "map-muwo",
+    "acquisition_status": "PDF acquired; vector/content review and rasterization outstanding",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v3/map-muwo/source.pdf",
+    "sha256": "419e9db457c2d82203e066e98c664650dd7044b762c25c96c57444e6015864c4",
+    "bytes": 158347,
+    "pdf_page": 1,
+    "raster_objects": 1,
+    "raster_object_records": [
+      "   1     0 image     173   221  index   1   8  image  no       113  0   301   301 6200B  16%"
+    ],
+    "text_characters": 36388,
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v3/map-muwo.png",
+    "status": "PDF page rendered; content review pending",
+    "preview_sha256": "3ef0b1bb7660af7ab456730615b4114fa3252da81e745c530a2680e7d11b2d6e"
+  },
+  {
+    "id": "map-mora",
+    "acquisition_status": "PDF acquired; vector/content review and rasterization outstanding",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v2/map-mora/source.pdf",
+    "sha256": "07becb12e4cb2f73b4f31224f5963ab4a1b4af5d4dce9efb6fc99d6386416e79",
+    "bytes": 236818,
+    "pdf_page": 1,
+    "raster_objects": 0,
+    "raster_object_records": [],
+    "text_characters": 21059,
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v2/map-mora.png",
+    "status": "PDF page rendered; content review pending",
+    "preview_sha256": "d0c35fdb5ce793ff79abb0ab540f9b7250d606786e8cc81d0beec9371e28fad5"
+  },
+  {
+    "id": "map-shen",
+    "acquisition_status": "PDF acquired; vector/content review and rasterization outstanding",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v3/map-shen/source.pdf",
+    "sha256": "248be52953f5cc0164e863f00c3212dddda92ca86c8ac1de1a29955bbd682f53",
+    "bytes": 419782,
+    "pdf_page": 1,
+    "raster_objects": 1,
+    "raster_object_records": [
+      "   1     0 image      42    55  index   1   8  image  no       181  0   101   101 1528B  66%"
+    ],
+    "text_characters": 5092,
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v3/map-shen.png",
+    "status": "PDF page rendered; content review pending",
+    "preview_sha256": "e2bba84338e98537e53477fda72cfb91b9b430a636dde87a7c9fbf57c11868f3"
+  },
+  {
+    "id": "text-nist-sha",
+    "acquisition_status": "PDF acquired; vector/content review and rasterization outstanding",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-nist-sha/source.pdf",
+    "sha256": "0455b406d89648d20cbde375561e19c245b9815e894164c2670772e3d54deb82",
+    "bytes": 833315,
+    "pdf_page": 15,
+    "raster_objects": 0,
+    "raster_object_records": [],
+    "text_characters": 2357,
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/text-nist-sha.png",
+    "status": "PDF page rendered; content review pending",
+    "preview_sha256": "562016c912f25830d9a9be54d3f2cbffaf927d9e575b46ded7bd4545dc3a027d"
+  },
+  {
+    "id": "text-nasa-api",
+    "acquisition_status": "PDF acquired; vector/content review and rasterization outstanding",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-nasa-api/source.pdf",
+    "sha256": "768f5ee932ff0a3a9195970221b4b2d64ef07971d283d2a34faf0769a2f70ac1",
+    "bytes": 417364,
+    "pdf_page": 3,
+    "raster_objects": 0,
+    "raster_object_records": [],
+    "text_characters": 2580,
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/text-nasa-api.png",
+    "status": "PDF page rendered; content review pending",
+    "preview_sha256": "059dd77f2652eb7f71d7007f58b5dc3c2a7f325750c479fdf1011afd840cbf4c"
+  },
+  {
+    "id": "text-census-income",
+    "acquisition_status": "PDF acquired; vector/content review and rasterization outstanding",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-census-income/source.pdf",
+    "sha256": "e6cf145cb10b5d037f5e77fa199d2e558bfe24f76273f385e9767c2eabba1cbf",
+    "bytes": 1890167,
+    "pdf_page": 9,
+    "raster_objects": 0,
+    "raster_object_records": [],
+    "text_characters": 4532,
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/text-census-income.png",
+    "status": "PDF page rendered; content review pending",
+    "preview_sha256": "d17b92d1bb73a5e82e3a49fb31e0f40629b47ebace07a0e0678ba0e8d6f53d80"
+  },
+  {
+    "id": "text-irs-form",
+    "acquisition_status": "PDF acquired; vector/content review and rasterization outstanding",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-irs-form/source.pdf",
+    "sha256": "3d31c226df0d189ced80e039d01cf0f8820c1019681a0f0ca6264de277b7e982",
+    "bytes": 220237,
+    "pdf_page": 1,
+    "raster_objects": 0,
+    "raster_object_records": [],
+    "text_characters": 10872,
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/text-irs-form.png",
+    "status": "PDF page rendered; content review pending",
+    "preview_sha256": "f1e88f24b42080eddb75e29fdd19e68c90f6c8b5588c20a6fab22f0961825522"
+  },
+  {
+    "id": "text-noaa-ian",
+    "acquisition_status": "PDF acquired; vector/content review and rasterization outstanding",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-noaa-ian/source.pdf",
+    "sha256": "804d2a867917d4ab157e5b2b1e444d21d306379a08d07ffd7059d157a4b15fce",
+    "bytes": 7049210,
+    "pdf_page": 3,
+    "raster_objects": 2,
+    "raster_object_records": [
+      "   3     0 image     138    66  rgb     3   8  image  no        32  0   219   220 9721B  36%",
+      "   3     1 smask     138    66  gray    1   8  image  no        32  0   219   220  965B  11%"
+    ],
+    "text_characters": 3354,
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/text-noaa-ian.png",
+    "status": "PDF page rendered; content review pending",
+    "preview_sha256": "0574390cf25b27c76c672b5dfb240f1d03b0fb5d35ad89ce2a47bae0fa7abc30"
+  },
+  {
+    "id": "text-cdc-mmwr",
+    "acquisition_status": "PDF acquired; vector/content review and rasterization outstanding",
+    "path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-cdc-mmwr/source.pdf",
+    "sha256": "79dcb3b5cdb1e3e6316a2946f588eba8dfdd605dbd848dc827c793628ed2e518",
+    "bytes": 426452,
+    "pdf_page": 2,
+    "raster_objects": 0,
+    "raster_object_records": [],
+    "text_characters": 6781,
+    "preview": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/text-cdc-mmwr.png",
+    "status": "PDF page rendered; content review pending",
+    "preview_sha256": "b2cf82efa638f4da888c0a91e6502603a70ba94d2c9d677025335a9e4b7baa5a"
+  }
+]

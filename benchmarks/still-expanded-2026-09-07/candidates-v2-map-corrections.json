@@ -1,0 +1,45 @@
+{
+  "status": "Source-admission corrections before any AV1 decoding/timing; final freeze outstanding",
+  "created_utc": "2026-09-07T18:11:14.387676+00:00",
+  "candidates": [
+    {
+      "id": "map-choh",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-choh",
+      "title": "Great-Falls-Hiking-Map.pdf",
+      "page_url": "https://www.nps.gov/choh/planyourvisit/upload/Great-Falls-Hiking-Map.pdf",
+      "asset_url": "https://www.nps.gov/choh/planyourvisit/upload/Great-Falls-Hiking-Map.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1,
+      "replaces": "map-gaar",
+      "reason": "Old PDF link serves an HTML redirect page, not a PDF."
+    },
+    {
+      "id": "map-mora",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-mora",
+      "title": "Ohanapecosh7-2019_.pdf",
+      "page_url": "https://www.nps.gov/mora/planyourvisit/upload/Ohanapecosh7-2019_.pdf",
+      "asset_url": "https://www.nps.gov/mora/planyourvisit/upload/Ohanapecosh7-2019_.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1,
+      "replaces": "map-grca",
+      "reason": "Entire map is one 1826x1429 JPEG; excluded from native 8K admission."
+    },
+    {
+      "id": "map-redw",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-redw",
+      "title": "HorseTrails_SB_2021-508-2.pdf",
+      "page_url": "https://www.nps.gov/redw/planyourvisit/upload/HorseTrails_SB_2021-508-2.pdf",
+      "asset_url": "https://www.nps.gov/redw/planyourvisit/upload/HorseTrails_SB_2021-508-2.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 2,
+      "replaces": "map-redw:p1",
+      "reason": "Page 1 is visitor text with a photograph. Inspect map on page 2 before selecting any workload."
+    }
+  ]
+}

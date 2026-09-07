@@ -1,0 +1,795 @@
+{
+  "created_utc": "2026-09-08T00:23:21.362623+00:00",
+  "source_membership_frozen": true,
+  "source_splits_frozen": true,
+  "workload_and_bitstreams_frozen": false,
+  "split_method": "SHA-256 ordering within predeclared content strata; first half development",
+  "split_salt": "rav1d-still-parity-source-split-v1:",
+  "strata": [
+    [
+      "photograph",
+      [
+        "photo-london-tram",
+        "texture-apache-winter"
+      ]
+    ],
+    [
+      "photograph",
+      [
+        "photo-emi-koussi",
+        "photo-new-orleans",
+        "photo-naples",
+        "photo-kinshasa",
+        "photo-brazil-rivers",
+        "photo-orenburg-snow"
+      ]
+    ],
+    [
+      "texture",
+      [
+        "texture-coleus",
+        "texture-galium"
+      ]
+    ],
+    [
+      "texture",
+      [
+        "texture-armeria",
+        "texture-wood-wall"
+      ]
+    ],
+    [
+      "texture",
+      [
+        "texture-bergen-forest",
+        "photo-el-salvador"
+      ]
+    ],
+    [
+      "map",
+      [
+        "map-choh",
+        "map-muwo"
+      ]
+    ],
+    [
+      "map",
+      [
+        "map-mora",
+        "map-shen"
+      ]
+    ],
+    [
+      "text",
+      [
+        "text-nasa-api",
+        "text-nist-sha"
+      ]
+    ],
+    [
+      "text",
+      [
+        "text-irs-form",
+        "text-census-income"
+      ]
+    ],
+    [
+      "text",
+      [
+        "text-noaa-ian",
+        "text-cdc-mmwr"
+      ]
+    ]
+  ],
+  "sources": [
+    {
+      "id": "texture-apache-winter",
+      "kind": "commons",
+      "category": "photograph",
+      "family": "apache-winter",
+      "title": "File:Apache-Sitgreaves National Forests - Winter Scenes (20181207-FS-APACHE-SITGREAVES-LSC-0020).jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:Apache-Sitgreaves_National_Forests_-_Winter_Scenes_(20181207-FS-APACHE-SITGREAVES-LSC-0020).jpg",
+      "asset_url": "https://upload.wikimedia.org/wikipedia/commons/6/6c/Apache-Sitgreaves_National_Forests_-_Winter_Scenes_%2820181207-FS-APACHE-SITGREAVES-LSC-0020%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "expected_size": [
+        8256,
+        5504
+      ],
+      "expected_bytes": 35231825,
+      "expected_sha1": "dd8ef7fc0cc824be46b049a51ca964570bc934d2",
+      "license": {
+        "value": "Public domain",
+        "source": "commons-desc-page",
+        "hidden": ""
+      },
+      "author": {
+        "value": "<a rel=\"nofollow\" class=\"external text\" href=\"https://www.flickr.com/people/usdagov/\">USDAgov</a>",
+        "source": "commons-desc-page"
+      },
+      "split": "development",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/texture-apache-winter/source.jpg",
+      "asset_sha256": "8952dd16403f0f3da6a4bc499df58e9710bb59eb544ed3bd09fdae6d5ab8f4f7",
+      "asset_bytes": 35231825,
+      "acquisition_version": 1,
+      "stored_size": [
+        8256,
+        5504
+      ],
+      "oriented_size": [
+        8256,
+        5504
+      ],
+      "camera_make": "\u0000IKON CORPORATION",
+      "camera_model": "NIKON D850",
+      "exif_orientation": 1,
+      "native_detail": "Full JPEG decoded; native camera geometry verified; never upscale"
+    },
+    {
+      "id": "photo-london-tram",
+      "kind": "commons",
+      "category": "photograph",
+      "family": "london-kingsway-tram-tunnel",
+      "title": "File:Kingsway Tram Tunnel 2024-02-10.jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:Kingsway_Tram_Tunnel_2024-02-10.jpg",
+      "asset_url": "https://upload.wikimedia.org/wikipedia/commons/0/03/Kingsway_Tram_Tunnel_2024-02-10.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "expected_size": [
+        7952,
+        5304
+      ],
+      "expected_bytes": 33829599,
+      "expected_sha1": "cc39a62a5d22501ff792f19d1245e7c903875c51",
+      "license": {
+        "value": "CC BY-SA 2.0",
+        "source": "commons-desc-page",
+        "hidden": ""
+      },
+      "author": {
+        "value": "Tom Page",
+        "source": "commons-desc-page"
+      },
+      "split": "holdout",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v5/photo-london-tram/source.jpg",
+      "asset_sha256": "650b5a70385d8459089b732b931db719c6e0a8c2ba3252bea3b75c1576a0ea27",
+      "asset_bytes": 33829599,
+      "acquisition_version": 5,
+      "stored_size": [
+        7952,
+        5304
+      ],
+      "oriented_size": [
+        7952,
+        5304
+      ],
+      "camera_make": "SONY",
+      "camera_model": "ILCE-7RM3",
+      "exif_orientation": 1,
+      "native_detail": "Full JPEG decoded; native camera geometry verified; never upscale"
+    },
+    {
+      "id": "photo-brazil-rivers",
+      "kind": "nasa",
+      "category": "photograph",
+      "family": "brazil-uruguay-ibicui",
+      "title": "Uruguay and Ibicui rivers, flooding and agriculture",
+      "nasa_id": "ISS073-E-248098",
+      "page_url": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS073&roll=E&frame=248098",
+      "expected_size": [
+        8256,
+        5504
+      ],
+      "split": "development",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/photo-brazil-rivers/source.jpg",
+      "asset_sha256": "f85c2654f57bb646c813e15c7037952e4ff035870ce5cb9c3b7919d90bdbfbda",
+      "asset_bytes": 7382976,
+      "acquisition_version": 1,
+      "stored_size": [
+        8256,
+        5504
+      ],
+      "oriented_size": [
+        8256,
+        5504
+      ],
+      "camera_make": "NIKON CORPORATION",
+      "camera_model": "NIKON Z 9",
+      "exif_orientation": 1,
+      "native_detail": "Full JPEG decoded; native camera geometry verified; never upscale"
+    },
+    {
+      "id": "photo-kinshasa",
+      "kind": "nasa",
+      "category": "photograph",
+      "family": "congo-kinshasa",
+      "title": "Kinshasa and Congo River",
+      "nasa_id": "ISS073-E-1208",
+      "page_url": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS073&roll=E&frame=1208",
+      "expected_size": [
+        8256,
+        5504
+      ],
+      "split": "development",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/photo-kinshasa/source.jpg",
+      "asset_sha256": "fc4b106c977d350f19867cef7db7e76aeef5c8a57b36bc940735701de7f49766",
+      "asset_bytes": 8180816,
+      "acquisition_version": 1,
+      "stored_size": [
+        8256,
+        5504
+      ],
+      "oriented_size": [
+        8256,
+        5504
+      ],
+      "camera_make": "NIKON CORPORATION",
+      "camera_model": "NIKON Z 9",
+      "exif_orientation": 1,
+      "native_detail": "Full JPEG decoded; native camera geometry verified; never upscale"
+    },
+    {
+      "id": "photo-orenburg-snow",
+      "kind": "nasa",
+      "category": "photograph",
+      "family": "orenburg-winter-rivers",
+      "title": "Orenburg snow and Ural/Sakmara rivers",
+      "nasa_id": "ISS064-E-35934",
+      "page_url": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS064&roll=E&frame=35934",
+      "expected_size": [
+        8256,
+        5504
+      ],
+      "split": "development",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v5/photo-orenburg-snow/source.jpg",
+      "asset_sha256": "65ac70804ad11c0db698c94fc09433375ff85c3f38f28ca00721a0bf814563dc",
+      "asset_bytes": 10589436,
+      "acquisition_version": 5,
+      "stored_size": [
+        8256,
+        5504
+      ],
+      "oriented_size": [
+        8256,
+        5504
+      ],
+      "camera_make": "NIKON CORPORATION",
+      "camera_model": "NIKON D850",
+      "exif_orientation": 1,
+      "native_detail": "Full JPEG decoded; native camera geometry verified; never upscale"
+    },
+    {
+      "id": "photo-new-orleans",
+      "kind": "nasa",
+      "category": "photograph",
+      "family": "louisiana-new-orleans",
+      "title": "New Orleans, Mississippi, and Lake Pontchartrain",
+      "nasa_id": "ISS064-E-40714",
+      "page_url": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS064&roll=E&frame=40714",
+      "expected_size": [
+        8256,
+        5504
+      ],
+      "split": "holdout",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/photo-new-orleans/source.jpg",
+      "asset_sha256": "c3d4846b8f584657cbe2f4dc286c138654266a31fdd5abaea0dfdc0d5835a10a",
+      "asset_bytes": 7864082,
+      "acquisition_version": 1,
+      "stored_size": [
+        8256,
+        5504
+      ],
+      "oriented_size": [
+        8256,
+        5504
+      ],
+      "camera_make": "NIKON CORPORATION",
+      "camera_model": "NIKON D850",
+      "exif_orientation": 1,
+      "native_detail": "Full JPEG decoded; native camera geometry verified; never upscale"
+    },
+    {
+      "id": "photo-naples",
+      "kind": "nasa",
+      "category": "photograph",
+      "family": "italy-naples",
+      "title": "Naples, Vesuvius, and mountains",
+      "nasa_id": "ISS064-E-40710",
+      "page_url": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS064&roll=E&frame=40710",
+      "expected_size": [
+        8256,
+        5504
+      ],
+      "split": "holdout",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/photo-naples/source.jpg",
+      "asset_sha256": "97d23e950bda7d06b63728081e7080c9d803bd64c26011df30970f98be763af3",
+      "asset_bytes": 10317837,
+      "acquisition_version": 1,
+      "stored_size": [
+        8256,
+        5504
+      ],
+      "oriented_size": [
+        8256,
+        5504
+      ],
+      "camera_make": "NIKON CORPORATION",
+      "camera_model": "NIKON D850",
+      "exif_orientation": 1,
+      "native_detail": "Full JPEG decoded; native camera geometry verified; never upscale"
+    },
+    {
+      "id": "photo-emi-koussi",
+      "kind": "nasa",
+      "category": "photograph",
+      "family": "chad-emi-koussi",
+      "title": "Emi Koussi volcano and desert",
+      "nasa_id": "ISS072-E-423041",
+      "page_url": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS072&roll=E&frame=423041",
+      "expected_size": [
+        8256,
+        5504
+      ],
+      "split": "holdout",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/photo-emi-koussi/source.jpg",
+      "asset_sha256": "477049fafcc721c730303cbfe8fbb003892bf67ba9cca18eca41714d593f6030",
+      "asset_bytes": 8270919,
+      "acquisition_version": 1,
+      "stored_size": [
+        8256,
+        5504
+      ],
+      "oriented_size": [
+        8256,
+        5504
+      ],
+      "camera_make": "NIKON CORPORATION",
+      "camera_model": "NIKON Z 9",
+      "exif_orientation": 1,
+      "native_detail": "Full JPEG decoded; native camera geometry verified; never upscale"
+    },
+    {
+      "id": "texture-coleus",
+      "kind": "commons",
+      "category": "texture",
+      "family": "coleus",
+      "title": "File:Coleus scutellarioides (cultivars) - Jardin universitaire Roger-Van den Hende, Quebec 36.jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:Coleus_scutellarioides_(cultivars)_-_Jardin_universitaire_Roger-Van_den_Hende,_Quebec_36.jpg",
+      "asset_url": "https://upload.wikimedia.org/wikipedia/commons/1/16/Coleus_scutellarioides_%28cultivars%29_-_Jardin_universitaire_Roger-Van_den_Hende%2C_Quebec_36.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "expected_size": [
+        8256,
+        5504
+      ],
+      "expected_bytes": 43187417,
+      "expected_sha1": "03c4297c96a60cbba46ced08090339e5695c8777",
+      "license": {
+        "value": "CC0",
+        "source": "commons-desc-page",
+        "hidden": ""
+      },
+      "author": {
+        "value": "<bdi><a href=\"https://www.wikidata.org/wiki/Q115464159\" class=\"extiw\" title=\"d:Q115464159\"><span title=\"developer analyst and photographer from Venezuela\">Wilfredor</span></a></bdi>",
+        "source": "commons-desc-page"
+      },
+      "split": "development",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/texture-coleus/source.jpg",
+      "asset_sha256": "0c268763eda48814e43d8a9d31549762ea6e17604fea40cbe8920333cc61d5d9",
+      "asset_bytes": 43187417,
+      "acquisition_version": 1,
+      "stored_size": [
+        8256,
+        5504
+      ],
+      "oriented_size": [
+        8256,
+        5504
+      ],
+      "camera_make": "NIKON CORPORATION",
+      "camera_model": "NIKON Z 7_2",
+      "exif_orientation": 1,
+      "native_detail": "Full JPEG decoded; native camera geometry verified; never upscale"
+    },
+    {
+      "id": "texture-galium",
+      "kind": "commons",
+      "category": "texture",
+      "family": "galium",
+      "title": "File:Galium Saxalite - Alpine Flora.jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:Galium_Saxalite_-_Alpine_Flora.jpg",
+      "asset_url": "https://upload.wikimedia.org/wikipedia/commons/9/92/Galium_Saxalite_-_Alpine_Flora.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "expected_size": [
+        7952,
+        5304
+      ],
+      "expected_bytes": 15787852,
+      "expected_sha1": "f509bdc398d396122f4ca704910a7d876e66419c",
+      "license": {
+        "value": "CC BY-SA 4.0",
+        "source": "commons-desc-page",
+        "hidden": ""
+      },
+      "author": {
+        "value": "<a href=\"//commons.wikimedia.org/wiki/User:PicturElements\" title=\"User:PicturElements\">PicturElements</a>",
+        "source": "commons-desc-page"
+      },
+      "split": "holdout",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/texture-galium/source.jpg",
+      "asset_sha256": "1cc1ff429913cd031c6a700f85afefd4adbcda3610890d919b126c25d64992e2",
+      "asset_bytes": 15787852,
+      "acquisition_version": 1,
+      "stored_size": [
+        7952,
+        5304
+      ],
+      "oriented_size": [
+        7952,
+        5304
+      ],
+      "camera_make": "SONY",
+      "camera_model": "ILCE-7RM2",
+      "exif_orientation": 1,
+      "native_detail": "Full JPEG decoded; native camera geometry verified; never upscale"
+    },
+    {
+      "id": "texture-wood-wall",
+      "kind": "commons",
+      "category": "texture",
+      "family": "wood-wall",
+      "title": "File:Moscow - 2026 - Wooden wall of the Kolomensky Palace.jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:Moscow_-_2026_-_Wooden_wall_of_the_Kolomensky_Palace.jpg",
+      "asset_url": "https://upload.wikimedia.org/wikipedia/commons/9/9e/Moscow_-_2026_-_Wooden_wall_of_the_Kolomensky_Palace.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "expected_size": [
+        8256,
+        5208
+      ],
+      "expected_bytes": 23797918,
+      "expected_sha1": "7e5b209b546ad5ba6d7aaae7718520496365013b",
+      "license": {
+        "value": "CC BY 4.0",
+        "source": "commons-desc-page",
+        "hidden": ""
+      },
+      "author": {
+        "value": "<a href=\"//commons.wikimedia.org/wiki/User:%D0%AE%D1%80%D0%B8%D0%B9_%D0%94.%D0%9A.\" title=\"User:\u042e\u0440\u0438\u0439 \u0414.\u041a.\">\u042e\u0440\u0438\u0439 \u0414.\u041a.</a>",
+        "source": "commons-desc-page"
+      },
+      "split": "development",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/texture-wood-wall/source.jpg",
+      "asset_sha256": "7c28b9294226f11afb00e6e86f81c17e1b15aeccff20300ad9ae5381cb38bd04",
+      "asset_bytes": 23797918,
+      "acquisition_version": 1,
+      "stored_size": [
+        8256,
+        5208
+      ],
+      "oriented_size": [
+        8256,
+        5208
+      ],
+      "camera_make": "NIKON CORPORATION",
+      "camera_model": "NIKON Z 8",
+      "exif_orientation": 1,
+      "native_detail": "Full JPEG decoded; native camera geometry verified; never upscale"
+    },
+    {
+      "id": "texture-armeria",
+      "kind": "commons",
+      "category": "texture",
+      "family": "armeria",
+      "title": "File:Armeria maritima02(js).jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:Armeria_maritima02(js).jpg",
+      "asset_url": "https://upload.wikimedia.org/wikipedia/commons/a/af/Armeria_maritima02%28js%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "expected_size": [
+        7952,
+        5304
+      ],
+      "expected_bytes": 21673158,
+      "expected_sha1": "9b6330b5256faaed868c112190ddeae8b4835c08",
+      "license": {
+        "value": "CC BY-SA 4.0",
+        "source": "commons-desc-page",
+        "hidden": ""
+      },
+      "author": {
+        "value": "<a href=\"//commons.wikimedia.org/wiki/User:Jerzystrzelecki\" title=\"User:Jerzystrzelecki\">Jerzy Strzelecki</a>",
+        "source": "commons-desc-page"
+      },
+      "split": "holdout",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/texture-armeria/source.jpg",
+      "asset_sha256": "cd29684f11e97cecdd8dbd7ffc034793cabcd2b4e62a0e7123c587474a90ab24",
+      "asset_bytes": 21673158,
+      "acquisition_version": 1,
+      "stored_size": [
+        7952,
+        5304
+      ],
+      "oriented_size": [
+        7952,
+        5304
+      ],
+      "camera_make": "SONY",
+      "camera_model": "ILCE-7RM2",
+      "exif_orientation": 1,
+      "native_detail": "Full JPEG decoded; native camera geometry verified; never upscale"
+    },
+    {
+      "id": "photo-el-salvador",
+      "kind": "nasa",
+      "category": "texture",
+      "family": "el-salvador-santa-ana",
+      "title": "Santa Ana volcano and tropical forest",
+      "nasa_id": "ISS064-E-40735",
+      "page_url": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS064&roll=E&frame=40735",
+      "expected_size": [
+        8256,
+        5504
+      ],
+      "split": "development",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/photo-el-salvador/source.jpg",
+      "asset_sha256": "0c0f9c7093938f0fdf91a8b52182c8a759e8cfc67cb6a6ba12749c731639b123",
+      "asset_bytes": 10077681,
+      "acquisition_version": 1,
+      "stored_size": [
+        8256,
+        5504
+      ],
+      "oriented_size": [
+        8256,
+        5504
+      ],
+      "camera_make": "NIKON CORPORATION",
+      "camera_model": "NIKON D850",
+      "exif_orientation": 1,
+      "native_detail": "Full JPEG decoded; native camera geometry verified; never upscale"
+    },
+    {
+      "id": "texture-bergen-forest",
+      "kind": "commons",
+      "category": "texture",
+      "family": "bergen-forest",
+      "title": "File:Bergen NH Edge of the forest seen from Paddenpad to the northeast.jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:Bergen_NH_Edge_of_the_forest_seen_from_Paddenpad_to_the_northeast.jpg",
+      "asset_url": "https://upload.wikimedia.org/wikipedia/commons/3/33/Bergen_NH_Edge_of_the_forest_seen_from_Paddenpad_to_the_northeast.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "expected_size": [
+        8256,
+        5504
+      ],
+      "expected_bytes": 36265377,
+      "expected_sha1": "67e24191ed5fda326a769a708844f6e52d421977",
+      "license": {
+        "value": "CC BY-SA 4.0",
+        "source": "commons-desc-page",
+        "hidden": ""
+      },
+      "author": {
+        "value": "<a href=\"//commons.wikimedia.org/wiki/User:Ymblanter\" title=\"User:Ymblanter\">Ymblanter</a>",
+        "source": "commons-desc-page"
+      },
+      "split": "holdout",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/texture-bergen-forest/source.jpg",
+      "asset_sha256": "ad4f0878f0ef79c85d4efe58d3b9b3de986e8d89d97f41a2dbe60bd42ea161bd",
+      "asset_bytes": 36265377,
+      "acquisition_version": 1,
+      "stored_size": [
+        8256,
+        5504
+      ],
+      "oriented_size": [
+        8256,
+        5504
+      ],
+      "camera_make": "NIKON CORPORATION",
+      "camera_model": "NIKON Z 7_2",
+      "exif_orientation": 1,
+      "native_detail": "Full JPEG decoded; native camera geometry verified; never upscale"
+    },
+    {
+      "id": "map-choh",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-choh",
+      "title": "Great-Falls-Hiking-Map.pdf",
+      "page_url": "https://www.nps.gov/choh/planyourvisit/upload/Great-Falls-Hiking-Map.pdf",
+      "asset_url": "https://www.nps.gov/choh/planyourvisit/upload/Great-Falls-Hiking-Map.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1,
+      "replaces": "map-gaar",
+      "reason": "Old PDF link serves an HTML redirect page, not a PDF.",
+      "split": "development",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v2/map-choh/source.pdf",
+      "asset_sha256": "caa298fc96b5b5118ef9f7289b271054b693631b9b0d9816622eb7ee0d8f9eab",
+      "asset_bytes": 213286,
+      "acquisition_version": 2,
+      "native_detail": "Selected PDF page has no embedded raster objects (pdfimages)",
+      "pdf_raster_objects_before_crop": 0
+    },
+    {
+      "id": "map-muwo",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-muwo",
+      "title": "map-muwo-trail-2019-small.pdf",
+      "page_url": "https://www.nps.gov/goga/planyourvisit/upload/map-muwo-trail-2019-small.pdf",
+      "asset_url": "https://www.nps.gov/goga/planyourvisit/upload/map-muwo-trail-2019-small.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1,
+      "replaces": "map-redw",
+      "reason": "Prefer a map page with no embedded raster objects, to keep 8K vector rendering unambiguous. Prior candidate remains archived as a mixed vector/raster source.",
+      "split": "holdout",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v3/map-muwo/source.pdf",
+      "asset_sha256": "419e9db457c2d82203e066e98c664650dd7044b762c25c96c57444e6015864c4",
+      "asset_bytes": 158347,
+      "acquisition_version": 3,
+      "pdf_crop_points": [
+        0.0,
+        83.25,
+        792.0,
+        528.75
+      ],
+      "native_detail": "Vector content in selected crop; embedded raster logos outside crop",
+      "pdf_raster_objects_before_crop": 1
+    },
+    {
+      "id": "map-mora",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-mora",
+      "title": "Ohanapecosh7-2019_.pdf",
+      "page_url": "https://www.nps.gov/mora/planyourvisit/upload/Ohanapecosh7-2019_.pdf",
+      "asset_url": "https://www.nps.gov/mora/planyourvisit/upload/Ohanapecosh7-2019_.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1,
+      "replaces": "map-grca",
+      "reason": "Entire map is one 1826x1429 JPEG; excluded from native 8K admission.",
+      "split": "development",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v2/map-mora/source.pdf",
+      "asset_sha256": "07becb12e4cb2f73b4f31224f5963ab4a1b4af5d4dce9efb6fc99d6386416e79",
+      "asset_bytes": 236818,
+      "acquisition_version": 2,
+      "native_detail": "Selected PDF page has no embedded raster objects (pdfimages)",
+      "pdf_raster_objects_before_crop": 0
+    },
+    {
+      "id": "map-shen",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-shen",
+      "title": "Bearfence_RoadTrail.pdf",
+      "page_url": "https://www.nps.gov/shen/planyourvisit/upload/Bearfence_RoadTrail.pdf",
+      "asset_url": "https://www.nps.gov/shen/planyourvisit/upload/Bearfence_RoadTrail.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1,
+      "replaces": "map-care",
+      "reason": "Prefer a map page with no embedded raster objects, to keep 8K vector rendering unambiguous. Prior candidate remains archived as a mixed vector/raster source.",
+      "split": "holdout",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v3/map-shen/source.pdf",
+      "asset_sha256": "248be52953f5cc0164e863f00c3212dddda92ca86c8ac1de1a29955bbd682f53",
+      "asset_bytes": 419782,
+      "acquisition_version": 3,
+      "pdf_crop_points": [
+        0.0,
+        223.875,
+        612.0,
+        568.125
+      ],
+      "native_detail": "Vector content in selected crop; embedded raster logos outside crop",
+      "pdf_raster_objects_before_crop": 1
+    },
+    {
+      "id": "text-nist-sha",
+      "kind": "pdf",
+      "category": "text",
+      "family": "nist-sha",
+      "title": "NIST FIPS 180-4 hash standard",
+      "page_url": "https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf",
+      "asset_url": "https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf",
+      "planned_pdf_page": 15,
+      "split": "development",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-nist-sha/source.pdf",
+      "asset_sha256": "0455b406d89648d20cbde375561e19c245b9815e894164c2670772e3d54deb82",
+      "asset_bytes": 833315,
+      "acquisition_version": 1,
+      "native_detail": "Selected PDF page has no embedded raster objects (pdfimages)",
+      "pdf_raster_objects_before_crop": 0
+    },
+    {
+      "id": "text-nasa-api",
+      "kind": "pdf",
+      "category": "text",
+      "family": "nasa-api",
+      "title": "NASA image library API documentation",
+      "page_url": "https://images.nasa.gov/docs/images.nasa.gov_api_docs.pdf",
+      "asset_url": "https://images.nasa.gov/docs/images.nasa.gov_api_docs.pdf",
+      "planned_pdf_page": 3,
+      "split": "holdout",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-nasa-api/source.pdf",
+      "asset_sha256": "768f5ee932ff0a3a9195970221b4b2d64ef07971d283d2a34faf0769a2f70ac1",
+      "asset_bytes": 417364,
+      "acquisition_version": 1,
+      "native_detail": "Selected PDF page has no embedded raster objects (pdfimages)",
+      "pdf_raster_objects_before_crop": 0
+    },
+    {
+      "id": "text-census-income",
+      "kind": "pdf",
+      "category": "text",
+      "family": "census-income",
+      "title": "Census income report P60-282",
+      "page_url": "https://www2.census.gov/library/publications/2024/demo/p60-282.pdf",
+      "asset_url": "https://www2.census.gov/library/publications/2024/demo/p60-282.pdf",
+      "planned_pdf_page": 9,
+      "split": "development",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-census-income/source.pdf",
+      "asset_sha256": "e6cf145cb10b5d037f5e77fa199d2e558bfe24f76273f385e9767c2eabba1cbf",
+      "asset_bytes": 1890167,
+      "acquisition_version": 1,
+      "native_detail": "Selected PDF page has no embedded raster objects (pdfimages)",
+      "pdf_raster_objects_before_crop": 0
+    },
+    {
+      "id": "text-irs-form",
+      "kind": "pdf",
+      "category": "text",
+      "family": "irs-form",
+      "title": "IRS Form 1040",
+      "page_url": "https://www.irs.gov/pub/irs-pdf/f1040.pdf",
+      "asset_url": "https://www.irs.gov/pub/irs-pdf/f1040.pdf",
+      "planned_pdf_page": 1,
+      "split": "holdout",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-irs-form/source.pdf",
+      "asset_sha256": "3d31c226df0d189ced80e039d01cf0f8820c1019681a0f0ca6264de277b7e982",
+      "asset_bytes": 220237,
+      "acquisition_version": 1,
+      "native_detail": "Selected PDF page has no embedded raster objects (pdfimages)",
+      "pdf_raster_objects_before_crop": 0
+    },
+    {
+      "id": "text-noaa-ian",
+      "kind": "pdf",
+      "category": "text",
+      "family": "noaa-ian",
+      "title": "NOAA Hurricane Ian report",
+      "page_url": "https://www.nhc.noaa.gov/data/tcr/AL092022_Ian.pdf",
+      "asset_url": "https://www.nhc.noaa.gov/data/tcr/AL092022_Ian.pdf",
+      "planned_pdf_page": 3,
+      "split": "development",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-noaa-ian/source.pdf",
+      "asset_sha256": "804d2a867917d4ab157e5b2b1e444d21d306379a08d07ffd7059d157a4b15fce",
+      "asset_bytes": 7049210,
+      "acquisition_version": 1,
+      "pdf_crop_points": [
+        0.0,
+        223.875,
+        612.0,
+        568.125
+      ],
+      "native_detail": "Vector content in selected crop; embedded raster logos outside crop",
+      "pdf_raster_objects_before_crop": 2
+    },
+    {
+      "id": "text-cdc-mmwr",
+      "kind": "pdf",
+      "category": "text",
+      "family": "cdc-mmwr",
+      "title": "CDC MMWR 53(1)",
+      "page_url": "https://www.cdc.gov/mmwr/pdf/wk/mm5301.pdf",
+      "asset_url": "https://www.cdc.gov/mmwr/pdf/wk/mm5301.pdf",
+      "planned_pdf_page": 2,
+      "split": "holdout",
+      "asset_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-cdc-mmwr/source.pdf",
+      "asset_sha256": "79dcb3b5cdb1e3e6316a2946f588eba8dfdd605dbd848dc827c793628ed2e518",
+      "asset_bytes": 426452,
+      "acquisition_version": 1,
+      "native_detail": "Selected PDF page has no embedded raster objects (pdfimages)",
+      "pdf_raster_objects_before_crop": 0
+    }
+  ],
+  "exposure": {
+    "av1_decodes": 0,
+    "av1_performance_measurements": 0
+  },
+  "limitations": [
+    "PDFs are native vector render sources, not camera photographs.",
+    "No HDR claim: source rasters are 8-bit; bit-depth edge coverage remains future work.",
+    "Encoder/quality/bit-depth/tile/edge assignments and output hashes still need freezing.",
+    "No verified off-host backup of large local assets."
+  ],
+  "content_review": "All selected source previews inspected before any AV1 work.",
+  "primary_crop": "Centered 16:9; downsample camera rasters, render PDF vectors at target resolution."
+}

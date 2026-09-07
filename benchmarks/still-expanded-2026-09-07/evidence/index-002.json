@@ -1,0 +1,149 @@
+[
+  {
+    "file": "8100-lilith-web-screenshots.md.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/registry-supplement/8100-lilith-web-screenshots.md",
+    "bytes": 3614,
+    "sha256": "f9bacb21d140b9f135466eeee1018404613ef211478c643c91cf153a261e6fa4",
+    "compressed_sha256": "9613cafee3556c0b6a14fe13988bb6db8a01d5ac2a6b59fa9dd4f2c177b86bd3"
+  },
+  {
+    "file": "acquisition-v1-map-dena-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/map-dena/pdfimages.txt",
+    "bytes": 1302,
+    "sha256": "cdf62d9a1cecba3aacf35386041e68f9e9c5e5fb45d14c194137844f11e1d872",
+    "compressed_sha256": "9951172d187b41aefdaf41a4697f6cdae1eb975bd7c4ba61a196aa0ab836086a"
+  },
+  {
+    "file": "acquisition-v1-map-grca-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/map-grca/pdfimages.txt",
+    "bytes": 279,
+    "sha256": "09b971898eb3b1eb396aed44dc86896787e0ec99130c32753d3e252b28c1a8a7",
+    "compressed_sha256": "574b13cc02836cd46a5b8d59c65daa519e21eb1d2c90f68de3e05552e22fccc1"
+  },
+  {
+    "file": "acquisition-v1-map-katm-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/map-katm/pdfimages.txt",
+    "bytes": 2418,
+    "sha256": "b426bd3dbe1b3d0da2de86e690eddcb63974f1394b32f2d942d7d8df3eabbe42",
+    "compressed_sha256": "72acaa9a22764254dfa4ebc4fc7ce4cacf4427430c0c3774f880a32f17bb0e9d"
+  },
+  {
+    "file": "acquisition-v1-map-redw-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/map-redw/pdfimages.txt",
+    "bytes": 558,
+    "sha256": "c67a9a9d3d3a6a2b98fb4bc253f14ab75b65b5864f865764f6a39b91bcb00b5c",
+    "compressed_sha256": "46192aa31ad46b104eaed15103bce2c9570cd5858c32a5e493494bd6a00784e3"
+  },
+  {
+    "file": "acquisition-v1-text-cdc-mmwr-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-cdc-mmwr/pdfimages.txt",
+    "bytes": 186,
+    "sha256": "0fabc764e123f7f3acd3eaa47311e1c50317f8bbb5b50878e699f21534352e8e",
+    "compressed_sha256": "7134332a091df4be9570e89ddac58085bac94ee73f18ca6639cd3aa63844419f"
+  },
+  {
+    "file": "acquisition-v1-text-census-income-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-census-income/pdfimages.txt",
+    "bytes": 186,
+    "sha256": "0fabc764e123f7f3acd3eaa47311e1c50317f8bbb5b50878e699f21534352e8e",
+    "compressed_sha256": "7134332a091df4be9570e89ddac58085bac94ee73f18ca6639cd3aa63844419f"
+  },
+  {
+    "file": "acquisition-v1-text-irs-form-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-irs-form/pdfimages.txt",
+    "bytes": 186,
+    "sha256": "0fabc764e123f7f3acd3eaa47311e1c50317f8bbb5b50878e699f21534352e8e",
+    "compressed_sha256": "7134332a091df4be9570e89ddac58085bac94ee73f18ca6639cd3aa63844419f"
+  },
+  {
+    "file": "acquisition-v1-text-nasa-api-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-nasa-api/pdfimages.txt",
+    "bytes": 186,
+    "sha256": "0fabc764e123f7f3acd3eaa47311e1c50317f8bbb5b50878e699f21534352e8e",
+    "compressed_sha256": "7134332a091df4be9570e89ddac58085bac94ee73f18ca6639cd3aa63844419f"
+  },
+  {
+    "file": "acquisition-v1-text-nist-sha-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-nist-sha/pdfimages.txt",
+    "bytes": 186,
+    "sha256": "0fabc764e123f7f3acd3eaa47311e1c50317f8bbb5b50878e699f21534352e8e",
+    "compressed_sha256": "7134332a091df4be9570e89ddac58085bac94ee73f18ca6639cd3aa63844419f"
+  },
+  {
+    "file": "acquisition-v1-text-noaa-ian-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/text-noaa-ian/pdfimages.txt",
+    "bytes": 372,
+    "sha256": "c4819b4ee22b74b9b718550a7662d825bf217ba538b98f5f395e83507326bebd",
+    "compressed_sha256": "6d91115ac103962790d06a05ee1f12b3e0739007253aa32259f2cc0ee92757dd"
+  },
+  {
+    "file": "acquisition-v2-map-choh-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v2/map-choh/pdfimages.txt",
+    "bytes": 186,
+    "sha256": "0fabc764e123f7f3acd3eaa47311e1c50317f8bbb5b50878e699f21534352e8e",
+    "compressed_sha256": "7134332a091df4be9570e89ddac58085bac94ee73f18ca6639cd3aa63844419f"
+  },
+  {
+    "file": "acquisition-v2-map-mora-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v2/map-mora/pdfimages.txt",
+    "bytes": 186,
+    "sha256": "0fabc764e123f7f3acd3eaa47311e1c50317f8bbb5b50878e699f21534352e8e",
+    "compressed_sha256": "7134332a091df4be9570e89ddac58085bac94ee73f18ca6639cd3aa63844419f"
+  },
+  {
+    "file": "acquisition-v2-map-redw-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v2/map-redw/pdfimages.txt",
+    "bytes": 5487,
+    "sha256": "f6f3c2a9f977f0e0d9441bcb4de7928a435b8e430bfcb8feaf9f562457293b30",
+    "compressed_sha256": "266fc6771fe076ac21217f6ea73e7c0ee4859cbbb82eff328ef6f27eecf9127d"
+  },
+  {
+    "file": "acquisition-v3-map-dewa-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v3/map-dewa/pdfimages.txt",
+    "bytes": 2976,
+    "sha256": "54fba515cfab087cd5e534a3fbec6a5a47e9a1eca465e26b61aee2964d63c998",
+    "compressed_sha256": "30875193232f0dbda840350a804d5798a4116df3279298d222823906ca1244a6"
+  },
+  {
+    "file": "acquisition-v3-map-fova-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v3/map-fova/pdfimages.txt",
+    "bytes": 279,
+    "sha256": "e9334dee699c67d0446ba6b4a51646f893f5809a293c1f5758e223eb5ab9b5d8",
+    "compressed_sha256": "ab06ccf95fe7f429bee7a0867e6fd6513f5e600f88634fd6823a5d67c5fac558"
+  },
+  {
+    "file": "acquisition-v3-map-muwo-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v3/map-muwo/pdfimages.txt",
+    "bytes": 279,
+    "sha256": "127276f4e8ba42ce45995533d132c151413c6274f7640b60f7d8451f46683bce",
+    "compressed_sha256": "5f1a4a636e988c3a6732d2524090692ebb5c7a5a8dffaaaf36b4689f2d5a73c9"
+  },
+  {
+    "file": "acquisition-v3-map-shen-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v3/map-shen/pdfimages.txt",
+    "bytes": 279,
+    "sha256": "bd7b5599dab3b37fb54ef680bd4690e3ea2ae7ce8773550a5eca5a305cb027c1",
+    "compressed_sha256": "fa3b5bae88587d84d4b5d043d3944f35d42464c4f27506ceb250ce771aee9a69"
+  },
+  {
+    "file": "acquisition-v4-map-deva-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v4/map-deva/pdfimages.txt",
+    "bytes": 465,
+    "sha256": "75c835793c9c9c9ebd35c2c1d1013ba1fa18e9bbd1697f6c8c09801d5bfb4db7",
+    "compressed_sha256": "9dcf6d5750e0086904ca58e96b889c9cf703d8ccd321f4edf861d6327648fa93"
+  },
+  {
+    "file": "acquisition-v4-map-yose-pdfimages.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v4/map-yose/pdfimages.txt",
+    "bytes": 3348,
+    "sha256": "e1262fbd6c275ab39c443675be3e789f4ed96aa99ad9069761b6c969d808e982",
+    "compressed_sha256": "6d2eab04039b778274390d9570e35158731b65a41c14e0db0f9c2e05adee55a7"
+  },
+  {
+    "file": "packed16-ci-26-pass.json.gz",
+    "source": "gh pr view 528 --repo imazen/rav1d-safe --json headRefOid,statusCheckRollup",
+    "bytes": 9735,
+    "sha256": "f41625454362e29e3383288aabd08ad6a0b9512d144bbd4047a3525da7ff3304",
+    "compressed_sha256": "31a937b33e82504308c3eb49b5af56e9a1a1030ef12d1ea967879ad79c7c9d74"
+  }
+]
