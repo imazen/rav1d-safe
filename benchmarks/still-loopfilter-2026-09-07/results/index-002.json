@@ -1,0 +1,110 @@
+[
+  {
+    "file": "early-return-screen-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/early-return-screen.jsonl",
+    "bytes": 24514,
+    "sha256": "4795238bad0010a51e12aa22921ad102ca8dc626e4ecf695963d08077d9addb1"
+  },
+  {
+    "file": "early-return-screen-002.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/early-return-screen.jsonl",
+    "bytes": 24557,
+    "sha256": "58aca9640ea4107ac0d2efc2e754988b3613d5d0f6783adf7b7eeea069b1820e"
+  },
+  {
+    "file": "early-return-screen-003.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/early-return-screen.jsonl",
+    "bytes": 24430,
+    "sha256": "e91b9bc58bfb5f2459c3ce1c40b9f1fbb76232a6fe4e4250fdcc452f155ea8df"
+  },
+  {
+    "file": "early-return-screen-004.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/early-return-screen.jsonl",
+    "bytes": 19450,
+    "sha256": "2f7cb5d29cf9873e15b8548ef95812ae6f5c2024c32b6a2e2a6773858782ffd8"
+  },
+  {
+    "file": "early-return-screen.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/early-return-screen.log",
+    "bytes": 1120,
+    "sha256": "e012a70d7574cb2fbf2629179faa40b3717990ada5c1882af4f079722d9ef1d5"
+  },
+  {
+    "file": "early-return-source-audit.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/early-return-source-audit.json",
+    "bytes": 1113,
+    "sha256": "5b952e99eaf3a52f983313fc948bd0c4911c81a94c4675d265797bd7ba4a058d"
+  },
+  {
+    "file": "early8-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/early8-builds.json",
+    "bytes": 554,
+    "sha256": "96240902304565da417b8a9369350af4bc1cae80ac9b7be6038fa8fb1662c723"
+  },
+  {
+    "file": "early8-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/early8-checked-build.log",
+    "bytes": 258,
+    "sha256": "88c4765c08444fd0aab018002975bc8e15c9118632392d0a6babc6e544e63db2"
+  },
+  {
+    "file": "earlywide-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/earlywide-builds.json",
+    "bytes": 557,
+    "sha256": "15ff2359a147d1e85340c85429f8705aa331959f967709c01fa006b93f199e47"
+  },
+  {
+    "file": "earlywide-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/earlywide-checked-build.log",
+    "bytes": 261,
+    "sha256": "f36e72befcf6632e747e93a7c5cf48af0c86fe208b97498254318da301245b36"
+  },
+  {
+    "file": "mask-census-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/mask-census-build.log",
+    "bytes": 570,
+    "sha256": "83a8af18899075595b8555196f2f695bdc78a18c813e29cb7ab5b3580748fba0"
+  },
+  {
+    "file": "mask-census-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/mask-census-builds.json",
+    "bytes": 559,
+    "sha256": "b111b10fa288934f2e4aaad021d888e8626e0080d3fcde5725c7072d2b3185ef"
+  },
+  {
+    "file": "mask-census-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/mask-census-checked-build.log",
+    "bytes": 266,
+    "sha256": "52e531e202bb249dfa51e5a0d3a68fe07f9f6a8241e1ef2136d6d884f2845ee4"
+  },
+  {
+    "file": "mask-census-consistency.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/mask-census-consistency.json",
+    "bytes": 447,
+    "sha256": "a1195a5a5ea8e34671d724f2ea8108c93e21b2bc2c38c348f21e864734a1a7ab"
+  },
+  {
+    "file": "mask-census-source-audit.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/mask-census-source-audit.json",
+    "bytes": 2402,
+    "sha256": "6d5741cc99702271f302b9c81f0d62df399cb0f902ade794f2daf97ca14c2504"
+  },
+  {
+    "file": "mask-census-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/mask-census-summary.json",
+    "bytes": 371925,
+    "sha256": "35832b7497cdb9caa000c2974ec5050fcadd9dd820c067e4bf1423cf66f506ef"
+  },
+  {
+    "file": "mask-census.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/mask-census.log",
+    "bytes": 4666,
+    "sha256": "52a27c69d770a2e2fee5891d7ed37dfa7363fa8b8744157e9866c6ad15a5e6e0"
+  },
+  {
+    "file": "transform-984d41dd-ci.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-loopfilter-2026-09-07/transform-984d41dd-ci.json",
+    "bytes": 9835,
+    "sha256": "3c2fa8bbd9224b86b9598e28226096473fc5029a7328e71f8b96ee0152b4d0a3"
+  }
+]

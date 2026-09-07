@@ -5,8 +5,11 @@ Retain the 8×8 fallback specialization and connect fourteen existing mixed
 the confirmed 2K/4K photo cells. Against that improved baseline, the dispatch
 connection cuts about 6.1–6.2% from 8K photo decoding at one and eight workers.
 Both gains survive matched alternate-alignment checks. Arithmetic and
-reference construction are unchanged. The latest candidate still takes
-1.64–2.28× upstream time; parity and release acceptance remain unmet.
+reference construction are unchanged. That candidate took 1.64–2.28×
+upstream time. The [mixed 8×8 follow-up](MIXED8.md) adds another measured
+improvement and records its placement-sensitive threaded 8K limitation;
+latest selected ratios are 1.52–2.22×. Parity and release acceptance remain
+unmet.
 
 Draft [PR #528](https://github.com/imazen/rav1d-safe/pull/528), following
 `docs/PERFORMANCE_PARITY_GOAL.md`. The entropy experiments retain the earlier
