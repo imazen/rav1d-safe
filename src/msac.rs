@@ -356,17 +356,23 @@ const EC_WIN_SIZE: usize = mem::size_of::<EcWin>() << 3;
 /// For i < val: cdf[i] += (32768 - cdf[i]) >> rate (probability increases)
 /// For i >= val: cdf[i] -= cdf[i] >> rate (probability decreases)
 ///
-/// Uses mask-select to avoid branches on the val boundary.
+/// Select the distance before shifting, so each probability needs one shift.
 #[inline(always)]
 fn update_cdf(cdf: &mut [u16], n: usize, val: usize, rate: u16, count: u16) {
     for i in 0..n {
-        let mask = ((i < val) as u16).wrapping_neg(); // 0xFFFF if below val, 0 otherwise
-        let delta_up = (32768u16.wrapping_sub(cdf[i])) >> rate;
-        let delta_dn = cdf[i] >> rate;
-        // Apply increase (delta_up) if below val, decrease (delta_dn) if at/above val
-        cdf[i] = cdf[i]
-            .wrapping_add(delta_up & mask)
-            .wrapping_sub(delta_dn & !mask);
+        let p = cdf[i];
+        let increase = i < val;
+        let distance = if increase {
+            32768u16.wrapping_sub(p)
+        } else {
+            p
+        };
+        let delta = distance >> rate;
+        cdf[i] = if increase {
+            p.wrapping_add(delta)
+        } else {
+            p.wrapping_sub(delta)
+        };
     }
     cdf[n] = count + (count < 32) as u16;
 }
@@ -929,4 +935,157 @@ pub fn rav1d_msac_decode_hi_tok(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
     }
     debug_assert!(ret < 16);
     ret % 16
+}
+
+#[cfg(all(test, not(asm_msac)))]
+mod tests {
+    use super::*;
+    use crate::src::c_box::CBox;
+
+    fn random(seed: &mut u64) -> u32 {
+        *seed ^= *seed << 13;
+        *seed ^= *seed >> 7;
+        *seed ^= *seed << 17;
+        (*seed >> 16) as u32
+    }
+
+    fn state(s: &MsacContext) -> (EcWin, c_uint, c_int, usize) {
+        (s.dif, s.rng, s.cnt, s.buf.pos)
+    }
+
+    #[test]
+    fn cdf_update_matches_directional_arithmetic_for_every_u16() {
+        // Independent of the decoder reference, which also calls update_cdf.
+        // Exercise every input bit pattern, including the nonstandard high
+        // half, and every AV1 rate, symbol direction, and count transition.
+        for probability in 0..=u16::MAX {
+            for rate in 4..=7 {
+                for val in 0..=1 {
+                    for count in [0, 15, 16, 31, 32] {
+                        let mut cdf = [probability, count, 0xfade];
+                        update_cdf(&mut cdf, 1, val, rate, count);
+                        let divisor = 1u32 << rate;
+                        let expected = if val == 0 {
+                            u32::from(probability) - u32::from(probability) / divisor
+                        } else {
+                            u32::from(probability)
+                                + ((32768 + 65536 - u32::from(probability)) % 65536) / divisor
+                        } as u16;
+                        assert_eq!(cdf, [expected, count + u16::from(count < 32), 0xfade]);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn adapt4_matches_reference_through_refills_and_preserves_unused_cdf() {
+        let mut seed = 0x61d4_f283_190b_7365;
+        let mut symbols = [0usize; 4];
+        for len in [0, 1, 2, 7, 8, 9, 15, 16, 17, 64, 511] {
+            for n in 1..=3 {
+                for update in [false, true] {
+                    for count in [0, 15, 16, 31, 32] {
+                        let bytes: Vec<_> = (0..len).map(|_| random(&mut seed) as u8).collect();
+                        let data = CArc::wrap(CBox::Rust(bytes.into_boxed_slice())).unwrap();
+                        let dsp = Rav1dMsacDSPContext::default();
+                        let mut actual = MsacContext::new(data.clone(), !update, &dsp);
+                        let mut reference = MsacContext::new(data, !update, &dsp);
+                        let mut a = [0xfade; 8];
+                        for probability in &mut a[..n] {
+                            *probability = (random(&mut seed) & 32767) as u16;
+                        }
+                        a[..n].sort_unstable_by(|a, b| b.cmp(a));
+                        a[n] = count;
+                        let mut b = a;
+                        for _ in 0..256 {
+                            let val = rav1d_msac_decode_symbol_adapt4(&mut actual, &mut a, n as u8);
+                            let expected = rav1d_msac_decode_symbol_adapt_rust(
+                                &mut reference,
+                                &mut b,
+                                n as u8,
+                            );
+                            symbols[val as usize] += 1;
+                            assert_eq!(val, expected, "len={len} n={n} update={update}");
+                            assert_eq!(a, b, "all CDF entries, including untouched suffix");
+                            assert_eq!(state(&actual), state(&reference));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            symbols.into_iter().all(|n| n > 100),
+            "exercise every symbol"
+        );
+    }
+
+    #[test]
+    fn adapt4_matches_reference_at_interval_boundaries_and_short_slices() {
+        let mut checks = 0;
+        for n in 1..=3 {
+            for rng in [32768, 32769, 32831, 32896, 33024, 49151, 65534, 65535] {
+                for probability in [0, 1, 31, 32, 63, 64, 65, 127, 128, 129, 16384, 32767, 32768] {
+                    // Only construct states whose first threshold is within
+                    // the coder range. The 32768 boundary needs low rng bits
+                    // to accommodate the minimum-probability contribution.
+                    if (rng >> 8) * u32::from(probability >> 6) / 2 + 4 * n as u32 > rng {
+                        continue;
+                    }
+                    for count in [0, 15, 16, 31, 32] {
+                        let mut initial = [0xfade; 8];
+                        initial[..n].fill(probability);
+                        initial[n] = count;
+                        let r = rng >> 8;
+                        for i in 0..=n {
+                            let v = if i == n {
+                                0
+                            } else {
+                                (r * u32::from(probability >> 6) >> 1) + 4 * (n - i) as u32
+                            };
+                            for c in [v.saturating_sub(1), v, v + 1, rng - 1] {
+                                if c >= rng {
+                                    continue;
+                                }
+                                for slice_len in [n + 1, 4, 8] {
+                                    for update in [false, true] {
+                                        let context = || MsacContext {
+                                            asm: MsacAsmContext {
+                                                dif: (c as EcWin) << (EC_WIN_SIZE - 16),
+                                                rng,
+                                                cnt: 64,
+                                                allow_update_cdf: update.into(),
+                                                ..Default::default()
+                                            },
+                                            ..Default::default()
+                                        };
+                                        let (mut a, mut b) = (initial, initial);
+                                        let (mut actual, mut reference) = (context(), context());
+                                        let val = rav1d_msac_decode_symbol_adapt4(
+                                            &mut actual,
+                                            &mut a[..slice_len],
+                                            n as u8,
+                                        );
+                                        let expected = rav1d_msac_decode_symbol_adapt_rust(
+                                            &mut reference,
+                                            &mut b[..slice_len],
+                                            n as u8,
+                                        );
+                                        assert_eq!(
+                                            val, expected,
+                                            "n={n} rng={rng} p={probability} c={c}"
+                                        );
+                                        assert_eq!(a, b);
+                                        assert_eq!(state(&actual), state(&reference));
+                                        checks += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checks > 50_000);
+    }
 }
