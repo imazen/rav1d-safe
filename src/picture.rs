@@ -210,10 +210,11 @@ impl Default for Rav1dPicAllocator {
     fn default() -> Self {
         Self {
             cookie: None,
+            default_pool: None,
             // SAFETY: `dav1d_default_picture_alloc` requires `p_c` be from a `&mut Dav1dPicture`,
             // `Self::alloc_picture_callback` safety preconditions guarantee that.
             // `dav1d_default_picture_alloc` also requires that `cookie` be from a `&Arc<MemPool<u8>>`,
-            // which is set if `Self::is_default()` in `rav1d_open`.
+            // which callback_cookie borrows from default_pool, initialized in rav1d_open.
             alloc_picture_callback: dav1d_default_picture_alloc,
             // SAFETY: `dav1d_default_picture_release` requires `p` be from a `&mut Dav1dPicture`
             // initialized by `dav1d_default_picture_alloc`.

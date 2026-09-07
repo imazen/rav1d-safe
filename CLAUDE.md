@@ -884,6 +884,8 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+- 2026-09-07: retained-picture allocation could dereference a default allocator cookie into a dropped decoder in `c-ffi`/`asm` builds. PR #528 retains the pool in each internal allocator clone; the formerly crashing lifecycle test and a 16-generation copy test guard it. See `docs/FFI_ALLOCATOR_LIFETIME.md`.
+
 ### Differential fuzz #522/#523: same malformed segment-ID repro
 
 Both reports reproduce the same 36-byte artifact. It yields segment ID 6
