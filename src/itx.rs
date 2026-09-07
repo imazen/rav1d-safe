@@ -80,6 +80,35 @@ fn inv_txfm_add<BD: BitDepth>(
     bd: BD,
     tmp: &mut [i32],
 ) {
+    inv_txfm_add_body(
+        dst,
+        coeff,
+        eob,
+        w,
+        h,
+        shift,
+        first_1d_fn,
+        second_1d_fn,
+        has_dc_only,
+        bd,
+        tmp,
+    );
+}
+
+#[inline(always)]
+fn inv_txfm_add_body<BD: BitDepth>(
+    dst: &mut ReconDst<'_>,
+    coeff: &mut [BD::Coef],
+    eob: i32,
+    w: usize,
+    h: usize,
+    shift: u8,
+    first_1d_fn: Itx1dFn,
+    second_1d_fn: Itx1dFn,
+    has_dc_only: bool,
+    bd: BD,
+    tmp: &mut [i32],
+) {
     let bitdepth_max = bd.bitdepth_max().as_::<i32>();
 
     assert!((4..=64).contains(&w));
@@ -255,19 +284,37 @@ fn inv_txfm_add_rust<const W: usize, const H: usize, const TYPE: TxfmType, BD: B
     // call; now `W*H` i32s = 64 B for 4x4 up to 16 KB for 64x64). The flat
     // view through `as_flattened_mut` is `&mut [i32]` of length exactly W*H.
     let mut tmp = [[0i32; W]; H];
-    inv_txfm_add(
-        dst,
-        coeff,
-        eob,
-        W,
-        H,
-        shift,
-        first_1d_fn,
-        second_1d_fn,
-        has_dc_only,
-        bd,
-        tmp.as_flattened_mut(),
-    )
+    if W == 8 && H == 8 && BD::BITDEPTH == 8 {
+        // Expose constant dimensions and transform functions to the compiler
+        // for the measured hot fallback; arithmetic shares the same body.
+        inv_txfm_add_body(
+            dst,
+            coeff,
+            eob,
+            W,
+            H,
+            shift,
+            first_1d_fn,
+            second_1d_fn,
+            has_dc_only,
+            bd,
+            tmp.as_flattened_mut(),
+        )
+    } else {
+        inv_txfm_add(
+            dst,
+            coeff,
+            eob,
+            W,
+            H,
+            shift,
+            first_1d_fn,
+            second_1d_fn,
+            has_dc_only,
+            bd,
+            tmp.as_flattened_mut(),
+        )
+    }
 }
 
 /// # Safety

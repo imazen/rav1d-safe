@@ -1,0 +1,242 @@
+[
+  {
+    "file": "alignment-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/alignment-build.log",
+    "bytes": 577,
+    "sha256": "27608788b68d61eb6aad7164923a64cd23c6b0b732ae8d63db7b32a6a7c8b7df"
+  },
+  {
+    "file": "alignment-codegen-check.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/alignment-codegen-check.json",
+    "bytes": 220,
+    "sha256": "5bf35bd714077e1534dbbc9b751ce81a7dbfec38154d2b70ec5af09f1602cccc"
+  },
+  {
+    "file": "alignment-controls.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/alignment-controls.json",
+    "bytes": 1141,
+    "sha256": "bf75a136be545632911c63a0916b4812a2b8981ddc9724971368377f1a247d53"
+  },
+  {
+    "file": "baseline-align5-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/baseline-align5-builds.json",
+    "bytes": 563,
+    "sha256": "dd9d20d069d7fc6fb005fdfeeba06b68d5f316960eb4f3dd3c472bc71cc7f736"
+  },
+  {
+    "file": "baseline-align5-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/baseline-align5-checked-build.log",
+    "bytes": 1643,
+    "sha256": "67403b4fe3fba4d7e3a5cd8a499201d43cb9864ae8b38dd2954c6a2520a809b1"
+  },
+  {
+    "file": "census-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-builds.json",
+    "bytes": 498,
+    "sha256": "298b11bd5d96562fe5503649239d7fd9b2ac6532a5061a43d017d49af06c850e"
+  },
+  {
+    "file": "census-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-checked-build.log",
+    "bytes": 261,
+    "sha256": "73ade58e71188a23ffba3b5da7cc21607a8cf5fae7a73a47f023388b132cb35c"
+  },
+  {
+    "file": "census-map-2k-min-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-map-2k-min-t1.json",
+    "bytes": 1416,
+    "sha256": "b9fc0be31f4aa052e82401729d7923287fcfea5a3c5e8f1763a91d39ded0254a"
+  },
+  {
+    "file": "census-map-2k-min-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-map-2k-min-t8.json",
+    "bytes": 1416,
+    "sha256": "7c41aff351d0b6008d1cf1a501f75b44fc397e07a9740f3c106593648a87001f"
+  },
+  {
+    "file": "census-map-2k-t8-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-map-2k-t8-t1.json",
+    "bytes": 1412,
+    "sha256": "30113ba708e6633b741ec5c7b0ae516791b4d40466bb55399af6dc7b3fcaa0a7"
+  },
+  {
+    "file": "census-map-2k-t8-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-map-2k-t8-t8.json",
+    "bytes": 1412,
+    "sha256": "4c47fcd52d14de79dfd399d2c688f045d46eb2e96188e2185a3c959a18235dcf"
+  },
+  {
+    "file": "census-map-4k-min-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-map-4k-min-t1.json",
+    "bytes": 1440,
+    "sha256": "c0215b9a16cb5ab14dd9da45b058b40123ec906e6e75e819c08143e7fcaa803e"
+  },
+  {
+    "file": "census-map-4k-min-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-map-4k-min-t8.json",
+    "bytes": 1440,
+    "sha256": "2a64cf1fffa4fd92480945dca15d36a2edb562f0e0fe1e764af86bbd4c6a2943"
+  },
+  {
+    "file": "census-map-4k-t8-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-map-4k-t8-t1.json",
+    "bytes": 1439,
+    "sha256": "8ffa2044afbafca66447516f1b1615f7fca92fc611b9decc258b58dfb2521db1"
+  },
+  {
+    "file": "census-map-4k-t8-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-map-4k-t8-t8.json",
+    "bytes": 1436,
+    "sha256": "f32971c88f3fc2023603e14adac855bf98672b03444b814bf845a9e5180ae053"
+  },
+  {
+    "file": "census-map-8k-min-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-map-8k-min-t1.json",
+    "bytes": 1467,
+    "sha256": "d8ec967b04b05cd5da08a7ae9979540e45ea5d183dde1cb7adb0a909e0105350"
+  },
+  {
+    "file": "census-map-8k-min-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-map-8k-min-t8.json",
+    "bytes": 1467,
+    "sha256": "4d715301921f86cc833ab69e8f6787c05ae4864914527114d037feb459b99223"
+  },
+  {
+    "file": "census-map-8k-t8-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-map-8k-t8-t1.json",
+    "bytes": 1464,
+    "sha256": "d562079f2e046edb3ece9bdc0c842c05251afe962b931c49597ba3e33f8dadf0"
+  },
+  {
+    "file": "census-map-8k-t8-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-map-8k-t8-t8.json",
+    "bytes": 1464,
+    "sha256": "8fce4f67310d9b76b051aa212cb629de4fcbceebdfac0cc371e99f2134fd8dc3"
+  },
+  {
+    "file": "census-photo-2k-min-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-photo-2k-min-t1.json",
+    "bytes": 1433,
+    "sha256": "dd5dd87b639c712b2c91ea9c8d20f6ba69ddf113ad4a08acf6da420dff7ef34b"
+  },
+  {
+    "file": "census-photo-2k-min-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-photo-2k-min-t8.json",
+    "bytes": 1433,
+    "sha256": "107ab209bc4fd307f6657da03d3b6792b90e309cfd6e2fc489acca55804ba6de"
+  },
+  {
+    "file": "census-photo-2k-t8-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-photo-2k-t8-t1.json",
+    "bytes": 1430,
+    "sha256": "28802be4d6e2abe187fd23edc10e6f4c33ee0f59931b8d19b8dac5c204146e76"
+  },
+  {
+    "file": "census-photo-2k-t8-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-photo-2k-t8-t8.json",
+    "bytes": 1427,
+    "sha256": "66fa1f05d24bae5a9607986224568a3620ebba21fad11f33910e931044d3b73c"
+  },
+  {
+    "file": "census-photo-4k-min-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-photo-4k-min-t1.json",
+    "bytes": 1484,
+    "sha256": "0d4fa5c41c9562bc2b7b3b9b26bd56233e4ffbd67c5c7ad5bd328e7fe4e25ebf"
+  },
+  {
+    "file": "census-photo-4k-min-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-photo-4k-min-t8.json",
+    "bytes": 1484,
+    "sha256": "b00b120a89c728da17e18a9d4a78963e089db44a7d0a682630043d08f7f6b63f"
+  },
+  {
+    "file": "census-photo-4k-t8-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-photo-4k-t8-t1.json",
+    "bytes": 1479,
+    "sha256": "679f3457375453fd6cebd894b000ceb594e1952e4cac261fde071bee94619073"
+  },
+  {
+    "file": "census-photo-4k-t8-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-photo-4k-t8-t8.json",
+    "bytes": 1476,
+    "sha256": "60960ad113e9ddc6f4708035a1f57a39b7fb70188ad0bf5aa15cedaf76caa84d"
+  },
+  {
+    "file": "census-photo-8k-min-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-photo-8k-min-t1.json",
+    "bytes": 1465,
+    "sha256": "a16c2d8c6c3e456feab346f27630b88f9caef3b75c72d1b290a53a84a7509dab"
+  },
+  {
+    "file": "census-photo-8k-min-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-photo-8k-min-t8.json",
+    "bytes": 1465,
+    "sha256": "06329fd56e31a4bd23e44eebc00cd7c7b03f4ba5dad8261d594142de9d8485b3"
+  },
+  {
+    "file": "census-photo-8k-t8-t1.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-photo-8k-t8-t1.json",
+    "bytes": 1462,
+    "sha256": "7c367e615aafe66a126b280673f73871df6c29ac60d45251e51e1b8be5dc4706"
+  },
+  {
+    "file": "census-photo-8k-t8-t8.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-photo-8k-t8-t8.json",
+    "bytes": 1459,
+    "sha256": "8d2b28e7c9fbb50084c985f1cd4f75b994ce8addd1cc4fab072cf60363a81cb0"
+  },
+  {
+    "file": "census-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census-summary.json",
+    "bytes": 65733,
+    "sha256": "6d8d98b26e875832bf61ccfe43b881d53939be394d31778c0c3e48e8a651891b"
+  },
+  {
+    "file": "census.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/census.log",
+    "bytes": 1606,
+    "sha256": "08b3ddc2a0cabee905d4c00006ad5f1723c7dfa691cde26b81a9e5b046c9308a"
+  },
+  {
+    "file": "corpus.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/corpus.json",
+    "bytes": 13107,
+    "sha256": "32c8a02d513ba044b949080d705de2d12fb62749fb43d7532e412402d89805e7"
+  },
+  {
+    "file": "inline8-align5-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-align5-builds.json",
+    "bytes": 562,
+    "sha256": "3cd10f1907550b56ec0a648c0b7135e99afda5dd61de123c873733f2d37b5fec"
+  },
+  {
+    "file": "inline8-align5-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-align5-checked-build.log",
+    "bytes": 266,
+    "sha256": "cf68c03f25b38dfb54be7c22d2b098c9c2ce5cd986f06c9e55a401ded82ccab8"
+  },
+  {
+    "file": "inline8-align5-confirm-confidence.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-align5-confirm-confidence.json",
+    "bytes": 4304,
+    "sha256": "7e91f50e5d242225440dae1b1bb821fcb7906a8af665cdba2aad10f85283aef2"
+  },
+  {
+    "file": "inline8-align5-confirm-frame-reference.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-align5-confirm-frame-reference.json",
+    "bytes": 265,
+    "sha256": "21e218d5017615392f775c8da6f932c68bdf24a88711dc6480e1f545b6cddd0c"
+  },
+  {
+    "file": "inline8-align5-confirm-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-align5-confirm-provenance.json",
+    "bytes": 1306,
+    "sha256": "0919d9122989cf087564d523b249b8dcd47e90b4a4a661d4d7863c64f3ab45f7"
+  },
+  {
+    "file": "inline8-align5-confirm-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-align5-confirm-summary.json",
+    "bytes": 3571,
+    "sha256": "b45a18f63f5ed16c0dd7218502636a542eda30f57becbcc0f9a5fa85b34814fa"
+  }
+]

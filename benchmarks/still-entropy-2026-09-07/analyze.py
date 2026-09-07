@@ -14,13 +14,14 @@ p = argparse.ArgumentParser()
 p.add_argument('--work-dir', type=Path, required=True)
 p.add_argument('--name', default='cdf-simd-confirm')
 p.add_argument('--candidate', default='cdf-simd')
+p.add_argument('--references', nargs='+', default=['baseline', 'upstream'])
 a = p.parse_args()
 rows = json.loads((a.work_dir / (a.name + '-summary.json')).read_text())
 records = []
 for row in rows:
     samples = row['samples']
     comparisons = {}
-    for reference in ['baseline', 'upstream']:
+    for reference in a.references:
         assert len(samples[a.candidate]) == len(samples[reference])
         ratios = [x / y for x, y in zip(samples[a.candidate], samples[reference])]
         n = len(ratios)
@@ -33,7 +34,7 @@ for row in rows:
             one_sided_bootstrap_95_upper=sorted(ratios)[rank - 1], all_ratios=ratios)
     records.append({k: row[k] for k in ['input', 'threads', 'instances', 'prime']}
                    | dict(comparisons=comparisons, medians=row['medians']))
-    b = comparisons['baseline']
+    b = comparisons[a.references[0]]
     print(row['input'], row['threads'],
           f"change={100 * (b['paired_median_ratio'] - 1):+.2f}%",
           f"upper={b['one_sided_bootstrap_95_upper']:.4f}")

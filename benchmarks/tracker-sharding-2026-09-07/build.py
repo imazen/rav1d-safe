@@ -14,11 +14,13 @@ p = argparse.ArgumentParser()
 p.add_argument('--repo', type=Path, required=True)
 p.add_argument('--work-dir', type=Path, required=True)
 p.add_argument('--label', required=True)
-p.add_argument('--driver', choices=['current', 'auto'], default='current')
+p.add_argument('--driver', choices=['current', 'auto', 'itx-census'], default='current')
 p.add_argument('--modes', nargs='+', default=['checked', 'unchecked', 'asm'])
 p.add_argument('--lockfile', type=Path, help='Pinned consumer lockfile override')
 p.add_argument('--archmage-repo', type=Path, help='Local archmage/magetypes patch checkout')
 p.add_argument('--refresh-lock', action='store_true', help='Allow only an explicit new dependency control to update its lockfile')
+p.add_argument('--function-alignment', type=int, choices=range(3, 7), default=4,
+               help='LLVM align-all-functions value; match both comparison arms')
 a = p.parse_args()
 repo = a.repo.resolve()
 root = a.work_dir.resolve()
@@ -40,7 +42,7 @@ if a.archmage_repo:
 (driver / 'Cargo.toml').write_text(manifest)
 env = os.environ.copy()
 env.pop('CARGO_ENCODED_RUSTFLAGS', None)
-env['RUSTFLAGS'] = '-C llvm-args=-align-all-functions=4'
+env['RUSTFLAGS'] = f'-C llvm-args=-align-all-functions={a.function_alignment}'
 env['CARGO_TERM_COLOR'] = 'never'
 records = []
 for mode in a.modes:
@@ -58,6 +60,7 @@ for mode in a.modes:
     assert not target.exists(), f'refusing to overwrite immutable binary {target}'
     shutil.copy2(driver / 'target/release' / f'rav1d-release-profile-{a.driver}', target)
     records.append(dict(mode=mode, command=command,
+                        rustflags=env['RUSTFLAGS'],
                         sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
                         manifest_sha256=hashlib.sha256((driver / 'Cargo.toml').read_bytes()).hexdigest(),
                         lockfile_sha256=hashlib.sha256((driver / 'Cargo.lock').read_bytes()).hexdigest()))
