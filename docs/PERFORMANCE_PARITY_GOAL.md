@@ -1,7 +1,9 @@
 # Goal: safe still decoding at upstream rav1d speed
 
-This is a proposed goal for the user to activate. Writing this document does
-not activate an autonomous goal or authorize publishing a crate.
+The user activated this goal on 2026-09-07 with a **10% per-workload-group**
+and **25% per-cell** slowdown allowance, replacing the proposed 5%/10% limits.
+Implementation and evidence are developed in a draft PR for review. This goal
+does not authorize publishing a crate.
 
 ## Copyable goal
 
@@ -18,6 +20,9 @@ not activate an autonomous goal or authorize publishing a crate.
 > Commit and push validated improvements and reproducible evidence as work
 > proceeds. Continue pursuing the largest measured gaps; report partial
 > progress honestly and do not declare parity until the holdout gates pass.
+> Meet the user-approved 10% group / 25% cell limits below. Investigate
+> archmage and magetypes improvements when useful; a separately reviewable
+> dependency PR and local Cargo patch are permitted.
 
 ## What parity means
 
@@ -31,9 +36,9 @@ On the designated release machine, require all of the following, with the
 corpus and thresholds fixed before evaluating a candidate:
 
 1. The equally weighted geometric mean of candidate/upstream elapsed-time
-   ratios is **at most 1.05** in every resolution × layout × concurrency
+   ratios is **at most 1.10** in every resolution × layout × concurrency
    stratum, for both development and untouched holdout sources.
-2. No individual mandatory cell is **more than 1.10×** upstream. Use at least
+2. No individual mandatory cell is **more than 1.25×** upstream. Use at least
    nine rotated paired rounds, each with at least 500 ms of measured upstream
    decode work. The one-sided 95% bootstrap upper confidence bound on the
    paired median ratio must meet the same limits. A noisy result is unresolved;
