@@ -224,3 +224,28 @@ CI exposed two independent issues, repaired in separate commits:
 The default checked doctest gate passes (nine tests, 13 pre-existing ignored
 examples). Cross-platform CI and the remaining performance gates are still required;
 the draft is not ready to merge or release.
+
+## Follow-up: move dispatch to a coefficient block
+
+`block-v1.patch.gz` (against `8b13ed69`) gives the coefficient decoder one
+baseline SSE2 boundary and forces its scalar body to inline there. The goal
+was to inline the retained CDF leaf into the coefficient loop. Generated code
+still has 15 CDF calls across both bit depths, down from 17, and the overall
+coefficient routines remain approximately 38 KiB each. All 76 checked unit
+and fixture tests pass, and the six-cell screen validates 90 timed runs.
+
+| 4K input | Workers | Paired change from retained CDF kernel |
+|---|---:|---:|
+| Photo, minimum tiles | 1 | -0.30% |
+| Photo, minimum tiles | 8 | -0.48% |
+| Photo, eight tiles | 1 | +0.41% |
+| Photo, eight tiles | 8 | -1.09% |
+| Map, eight tiles | 1 | -0.26% |
+| Map, eight tiles | 8 | +3.31% |
+
+This is rejected and reverted: no convincing serial win, with a tiled-map
+regression in the screen. The original coefficient source is restored byte
+for byte. Results, code-generation counts, build hashes, and exact patch are
+retained. An independent four-lane array formulation also compiled to scalar
+shifts, so it was rejected at code inspection without a decode speed claim;
+its source and assembly are archived under `experiments/cdf-auto-codegen.*`.
