@@ -150,6 +150,12 @@
     "sha256": "f897b95dd611aa46b1aacb4b566217762331e23f5810005e13c184ccacd9ff08"
   },
   {
+    "file": "cdf-auto-codegen.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-auto-codegen.log",
+    "bytes": 353,
+    "sha256": "3beda3043d8b6a1ac2c41a699bb03dc677cef3b415d0ebc4427d52998b14f688"
+  },
+  {
     "file": "cdf-count-lane-mutation.log.gz",
     "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-count-lane-mutation.log",
     "bytes": 2565,
@@ -354,6 +360,12 @@
     "sha256": "c1af4239d08414b05688a159f181422c9bcc0c3d03d7df51b13d2019a2adf4b2"
   },
   {
+    "file": "checked-doctests-final.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/checked-doctests-final.log",
+    "bytes": 2459,
+    "sha256": "9b2828766a68c94cd1027489ff9334802dd7b9b1d9a28da877f1f1fece61dcbc"
+  },
+  {
     "file": "ci-asm-lifetime-local.log.gz",
     "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ci-asm-lifetime-local.log",
     "bytes": 68900,
@@ -424,6 +436,66 @@
     "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-lifetime-fixed.log",
     "bytes": 5599,
     "sha256": "7d110c8e3bf1b8796245d5ec2dd78804c9bf4b1f9791e29563f66e03f8be5e02"
+  },
+  {
+    "file": "ffi-pool-miri-stacked-final.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-stacked-final.log",
+    "bytes": 1124,
+    "sha256": "bd8d4d54b105f8bf3854b9ab876c2d454e2bd229c50b488aa5a254abcbe023de"
+  },
+  {
+    "file": "ffi-pool-miri-stacked-owned-helper.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-stacked-owned-helper.log",
+    "bytes": 1123,
+    "sha256": "5c5f27e6ea20a132ce9b682283ac00a1534f652cac8e79c88df28894d72299e6"
+  },
+  {
+    "file": "ffi-pool-miri-stacked-owned.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-stacked-owned.log",
+    "bytes": 4194,
+    "sha256": "fe8159b68e6db3d179ccad449cb1ede02378066350152bfcb9b56320fa2301c0"
+  },
+  {
+    "file": "ffi-pool-miri-stacked-parsed.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-stacked-parsed.log",
+    "bytes": 18145,
+    "sha256": "3755adc1c0835f1244c012fbea1d431edabc1bbd9dff29612913511aecec3c61"
+  },
+  {
+    "file": "ffi-pool-miri-stacked.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-stacked.log",
+    "bytes": 5805,
+    "sha256": "bdc40456509519a217078c964a7232401520e7c2e6991c88b93021fac236b1f7"
+  },
+  {
+    "file": "ffi-pool-miri-tree-final.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-tree-final.log",
+    "bytes": 1045,
+    "sha256": "dce4c4785a19e2417e4cedb8c049a453f188859ce5777f6e40ad471eb2969dd7"
+  },
+  {
+    "file": "ffi-pool-owned-asm-final.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-owned-asm-final.log",
+    "bytes": 73355,
+    "sha256": "a9f2372d5688b3c3baf73c807e020c66fd22f6b908139e953fdd37ac10579784"
+  },
+  {
+    "file": "ffi-pool-owned-c-ffi-final.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-owned-c-ffi-final.log",
+    "bytes": 11183,
+    "sha256": "43074aada38947eace89b87fa4d670e01148acf508948a5248964b7cde9bf3f5"
+  },
+  {
+    "file": "ffi-pool-owned-clippy.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-owned-clippy.log",
+    "bytes": 514,
+    "sha256": "0d34fe35427b1c8ef788342b333a086015b0a89f8a7f46af04b530a5a8db5650"
+  },
+  {
+    "file": "ffi-public-abi-audit.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-public-abi-audit.json",
+    "bytes": 783,
+    "sha256": "b000124a77a79ada7e43110faff276096daee5f7a7339883212b60d57661373e"
   },
   {
     "file": "source-versions.json.gz",

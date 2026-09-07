@@ -2311,14 +2311,13 @@ pub(crate) struct Rav1dPicAllocator {
     /// # Safety
     ///
     /// Custom allocator cookies retain the C API's caller-owned lifetime.
-    /// The default allocator instead borrows `default_pool` for each callback,
+    /// The default allocator instead passes an owned pool to its Rust helper,
     /// so a retained picture can allocate a copy after its decoder is dropped.
     pub cookie: Option<SendSyncNonNull<c_void>>,
 
-    /// Rust-owned backing for the default callback's `&Arc<MemPool<u8>>`.
-    /// Every allocator clone owns the pool; callback_cookie forms its pointer
-    /// only while borrowing that clone. This field is not part of the public
-    /// Dav1dPicAllocator ABI and is never exported as an owning C cookie.
+    /// Every default allocator clone owns the pool, including before decoder
+    /// initialization. This field is not part of the public Dav1dPicAllocator
+    /// ABI and is never exported as an owning C cookie.
     pub(crate) default_pool: Option<Arc<MemPool<u8>>>,
 
     /// See [`Dav1dPicAllocator::alloc_picture_callback`].
@@ -2391,13 +2390,6 @@ impl From<Rav1dPicAllocator> for Dav1dPicAllocator {
 
 #[cfg(feature = "c-ffi")]
 impl Rav1dPicAllocator {
-    fn callback_cookie(&self) -> Option<SendSyncNonNull<c_void>> {
-        match &self.default_pool {
-            Some(pool) => Some(SendSyncNonNull::from_ref(pool).cast::<c_void>()),
-            None => self.cookie,
-        }
-    }
-
     pub fn alloc_picture_data(
         &self,
         w: c_int,
@@ -2418,9 +2410,12 @@ impl Rav1dPicAllocator {
         };
         let mut pic_c = pic.to::<Dav1dPicture>();
         // SAFETY: `pic_c` is a valid `Dav1dPicture` with `data`, `stride`, `allocator_data` unset.
-        // The default cookie borrows an Arc slot owned by this allocator,
-        // whose shared borrow remains live throughout the callback.
-        let result = unsafe { (self.alloc_picture_callback)(&mut pic_c, self.callback_cookie()) };
+        let result = unsafe {
+            match &self.default_pool {
+                Some(pool) => Self::default_picture_alloc_with_pool(&mut pic_c, pool.clone()),
+                None => (self.alloc_picture_callback)(&mut pic_c, self.cookie),
+            }
+        };
         result.try_to::<Rav1dResult>().unwrap()?;
         // `data`, `stride`, and `allocator_data` are the only fields set by the allocator.
         // Of those, only `data` and `allocator_data` are read through `r#ref`,
@@ -2459,7 +2454,7 @@ impl Rav1dPicAllocator {
         // SAFETY: `pic_c` contains the same `data` and `allocator_data`
         // that `Self::alloc_picture_data` set, which now get deallocated here.
         unsafe {
-            (self.release_picture_callback)(&mut pic_c, self.callback_cookie());
+            (self.release_picture_callback)(&mut pic_c, self.cookie);
         }
     }
 }

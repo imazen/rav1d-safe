@@ -263,7 +263,7 @@ pub(crate) fn rav1d_open(
     if c.allocator.is_default() {
         let c = Arc::get_mut(&mut c).unwrap();
         // Pictures retain allocator clones and can allocate copies after c is
-        // dropped. Own the pool, and borrow its Arc slot only for each callback.
+        // dropped. Pass owned pool clones directly to the allocation helper.
         c.allocator.default_pool = Some(c.picture_pool.clone());
     }
     let c = c;

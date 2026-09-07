@@ -19,6 +19,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  ffi-allocator-miri:
+    name: FFI allocator ownership (Miri, ${{ matrix.model }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - model: stacked
+            flags: "-Zmiri-strict-provenance"
+          - model: tree
+            flags: "-Zmiri-strict-provenance -Zmiri-tree-borrows"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      # Allocation-only lifetime/provenance gate: no entropy or SIMD decode.
+      # Both native default ownership and unrecognized C callbacks are live.
+      - run: cargo +nightly miri test --lib --no-default-features --features bitdepth_8,bitdepth_16,c-ffi retained_allocator_allocates_after_decoder_drop
+        env:
+          MIRIFLAGS: ${{ matrix.flags }}
+
   # ==========================================================================
   # Primary build + test matrix
   # ==========================================================================
