@@ -163,8 +163,16 @@ pub enum Strictness {
 
 /// Decoder configuration settings
 ///
-/// Use `Settings::default()` or struct update syntax (`Settings { threads: 4, ..Default::default() }`)
-/// to construct. New fields may be added in minor releases.
+/// Construct with [`Settings::default()`], then assign the fields to customize.
+/// This type is non-exhaustive; downstream callers cannot use struct literals.
+///
+/// ```
+/// use rav1d_safe::{Settings, Strictness};
+/// let mut settings = Settings::default();
+/// settings.threads = 4;
+/// settings.strictness = Strictness::Lenient;
+/// assert_eq!(settings.strictness, Strictness::Lenient);
+/// ```
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct Settings {
