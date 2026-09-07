@@ -1,0 +1,242 @@
+[
+  {
+    "file": "ci-protocol-checked-debug.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ci-protocol-checked-debug.log",
+    "bytes": 1519,
+    "sha256": "58ba57943f9ce4323c5cb50ad954a36a882c5941e2f65e593f6eba355143dbff"
+  },
+  {
+    "file": "ci-protocol-checked-release.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ci-protocol-checked-release.log",
+    "bytes": 14136,
+    "sha256": "57d54f525e142e47c951c2fda533e778ee6660cd0eca4b4fa1e109c0ce18a99f"
+  },
+  {
+    "file": "ci-protocol-simd-test.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ci-protocol-simd-test.log",
+    "bytes": 1208,
+    "sha256": "4c80d0e24f2e562b9e22cb425913f7d85757ff6c024b14e5a22486321f7984ac"
+  },
+  {
+    "file": "corpus.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/corpus.json",
+    "bytes": 13107,
+    "sha256": "32c8a02d513ba044b949080d705de2d12fb62749fb43d7532e412402d89805e7"
+  },
+  {
+    "file": "ffi-pool-asm-all-lib.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-asm-all-lib.log",
+    "bytes": 72053,
+    "sha256": "27b35115d831c4b9e43f4b0c2d33de33bf1157551163eceebe3ceb18a44f4cae"
+  },
+  {
+    "file": "ffi-pool-c-ffi-lifecycle.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-c-ffi-lifecycle.log",
+    "bytes": 2440,
+    "sha256": "d4c3be52367de74af9b823b37869997432b1119baee9e0aa6cf05efa70b79452"
+  },
+  {
+    "file": "ffi-pool-lifetime-fixed-import.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-lifetime-fixed-import.log",
+    "bytes": 68806,
+    "sha256": "42eec8db8e92087c5ad15bec3f38dee6583b1572a694b3d2b9ae4241760b5e36"
+  },
+  {
+    "file": "ffi-pool-lifetime-fixed.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-lifetime-fixed.log",
+    "bytes": 5599,
+    "sha256": "7d110c8e3bf1b8796245d5ec2dd78804c9bf4b1f9791e29563f66e03f8be5e02"
+  },
+  {
+    "file": "ffi-pool-miri-stacked-final.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-stacked-final.log",
+    "bytes": 1124,
+    "sha256": "bd8d4d54b105f8bf3854b9ab876c2d454e2bd229c50b488aa5a254abcbe023de"
+  },
+  {
+    "file": "ffi-pool-miri-stacked-owned-helper.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-stacked-owned-helper.log",
+    "bytes": 1123,
+    "sha256": "5c5f27e6ea20a132ce9b682283ac00a1534f652cac8e79c88df28894d72299e6"
+  },
+  {
+    "file": "ffi-pool-miri-stacked-owned.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-stacked-owned.log",
+    "bytes": 4194,
+    "sha256": "fe8159b68e6db3d179ccad449cb1ede02378066350152bfcb9b56320fa2301c0"
+  },
+  {
+    "file": "ffi-pool-miri-stacked-parsed.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-stacked-parsed.log",
+    "bytes": 18145,
+    "sha256": "3755adc1c0835f1244c012fbea1d431edabc1bbd9dff29612913511aecec3c61"
+  },
+  {
+    "file": "ffi-pool-miri-stacked.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-stacked.log",
+    "bytes": 5805,
+    "sha256": "bdc40456509519a217078c964a7232401520e7c2e6991c88b93021fac236b1f7"
+  },
+  {
+    "file": "ffi-pool-miri-tree-final.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-miri-tree-final.log",
+    "bytes": 1045,
+    "sha256": "dce4c4785a19e2417e4cedb8c049a453f188859ce5777f6e40ad471eb2969dd7"
+  },
+  {
+    "file": "ffi-pool-owned-asm-final.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-owned-asm-final.log",
+    "bytes": 73355,
+    "sha256": "a9f2372d5688b3c3baf73c807e020c66fd22f6b908139e953fdd37ac10579784"
+  },
+  {
+    "file": "ffi-pool-owned-c-ffi-final.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-owned-c-ffi-final.log",
+    "bytes": 11183,
+    "sha256": "43074aada38947eace89b87fa4d670e01148acf508948a5248964b7cde9bf3f5"
+  },
+  {
+    "file": "ffi-pool-owned-clippy.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-pool-owned-clippy.log",
+    "bytes": 514,
+    "sha256": "0d34fe35427b1c8ef788342b333a086015b0a89f8a7f46af04b530a5a8db5650"
+  },
+  {
+    "file": "ffi-public-abi-audit.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ffi-public-abi-audit.json",
+    "bytes": 783,
+    "sha256": "b000124a77a79ada7e43110faff276096daee5f7a7339883212b60d57661373e"
+  },
+  {
+    "file": "mage-cached-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-cached-builds.json",
+    "bytes": 499,
+    "sha256": "f15c910ecbda37564d5cb640a16e677f60ec186667d75de7021b4364086b94df"
+  },
+  {
+    "file": "mage-cached-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-cached-checked-build.log",
+    "bytes": 259,
+    "sha256": "00c31b72a471da0b2f90d302405961bed8308ac9f89d4572cb942a2af5bdaaf1"
+  },
+  {
+    "file": "mage-cached-decoder-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-cached-decoder-tests.log",
+    "bytes": 14136,
+    "sha256": "6cddea88b6e706a285fff80c2cd9b4523ad626c66a6ba873f9953fbeef55e4c7"
+  },
+  {
+    "file": "mage-cached-screen-frame-reference.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-cached-screen-frame-reference.json",
+    "bytes": 263,
+    "sha256": "607144a3f9e04d44e120f7deb883341d265bcef4c95ea35b9c7705ae04f0ca96"
+  },
+  {
+    "file": "mage-cached-screen-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-cached-screen-provenance.json",
+    "bytes": 2109,
+    "sha256": "df02a56ca7658901e8281fc6f59132becc550d3d892d95f163a7abdb660beb96"
+  },
+  {
+    "file": "mage-cached-screen-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-cached-screen-summary.json",
+    "bytes": 5554,
+    "sha256": "e3bb15f3172591c2b58dcadd391efecba51f6c049d3216008e5eb4bbc52481db"
+  },
+  {
+    "file": "mage-cached-screen-000.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-cached-screen.jsonl",
+    "bytes": 24484,
+    "sha256": "915db1f261145c98ef516555cc9831c9909495635a24e8a8cdbee9cfd02b3dc8"
+  },
+  {
+    "file": "mage-cached-screen-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-cached-screen.jsonl",
+    "bytes": 24440,
+    "sha256": "f22bf78612d3f3fc9e6d3647607590bd50da9b4f182ce6a4ad2dd092d8851cb7"
+  },
+  {
+    "file": "mage-cached-screen-002.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-cached-screen.jsonl",
+    "bytes": 24475,
+    "sha256": "021275cbb297f3717cc40daa5359176f5de3d179c6054900df59a90e9ed7c25f"
+  },
+  {
+    "file": "mage-cached-screen-003.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-cached-screen.jsonl",
+    "bytes": 21955,
+    "sha256": "ce9169a49a527ae0c95ef1445e9de1769fc1be19ffb118345c849157a1d59c11"
+  },
+  {
+    "file": "mage-cached-screen.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-cached-screen.log",
+    "bytes": 1063,
+    "sha256": "ba46996657761ba25cc03560729a580c0244fa14f0984e360698183653d24864"
+  },
+  {
+    "file": "mage-control-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-control-builds.json",
+    "bytes": 482,
+    "sha256": "248c4b5a780a4f6462b1fa69de60f765304b18ec601bf70bf138bd9740db6772"
+  },
+  {
+    "file": "mage-control-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-control-checked-build.log",
+    "bytes": 948,
+    "sha256": "0e55b378a89f9b08d63eab32714bbe1b9c7b89d34d3ed5f960769466d35878a3"
+  },
+  {
+    "file": "mage-existing-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-existing-builds.json",
+    "bytes": 501,
+    "sha256": "64ff0b435eb7baf81c433fe23e61ddeea3a04cd0fced3c18d8a355148b0b74b1"
+  },
+  {
+    "file": "mage-existing-checked-build-failed.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-existing-checked-build-failed.log",
+    "bytes": 818,
+    "sha256": "2da82559c8df2049720b6bef052b78c47aa547b179909506808ef5ae70979a25"
+  },
+  {
+    "file": "mage-existing-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-existing-checked-build.log",
+    "bytes": 261,
+    "sha256": "13b4eb79ea5a5012db7514513e7cc84c02d410642a2899dcd4a05fce61b258f4"
+  },
+  {
+    "file": "mage-sse2-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-builds.json",
+    "bytes": 497,
+    "sha256": "3945fba04ba134c5cf05438e2b90301603fbe82d20ddf8eb950e580ffbcc0fec"
+  },
+  {
+    "file": "mage-sse2-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-checked-build.log",
+    "bytes": 519,
+    "sha256": "2003e5283017cb7da79d22f1267fd5369e050329727667c2186263bee4324f09"
+  },
+  {
+    "file": "mage-sse2-codegen.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-codegen.json",
+    "bytes": 2987,
+    "sha256": "ecff97917df5e4a7d3155024d137e7e5b12902fa3a0e7b98168ed46d1b8857a3"
+  },
+  {
+    "file": "mage-sse2-decoder-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-decoder-tests.log",
+    "bytes": 14903,
+    "sha256": "5f3fcf54951f1747883ee0675f8d28664863b554356439a2b9f3006bf0fe021c"
+  },
+  {
+    "file": "mage-sse2-generate.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-generate.log",
+    "bytes": 15107,
+    "sha256": "93710d6c2e433038dcb490218b7b11b1ca12e8fa5919d00841285ec40bded8e9"
+  },
+  {
+    "file": "mage-sse2-integer-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-integer-tests.log",
+    "bytes": 85297,
+    "sha256": "b3db4488ff050c4ebfd28c561b60a3b49cb2b938d9a241cec210d410e58358a6"
+  }
+]
