@@ -1,0 +1,14 @@
+   Compiling rav1d-safe v0.6.0 (/Users/lilith/work/zen/rav1d-safe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.57s
+     Running tests/strictness.rs (target/debug/deps/strictness-e03cd5e51827b8a9)
+
+running 6 tests
+test lenient_is_below_strict_and_strict_is_the_default ... ok
+test deprecated_strict_std_compliance_still_means_strict ... ok
+test fuzz_522_523_out_of_range_segment_id_is_rejected ... ok
+test desynced_segment_ids_strict_rejects_lenient_conceals ... ok
+test corrupt_tile_padding_strict_rejects_lenient_conceals ... ok
+test conforming_stream_is_identical_under_both ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+

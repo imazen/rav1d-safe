@@ -884,6 +884,16 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+### Differential fuzz #522/#523: same malformed segment-ID repro
+
+Both reports reproduce the same 36-byte artifact. It yields segment ID 6
+with LastActiveSegId 4; strict/default rejection is required by the AV1
+segment bound. dav1d 1.5.4 accepts it even in strict mode, so the current
+differential harness still flags the policy mismatch. A six-test strictness
+suite now includes the exact bytes and a mutation-verified rejection guard.
+[Reproduction, correct R2 prefix and evidence](benchmarks/issues_522_523_2026-09-07/README.md).
+
+
 ### Root `Strictness` import (#525)
 
 `Strictness` is now re-exported alongside `Settings`. For downstream callers,

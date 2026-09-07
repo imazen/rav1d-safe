@@ -1,0 +1,31 @@
+   Compiling rav1d-safe v0.6.0 (/Users/lilith/work/zen/rav1d-safe)
+warning: unused import: `crate::src::managed::Strictness`
+   --> src/decode.rs:129:5
+    |
+129 | use crate::src::managed::Strictness;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `rav1d-safe` (lib) generated 1 warning (run `cargo fix --lib -p rav1d-safe` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.73s
+     Running tests/strictness.rs (target/debug/deps/strictness-e03cd5e51827b8a9)
+
+running 1 test
+test fuzz_522_523_out_of_range_segment_id_is_rejected ... FAILED
+
+failures:
+
+---- fuzz_522_523_out_of_range_segment_id_is_rejected stdout ----
+
+thread 'fuzz_522_523_out_of_range_segment_id_is_rejected' (144450770) panicked at tests/strictness.rs:138:14:
+out-of-range segment ID must be rejected
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    fuzz_522_523_out_of_range_segment_id_is_rejected
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.05s
+
+error: test failed, to rerun pass `--test strictness`

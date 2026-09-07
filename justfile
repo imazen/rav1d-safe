@@ -338,3 +338,12 @@ arm-tiers-macos:
 test-filmgrain-concurrency:
     CARGO_BUILD_JOBS=2 nice -n 19 cargo nextest run --lib --test filmgrain_threads -E 'binary(filmgrain_threads) | test(parallel_frame_tile_contexts)' --test-threads 1 --success-output immediate
     CARGO_BUILD_JOBS=2 nice -n 19 cargo nextest run --features unchecked --lib --test filmgrain_threads -E 'binary(filmgrain_threads) | test(parallel_frame_tile_contexts)' --test-threads 1 --success-output immediate
+
+# Root API and strict/lenient conformance regression checks (issues 525, 522, 523).
+test-strictness:
+    cargo test --test strictness
+    cargo test --doc Settings
+
+# Replay one differential artifact without a sweep; requires system libdav1d.
+repro-differential artifact:
+    cargo +nightly fuzz run differential_dav1d --features differential {{artifact}} -- -runs=1

@@ -1,0 +1,15 @@
+   Compiling rav1d-safe v0.6.0 (/Users/lilith/work/zen/rav1d-safe)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.87s
+     Running `target/debug/examples/strictness_sweep --jobs 1 /Users/lilith/work/codec-artifacts/rav1d-issues-522-523/crash-16c021d73995521b6baafff5d542fc040325b6d4`
+segment_id=6 LastActiveSegId=4
+DECODE REJECT src/decode.rs:1405
+tile reject src/decode.rs:4892
+Error parsing OBU data
+DISAGREE lenient=frame strict=ERROR  /Users/lilith/work/codec-artifacts/rav1d-issues-522-523/crash-16c021d73995521b6baafff5d542fc040325b6d4
+
+1 files (0 unreadable), 1 disagreements
+         lenient |   frame   nofrm   error  <- strict
+           frame |       0       0       1
+           nofrm |       0       0       0
+           error |       0       0       0
+  lenient=frame strict=ERROR  /Users/lilith/work/codec-artifacts/rav1d-issues-522-523/crash-16c021d73995521b6baafff5d542fc040325b6d4
