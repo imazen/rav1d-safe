@@ -1,5 +1,89 @@
 [
   {
+    "file": "mage-sse2-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-builds.json",
+    "bytes": 497,
+    "sha256": "3945fba04ba134c5cf05438e2b90301603fbe82d20ddf8eb950e580ffbcc0fec"
+  },
+  {
+    "file": "mage-sse2-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-checked-build.log",
+    "bytes": 519,
+    "sha256": "2003e5283017cb7da79d22f1267fd5369e050329727667c2186263bee4324f09"
+  },
+  {
+    "file": "mage-sse2-codegen.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-codegen.json",
+    "bytes": 2987,
+    "sha256": "ecff97917df5e4a7d3155024d137e7e5b12902fa3a0e7b98168ed46d1b8857a3"
+  },
+  {
+    "file": "mage-sse2-decoder-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-decoder-tests.log",
+    "bytes": 14903,
+    "sha256": "5f3fcf54951f1747883ee0675f8d28664863b554356439a2b9f3006bf0fe021c"
+  },
+  {
+    "file": "mage-sse2-generate.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-generate.log",
+    "bytes": 15107,
+    "sha256": "93710d6c2e433038dcb490218b7b11b1ca12e8fa5919d00841285ec40bded8e9"
+  },
+  {
+    "file": "mage-sse2-integer-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-integer-tests.log",
+    "bytes": 85297,
+    "sha256": "b3db4488ff050c4ebfd28c561b60a3b49cb2b938d9a241cec210d410e58358a6"
+  },
+  {
+    "file": "mage-sse2-screen-frame-reference.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen-frame-reference.json",
+    "bytes": 263,
+    "sha256": "607144a3f9e04d44e120f7deb883341d265bcef4c95ea35b9c7705ae04f0ca96"
+  },
+  {
+    "file": "mage-sse2-screen-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen-provenance.json",
+    "bytes": 2115,
+    "sha256": "b7c7f69d79280f4bccbc837c09be30cbb186b46e521b35fd5031855e71e78717"
+  },
+  {
+    "file": "mage-sse2-screen-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen-summary.json",
+    "bytes": 5559,
+    "sha256": "66d2d4b01cfd279c4383c4e5a78585cd9f26f30ab3be83eadf9e08664a5ad304"
+  },
+  {
+    "file": "mage-sse2-screen-000.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen.jsonl",
+    "bytes": 24516,
+    "sha256": "942dfaa7bf7959cb8ad85fee3bf5b42b66a6c7acb40b220fda4f9359ee9e58a8"
+  },
+  {
+    "file": "mage-sse2-screen-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen.jsonl",
+    "bytes": 24468,
+    "sha256": "76e4971ef74517360268c17f89d1b50936179c5257aa2d4128d907a4b33f317a"
+  },
+  {
+    "file": "mage-sse2-screen-002.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen.jsonl",
+    "bytes": 24507,
+    "sha256": "f2976c81748784762c94f78fea11bc79bf4f0207f67ed3a5ef5687ffe402bb32"
+  },
+  {
+    "file": "mage-sse2-screen-003.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen.jsonl",
+    "bytes": 21983,
+    "sha256": "b442d776b384b78f4bc133557b5c91dec04fc1ce783038d61e3a70e9966472b1"
+  },
+  {
+    "file": "mage-sse2-screen.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/mage-sse2-screen.log",
+    "bytes": 1064,
+    "sha256": "73ef27ad5c5ce16d056271c7034e4f2b4f3aa46d0db427da789f95f94a75d9b6"
+  },
+  {
     "file": "source-versions.json.gz",
     "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/source-versions.json",
     "bytes": 1480,

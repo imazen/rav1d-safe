@@ -445,3 +445,37 @@ restored exactly. A possible follow-up would need evidence that CDF
 operations inline within the same CPU tier, eliminating the extra boundaries,
 before repeating this design. `block-v3-*` records both builds, tests, all
 timings, and the complete code-generation inventory.
+
+## Follow-up: vector operations inside the V3 caller
+
+`block-v3-mage.patch.gz`, against `e86da579`, combines the fully inlined V3
+coefficient body with the earlier uncached magetypes CDF formulation. Use
+unmodified archmage `7a67c74c` and the same frozen consumer lockfile as before;
+`block-v3-mage-control` changes only the dependencies of `block-v3-inline`.
+The root development lockfile is separately archived for the test run.
+
+The V3 routines have no magetypes calls, so the vector operations do inline
+inside this CPU tier. However, token summoning and CDF fallback code remain:
+each V3 routine has 29 baseline CDF calls and 80 VZEROUPPER sites. Each also
+grows to about 44 KiB. Static call counts include untaken fallbacks and must
+not be mistaken for runtime operation counts.
+
+All 76 checked tests pass. The CDF token-permutation test explicitly records
+the V3, V1, and scalar choices and requires all three when the host supports
+V3. The six-cell, five-round screen validates 150 measured runs:
+
+| 4K input | Workers | V3 with old dependencies | Dependency control | Inlined magetypes |
+|---|---:|---:|---:|---:|
+| Photo, minimum tiles | 1 | +4.21% | +3.39% | +6.33% |
+| Photo, minimum tiles | 8 | +4.03% | +2.82% | +7.16% |
+| Photo, eight tiles | 1 | +4.71% | +3.63% | +6.24% |
+| Photo, eight tiles | 8 | +5.94% | -0.94% | +6.36% |
+| Map, eight tiles | 1 | +4.34% | +3.93% | +5.94% |
+| Map, eight tiles | 8 | +1.39% | +0.03% | +4.92% |
+
+All percentages are paired changes against the retained CDF kernel. The
+dependency-control variation is visible rather than folded into a claimed
+kernel speedup. Reject and restore both decoder and Cargo files. A future
+version would need to pass an existing token through the hot path instead
+of summoning again; inlining alone did not produce a gain. Transform-shape
+profiling is the next independent lead after these unsuccessful CDF screens.
