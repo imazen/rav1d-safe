@@ -1,0 +1,29 @@
+[package]
+name = "rav1d-upstream-profile"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+rav1d = { path = "../upstream" }
+md5 = "=0.8.0"
+
+[features]
+probe-usage = []
+probe-wide = []
+probe-tasktime = []
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+debug = "line-tables-only"
+strip = false
+panic = "unwind"
+
+[[bin]]
+name = "rav1d-upstream-profile"
+path = "src/main.rs"
+
+[[bin]]
+name = "rav1d-upstream-frame-threading"
+path = "src/frame_threading.rs"

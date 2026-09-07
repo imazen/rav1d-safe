@@ -1,0 +1,258 @@
+[
+  {
+    "input": "multi",
+    "arm": "checked",
+    "threads": 1,
+    "command": [
+      "/home/lilith/tmp/rav1d-policy-mc-2026-09-07/bin/combined",
+      "test-vectors/dav1d-test-data/8-bit/features/non_uniform_tiling.ivf",
+      "1",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t720x300\t8\ta9d3dff1915dbcbb9baacc5182e70d36\nFRAME\t1\t720x300\t8\te9a41049b3b5f2180610579e802bc2c4\nFRAME\t2\t720x300\t8\td6a7593a1908ba7228c553de38d20373\nFRAME\t3\t720x300\t8\t4651536654025d0dbb7dc802e58083ec\nFRAME\t4\t720x300\t8\t5cb1ba2b53d6e52a7380a7b48b3dd66c\nFRAME\t5\t720x300\t8\t38d725503945ce1c2e409e6488b9ea4f\nFRAME\t6\t720x300\t8\t8556dc3071bae174df06c302b8ddc263\nFRAME\t7\t720x300\t8\tcf60030bab9dda0d8f83db6571c5afad\nFRAME\t8\t720x300\t8\td17cbbea8e483628de288f27d2919cea\nFRAME\t9\t720x300\t8\t6a3c0e8962a2eb23c4ed98432750554e\nFRAME\t10\t720x300\t8\tdf2bdaf9698a790ea041e392791fbe5b\nFRAME\t11\t720x300\t8\ta246e428599654118e96386232440a8d\nFRAME\t12\t720x300\t8\td5aa16b53f229b3e02fa9f721c58160a\nFRAME\t13\t720x300\t8\t04f76c4ae46391c34d89be129b07b697\nFRAME\t14\t720x300\t8\t7353e32f32817f8d83c6bf2af8d017d6\nFRAME\t15\t720x300\t8\tdd7caf4c7c147a7410187f303da379e0\nFRAME\t16\t720x300\t8\tbd279bbb77e3fddc1528373a84dc4b7e\nFRAME\t17\t720x300\t8\tade495812f5b52da5afea6c8e02f364a\nFRAME\t18\t720x300\t8\t6d4fb68253a40b797415328d85fdf076\nFRAME\t19\t720x300\t8\tb1d859fe6e15f11b18bf2797b58f3644\nFRAME\t20\t720x300\t8\t3894d78a924b68edf287339edb4fea45\nFRAME\t21\t720x300\t8\t7c6bb5b266c984201d99f968f056a0bb\nFRAME\t22\t720x300\t8\tf9316329988a65ba182bb42202a25391\nFRAME\t23\t720x300\t8\tff6c814b5a3b237d88aa1db136a2a72a\nCONFIG\tpackets=24\tframes=24\tthreads=1\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t222.324685\nRESULT\t0\t96\t222.341637\t2.316059\nVALIDATED\t3\tlifetime_frames=168\ttimed_frames=96\n",
+    "stderr": ""
+  },
+  {
+    "input": "multi",
+    "arm": "upstream",
+    "threads": 1,
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/driver/target/release/rav1d-upstream-profile",
+      "test-vectors/dav1d-test-data/8-bit/features/non_uniform_tiling.ivf",
+      "1",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t720x300\t8\ta9d3dff1915dbcbb9baacc5182e70d36\nFRAME\t1\t720x300\t8\te9a41049b3b5f2180610579e802bc2c4\nFRAME\t2\t720x300\t8\td6a7593a1908ba7228c553de38d20373\nFRAME\t3\t720x300\t8\t4651536654025d0dbb7dc802e58083ec\nFRAME\t4\t720x300\t8\t5cb1ba2b53d6e52a7380a7b48b3dd66c\nFRAME\t5\t720x300\t8\t38d725503945ce1c2e409e6488b9ea4f\nFRAME\t6\t720x300\t8\t8556dc3071bae174df06c302b8ddc263\nFRAME\t7\t720x300\t8\tcf60030bab9dda0d8f83db6571c5afad\nFRAME\t8\t720x300\t8\td17cbbea8e483628de288f27d2919cea\nFRAME\t9\t720x300\t8\t6a3c0e8962a2eb23c4ed98432750554e\nFRAME\t10\t720x300\t8\tdf2bdaf9698a790ea041e392791fbe5b\nFRAME\t11\t720x300\t8\ta246e428599654118e96386232440a8d\nFRAME\t12\t720x300\t8\td5aa16b53f229b3e02fa9f721c58160a\nFRAME\t13\t720x300\t8\t04f76c4ae46391c34d89be129b07b697\nFRAME\t14\t720x300\t8\t7353e32f32817f8d83c6bf2af8d017d6\nFRAME\t15\t720x300\t8\tdd7caf4c7c147a7410187f303da379e0\nFRAME\t16\t720x300\t8\tbd279bbb77e3fddc1528373a84dc4b7e\nFRAME\t17\t720x300\t8\tade495812f5b52da5afea6c8e02f364a\nFRAME\t18\t720x300\t8\t6d4fb68253a40b797415328d85fdf076\nFRAME\t19\t720x300\t8\tb1d859fe6e15f11b18bf2797b58f3644\nFRAME\t20\t720x300\t8\t3894d78a924b68edf287339edb4fea45\nFRAME\t21\t720x300\t8\t7c6bb5b266c984201d99f968f056a0bb\nFRAME\t22\t720x300\t8\tf9316329988a65ba182bb42202a25391\nFRAME\t23\t720x300\t8\tff6c814b5a3b237d88aa1db136a2a72a\nCONFIG\tpackets=24\tframes=24\tthreads=1\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t35.297364\nRESULT\t0\t96\t35.325848\t0.367978\nVALIDATED\t3\tlifetime_frames=168\ttimed_frames=96\n",
+    "stderr": ""
+  },
+  {
+    "input": "multi",
+    "arm": "checked",
+    "threads": 8,
+    "command": [
+      "/home/lilith/tmp/rav1d-policy-mc-2026-09-07/bin/combined",
+      "test-vectors/dav1d-test-data/8-bit/features/non_uniform_tiling.ivf",
+      "8",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t720x300\t8\ta9d3dff1915dbcbb9baacc5182e70d36\nFRAME\t1\t720x300\t8\te9a41049b3b5f2180610579e802bc2c4\nFRAME\t2\t720x300\t8\td6a7593a1908ba7228c553de38d20373\nFRAME\t3\t720x300\t8\t4651536654025d0dbb7dc802e58083ec\nFRAME\t4\t720x300\t8\t5cb1ba2b53d6e52a7380a7b48b3dd66c\nFRAME\t5\t720x300\t8\t38d725503945ce1c2e409e6488b9ea4f\nFRAME\t6\t720x300\t8\t8556dc3071bae174df06c302b8ddc263\nFRAME\t7\t720x300\t8\tcf60030bab9dda0d8f83db6571c5afad\nFRAME\t8\t720x300\t8\td17cbbea8e483628de288f27d2919cea\nFRAME\t9\t720x300\t8\t6a3c0e8962a2eb23c4ed98432750554e\nFRAME\t10\t720x300\t8\tdf2bdaf9698a790ea041e392791fbe5b\nFRAME\t11\t720x300\t8\ta246e428599654118e96386232440a8d\nFRAME\t12\t720x300\t8\td5aa16b53f229b3e02fa9f721c58160a\nFRAME\t13\t720x300\t8\t04f76c4ae46391c34d89be129b07b697\nFRAME\t14\t720x300\t8\t7353e32f32817f8d83c6bf2af8d017d6\nFRAME\t15\t720x300\t8\tdd7caf4c7c147a7410187f303da379e0\nFRAME\t16\t720x300\t8\tbd279bbb77e3fddc1528373a84dc4b7e\nFRAME\t17\t720x300\t8\tade495812f5b52da5afea6c8e02f364a\nFRAME\t18\t720x300\t8\t6d4fb68253a40b797415328d85fdf076\nFRAME\t19\t720x300\t8\tb1d859fe6e15f11b18bf2797b58f3644\nFRAME\t20\t720x300\t8\t3894d78a924b68edf287339edb4fea45\nFRAME\t21\t720x300\t8\t7c6bb5b266c984201d99f968f056a0bb\nFRAME\t22\t720x300\t8\tf9316329988a65ba182bb42202a25391\nFRAME\t23\t720x300\t8\tff6c814b5a3b237d88aa1db136a2a72a\nCONFIG\tpackets=24\tframes=24\tthreads=8\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t193.252953\nRESULT\t0\t96\t193.270526\t2.013235\nVALIDATED\t3\tlifetime_frames=168\ttimed_frames=96\n",
+    "stderr": ""
+  },
+  {
+    "input": "multi",
+    "arm": "upstream",
+    "threads": 8,
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/driver/target/release/rav1d-upstream-profile",
+      "test-vectors/dav1d-test-data/8-bit/features/non_uniform_tiling.ivf",
+      "8",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t720x300\t8\ta9d3dff1915dbcbb9baacc5182e70d36\nFRAME\t1\t720x300\t8\te9a41049b3b5f2180610579e802bc2c4\nFRAME\t2\t720x300\t8\td6a7593a1908ba7228c553de38d20373\nFRAME\t3\t720x300\t8\t4651536654025d0dbb7dc802e58083ec\nFRAME\t4\t720x300\t8\t5cb1ba2b53d6e52a7380a7b48b3dd66c\nFRAME\t5\t720x300\t8\t38d725503945ce1c2e409e6488b9ea4f\nFRAME\t6\t720x300\t8\t8556dc3071bae174df06c302b8ddc263\nFRAME\t7\t720x300\t8\tcf60030bab9dda0d8f83db6571c5afad\nFRAME\t8\t720x300\t8\td17cbbea8e483628de288f27d2919cea\nFRAME\t9\t720x300\t8\t6a3c0e8962a2eb23c4ed98432750554e\nFRAME\t10\t720x300\t8\tdf2bdaf9698a790ea041e392791fbe5b\nFRAME\t11\t720x300\t8\ta246e428599654118e96386232440a8d\nFRAME\t12\t720x300\t8\td5aa16b53f229b3e02fa9f721c58160a\nFRAME\t13\t720x300\t8\t04f76c4ae46391c34d89be129b07b697\nFRAME\t14\t720x300\t8\t7353e32f32817f8d83c6bf2af8d017d6\nFRAME\t15\t720x300\t8\tdd7caf4c7c147a7410187f303da379e0\nFRAME\t16\t720x300\t8\tbd279bbb77e3fddc1528373a84dc4b7e\nFRAME\t17\t720x300\t8\tade495812f5b52da5afea6c8e02f364a\nFRAME\t18\t720x300\t8\t6d4fb68253a40b797415328d85fdf076\nFRAME\t19\t720x300\t8\tb1d859fe6e15f11b18bf2797b58f3644\nFRAME\t20\t720x300\t8\t3894d78a924b68edf287339edb4fea45\nFRAME\t21\t720x300\t8\t7c6bb5b266c984201d99f968f056a0bb\nFRAME\t22\t720x300\t8\tf9316329988a65ba182bb42202a25391\nFRAME\t23\t720x300\t8\tff6c814b5a3b237d88aa1db136a2a72a\nCONFIG\tpackets=24\tframes=24\tthreads=8\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t26.177386\nRESULT\t0\t96\t26.188487\t0.272797\nVALIDATED\t3\tlifetime_frames=168\ttimed_frames=96\n",
+    "stderr": ""
+  },
+  {
+    "input": "first",
+    "arm": "checked",
+    "threads": 1,
+    "command": [
+      "/home/lilith/tmp/rav1d-policy-mc-2026-09-07/bin/combined",
+      "/home/lilith/tmp/rav1d-concurrency-2026-09-06/inputs/non_uniform_first.obu",
+      "1",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t720x300\t8\ta9d3dff1915dbcbb9baacc5182e70d36\nCONFIG\tpackets=1\tframes=1\tthreads=1\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t16.921641\nRESULT\t0\t4\t16.936590\t4.234148\nVALIDATED\t3\tlifetime_frames=7\ttimed_frames=4\n",
+    "stderr": ""
+  },
+  {
+    "input": "first",
+    "arm": "upstream",
+    "threads": 1,
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/driver/target/release/rav1d-upstream-profile",
+      "/home/lilith/tmp/rav1d-concurrency-2026-09-06/inputs/non_uniform_first.obu",
+      "1",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t720x300\t8\ta9d3dff1915dbcbb9baacc5182e70d36\nCONFIG\tpackets=1\tframes=1\tthreads=1\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t5.652904\nRESULT\t0\t4\t5.667021\t1.416755\nVALIDATED\t3\tlifetime_frames=7\ttimed_frames=4\n",
+    "stderr": ""
+  },
+  {
+    "input": "first",
+    "arm": "checked",
+    "threads": 8,
+    "command": [
+      "/home/lilith/tmp/rav1d-policy-mc-2026-09-07/bin/combined",
+      "/home/lilith/tmp/rav1d-concurrency-2026-09-06/inputs/non_uniform_first.obu",
+      "8",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t720x300\t8\ta9d3dff1915dbcbb9baacc5182e70d36\nCONFIG\tpackets=1\tframes=1\tthreads=8\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t8.906151\nRESULT\t0\t4\t8.919537\t2.229884\nVALIDATED\t3\tlifetime_frames=7\ttimed_frames=4\n",
+    "stderr": ""
+  },
+  {
+    "input": "first",
+    "arm": "upstream",
+    "threads": 8,
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/driver/target/release/rav1d-upstream-profile",
+      "/home/lilith/tmp/rav1d-concurrency-2026-09-06/inputs/non_uniform_first.obu",
+      "8",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t720x300\t8\ta9d3dff1915dbcbb9baacc5182e70d36\nCONFIG\tpackets=1\tframes=1\tthreads=8\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t2.927239\nRESULT\t0\t4\t2.936155\t0.734039\nVALIDATED\t3\tlifetime_frames=7\ttimed_frames=4\n",
+    "stderr": ""
+  },
+  {
+    "input": "stress",
+    "arm": "checked",
+    "threads": 1,
+    "command": [
+      "/home/lilith/tmp/rav1d-policy-mc-2026-09-07/bin/combined",
+      "tests/crash_vectors/tile_threading_cdef_lpf_race.obu",
+      "1",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t1024x1024\t8\t51b9c3ab246fda65e2c0a2155588e9a5\nCONFIG\tpackets=1\tframes=1\tthreads=1\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t53.504375\nRESULT\t0\t4\t53.517350\t13.379338\nVALIDATED\t3\tlifetime_frames=7\ttimed_frames=4\n",
+    "stderr": ""
+  },
+  {
+    "input": "stress",
+    "arm": "upstream",
+    "threads": 1,
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/driver/target/release/rav1d-upstream-profile",
+      "tests/crash_vectors/tile_threading_cdef_lpf_race.obu",
+      "1",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t1024x1024\t8\t51b9c3ab246fda65e2c0a2155588e9a5\nCONFIG\tpackets=1\tframes=1\tthreads=1\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t12.274808\nRESULT\t0\t4\t12.288724\t3.072181\nVALIDATED\t3\tlifetime_frames=7\ttimed_frames=4\n",
+    "stderr": ""
+  },
+  {
+    "input": "stress",
+    "arm": "checked",
+    "threads": 8,
+    "command": [
+      "/home/lilith/tmp/rav1d-policy-mc-2026-09-07/bin/combined",
+      "tests/crash_vectors/tile_threading_cdef_lpf_race.obu",
+      "8",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t1024x1024\t8\t51b9c3ab246fda65e2c0a2155588e9a5\nCONFIG\tpackets=1\tframes=1\tthreads=8\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t14.294062\nRESULT\t0\t4\t14.307026\t3.576757\nVALIDATED\t3\tlifetime_frames=7\ttimed_frames=4\n",
+    "stderr": ""
+  },
+  {
+    "input": "stress",
+    "arm": "upstream",
+    "threads": 8,
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/driver/target/release/rav1d-upstream-profile",
+      "tests/crash_vectors/tile_threading_cdef_lpf_race.obu",
+      "8",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t1024x1024\t8\t51b9c3ab246fda65e2c0a2155588e9a5\nCONFIG\tpackets=1\tframes=1\tthreads=8\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t3.012229\nRESULT\t0\t4\t3.021107\t0.755277\nVALIDATED\t3\tlifetime_frames=7\ttimed_frames=4\n",
+    "stderr": ""
+  },
+  {
+    "input": "single10",
+    "arm": "checked",
+    "threads": 1,
+    "command": [
+      "/home/lilith/tmp/rav1d-policy-mc-2026-09-07/bin/combined",
+      "tests/crash_vectors/lr_sgr_10bpc_noisy_nocdef.obu",
+      "1",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t256x256\t10\tbafc939f19adc1451c122baa7a8c828d\nCONFIG\tpackets=1\tframes=1\tthreads=1\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t7.297417\nRESULT\t0\t4\t7.308127\t1.827032\nVALIDATED\t3\tlifetime_frames=7\ttimed_frames=4\n",
+    "stderr": ""
+  },
+  {
+    "input": "single10",
+    "arm": "upstream",
+    "threads": 1,
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/driver/target/release/rav1d-upstream-profile",
+      "tests/crash_vectors/lr_sgr_10bpc_noisy_nocdef.obu",
+      "1",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t256x256\t10\tbafc939f19adc1451c122baa7a8c828d\nCONFIG\tpackets=1\tframes=1\tthreads=1\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t3.524994\nRESULT\t0\t4\t3.537267\t0.884317\nVALIDATED\t3\tlifetime_frames=7\ttimed_frames=4\n",
+    "stderr": ""
+  },
+  {
+    "input": "single10",
+    "arm": "checked",
+    "threads": 8,
+    "command": [
+      "/home/lilith/tmp/rav1d-policy-mc-2026-09-07/bin/combined",
+      "tests/crash_vectors/lr_sgr_10bpc_noisy_nocdef.obu",
+      "8",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t256x256\t10\tbafc939f19adc1451c122baa7a8c828d\nCONFIG\tpackets=1\tframes=1\tthreads=8\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t7.636961\nRESULT\t0\t4\t7.645046\t1.911261\nVALIDATED\t3\tlifetime_frames=7\ttimed_frames=4\n",
+    "stderr": ""
+  },
+  {
+    "input": "single10",
+    "arm": "upstream",
+    "threads": 8,
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/driver/target/release/rav1d-upstream-profile",
+      "tests/crash_vectors/lr_sgr_10bpc_noisy_nocdef.obu",
+      "8",
+      "1",
+      "4",
+      "1"
+    ],
+    "exit": 0,
+    "stdout": "FRAME\t0\t256x256\t10\tbafc939f19adc1451c122baa7a8c828d\nCONFIG\tpackets=1\tframes=1\tthreads=8\tinstances=1\tpasses=4\treps=1\tframe_delay=1\tusage=false\twide=false\ttasks=false\nINSTANCE\t0\t0\t3.768916\nRESULT\t0\t4\t3.782432\t0.945608\nVALIDATED\t3\tlifetime_frames=7\ttimed_frames=4\n",
+    "stderr": ""
+  }
+]

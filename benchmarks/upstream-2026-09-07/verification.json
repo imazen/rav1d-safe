@@ -1,0 +1,10 @@
+{
+  "runs": 504,
+  "timed_frames": 294784,
+  "lifetime_frames": 314440,
+  "before_after_hash_validations": 2268,
+  "all_cross_arm_frame_sequences_identical": true,
+  "all_exits_zero": true,
+  "upstream_source_blobs_verified_unmodified": 1364,
+  "invalid_input_checks_rejected_before_timing": 12
+}

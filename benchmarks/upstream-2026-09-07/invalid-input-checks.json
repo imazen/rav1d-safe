@@ -1,0 +1,182 @@
+[
+  {
+    "case": "empty.obu",
+    "arm": "checked",
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/bin/checked",
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/invalid/empty.obu",
+      "1",
+      "1",
+      "1",
+      "1"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "\nthread 'main' (3710757) panicked at examples/profile_concurrency.rs:58:9:\nassertion failed: !b.is_empty()\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+  },
+  {
+    "case": "empty.obu",
+    "arm": "upstream-fd1",
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/bin/upstream-fd1",
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/invalid/empty.obu",
+      "1",
+      "1",
+      "1",
+      "1"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "\nthread 'main' (3710758) panicked at src/main.rs:35:9:\nassertion failed: !b.is_empty()\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+  },
+  {
+    "case": "empty.obu",
+    "arm": "upstream-auto",
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/bin/upstream-auto",
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/invalid/empty.obu",
+      "1",
+      "1",
+      "1",
+      "1"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "\nthread 'main' (3710759) panicked at src/frame_threading.rs:35:9:\nassertion failed: !b.is_empty()\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+  },
+  {
+    "case": "truncated.ivf",
+    "arm": "checked",
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/bin/checked",
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/invalid/truncated.ivf",
+      "1",
+      "1",
+      "1",
+      "1"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "\nthread 'main' (3710760) panicked at examples/profile_concurrency.rs:70:9:\ntruncated or empty IVF packet\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+  },
+  {
+    "case": "truncated.ivf",
+    "arm": "upstream-fd1",
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/bin/upstream-fd1",
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/invalid/truncated.ivf",
+      "1",
+      "1",
+      "1",
+      "1"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "\nthread 'main' (3710761) panicked at src/main.rs:47:9:\ntruncated or empty IVF packet\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+  },
+  {
+    "case": "truncated.ivf",
+    "arm": "upstream-auto",
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/bin/upstream-auto",
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/invalid/truncated.ivf",
+      "1",
+      "1",
+      "1",
+      "1"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "\nthread 'main' (3710762) panicked at src/frame_threading.rs:47:9:\ntruncated or empty IVF packet\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+  },
+  {
+    "case": "wrong_codec.ivf",
+    "arm": "checked",
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/bin/checked",
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/invalid/wrong_codec.ivf",
+      "1",
+      "1",
+      "1",
+      "1"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "\nthread 'main' (3710763) panicked at examples/profile_concurrency.rs:61:5:\nAV1 IVF header\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+  },
+  {
+    "case": "wrong_codec.ivf",
+    "arm": "upstream-fd1",
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/bin/upstream-fd1",
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/invalid/wrong_codec.ivf",
+      "1",
+      "1",
+      "1",
+      "1"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "\nthread 'main' (3710764) panicked at src/main.rs:38:5:\nAV1 IVF header\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+  },
+  {
+    "case": "wrong_codec.ivf",
+    "arm": "upstream-auto",
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/bin/upstream-auto",
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/invalid/wrong_codec.ivf",
+      "1",
+      "1",
+      "1",
+      "1"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "\nthread 'main' (3710765) panicked at src/frame_threading.rs:38:5:\nAV1 IVF header\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+  },
+  {
+    "case": "invalid.obu",
+    "arm": "checked",
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/bin/checked",
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/invalid/invalid.obu",
+      "1",
+      "1",
+      "1",
+      "1"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "\nthread '<unnamed>' (3710767) panicked at examples/profile_concurrency.rs:88:56:\ndecode packet: Error: InvalidData\n\n    at src/managed.rs:635\n\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+  },
+  {
+    "case": "invalid.obu",
+    "arm": "upstream-fd1",
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/bin/upstream-fd1",
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/invalid/invalid.obu",
+      "1",
+      "1",
+      "1",
+      "1"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "Error parsing OBU data\n\nthread '<unnamed>' (3710769) panicked at src/main.rs:86:16:\ndecode packet: InvalidArgument\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+  },
+  {
+    "case": "invalid.obu",
+    "arm": "upstream-auto",
+    "command": [
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/bin/upstream-auto",
+      "/home/lilith/tmp/rav1d-upstream-perf-2026-09-07/invalid/invalid.obu",
+      "1",
+      "1",
+      "1",
+      "1"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "Error parsing OBU data\n\nthread '<unnamed>' (3710771) panicked at src/frame_threading.rs:86:16:\ndecode packet: InvalidArgument\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+  }
+]

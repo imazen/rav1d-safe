@@ -1,0 +1,5 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=8/24 avail=27682MiB :: python3 benchmarks/upstream-2026-09-07/profile.py --repo /home/lilith/work/zen/rav1d-safe --work-dir /home/lilith/tmp/rav1d-upstream-perf-2026-09-07
+checked-t1 completed and validated
+checked-t8 completed and validated
+upstream-fd1-t8 completed and validated
+run-heavy: done rc=0 24s | peak-RSS 0.06GiB | min-avail 27638MiB | peak-load 4.12
