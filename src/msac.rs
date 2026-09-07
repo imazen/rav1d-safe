@@ -356,25 +356,68 @@ const EC_WIN_SIZE: usize = mem::size_of::<EcWin>() << 3;
 /// For i < val: cdf[i] += (32768 - cdf[i]) >> rate (probability increases)
 /// For i >= val: cdf[i] -= cdf[i] >> rate (probability decreases)
 ///
-/// Select the distance before shifting, so each probability needs one shift.
+/// Uses mask-select to avoid branches on the val boundary.
 #[inline(always)]
 fn update_cdf(cdf: &mut [u16], n: usize, val: usize, rate: u16, count: u16) {
+    #[cfg(all(not(asm_msac), target_arch = "x86_64"))]
+    {
+        use archmage::SimdToken as _;
+        if n == 3 && rate < 16 {
+            if let Some(token) = archmage::X64V1Token::summon() {
+                return update_cdf3_simd(
+                    token,
+                    (&mut cdf[..4]).try_into().unwrap(),
+                    val.min(3),
+                    rate,
+                    count,
+                );
+            }
+        }
+    }
     for i in 0..n {
-        let p = cdf[i];
-        let increase = i < val;
-        let distance = if increase {
-            32768u16.wrapping_sub(p)
-        } else {
-            p
-        };
-        let delta = distance >> rate;
-        cdf[i] = if increase {
-            p.wrapping_add(delta)
-        } else {
-            p.wrapping_sub(delta)
-        };
+        let mask = ((i < val) as u16).wrapping_neg(); // 0xFFFF if below val, 0 otherwise
+        let delta_up = (32768u16.wrapping_sub(cdf[i])) >> rate;
+        let delta_dn = cdf[i] >> rate;
+        // Apply increase (delta_up) if below val, decrease (delta_dn) if at/above val
+        cdf[i] = cdf[i]
+            .wrapping_add(delta_up & mask)
+            .wrapping_sub(delta_dn & !mask);
     }
     cdf[n] = count + (count < 32) as u16;
+}
+
+/// A leaf kernel: keep normalization/refill outside the SIMD call so no coder
+/// state or vector registers must survive a refill. Each lane keeps the
+/// scalar wrapping arithmetic, including zero and high u16 probabilities.
+#[cfg(all(not(asm_msac), target_arch = "x86_64"))]
+#[archmage::arcane]
+fn update_cdf3_simd(
+    _token: archmage::X64V1Token,
+    cdf: &mut [u16; 4],
+    val: usize,
+    rate: u16,
+    count: u16,
+) {
+    use core::arch::x86_64::*;
+    use zerocopy::IntoBytes;
+
+    let p = _mm_cvtsi64_si128(i64::from_ne_bytes(cdf.as_bytes().try_into().unwrap()));
+    let below = _mm_cmpgt_epi16(
+        _mm_set1_epi16(val as i16),
+        _mm_setr_epi16(0, 1, 2, 3, 4, 5, 6, 7),
+    );
+    let shift = _mm_cvtsi32_si128(i32::from(rate));
+    let up = _mm_srl_epi16(_mm_sub_epi16(_mm_set1_epi16(i16::MIN), p), shift);
+    let down = _mm_srl_epi16(p, shift);
+    let updated = _mm_sub_epi16(
+        _mm_add_epi16(p, _mm_and_si128(below, up)),
+        _mm_andnot_si128(below, down),
+    );
+    // The count is the fourth lane. Replacing it before the sole store also
+    // leaves every byte after the four-entry CDF untouched.
+    let updated = _mm_insert_epi16::<3>(updated, i32::from(count + u16::from(count < 32)));
+    cdf.as_mut_bytes()
+        .copy_from_slice(&_mm_cvtsi128_si64(updated).to_ne_bytes());
 }
 
 #[inline]
@@ -960,22 +1003,72 @@ mod tests {
         // half, and every AV1 rate, symbol direction, and count transition.
         for probability in 0..=u16::MAX {
             for rate in 4..=7 {
-                for val in 0..=1 {
-                    for count in [0, 15, 16, 31, 32] {
-                        let mut cdf = [probability, count, 0xfade];
-                        update_cdf(&mut cdf, 1, val, rate, count);
-                        let divisor = 1u32 << rate;
-                        let expected = if val == 0 {
-                            u32::from(probability) - u32::from(probability) / divisor
-                        } else {
-                            u32::from(probability)
-                                + ((32768 + 65536 - u32::from(probability)) % 65536) / divisor
-                        } as u16;
-                        assert_eq!(cdf, [expected, count + u16::from(count < 32), 0xfade]);
+                for n in [1, 3] {
+                    for val in 0..=n {
+                        for count in [0, 15, 16, 31, 32] {
+                            let mut cdf = [0xfade; 5];
+                            cdf[..n].fill(probability);
+                            cdf[n] = count;
+                            let mut expected = cdf;
+                            let divisor = 1u32 << rate;
+                            for (i, p) in expected[..n].iter_mut().enumerate() {
+                                *p = if i >= val {
+                                    u32::from(probability) - u32::from(probability) / divisor
+                                } else {
+                                    u32::from(probability)
+                                        + ((32768 + 65536 - u32::from(probability)) % 65536)
+                                            / divisor
+                                } as u16;
+                            }
+                            expected[n] = count + u16::from(count < 32);
+                            update_cdf(&mut cdf, n, val, rate, count);
+                            assert_eq!(
+                                cdf, expected,
+                                "p={probability} rate={rate} n={n} val={val}"
+                            );
+                        }
                     }
                 }
             }
         }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn cdf_update_preserves_arithmetic_with_baseline_token_disabled() {
+        use archmage::SimdToken as _;
+        use archmage::testing::{CompileTimePolicy, for_each_token_permutation};
+
+        let _lock = crate::src::safe_simd::token_test_lock();
+        let (mut vector, mut scalar) = (false, false);
+        let report = for_each_token_permutation(CompileTimePolicy::WarnStderr, |_| {
+            if archmage::X64V1Token::summon().is_some() {
+                vector = true;
+            } else {
+                scalar = true;
+            }
+            for val in [0, 1, 2, 3, 4, usize::MAX] {
+                for rate in 0..16 {
+                    for count in [0, 15, 16, 31, 32, u16::MAX] {
+                        let mut cdf = [0, 32768, 65535, count, 0xfade];
+                        let mut expected = cdf;
+                        for (i, p) in expected[..3].iter_mut().enumerate() {
+                            let q = u32::from(*p);
+                            *p = if i >= val {
+                                q - q / (1 << rate)
+                            } else {
+                                q + ((32768 + 65536 - q) % 65536) / (1 << rate)
+                            } as u16;
+                        }
+                        expected[3] = count + u16::from(count < 32);
+                        update_cdf(&mut cdf, 3, val, rate, count);
+                        assert_eq!(cdf, expected);
+                    }
+                }
+            }
+        });
+        assert!(report.permutations_run > 1);
+        assert!(vector && scalar, "both dispatch paths must execute");
     }
 
     #[test]

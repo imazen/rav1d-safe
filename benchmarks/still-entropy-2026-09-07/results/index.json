@@ -132,6 +132,12 @@
     "sha256": "26230e1e4825cb6e2514ce1c8bddabe2f79d3f2b047c1d875e4f4733c92c9a9b"
   },
   {
+    "file": "api-audit.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/api-audit.json",
+    "bytes": 1760,
+    "sha256": "d2486dc2c5d4f40f74439ef3735545a6b42d4285c503e9104519132f04fa6c70"
+  },
+  {
     "file": "candidate-builds.json.gz",
     "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/candidate-builds.json",
     "bytes": 315,
@@ -142,6 +148,12 @@
     "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/candidate-checked-build.log",
     "bytes": 257,
     "sha256": "f897b95dd611aa46b1aacb4b566217762331e23f5810005e13c184ccacd9ff08"
+  },
+  {
+    "file": "cdf-count-lane-mutation.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-count-lane-mutation.log",
+    "bytes": 2565,
+    "sha256": "3654eebacb22c380c048a23425e00458afd8cfbb90de40f6d5c98392c12b4d13"
   },
   {
     "file": "cdf-select-builds.json.gz",
@@ -156,10 +168,208 @@
     "sha256": "777a92a131f81e0225c215ff9f3274ac872bb0bf4eb697e1b796b77e5af1b152"
   },
   {
+    "file": "cdf-select-screen-frame-reference.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-select-screen-frame-reference.json",
+    "bytes": 263,
+    "sha256": "607144a3f9e04d44e120f7deb883341d265bcef4c95ea35b9c7705ae04f0ca96"
+  },
+  {
+    "file": "cdf-select-screen-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-select-screen-provenance.json",
+    "bytes": 1528,
+    "sha256": "e7dc4392e52314b8afc6988c87dddcd416bc29441a78fd36b60183f50c2d1a75"
+  },
+  {
+    "file": "cdf-select-screen-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-select-screen-summary.json",
+    "bytes": 3614,
+    "sha256": "f7ca872004ab6a89cbb31b19de9163ec734ef7c9fec618b7a4792a08facf759f"
+  },
+  {
+    "file": "cdf-select-screen-000.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-select-screen.jsonl",
+    "bytes": 24361,
+    "sha256": "d5c40f8350617a71c5c8fcee0b9047e009f6755a186ea72b80cd8e3b2adacf9d"
+  },
+  {
+    "file": "cdf-select-screen-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-select-screen.jsonl",
+    "bytes": 24327,
+    "sha256": "bca70dd66c492d17d661c06d86aa4d9f127c78d9a4127883bd8d4c81af64f7d6"
+  },
+  {
+    "file": "cdf-select-screen-002.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-select-screen.jsonl",
+    "bytes": 9736,
+    "sha256": "90e5eb75147bbf3e60b0d48940c8c2e19063173fef7dea5192fd35f49b8daee3"
+  },
+  {
     "file": "cdf-select-tests.log.gz",
     "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-select-tests.log",
     "bytes": 1806,
     "sha256": "6643f956e6643e53f83aceb3f9a3ff5fefc03d925ebd3106780db972a170cc7c"
+  },
+  {
+    "file": "cdf-simd-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-builds.json",
+    "bytes": 314,
+    "sha256": "60d423237f9920c4a15c8812d7ae716af89c16301551719b8da24fdeac4b3d1e"
+  },
+  {
+    "file": "cdf-simd-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-checked-build.log",
+    "bytes": 256,
+    "sha256": "78c93e3a06618524874292f577ad19cd5db47be74ee3f8e74f53b60bbce3f083"
+  },
+  {
+    "file": "cdf-simd-confirm-confidence.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-confirm-confidence.json",
+    "bytes": 9690,
+    "sha256": "d32ccb8ebe70fb5d36044f985e1749c8e1e49594e58100478a09b2ad102b89e7"
+  },
+  {
+    "file": "cdf-simd-confirm-frame-reference.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-confirm-frame-reference.json",
+    "bytes": 350,
+    "sha256": "ce883406f29e51ba0221c158756d2582ffa26c1a5c7894b31953cf31efb0e00c"
+  },
+  {
+    "file": "cdf-simd-confirm-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-confirm-provenance.json",
+    "bytes": 1540,
+    "sha256": "a502124e2ab0ae3f7afd295821b059a587e5e00210d04a4719488db0c1934edb"
+  },
+  {
+    "file": "cdf-simd-confirm-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-confirm-summary.json",
+    "bytes": 6606,
+    "sha256": "f12520b4fd63e4e08803ce766413606f346d896eb71f6e2b458205119ddbb864"
+  },
+  {
+    "file": "cdf-simd-confirm-000.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-confirm.jsonl",
+    "bytes": 24530,
+    "sha256": "1a1249d0a663b04786a454b5b82d97cd4ed74e7781596a31bc7258b062212c0f"
+  },
+  {
+    "file": "cdf-simd-confirm-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-confirm.jsonl",
+    "bytes": 24417,
+    "sha256": "f3d12236371522f42c283c2113f3309f1d1be5532c599135621d4cd4dad3cb41"
+  },
+  {
+    "file": "cdf-simd-confirm-002.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-confirm.jsonl",
+    "bytes": 24449,
+    "sha256": "1f4f2051ac935aa5a4ae07ab8693b825e1c9e97665e90792ce0ab455e4cb1bf3"
+  },
+  {
+    "file": "cdf-simd-confirm-003.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-confirm.jsonl",
+    "bytes": 24413,
+    "sha256": "752c705762170282dc2cc84fd5644a6ef461c7aa6bd19b677fd9f110c4264776"
+  },
+  {
+    "file": "cdf-simd-confirm-004.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-confirm.jsonl",
+    "bytes": 24232,
+    "sha256": "1422ab304d9ab7774185c306a6e4fbe33ae520962c172e3d9e93907252bf6385"
+  },
+  {
+    "file": "cdf-simd-confirm-005.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-confirm.jsonl",
+    "bytes": 14617,
+    "sha256": "f91d680bb1816f666745c16dcc8543d0cf22441489ed8214b1e15381c307f241"
+  },
+  {
+    "file": "cdf-simd-conformance-t1.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-conformance-t1.log",
+    "bytes": 7134,
+    "sha256": "1469841fd9da5ba15aa692b73696980bcc7ae7d0569b3483696bc70e6f2d57a0"
+  },
+  {
+    "file": "cdf-simd-conformance-t8.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-conformance-t8.log",
+    "bytes": 2430,
+    "sha256": "c56f11a5ce2bb3895e554040b43819cb8161172525c74e9e0fcc8b7132b41c8a"
+  },
+  {
+    "file": "cdf-simd-debug-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-debug-tests.log",
+    "bytes": 2737,
+    "sha256": "d854b8f6e77ed3d1057c213f2b839659fd6632697bd13b422030dfc2483c7de9"
+  },
+  {
+    "file": "cdf-simd-final-lib-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-final-lib-tests.log",
+    "bytes": 13171,
+    "sha256": "85b61d8239117c0069caa20c7b54f3b84106eed490ace9e25780fb39f0eb0540"
+  },
+  {
+    "file": "cdf-simd-screen-frame-reference.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-screen-frame-reference.json",
+    "bytes": 263,
+    "sha256": "607144a3f9e04d44e120f7deb883341d265bcef4c95ea35b9c7705ae04f0ca96"
+  },
+  {
+    "file": "cdf-simd-screen-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-screen-provenance.json",
+    "bytes": 1518,
+    "sha256": "6a4e1d65548ceb0e03a6eb363cc57676a60341815bd406abe660ccb09ee720de"
+  },
+  {
+    "file": "cdf-simd-screen-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-screen-summary.json",
+    "bytes": 3590,
+    "sha256": "347d86785c803db7c2ebcdd2fe90a0114dedd8374772555a32c67662badeec54"
+  },
+  {
+    "file": "cdf-simd-screen-000.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-screen.jsonl",
+    "bytes": 24313,
+    "sha256": "26f076a149d6a0d3721bdb20f0888d1116781c889142cbcd12f4122925f79bd5"
+  },
+  {
+    "file": "cdf-simd-screen-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-screen.jsonl",
+    "bytes": 24275,
+    "sha256": "970352c43d9de8e0ec73c909ecebf7a9371d5197648073ce9f212abffabaac63"
+  },
+  {
+    "file": "cdf-simd-screen-002.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-screen.jsonl",
+    "bytes": 9716,
+    "sha256": "3a9ee73a3d5db652783e40b8cb85f37dd7283b052b9c0dd8d40b18cb8d2dbaea"
+  },
+  {
+    "file": "cdf-simd-tests-fixed.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-tests-fixed.log",
+    "bytes": 1806,
+    "sha256": "05e4e3d6c9cdda677c024c7dc69790ae64ef01e26c74adabb3f62b704e2712dd"
+  },
+  {
+    "file": "cdf-simd-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/cdf-simd-tests.log",
+    "bytes": 2046,
+    "sha256": "c1af4239d08414b05688a159f181422c9bcc0c3d03d7df51b13d2019a2adf4b2"
+  },
+  {
+    "file": "ci-asm-lifetime-local.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ci-asm-lifetime-local.log",
+    "bytes": 68900,
+    "sha256": "906591d17e7cc57f31bff3544587cf8ef23f072884feac8df18657539ed25e4c"
+  },
+  {
+    "file": "ci-c08042b7-ubuntu-asm.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ci-c08042b7-ubuntu-asm.log",
+    "bytes": 153855,
+    "sha256": "1e3a8a86c7d6e5c231c06433d54f3712b2b607b5b442cc204472017af9b0657a"
+  },
+  {
+    "file": "ci-c08042b7-ubuntu-safe.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/ci-c08042b7-ubuntu-safe.log",
+    "bytes": 43030,
+    "sha256": "8759dd2f502e07ebf82565f6749e811c7562c1c6d48c4ee39d5c1e6b8a83bf34"
   },
   {
     "file": "corpus.json.gz",
@@ -170,8 +380,8 @@
   {
     "file": "source-versions.json.gz",
     "source": "/home/lilith/tmp/rav1d-still-parity-2026-09-07/source-versions.json",
-    "bytes": 1194,
-    "sha256": "76726f95143b025b65074ba724677e177d5c37cf7f1bad10150346122befdf29"
+    "bytes": 1480,
+    "sha256": "7614e95dbf3f329cb583a87da8bbe6fa31c60ea805090f41100991e341fb17ba"
   },
   {
     "file": "sources.json.gz",
