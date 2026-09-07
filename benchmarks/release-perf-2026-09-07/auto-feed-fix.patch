@@ -1,0 +1,29 @@
+--- initial/main.rs
++++ corrected/main.rs
+@@ -85,9 +85,23 @@
+ fn run(dec: &mut Decoder, packets: &[Vec<u8>], mut frame: impl FnMut(Frame)) -> usize {
+     let mut n = 0;
+     for packet in packets {
+-        if let Some(f) = dec.decode(black_box(packet)).expect("decode packet") {
+-            frame(f);
+-            n += 1;
++        let mut attempts = 0;
++        loop {
++            match dec.decode(black_box(packet)) {
++                Ok(Some(f)) => { frame(f); n += 1; break; }
++                Ok(None) => break,
++                Err(e) if matches!(e.error(), rav1d_safe::src::managed::Error::NeedMoreData) => {
++                    // send_data rejected this packet before consuming it.
++                    // As in tests/filmgrain_threads.rs, retrieve old output and
++                    // retry these SAME bytes; never silently discard input.
++                    if let Some(f) = dec.get_frame().expect("backpressure output") {
++                        frame(f); n += 1;
++                    }
++                    attempts += 1;
++                    assert!(attempts < 100_000, "input backpressure made no progress");
++                }
++                Err(e) => panic!("decode packet: {e}"),
++            }
+         }
+     }
+     for f in dec.flush().expect("drain and reset stream") {

@@ -1,0 +1,108 @@
+[
+  {
+    "num": "0.1.0",
+    "created_at": "2026-02-12T08:44:57.050023Z",
+    "yanked": false,
+    "checksum": "0ee0faae397edbece765ba42fd64fa6b808931261235d78f30adeee9880bac47",
+    "features": {
+      "asm": [
+        "c-ffi"
+      ],
+      "asm_arm64_dotprod": [
+        "asm"
+      ],
+      "asm_arm64_i8mm": [
+        "asm"
+      ],
+      "asm_arm64_sve2": [
+        "asm"
+      ],
+      "bitdepth_16": [],
+      "bitdepth_8": [],
+      "c-ffi": [
+        "unchecked",
+        "dav1d-compat"
+      ],
+      "dav1d-compat": [],
+      "default": [
+        "bitdepth_8",
+        "bitdepth_16"
+      ],
+      "force_scalar": [],
+      "simd_test": [],
+      "unchecked": [
+        "rav1d-disjoint-mut/unchecked"
+      ]
+    },
+    "crate": "rav1d-safe",
+    "verified_archive_files": 115,
+    "vcs": {
+      "git": {
+        "sha1": "441dad0c1ed21d700efb51ab40392d3c835a1819"
+      },
+      "path_in_vcs": ""
+    },
+    "packaged_x86_asm_files": 0
+  },
+  {
+    "num": "0.5.7",
+    "created_at": "2026-05-26T12:46:55.768928Z",
+    "yanked": false,
+    "checksum": "717c3ef9a98101f3d2e33c4a8a4d1fd8b4fb0d39fa67a838e3308386ad9e7a1a",
+    "features": {
+      "asm": [
+        "c-ffi"
+      ],
+      "asm_arm64_dotprod": [
+        "asm"
+      ],
+      "asm_arm64_i8mm": [
+        "asm"
+      ],
+      "asm_arm64_sve2": [
+        "asm"
+      ],
+      "bitdepth_16": [],
+      "bitdepth_8": [],
+      "c-ffi": [
+        "unchecked",
+        "dav1d-compat",
+        "libc"
+      ],
+      "dav1d-compat": [],
+      "default": [
+        "bitdepth_8",
+        "bitdepth_16"
+      ],
+      "partial_asm": [
+        "unchecked"
+      ],
+      "simd_test": [],
+      "unchecked": []
+    },
+    "crate": "rav1d-safe",
+    "verified_archive_files": 142,
+    "vcs": {
+      "git": {
+        "sha1": "6d9720fc5a46d2883df54fa0e3671dd066ee2492"
+      },
+      "path_in_vcs": ""
+    },
+    "packaged_x86_asm_files": 0
+  },
+  {
+    "num": "0.1.0",
+    "created_at": "2019-06-06T20:17:25.313432Z",
+    "yanked": false,
+    "checksum": "b78ef9cb8a0acca6c3ddace366634b8b080221df1b9dbd9064e0b6c80e466b95",
+    "features": {},
+    "crate": "rav1d",
+    "verified_archive_files": 11,
+    "vcs": {
+      "git": {
+        "sha1": "25eaf97cbd12a9ab125aa5b508f2a610ed43e366"
+      }
+    },
+    "packaged_x86_asm_files": 0
+  }
+]

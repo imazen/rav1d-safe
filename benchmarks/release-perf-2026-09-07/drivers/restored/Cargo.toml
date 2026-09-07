@@ -1,0 +1,23 @@
+[package]
+name = "rav1d-release-profile-restored"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+rav1d-safe = { path = "/home/lilith/tmp/rav1d-release-perf-2026-09-07/first-restored" }
+md5 = "=0.8.0"
+
+[features]
+unchecked = ["rav1d-safe/unchecked"]
+asm = ["rav1d-safe/asm"]
+probe-usage = []
+probe-wide = []
+probe-tasktime = []
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+debug = "line-tables-only"
+strip = false
+panic = "unwind"

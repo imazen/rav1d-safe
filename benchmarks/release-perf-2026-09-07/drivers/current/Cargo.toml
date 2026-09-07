@@ -1,0 +1,25 @@
+[package]
+name = "rav1d-release-profile-current"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+rav1d-safe = { path = "/home/lilith/work/zen/rav1d-safe" }
+md5 = "=0.8.0"
+
+[features]
+unchecked = ["rav1d-safe/unchecked"]
+asm = ["rav1d-safe/asm"]
+tracker-off = ["rav1d-safe/probe-untracked"]
+asm-tracker-off = ["rav1d-safe/asm", "rav1d-safe/probe-untracked"]
+probe-usage = []
+probe-wide = []
+probe-tasktime = []
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+debug = "line-tables-only"
+strip = false
+panic = "unwind"

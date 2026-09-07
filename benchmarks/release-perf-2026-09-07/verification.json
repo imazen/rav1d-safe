@@ -1,0 +1,23 @@
+{
+  "attempts": 842,
+  "successful_runs": 840,
+  "failed_runs": 2,
+  "successful_cells": 168,
+  "rotations": 5,
+  "timed_frames": 208800,
+  "hash_validation_passes": 3480,
+  "failed_cells": [
+    [
+      "stress",
+      8,
+      1,
+      "latest-checked"
+    ],
+    [
+      "stress",
+      8,
+      1,
+      "latest-unchecked"
+    ]
+  ]
+}

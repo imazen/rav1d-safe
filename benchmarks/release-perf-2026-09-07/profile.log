@@ -1,0 +1,4 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=8/24 avail=27715MiB :: python3 benchmarks/release-perf-2026-09-07/profile.py --repo /home/lilith/work/zen/rav1d-safe --work-dir /home/lilith/tmp/rav1d-release-perf-2026-09-07
+current-unchecked-t8 completed and validated
+current-asm-t8 completed and validated
+run-heavy: done rc=0 9s | peak-RSS 0.06GiB | min-avail 27637MiB | peak-load 0.60
