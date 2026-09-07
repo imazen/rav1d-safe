@@ -198,17 +198,29 @@ fn hash_frame(frame: &Frame, ctx: &mut md5::Context) {
 
 /// Decode every packet and return `(md5, frames, max_height)`.
 fn decode(ivf: &Path, threads: u32, apply_grain: bool) -> Result<(String, usize, usize), String> {
+    let (hash, frames, height, _) = decode_with_delay(ivf, threads, 1, apply_grain)?;
+    Ok((hash, frames, height))
+}
+
+fn decode_with_delay(
+    ivf: &Path,
+    threads: u32,
+    max_frame_delay: u32,
+    apply_grain: bool,
+) -> Result<(String, usize, usize, usize), String> {
     let file = std::fs::File::open(ivf).map_err(|e| format!("open {}: {e}", ivf.display()))?;
     let mut reader = std::io::BufReader::new(file);
     let packets = ivf_parser::parse_all_frames(&mut reader).map_err(|e| format!("ivf: {e}"))?;
 
     let mut settings = Settings::default();
     settings.threads = threads;
+    settings.max_frame_delay = max_frame_delay;
     settings.apply_grain = apply_grain;
     let mut decoder = Decoder::with_settings(settings).map_err(|e| format!("decoder: {e}"))?;
 
     let mut ctx = md5::Context::new();
     let mut n = 0usize;
+    let mut deferred = 0usize;
     let mut max_h = 0usize;
     let note = |frame: &Frame, ctx: &mut md5::Context, n: &mut usize, max_h: &mut usize| {
         let h = match frame.planes() {
@@ -221,16 +233,42 @@ fn decode(ivf: &Path, threads: u32, apply_grain: bool) -> Result<(String, usize,
     };
 
     for p in &packets {
-        match decoder.decode(&p.data) {
-            Ok(Some(frame)) => note(&frame, &mut ctx, &mut n, &mut max_h),
-            Ok(None) => {}
-            Err(e) => return Err(format!("decode packet {n}: {e}")),
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        loop {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "decoder made no progress on input backpressure"
+            );
+            match decoder.decode(&p.data) {
+                Ok(Some(frame)) => {
+                    note(&frame, &mut ctx, &mut n, &mut max_h);
+                    break;
+                }
+                Ok(None) => {
+                    deferred += 1;
+                    break;
+                }
+                Err(e) if matches!(e.error(), rav1d_safe::src::managed::Error::NeedMoreData) => {
+                    // send_data rejected this packet before consuming it.
+                    // Retrieve output from the previous packet, then retry
+                    // the SAME bytes; dropping them would hide frame loss.
+                    if let Some(frame) = decoder
+                        .get_frame()
+                        .map_err(|e| format!("backpressure: {e}"))?
+                    {
+                        note(&frame, &mut ctx, &mut n, &mut max_h);
+                    }
+                    // None can still mean pending input was parsed into a
+                    // frame context. Retry submission before forcing a drain.
+                }
+                Err(e) => return Err(format!("decode packet {n}: {e}")),
+            }
         }
     }
     for frame in decoder.flush().map_err(|e| format!("flush: {e}"))? {
         note(&frame, &mut ctx, &mut n, &mut max_h);
     }
-    Ok((format!("{:x}", ctx.finalize()), n, max_h))
+    Ok((format!("{:x}", ctx.finalize()), n, max_h, deferred))
 }
 
 /// The gate: every film-grain vector must produce the reference MD5 at 1, 2, 4
@@ -315,4 +353,82 @@ fn some_vector_spans_multiple_row_bands() {
          two grain workers can never contend, so the thread test is vacuous"
     );
     eprintln!("tallest grain vector {best_name}: {best} px = {bands} row bands");
+}
+
+/// Frame contexts must actually be enabled; checked builds clamp them to one.
+#[cfg(feature = "unchecked")]
+#[test]
+fn film_grain_frame_and_tile_threads_match_reference() {
+    let vectors = grain_vectors();
+    let mut deferred = 0;
+    let mut multi_frame_vectors = 0;
+    for v in &vectors {
+        let baseline = decode(&v.ivf, 1, true).expect("serial reference");
+        assert_eq!(baseline.0, v.expected_md5, "serial {}", v.name);
+        multi_frame_vectors += usize::from(baseline.1 > 1);
+        for (threads, delay) in [(4, 2), (8, 2), (8, 4)] {
+            for rep in 0..3 {
+                let result = decode_with_delay(&v.ivf, threads, delay, true).unwrap_or_else(|e| {
+                    panic!("{} t={threads} delay={delay} rep={rep}: {e}", v.name)
+                });
+                assert_eq!(
+                    result.0, v.expected_md5,
+                    "{} t={threads} delay={delay} rep={rep}",
+                    v.name
+                );
+                assert_eq!(result.1, baseline.1, "lost/duplicated frames: {}", v.name);
+                deferred += result.3;
+            }
+        }
+    }
+    assert!(
+        multi_frame_vectors > 0,
+        "no multi-frame input exercised the pipeline"
+    );
+    assert!(deferred > 0, "frame decoding never deferred output");
+    eprintln!(
+        "{} vectors, {} multi-frame vectors, {} deferred packet outputs, {} threaded decode runs",
+        vectors.len(),
+        multi_frame_vectors,
+        deferred,
+        vectors.len() * 9
+    );
+}
+
+/// Separate decoders have separate picture buffers but share dispatch state.
+#[test]
+fn film_grain_independent_decoders_match_reference() {
+    let vectors = grain_vectors();
+    let barrier = std::sync::Barrier::new(3);
+    std::thread::scope(|scope| {
+        let mut workers = Vec::new();
+        for worker in 0..3 {
+            let vectors = &vectors;
+            let barrier = &barrier;
+            workers.push(scope.spawn(move || {
+                // One start barrier: a decode failure must not leave sibling
+                // workers blocked at a later barrier.
+                barrier.wait();
+                for v in vectors {
+                    let delay = if cfg!(feature = "unchecked") && worker != 0 {
+                        2
+                    } else {
+                        1
+                    };
+                    let result = decode_with_delay(&v.ivf, 4, delay, true).unwrap_or_else(|e| {
+                        panic!("{} decoder={worker} delay={delay}: {e}", v.name)
+                    });
+                    assert_eq!(
+                        result.0, v.expected_md5,
+                        "{} decoder={worker} delay={delay}",
+                        v.name
+                    );
+                    assert!(result.1 > 0, "no frames: {}", v.name);
+                }
+            }));
+        }
+        for worker in workers {
+            worker.join().expect("parallel decoder panicked");
+        }
+    });
 }

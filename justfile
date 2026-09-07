@@ -320,3 +320,30 @@ bench-compare:
     echo "============================================"
     cargo bench --bench decode_avif --features "asm,bitdepth_8,bitdepth_16" 2>&1 | grep -E "photo_|Timer"
     cargo bench --bench decode --features "asm,bitdepth_8,bitdepth_16" 2>&1 | grep -E "bit/|film_grain/|Timer"
+
+# #526: corpus reference MD5s with grain enabled at 1/2/4/8 threads, dev guards on.
+test-filmgrain:
+    CARGO_BUILD_JOBS=4 nice -n 19 cargo nextest run --test filmgrain_threads --test-threads 1
+
+test-filmgrain-rows:
+    CARGO_BUILD_JOBS=4 nice -n 19 cargo nextest run --lib -E 'test(filmgrain_rows)' --test-threads 1
+
+# Native ARM interleaved decoder tiers; requires the explicit IVF fixtures.
+arm-tiers-macos:
+    mkdir -p "$HOME/tmp"
+    CARGO_BUILD_JOBS=4 RAYON_NUM_THREADS=4 OMP_NUM_THREADS=4 TMPDIR="$HOME/tmp" nice -n 19 cargo bench --locked -p rav1d-safe --bench tier_isolation -- --format=llm > "$HOME/tmp/rav1d-arm-tiers.log" 2>&1
+
+
+# #526: actual frame contexts plus a 32-tile stream, and concurrent decoders.
+test-filmgrain-concurrency:
+    CARGO_BUILD_JOBS=2 nice -n 19 cargo nextest run --lib --test filmgrain_threads -E 'binary(filmgrain_threads) | test(parallel_frame_tile_contexts)' --test-threads 1 --success-output immediate
+    CARGO_BUILD_JOBS=2 nice -n 19 cargo nextest run --features unchecked --lib --test filmgrain_threads -E 'binary(filmgrain_threads) | test(parallel_frame_tile_contexts)' --test-threads 1 --success-output immediate
+
+# Root API and strict/lenient conformance regression checks (issues 525, 522, 523).
+test-strictness:
+    cargo test --test strictness
+    cargo test --doc Settings
+
+# Replay one differential artifact without a sweep; requires system libdav1d.
+repro-differential artifact:
+    cargo +nightly fuzz run differential_dav1d --features differential {{artifact}} -- -runs=1

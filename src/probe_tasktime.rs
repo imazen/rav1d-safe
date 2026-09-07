@@ -202,7 +202,10 @@ pub fn reset() {
 
 /// Dump every counter as `PROBE <key> <value>` lines on stdout.
 pub fn report(frames: u64) {
-    assert!(NEXT_SLOT.load(Ordering::Relaxed) <= MAX_WORKERS, "task probe worker slot overflow");
+    assert!(
+        NEXT_SLOT.load(Ordering::Relaxed) <= MAX_WORKERS,
+        "task probe worker slot overflow"
+    );
     let f = frames.max(1) as f64;
     let mut per_stage_total = [0u64; N_STAGE];
     let mut per_worker_total = [0u64; MAX_WORKERS];

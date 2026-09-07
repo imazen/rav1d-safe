@@ -49,7 +49,7 @@ The public API lives in `src/managed.rs` and is re-exported at the crate root, s
 
 ```rust
 use rav1d_safe::{
-    Decoder, Settings, CpuLevel, Error, Frame, Result,
+    Decoder, Settings, Strictness, CpuLevel, Error, Frame, Result,
     Planes,                       // enum; you match Planes::Depth8(_) / Planes::Depth16(_)
     Planes8, Planes16,            // the inner per-bit-depth plane sets the variants wrap
     PlaneView8, PlaneView16,      // zero-copy 2D plane views
@@ -61,6 +61,22 @@ use rav1d_safe::{
     enabled_features,
 };
 ```
+
+Configure the conformance policy by modifying the default settings:
+
+```rust
+use rav1d_safe::{Decoder, Settings, Strictness};
+
+# fn main() -> rav1d_safe::Result<()> {
+let mut settings = Settings::default();
+settings.strictness = Strictness::Lenient;
+let decoder = Decoder::with_settings(settings)?;
+# Ok(())
+# }
+```
+
+The default is `Strictness::Strict`. `Settings` remains non-exhaustive, so
+downstream callers use field assignment rather than a struct literal.
 
 **Core types:**
 

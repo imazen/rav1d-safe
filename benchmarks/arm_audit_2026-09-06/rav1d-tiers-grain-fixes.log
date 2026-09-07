@@ -1,0 +1,70 @@
+   Compiling rav1d-safe v0.6.0 (/Users/lilith/work/zen/rav1d-safe)
+    Finished `bench` profile [optimized + debuginfo] target(s) in 16.79s
+     Running benches/tier_isolation.rs (target/release/deps/tier_isolation-ffebf82127dd6147)
+fixture 8-bit/data/00000795.ivf: 98730 bytes, 12 decoded frames, exact tier parity passed
+fixture 10-bit/data/00000775.ivf: 17844 bytes, 10 decoded frames, exact tier parity passed
+fixture 12-bit/data/00000790.ivf: 17528 bytes, 10 decoded frames, exact tier parity passed
+fixture 8-bit/film_grain/av1-1-b8-23-film_grain-50.ivf: 28634 bytes, 10 decoded frames, exact tier parity passed
+fixture 10-bit/film_grain/av1-1-b10-23-film_grain-50.ivf: 28906 bytes, 10 decoded frames, exact tier parity passed
+[zenbench] calibration: int=0.28ns/iter mem_bw=117.8GiB/s mem_lat=7.3ns
+[zenbench] timer resolution: 41ns, loop overhead: 0.22ns/iter, TSC: 1.000 ticks/ns (invariant)
+[zenbench] results → /Users/lilith/tmp/zenbench/zenbench-1788676727-15960.txt
+
+═══════════════════════════════════════════════════════════════
+  zenbench  1788676727-15960
+  git: 58015574ffe3ef95ebc5f4c1825d49f4ec0b52f5
+═══════════════════════════════════════════════════════════════
+
+  decode_tiers/8-bit/data/00000795.ivf  30 rounds × 1 calls
+                     mean ±mad ms  95% CI vs base       ops/s
+  ├─ native_simd      38.6 ±2.4ms  [38.0–39.2]ms         311
+  ╰─ forced_scalar   126.0 ±2.7ms  [+222.9%–+229.3%]    95.3
+
+  native_simd    ████████████████████████████████████████████████████ 311 ops/s
+  forced_scalar  ████████████████ 95.3 ops/s
+
+  decode_tiers/10-bit/data/00000775.ivf  30 rounds × 1 calls
+                    mean ±mad ms  95% CI vs base       ops/s
+  ├─ native_simd     10.6 ±0.9ms  [10.1–11.1]ms        944
+  ╰─ forced_scalar   26.5 ±1.2ms  [+141.0%–+158.6%]    378
+
+  native_simd    █████████████████████████████████████████████████████ 944 ops/s
+  forced_scalar  █████████████████████ 378 ops/s
+
+  decode_tiers/12-bit/data/00000790.ivf  30 rounds × 1 calls
+                    mean ±mad ms  95% CI vs base       ops/s
+  ├─ native_simd     10.2 ±1.8ms  [9.7–10.6]ms         984
+  ╰─ forced_scalar   26.4 ±1.4ms  [+151.1%–+169.2%]    378
+
+  native_simd    █████████████████████████████████████████████████████ 984 ops/s
+  forced_scalar  ████████████████████ 378 ops/s
+
+  decode_tiers/8-bit/film_grain/av1-1-b8-23-film_grain-50.ivf  30 rounds × 1 calls
+                    mean ±mad ms  95% CI vs base     ops/s
+  ├─ native_simd     18.1 ±2.5ms  [17.6–18.7]ms      552
+  ╰─ forced_scalar   34.4 ±0.9ms  [+83.3%–+96.2%]    291
+
+  native_simd    █████████████████████████████████████████████████████ 552 ops/s
+  forced_scalar  ████████████████████████████ 291 ops/s
+
+  decode_tiers/10-bit/film_grain/av1-1-b10-23-film_grain-50.ivf  30 rounds × 1 calls
+                    mean ±mad ms  95% CI vs base     ops/s
+  ├─ native_simd     24.3 ±2.6ms  [23.7–24.9]ms      412
+  ╰─ forced_scalar   43.3 ±0.8ms  [+73.3%–+83.3%]    231
+
+  native_simd    █████████████████████████████████████████████████████ 412 ops/s
+  forced_scalar  ██████████████████████████████ 231 ops/s
+
+  total: 30.4s  (10 noisy rounds)
+═══════════════════════════════════════════════════════════════
+  filter: cargo bench -- --group=NAME  format: --format=llm|csv|md|json
+group=decode_tiers/8-bit/data/00000795.ivf benchmark=native_simd  |  vs_base=baseline  |  min=35.99ms mean=38.64ms median=39.12ms mad=2.35ms  |  throughput=310.59 ops/s  |  n=30 cv=4.4% rounds=30 calls=1 mean_ci=[38.03ms 39.24ms] cold=35.79ms
+group=decode_tiers/8-bit/data/00000795.ivf benchmark=forced_scalar  |  vs_base_pct=+226.07 ci=[+222.94% +229.31%] significant=true effect=45.59 p=0.0000  |  min=123.29ms mean=125.98ms median=126.40ms mad=2.73ms  |  throughput=95.25 ops/s  |  n=30 cv=1.7% rounds=30 calls=1 mean_ci=[125.27ms 126.74ms] cold=124.51ms
+group=decode_tiers/10-bit/data/00000775.ivf benchmark=native_simd  |  vs_base=baseline  |  min=8.97ms mean=10.59ms median=11.59ms mad=937.93µs  |  throughput=944.03 ops/s  |  n=30 cv=13.2% rounds=30 calls=1 mean_ci=[10.10ms 11.08ms] cold=9.52ms
+group=decode_tiers/10-bit/data/00000775.ivf benchmark=forced_scalar  |  vs_base_pct=+149.78 ci=[+141.03% +158.62%] significant=true effect=11.93 p=0.0000  |  min=24.86ms mean=26.46ms median=25.77ms mad=1.23ms  |  throughput=377.94 ops/s  |  n=30 cv=4.7% rounds=30 calls=1 mean_ci=[26.01ms 26.91ms] cold=24.32ms
+group=decode_tiers/12-bit/data/00000790.ivf benchmark=native_simd  |  vs_base=baseline  |  min=8.76ms mean=10.17ms median=10.03ms mad=1.76ms  |  throughput=983.72 ops/s  |  n=30 cv=12.8% rounds=30 calls=1 mean_ci=[9.71ms 10.63ms] cold=9.36ms
+group=decode_tiers/12-bit/data/00000790.ivf benchmark=forced_scalar  |  vs_base_pct=+160.17 ci=[+151.10% +169.23%] significant=true effect=12.18 p=0.0000  |  min=24.39ms mean=26.45ms median=25.71ms mad=1.37ms  |  throughput=378.11 ops/s  |  n=30 cv=5.2% rounds=30 calls=1 mean_ci=[25.96ms 26.94ms] cold=24.94ms
+group=decode_tiers/8-bit/film_grain/av1-1-b8-23-film_grain-50.ivf benchmark=native_simd  |  vs_base=baseline  |  min=16.34ms mean=18.13ms median=18.39ms mad=2.52ms  |  throughput=551.63 ops/s  |  n=30 cv=8.7% rounds=30 calls=1 mean_ci=[17.57ms 18.69ms] cold=16.69ms
+group=decode_tiers/8-bit/film_grain/av1-1-b8-23-film_grain-50.ivf benchmark=forced_scalar  |  vs_base_pct=+89.74 ci=[+83.32% +96.18%] significant=true effect=9.70 p=0.0000  |  min=32.52ms mean=34.40ms median=33.13ms mad=885.74µs  |  throughput=290.73 ops/s  |  n=30 cv=5.1% rounds=30 calls=1 mean_ci=[33.78ms 35.04ms] cold=33.56ms
+group=decode_tiers/10-bit/film_grain/av1-1-b10-23-film_grain-50.ivf benchmark=native_simd  |  vs_base=baseline  |  min=22.34ms mean=24.29ms median=24.51ms mad=2.56ms  |  throughput=411.71 ops/s  |  n=30 cv=6.9% rounds=30 calls=1 mean_ci=[23.70ms 24.88ms] cold=22.28ms
+group=decode_tiers/10-bit/film_grain/av1-1-b10-23-film_grain-50.ivf benchmark=forced_scalar  |  vs_base_pct=+78.28 ci=[+73.34% +83.29%] significant=true effect=11.03 p=0.0000  |  min=41.36ms mean=43.30ms median=41.97ms mad=796.93µs  |  throughput=230.93 ops/s  |  n=30 cv=4.1% rounds=30 calls=1 mean_ci=[42.68ms 43.94ms] cold=41.76ms

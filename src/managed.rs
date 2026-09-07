@@ -163,8 +163,16 @@ pub enum Strictness {
 
 /// Decoder configuration settings
 ///
-/// Use `Settings::default()` or struct update syntax (`Settings { threads: 4, ..Default::default() }`)
-/// to construct. New fields may be added in minor releases.
+/// Construct with [`Settings::default()`], then assign the fields to customize.
+/// This type is non-exhaustive; downstream callers cannot use struct literals.
+///
+/// ```
+/// use rav1d_safe::{Settings, Strictness};
+/// let mut settings = Settings::default();
+/// settings.threads = 4;
+/// settings.strictness = Strictness::Lenient;
+/// assert_eq!(settings.strictness, Strictness::Lenient);
+/// ```
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct Settings {
@@ -780,7 +788,12 @@ impl Frame {
     #[cfg(feature = "probe-tasktime")]
     pub fn probe_geometry(&self) -> (u8, u8, u8, u8) {
         let h = &self.inner.frame_hdr.as_ref().expect("frame header").rav1d;
-        (h.tiling.cols, h.tiling.rows, h.frame_type as u8, h.show_existing_frame)
+        (
+            h.tiling.cols,
+            h.tiling.rows,
+            h.frame_type as u8,
+            h.show_existing_frame,
+        )
     }
 
     /// Frame width in pixels
@@ -1468,3 +1481,7 @@ pub fn enabled_features() -> String {
 
     features.join(", ")
 }
+
+#[cfg(test)]
+#[path = "managed/frame_tile_tests.rs"]
+mod frame_tile_tests;

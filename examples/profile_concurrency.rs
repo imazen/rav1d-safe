@@ -132,7 +132,11 @@ impl PerfControl {
             self.1.read_line(&mut ack).unwrap() > 0,
             "perf control closed"
         );
-        assert_eq!(ack.trim().trim_start_matches('\0'), "ack", "perf control acknowledgement");
+        assert_eq!(
+            ack.trim().trim_start_matches('\0'),
+            "ack",
+            "perf control acknowledgement"
+        );
     }
 }
 

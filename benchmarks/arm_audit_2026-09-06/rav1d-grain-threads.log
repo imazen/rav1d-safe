@@ -1,0 +1,11 @@
+   Compiling rav1d-safe v0.6.0 (/Users/lilith/work/zen/rav1d-safe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.62s
+     Running tests/filmgrain_threads.rs (target/debug/deps/filmgrain_threads-024042000e186a01)
+
+running 3 tests
+test film_grain_md5_matches_at_1_2_4_8_threads ... ok
+test grain_actually_changes_pixels ... ok
+test some_vector_spans_multiple_row_bands ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.44s
+

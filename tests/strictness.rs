@@ -17,7 +17,7 @@
 //! Both verified 2026-08-28 against aomdec (libaom 632172a) and the dav1d 1.5.3
 //! CLI: `--strict 0` decodes 1/1 frames, `--strict 1` rejects. The record is
 //! `benchmarks/strictness_2026-08-28.meta`.
-use rav1d_safe::src::managed::{Decoder, Error, Frame, Planes, Settings, Strictness};
+use rav1d_safe::{Decoder, Error, Frame, Planes, Settings, Strictness};
 
 const SEG_ID_DESYNC: &[u8] = include_bytes!("strictness_vectors/segment_id_desync_zenrav1e35.obu");
 const TILE_PADDING_DESYNC: &[u8] =
@@ -114,4 +114,28 @@ fn deprecated_strict_std_compliance_still_means_strict() {
         .err()
         .expect("strict_std_compliance = true must behave as Strictness::Strict");
     assert!(matches!(err, Error::InvalidData), "got {err:?}");
+}
+
+// Shared 36-byte farm repro for #522 and #523. SHA-256:
+// 54618c389e1f7bda7de0eacd5b3938fe589bb6511a76d35fd9e71a29264bd40f
+// The decoded segment ID is 6 with LastActiveSegId=4 (AV1 section 6.10.8).
+#[test]
+fn fuzz_522_523_out_of_range_segment_id_is_rejected() {
+    let data: &[u8] = &[
+        0x0a, 0x06, 0x18, 0x25, 0xcf, 0x2a, 0xcf, 0x31, 0x31, 0x31, 0x0d, 0x30, 0x25, 0x31, 0x0e,
+        0x25, 0x35, 0x35, 0x35, 0xec, 0x24, 0x24, 0x0b, 0x00, 0x1e, 0x46, 0x00, 0x00, 0x00, 0xa9,
+        0x00, 0x25, 0x24, 0x32, 0xde, 0x30,
+    ];
+    let frame = decode_first(with(Strictness::Lenient), data)
+        .expect("lenient positive control reaches reconstruction");
+    assert_eq!(
+        (frame.width(), frame.height(), frame.bit_depth()),
+        (243, 173, 10)
+    );
+    for settings in [with(Strictness::Strict), Settings::default()] {
+        let err = decode_first(settings, data)
+            .err()
+            .expect("out-of-range segment ID must be rejected");
+        assert!(matches!(err, Error::InvalidData), "got {err:?}");
+    }
 }

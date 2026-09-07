@@ -98,7 +98,10 @@ compile_error!("unsound measurement probes are disabled; use a historical benchm
 ))]
 compile_error!("Loom must exercise the production sharded tracker and its instrumented spin lock");
 
-#[cfg(all(feature = "__probe_usage", any(feature = "__probe_count", feature = "__tracker_legacy")))]
+#[cfg(all(
+    feature = "__probe_usage",
+    any(feature = "__probe_count", feature = "__tracker_legacy")
+))]
 compile_error!("usage census requires the production sharded tracker");
 
 extern crate alloc;

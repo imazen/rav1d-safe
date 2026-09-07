@@ -524,8 +524,20 @@ pub(crate) fn rav1d_task_delayed_fg(c: &Rav1dContext, out: &mut Rav1dPicture, in
     // A worker death by panic means the film-grain rows may never complete;
     // the panic guard wakes this condvar and the caller (rav1d_apply_grain)
     // checks `panicked` and discards the output (zenavif#30).
-    if !ttd.panicked.load(Ordering::SeqCst) {
+    while !ttd.panicked.load(Ordering::SeqCst)
+        && (ttd.delayed_fg_exec.get() != 0
+            || ttd.delayed_fg_progress[0].load(Ordering::SeqCst)
+                != ttd.delayed_fg_progress[1].load(Ordering::SeqCst))
+    {
         ttd.delayed_fg_cond.wait(&mut task_thread_lock);
+    }
+    if ttd.panicked.load(Ordering::SeqCst) {
+        // A sibling may still hold delayed_fg's read lock and update progress.
+        // Stop scheduling new grain work, but leave those workers' state alive
+        // until the poisoned decoder joins them on drop. The caller observes
+        // panicked and returns an error instead of exposing incomplete pixels.
+        ttd.delayed_fg_exec.set(0);
+        return;
     }
     drop(task_thread_lock);
     ttd.delayed_fg_progress[0].store(0, Ordering::SeqCst);
@@ -1596,4 +1608,54 @@ pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
         }
     }
     drop(task_thread_lock.take().expect("thread lock was not held"));
+}
+
+#[cfg(test)]
+mod grain_panic_tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[test]
+    fn delayed_grain_panic_preserves_live_worker_state() {
+        let c = Rav1dContext::default();
+        let ttd = Arc::clone(&c.task_thread);
+        let (release, released) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let mut lock = ttd.lock.lock();
+            while ttd.delayed_fg_exec.get() == 0 {
+                assert!(
+                    !ttd.cond
+                        .wait_for(&mut lock, Duration::from_secs(5))
+                        .timed_out()
+                );
+            }
+            // This worker is still reading the band when a sibling dies.
+            let grain = ttd.delayed_fg.read();
+            ttd.delayed_fg_progress[0].store(3, Ordering::SeqCst);
+            ttd.delayed_fg_progress[1].store(1, Ordering::SeqCst);
+            ttd.panicked.store(true, Ordering::SeqCst);
+            ttd.delayed_fg_cond.notify_one();
+            drop(lock);
+            released
+                .recv_timeout(Duration::from_secs(5))
+                .expect("caller must return while the grain reader is alive");
+            assert_eq!(grain.out.p.bpc, 8);
+        });
+        let mut out = Rav1dPicture::default();
+        out.p.bpc = 8;
+        rav1d_task_delayed_fg(&c, &mut out, &Rav1dPicture::default());
+        assert!(c.task_thread.panicked.load(Ordering::SeqCst));
+        assert_eq!(c.task_thread.delayed_fg_exec.get(), 0);
+        assert_eq!(
+            c.task_thread.delayed_fg_progress[0].load(Ordering::SeqCst),
+            3
+        );
+        assert_eq!(
+            c.task_thread.delayed_fg_progress[1].load(Ordering::SeqCst),
+            1
+        );
+        release.send(()).unwrap();
+        worker.join().unwrap();
+    }
 }

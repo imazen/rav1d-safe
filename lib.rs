@@ -226,6 +226,6 @@ pub mod src {
 pub use src::managed::{
     ColorInfo, ColorPrimaries, ColorRange, ContentLightLevel, CpuLevel, DecodeFrameType, Decoder,
     Error, Frame, InloopFilters, MasteringDisplay, MatrixCoefficients, PixelLayout, PlaneView8,
-    PlaneView16, Planes, Planes8, Planes16, Result, Settings, TransferCharacteristics,
+    PlaneView16, Planes, Planes8, Planes16, Result, Settings, Strictness, TransferCharacteristics,
     enabled_features,
 };

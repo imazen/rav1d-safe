@@ -1,0 +1,13 @@
+run-heavy: mem-cap=24G (cgroup, hard) jobs=4/32 avail=46054MiB :: cargo test --locked --test filmgrain_threads -- --test-threads=1
+   Compiling rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.88s
+     Running tests/filmgrain_threads.rs (target/debug/deps/filmgrain_threads-45af1accd30c3b7f)
+
+running 3 tests
+test film_grain_md5_matches_at_1_2_4_8_threads ... ok
+test grain_actually_changes_pixels ... ok
+test some_vector_spans_multiple_row_bands ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.07s
+
+run-heavy: done rc=0 23s | peak-RSS 0.73GiB | min-avail 45894MiB | peak-load 0.92

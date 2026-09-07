@@ -1,0 +1,115 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.186
+   Compiling target-lexicon v0.13.5
+   Compiling autocfg v1.5.1
+   Compiling heck v0.5.0
+   Compiling num-traits v0.2.19
+   Compiling shlex v2.0.1
+   Compiling jobserver v0.1.34
+   Compiling syn v2.0.117
+   Compiling find-msvc-tools v0.1.9
+   Compiling winnow v1.0.3
+   Compiling cc v1.2.64
+   Compiling toml_parser v1.1.2+spec-1.1.0
+   Compiling smallvec v1.15.2
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling serde_spanned v1.1.1
+   Compiling cfg-expr v0.20.8
+   Compiling toml v1.1.2+spec-1.1.0
+   Compiling version-compare v0.2.1
+   Compiling pkg-config v0.3.33
+   Compiling num-integer v0.1.46
+   Compiling zerocopy v0.8.52
+   Compiling system-deps v7.0.8
+   Compiling equator-macro v0.4.2
+   Compiling parking_lot_core v0.9.12
+   Compiling stable_deref_trait v1.2.1
+   Compiling log v0.4.32
+   Compiling equator v0.4.2
+   Compiling as-slice v0.2.1
+   Compiling dav1d-sys v0.8.3
+   Compiling nasm-rs v0.3.2
+   Compiling num-bigint v0.4.6
+   Compiling zerocopy-derive v0.8.52
+   Compiling bitflags v2.13.0
+   Compiling paste v1.0.15
+   Compiling scopeguard v1.2.0
+   Compiling cfg-if v1.0.4
+   Compiling lock_api v0.4.14
+   Compiling aligned-vec v0.6.4
+   Compiling rav1d-safe v0.6.0 (/Users/lilith/work/zen/rav1d-safe)
+   Compiling aligned v0.4.3
+   Compiling num-derive v0.4.2
+   Compiling atomig-macro v0.4.0
+   Compiling archmage-macros v0.9.26
+   Compiling strum_macros v0.28.0
+   Compiling libfuzzer-sys v0.4.13
+   Compiling bytes v1.11.1
+   Compiling byte-slice-cast v1.2.3
+   Compiling safe_unaligned_simd v0.2.5
+   Compiling archmage v0.9.26
+   Compiling strum v0.28.0
+   Compiling rav1d-disjoint-mut v0.3.1 (/Users/lilith/work/zen/rav1d-safe/crates/rav1d-disjoint-mut)
+   Compiling num-rational v0.4.2
+   Compiling atomig v0.4.3
+   Compiling av-data v0.4.4
+   Compiling parking_lot v0.12.5
+   Compiling raw-cpuid v11.6.0
+   Compiling enough v0.4.4
+   Compiling assert_matches v1.5.0
+   Compiling arbitrary v1.4.2
+   Compiling static_assertions v1.1.0
+   Compiling whereat v0.1.5
+   Compiling to_method v1.1.0
+   Compiling dav1d v0.11.1
+   Compiling rav1d-safe-fuzz v0.0.0 (/Users/lilith/work/zen/rav1d-safe/fuzz)
+    Finished `release` profile [optimized + debuginfo] target(s) in 46.49s
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.06s
+     Running `fuzz/target/aarch64-apple-darwin/release/differential_dav1d -artifact_prefix=/Users/lilith/work/zen/rav1d-safe/fuzz/artifacts/differential_dav1d/ -runs=1 /Users/lilith/work/codec-artifacts/rav1d-issues-522-523/crash-16c021d73995521b6baafff5d542fc040325b6d4`
+INFO: Running with entropic power schedule (0xFF, 100).
+INFO: Seed: 2442725829
+INFO: Loaded 1 modules   (146793 inline 8-bit counters): 146793 [0x101133930, 0x101157699), 
+INFO: Loaded 1 PC tables (146793 PCs): 146793 [0x1011576a0,0x101394d30), 
+fuzz/target/aarch64-apple-darwin/release/differential_dav1d: Running 1 inputs 1 time(s) each.
+Running: /Users/lilith/work/codec-artifacts/rav1d-issues-522-523/crash-16c021d73995521b6baafff5d542fc040325b6d4
+
+thread '<unnamed>' (144423449) panicked at fuzz_targets/differential_dav1d.rs:256:13:
+DIVERGENCE: dav1d decoded a frame but rav1d-safe errored: rav1d decode: Error: InvalidData
+
+    at /Users/lilith/work/zen/rav1d-safe/src/managed.rs:627
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+==47982== ERROR: libFuzzer: deadly signal
+    #0 0x000101c9359c in __sanitizer_print_stack_trace+0x28 (librustc-nightly_rt.asan.dylib:arm64+0x8759c)
+    #1 0x000100e97dbc in fuzzer::PrintStackTrace()+0x30 (differential_dav1d:arm64+0x100717dbc)
+    #2 0x000100e8beb4 in fuzzer::Fuzzer::CrashCallback()+0x54 (differential_dav1d:arm64+0x10070beb4)
+    #3 0x00018e3eb740 in _sigtramp+0x34 (libsystem_platform.dylib:arm64e+0x3740)
+    #4 0x00018e3e18d4 in pthread_kill+0x124 (libsystem_pthread.dylib:arm64e+0x68d4)
+    #5 0x00018e2e8640 in abort+0x90 (libsystem_c.dylib:arm64e+0x78640)
+    #6 0x000100f39c14 in _RNvNtNtNtCsemu8NNeCfl_3std3sys3pal4unix14abort_internal+0x8 (differential_dav1d:arm64+0x1007b9c14)
+    #7 0x000100f39a78 in _RNvNtCsemu8NNeCfl_3std7process5abort+0x8 (differential_dav1d:arm64+0x1007b9a78)
+    #8 0x000100f35088 in _RNCNvCsgnc4poqN7vV_13libfuzzer_sys10initialize0B3_+0xb8 (differential_dav1d:arm64+0x1007b5088)
+    #9 0x000100ee343c in _RNvNtCsemu8NNeCfl_3std9panicking15panic_with_hook+0x264 (differential_dav1d:arm64+0x10076343c)
+    #10 0x000100ed4c68 in _RNCNvNtCsemu8NNeCfl_3std9panicking13panic_handler0B5_+0x40 (differential_dav1d:arm64+0x100754c68)
+    #11 0x000100eceb08 in _RINvNtNtCsemu8NNeCfl_3std3sys9backtrace26___rust_end_short_backtraceNCNvNtB6_9panicking13panic_handler0zEB6_+0x8 (differential_dav1d:arm64+0x10074eb08)
+    #12 0x000100ed5238 in _RNvCsfGji0TOS6y3_7___rustc17rust_begin_unwind+0x1c (differential_dav1d:arm64+0x100755238)
+    #13 0x000100f3afa0 in _RNvNtCs5OMICbPrdUD_4core9panicking9panic_fmt+0x24 (differential_dav1d:arm64+0x1007bafa0)
+    #14 0x00010078d8ec in _RNvNvCsa1mbRsuWyg8_18differential_dav1d1__19___libfuzzer_sys_run differential_dav1d.rs
+    #15 0x000100792aa4 in rust_fuzzer_test_input lib.rs:276
+    #16 0x000100e8a4e0 in _RINvNvNtCsemu8NNeCfl_3std9panicking12catch_unwind7do_callNCNvCsgnc4poqN7vV_13libfuzzer_sys15test_input_wrap0lEBX_+0xc4 (differential_dav1d:arm64+0x10070a4e0)
+    #17 0x000100e8b118 in __rust_try+0x18 (differential_dav1d:arm64+0x10070b118)
+    #18 0x000100e89db0 in LLVMFuzzerTestOneInput+0x16c (differential_dav1d:arm64+0x100709db0)
+    #19 0x000100e8d734 in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long)+0x158 (differential_dav1d:arm64+0x10070d734)
+    #20 0x000100ea9618 in fuzzer::RunOneTest(fuzzer::Fuzzer*, char const*, unsigned long)+0xdc (differential_dav1d:arm64+0x100729618)
+    #21 0x000100eae27c in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long))+0x1b90 (differential_dav1d:arm64+0x10072e27c)
+    #22 0x000100ebb81c in main+0x24 (differential_dav1d:arm64+0x10073b81c)
+    #23 0x00018e023dfc in start+0x1b4c (dyld:arm64e+0x1fdfc)
+
+NOTE: libFuzzer has rudimentary signal handlers.
+      Combine libFuzzer with AddressSanitizer or similar for better crash reports.
+SUMMARY: libFuzzer: deadly signal
+────────────────────────────────────────────────────────────────────────────────
+
+Error: Fuzz target exited with exit status: 77

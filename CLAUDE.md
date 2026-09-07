@@ -884,6 +884,65 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+### Differential fuzz #522/#523: same malformed segment-ID repro
+
+Both reports reproduce the same 36-byte artifact. It yields segment ID 6
+with LastActiveSegId 4; strict/default rejection is required by the AV1
+segment bound. dav1d 1.5.4 accepts it even in strict mode, so the current
+differential harness still flags the policy mismatch. A six-test strictness
+suite now includes the exact bytes and a mutation-verified rejection guard.
+[Reproduction, correct R2 prefix and evidence](benchmarks/issues_522_523_2026-09-07/README.md).
+
+
+### Root `Strictness` import (#525)
+
+`Strictness` is now re-exported alongside `Settings`. For downstream callers,
+create `Settings::default()` and then assign `settings.strictness`; `Settings`
+remains non-exhaustive. The integration suite `tests/strictness.rs` imports
+from the root and tests both policies against conforming and malformed streams.
+
+
+### ARM film-grain row reservations and panic cleanup (#526)
+
+Fixed by `83fa5d3e` and `56601c91`. The ARM grain dispatchers reserved a
+32-row hull, which fails the one-row extent guard in dev builds. They now
+borrow one block-row for destination, source, and the sampled luma row;
+NEON and scalar grain arithmetic share the same row callback. No extent
+ceiling was raised. The existing `filmgrain_threads` test reproduces both
+the extent panic and the cleanup `try_write().unwrap()` on the prior code.
+
+A worker panic wakes the grain caller before surviving workers necessarily
+release their read locks. Cleanup now stops scheduling without clearing
+those workers' pictures or progress counters; `rav1d_apply_grain` observes
+the panic flag and returns an error. The live-reader unit test reproduces
+this interleaving deterministically. Normal completion waits on the progress
+predicate rather than assuming every condvar wake means completion.
+
+Validation: `just test-filmgrain` checks 13 reference-MD5 vectors at 1/2/4/8
+threads with dev extent assertions. `just test-filmgrain-rows` compares ARM
+against scalar at 8/10/12 bits, all chroma layouts, overlap, clipping, chroma
+scaling, odd widths and a 3841-pixel-wide band, while holding padding borrowed.
+CI runs the corpus test in dev on both conformance architectures (`69b6c704`).
+The reservations are block-row segments, not full-width image rows: at most
+32 luma pixels, 16 horizontally subsampled chroma pixels (32 for 4:4:4), and
+32 input-luma pixels. Each callback drops its guards before the next row.
+Default checked builds clamp `n_fc` to 1 in `src/lib.rs::get_num_threads`,
+so the 1/2/4/8-thread corpus run validates tile/grain worker concurrency,
+not concurrent frame contexts. The latter requires `unchecked` and was not
+validated in this run. Throughput impact was not measured.
+Follow-up concurrency validation on 2026-09-06 (`6115e06b`) passes with
+`unchecked`: 117 film-grain runs using 2/4 frame contexts, three independent
+decoders, and a 32-tile stream at eight workers and 1/2/4 frame contexts.
+See [FILMGRAIN_CONCURRENCY.md](docs/FILMGRAIN_CONCURRENCY.md) for the matrix,
+input-backpressure contract, liveness checks, and limits. Checked frame
+threading remains disabled; the earlier paragraph describes the initial run.
+The original downstream zenpipe AVIF was not identified or rerun here.
+Additional checks on Apple ARM: 116 dev-profile unit/committed-vector/crash
+tests passed (8 pre-existing ignored tests); six focused release tests passed,
+including grain token permutations. Default-library clippy passed. The optional
+`asm` build stopped in the assembler because `src/arm/asm-offsets.h` is missing,
+so that feature was not validated by this run.
+
 ### The aarch64 LR overflow guard could not fire (2026-08-31) — FIXED
 A debug-profile consumer of the published `0.5.7` crashed decoding
 `8-bit/issues/320_tennis.ivf`:
@@ -1067,3 +1126,7 @@ but harmless and unrelated to the failure. Not `set_tile_threading`.
 duration (the same mutex `for_each_token_permutation` acquires), so token state
 is stable end-to-end. Test-only; decoder parallelism/perf/accuracy unchanged.
 Verified: full lib suite 0/60 fails, v4x×permutations 0/150 fails (was 86/100).
+
+### x86 film-grain row reservation fix (2026-09-06)
+
+The new filmgrain_threads CI gate exposed 32-row reservations in the x86 safe-dispatch grain kernels (`src/safe_simd/filmgrain.rs`), exceeding the unchanged picture extent ceiling. Commit `c2a7dfd7` makes luma/chroma use PictureGrainRows callbacks as the ARM path does. Native Zen 5 debug reproduction failed before and passed afterward; 8/10/12-bit row tests also pass on x86 and ARM. `just test-filmgrain-rows` now selects `filmgrain_rows`, and tests cover production dispatch on x86. See `benchmarks/arm_audit_2026-09-06/README.md` and its raw logs for scope and commands.

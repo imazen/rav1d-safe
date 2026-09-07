@@ -134,7 +134,7 @@ jobs:
       # flush_drains (#423) rides along because its frame-threading half only
       # has teeth where n_fc > 1 exists — the `asm` legs of this matrix.
       - name: Run committed-vector decode tests (cross-arch correctness)
-        run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }}" --release --test decode_md5_committed --test safe_simd_crashes --test flush_drains ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+        run: cargo nextest run --profile ci --no-default-features --features "${{ matrix.features }}" --release --test decode_md5_committed --test safe_simd_crashes --test flush_drains --test strictness ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
 
       # Fuzz-crash regression gate. Every committed repro (fuzz/regression/ +
       # tests/crash_vectors/) through every fuzz target's entry point, on stable —
@@ -380,6 +380,12 @@ jobs:
           if [ ! -d test-vectors/dav1d-test-data ]; then
             git clone --depth 1 https://code.videolan.org/videolan/dav1d-test-data.git test-vectors/dav1d-test-data
           fi
+      - name: Film grain with threading and debug extent checks (#526)
+        run: cargo nextest run --profile ci --test filmgrain_threads --test-threads 1
+        timeout-minutes: 10
+      - name: Film grain with parallel frame contexts and tile workers (#526)
+        run: cargo nextest run --profile ci --features unchecked --lib --test filmgrain_threads -E 'binary(filmgrain_threads) | test(parallel_frame_tile_contexts)' --test-threads 1 --success-output immediate
+        timeout-minutes: 10
       - name: Run conformance (all vectors × all CPU tiers)
         # Each per-tier test runs in its own process, so switching the global
         # CPU-flags mask can't race across tests (no --test-threads=1 needed).

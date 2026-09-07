@@ -553,7 +553,12 @@ pub mod wide_probe {
             N_RECT_DECLINED.load(Relaxed),
             N_RECT_MULTI.load(Relaxed),
         );
-        let _ = writeln!(out, "WAIT\t{}\t{}", WAIT_NS.load(Relaxed), WAIT_MAX_NS.load(Relaxed));
+        let _ = writeln!(
+            out,
+            "WAIT\t{}\t{}",
+            WAIT_NS.load(Relaxed),
+            WAIT_MAX_NS.load(Relaxed)
+        );
         out
     }
 
@@ -2029,7 +2034,14 @@ fn tile_concurrency() -> usize {
 impl BorrowTracker {
     pub fn new(len: usize) -> Self {
         #[cfg(feature = "__probe_usage")]
-        crate::usage_probe::policy("new", len, mask_for(len), block_shift_for(len), 0, core::mem::size_of::<Self>());
+        crate::usage_probe::policy(
+            "new",
+            len,
+            mask_for(len),
+            block_shift_for(len),
+            0,
+            core::mem::size_of::<Self>(),
+        );
         Self {
             #[cfg(not(disjoint_mut_loom))]
             shards: [const { Shard::new() }; N_SHARDS],
@@ -2230,7 +2242,15 @@ impl BorrowTracker {
         let start = bounds.range.start;
         let end = bounds.range.end;
         #[cfg(feature = "__probe_usage")]
-        crate::usage_probe::borrow(Location::caller(), IS_MUT, end.saturating_sub(start), 1, end.saturating_sub(start), self.mask, self.shift);
+        crate::usage_probe::borrow(
+            Location::caller(),
+            IS_MUT,
+            end.saturating_sub(start),
+            1,
+            end.saturating_sub(start),
+            self.mask,
+            self.shift,
+        );
         #[cfg(feature = "__probe_sites")]
         crate::site_probe::record(Location::caller(), IS_MUT, end.saturating_sub(start));
         // THROWAWAY (`__probe_tinynop`): price the sub-`SHARD_MIN_LEN` instance
@@ -2820,7 +2840,15 @@ impl BorrowTracker {
             }
         }
         #[cfg(feature = "__probe_usage")]
-        crate::usage_probe::borrow(Location::caller(), IS_MUT, seg * rows, rows, span, self.mask, self.shift);
+        crate::usage_probe::borrow(
+            Location::caller(),
+            IS_MUT,
+            seg * rows,
+            rows,
+            span,
+            self.mask,
+            self.shift,
+        );
         Some(if n == 1 {
             BorrowId::narrow1(set[0] as usize, slots[0])
         } else {
