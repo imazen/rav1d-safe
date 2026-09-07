@@ -1,0 +1,242 @@
+[
+  {
+    "file": "wire16-confirm-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-confirm-summary.json",
+    "bytes": 9887,
+    "sha256": "9e081f7200da10ab44c938a17bff10ca9316c0a18c87026fe56281dd681c5ff7"
+  },
+  {
+    "file": "wire16-confirm-000.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-confirm.jsonl",
+    "bytes": 24698,
+    "sha256": "950eb9e03a094410c38ae704f27760f41c28ee446b79e5667bc8d8180a96b91d"
+  },
+  {
+    "file": "wire16-confirm-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-confirm.jsonl",
+    "bytes": 24639,
+    "sha256": "a1a7d105d36b8bbe7408fba6e809576a1caac29f12b9513b36fff412a1658ddb"
+  },
+  {
+    "file": "wire16-confirm-002.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-confirm.jsonl",
+    "bytes": 24521,
+    "sha256": "03e31dd304c3babc2d8cfdb76fd2905cdf37b38f007dfb04f69e38b8fa591983"
+  },
+  {
+    "file": "wire16-confirm-003.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-confirm.jsonl",
+    "bytes": 24581,
+    "sha256": "67136435f6d311cf4f2697f0e39b7c6b8a99f496fcc5dccff014425c745d7771"
+  },
+  {
+    "file": "wire16-confirm-004.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-confirm.jsonl",
+    "bytes": 24506,
+    "sha256": "d05094347335e5424d15adc862582d163de4b053bf759d7844e467d40f849450"
+  },
+  {
+    "file": "wire16-confirm-005.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-confirm.jsonl",
+    "bytes": 24517,
+    "sha256": "52ae695b72302726c5e5145011c90a27756933235cae5bf94862331aa3daa5cd"
+  },
+  {
+    "file": "wire16-confirm-006.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-confirm.jsonl",
+    "bytes": 24466,
+    "sha256": "f95f0b40d0202ee46fb0098fe668f11ed7289380777836b6c3f788e2f0178429"
+  },
+  {
+    "file": "wire16-confirm-007.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-confirm.jsonl",
+    "bytes": 24376,
+    "sha256": "7bba1c7bd478c9bd64e21c14bf51180ac7c95cd09636fab3005a58dfaaac39f5"
+  },
+  {
+    "file": "wire16-confirm-008.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-confirm.jsonl",
+    "bytes": 9832,
+    "sha256": "36ac989ba4033c1720bf360af8811a9d4997c1c98eb1951a1c24c049d0366218"
+  },
+  {
+    "file": "wire16-confirm.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-confirm.log",
+    "bytes": 1106,
+    "sha256": "bf68e3db9213dc20118f85edce22025164981adfcf4d7c618ac6cd070daeb37a"
+  },
+  {
+    "file": "wire16-conformance-t1.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-conformance-t1.log",
+    "bytes": 3601,
+    "sha256": "ebbea99040765ed0ece03e8f8acf0fdc36b0432f0e1c56750bdea04e8b1aeb80"
+  },
+  {
+    "file": "wire16-conformance-t8.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-conformance-t8.log",
+    "bytes": 2439,
+    "sha256": "2a336bc68312143378874ff503c0a7ad9db13c45ae916ca07d71d2b0f27264c8"
+  },
+  {
+    "file": "wire16-debug-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-debug-tests.log",
+    "bytes": 5581,
+    "sha256": "262335185bfcd70350a77b01e126dafdf6b340ec0bb4f54d347c1d15c940aea8"
+  },
+  {
+    "file": "wire16-decoder-tests-retry.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-decoder-tests-retry.log",
+    "bytes": 47060,
+    "sha256": "077de1cdeedbe8f6b81d3a600f6918ea785fe82f7b24d0ef77a10607fb86a2da"
+  },
+  {
+    "file": "wire16-decoder-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-decoder-tests.log",
+    "bytes": 1293,
+    "sha256": "37f8603c8ca5e31512d2b2ab91db10591aaeeaa50d37aa9831297f3723d906e7"
+  },
+  {
+    "file": "wire16-differential.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-differential.log",
+    "bytes": 2439,
+    "sha256": "b39dfabb18bbf2bfedd72ce2b35bfffdbf9da9a9a5fb3f3ddb172bd2382629d2"
+  },
+  {
+    "file": "wire16-final-source-audit.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-final-source-audit.json",
+    "bytes": 621,
+    "sha256": "e08b963a568403842d7a94db7d714ee200b1a16ef2ef87798833c3b644073d2d"
+  },
+  {
+    "file": "wire16-mutation-result.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-mutation-result.json",
+    "bytes": 475,
+    "sha256": "33575698cbeb90ab77537f3e6b6103496d88a47ed32220622c6d8c60befb4a47"
+  },
+  {
+    "file": "wire16-mutation-run.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-mutation-run.log",
+    "bytes": 367,
+    "sha256": "8a93e44d11fddc51d0a05e7db72b687b52158277de6dd12a3159283981bbee33"
+  },
+  {
+    "file": "wire16-profile-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-profile-summary.json",
+    "bytes": 121779,
+    "sha256": "8a13c5f25a418548de5c121979755850d477635b95f01318c0f110230f600fa6"
+  },
+  {
+    "file": "wire16-profiles.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-profiles.log",
+    "bytes": 1087,
+    "sha256": "20e2ce278ee40e68a49b8516b611e9bc705eb58c3f55439fc4e0014032c3e612"
+  },
+  {
+    "file": "wire16-row-column-mutation.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-row-column-mutation.log",
+    "bytes": 7397,
+    "sha256": "48d9b109b7e4dfc6afc140bc8cd2e367f8da548071e655caea5ab7b0446f8e33"
+  },
+  {
+    "file": "wire16-screen-confidence.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-screen-confidence.json",
+    "bytes": 9515,
+    "sha256": "a65d1d91aec739051b681e7bb598e2251d5d2bbf4e0d09d3c4da444ad2db97cd"
+  },
+  {
+    "file": "wire16-screen-frame-reference.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-screen-frame-reference.json",
+    "bytes": 435,
+    "sha256": "f25b040c1204530dcf34f87950903bb2c692d5c93d5330fa94a0f2cc10fc55db"
+  },
+  {
+    "file": "wire16-screen-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-screen-provenance.json",
+    "bytes": 1588,
+    "sha256": "70635b2bac08e72ee49d4fbbed75ca395048ebba937d00aa1cc46b9b86c48cad"
+  },
+  {
+    "file": "wire16-screen-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-screen-summary.json",
+    "bytes": 5916,
+    "sha256": "6fe4b9c5414eea8ff3d7f8862dc34d069ac775dae2b0f22aa600b1e1d921d193"
+  },
+  {
+    "file": "wire16-screen-000.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-screen.jsonl",
+    "bytes": 24487,
+    "sha256": "25de0da6db6987624714a05b2bf11b46a7a8ca2c17174a1c2d5429750a596a8c"
+  },
+  {
+    "file": "wire16-screen-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-screen.jsonl",
+    "bytes": 24527,
+    "sha256": "3c60a491bec9c8dc1c1c8f3954f26e825982c55f3e38da0b7439274b9b704a09"
+  },
+  {
+    "file": "wire16-screen-002.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-screen.jsonl",
+    "bytes": 24345,
+    "sha256": "e6f52fd51df4d2fc53902676067a85aa03368d753129ef72c2144cba091ef1ca"
+  },
+  {
+    "file": "wire16-screen-003.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-screen.jsonl",
+    "bytes": 24319,
+    "sha256": "5d8bb20b3ad36343fb101b014ecfd16b76aff620b9a9b6a52cf6baca2acdd2e6"
+  },
+  {
+    "file": "wire16-screen.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-screen.log",
+    "bytes": 1033,
+    "sha256": "a82419ffaeedcc71bd347ddcef32cc9b39ab40e3023c4304e5bd22a2fd19d2de"
+  },
+  {
+    "file": "wire16-source-audit.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire16-source-audit.json",
+    "bytes": 497,
+    "sha256": "f7e2f176224f7d7298bd219ee5a3bc907bad9fd9baf10011b28896b071f4c895"
+  },
+  {
+    "file": "profile-commands.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/commands.json",
+    "bytes": 16433,
+    "sha256": "6b80fb0e96bd432e1764d361322f0e5ac818de4660240dd6130faecd42a6fa40"
+  },
+  {
+    "file": "profile-photo-4k-t8-t1-baseline.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-4k-t8-t1-baseline.txt",
+    "bytes": 20370,
+    "sha256": "db5349e6d4d3c9145610bd93c696825a82a6664c501485d6bcd7ea3753ae0aa8"
+  },
+  {
+    "file": "profile-photo-4k-t8-t1-upstream.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-4k-t8-t1-upstream.txt",
+    "bytes": 12114,
+    "sha256": "1b72ee07150e92c00a0ea623c310e85e76bfc7fce26b62db308f132aaa0b00eb"
+  },
+  {
+    "file": "profile-photo-4k-t8-t1-wire16.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-4k-t8-t1-wire16.txt",
+    "bytes": 21144,
+    "sha256": "7ceccd5853fe8af7c51e0d6c088efc0a591a44d4ede7b8d3146b670f622ee264"
+  },
+  {
+    "file": "profile-photo-8k-t8-t1-baseline.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-8k-t8-t1-baseline.txt",
+    "bytes": 20370,
+    "sha256": "26f7cf07888b998660c1a8b9db5e031769a63bee10cc055c1c808470c8ab2779"
+  },
+  {
+    "file": "profile-photo-8k-t8-t1-upstream.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-8k-t8-t1-upstream.txt",
+    "bytes": 13920,
+    "sha256": "c9ac6c66a2753fba30f3e90022526a83ffd283bc489d28263936ebd5a8cf7011"
+  },
+  {
+    "file": "profile-photo-8k-t8-t1-wire16.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-8k-t8-t1-wire16.txt",
+    "bytes": 21144,
+    "sha256": "251af010528cac29a699e905006137d27ea847230b554e1dd87518f150239982"
+  }
+]

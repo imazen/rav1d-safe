@@ -518,6 +518,25 @@ fn itxfm_dispatch_8bpc(
         (R32x16, IDTX) => arcane!(inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner),
         (S32x32, IDTX) => arcane!(inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner),
 
+        // Mixed 16x16 transforms: kernel names list row then column, while
+        // TxfmType lists column then row (as in the scalar reference).
+        (S16x16, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_16x16_8bpc_avx2_inner),
+        (S16x16, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_16x16_8bpc_avx2_inner),
+        (S16x16, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_16x16_8bpc_avx2_inner),
+        (S16x16, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_16x16_8bpc_avx2_inner),
+        (S16x16, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_16x16_8bpc_avx2_inner),
+        (S16x16, FLIPADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_flipadst_16x16_8bpc_avx2_inner)
+        }
+        (S16x16, ADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_adst_16x16_8bpc_avx2_inner),
+        (S16x16, FLIPADST_ADST) => arcane!(inv_txfm_add_adst_flipadst_16x16_8bpc_avx2_inner),
+        (S16x16, H_DCT) => arcane!(inv_txfm_add_dct_identity_16x16_8bpc_avx2_inner),
+        (S16x16, V_DCT) => arcane!(inv_txfm_add_identity_dct_16x16_8bpc_avx2_inner),
+        (S16x16, H_ADST) => arcane!(inv_txfm_add_adst_identity_16x16_8bpc_avx2_inner),
+        (S16x16, V_ADST) => arcane!(inv_txfm_add_identity_adst_16x16_8bpc_avx2_inner),
+        (S16x16, H_FLIPADST) => arcane!(inv_txfm_add_flipadst_identity_16x16_8bpc_avx2_inner),
+        (S16x16, V_FLIPADST) => arcane!(inv_txfm_add_identity_flipadst_16x16_8bpc_avx2_inner),
+
         // ===== 4x4 ADST/FLIPADST/hybrid (scalar, 14 types) =====
         (S4x4, ADST_DCT) => scalar!(inv_txfm_add_dct_adst_4x4_8bpc_avx2_inner),
         (S4x4, DCT_ADST) => scalar!(inv_txfm_add_adst_dct_4x4_8bpc_avx2_inner),
@@ -692,39 +711,35 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
         let coeff_i16: &mut [i16] = zerocopy::FromBytes::mut_from_bytes(coeff.as_mut_bytes())
             .expect("coeff alignment/size mismatch for i16 reinterpretation");
 
-        dst.with_block_mut::<BD, _>(
-            w,
-            h,
-            |bytes, offset, stride| match BD::BPC {
-                BPC::BPC8 => itxfm_dispatch_8bpc(
+        dst.with_block_mut::<BD, _>(w, h, |bytes, offset, stride| match BD::BPC {
+            BPC::BPC8 => itxfm_dispatch_8bpc(
+                token,
+                tx_size,
+                tx_type as TxfmType,
+                bytes,
+                offset,
+                stride.unsigned_abs(),
+                stride,
+                coeff_i16,
+                eob,
+                bd_c,
+            ),
+            BPC::BPC16 => {
+                let dst_u16: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(&mut bytes[..])
+                    .expect("dst alignment/size mismatch for u16 reinterpretation");
+                itxfm_dispatch_16bpc(
                     token,
                     tx_size,
                     tx_type as TxfmType,
-                    bytes,
-                    offset,
+                    dst_u16,
+                    offset / 2,
                     stride.unsigned_abs(),
-                    stride,
                     coeff_i16,
                     eob,
                     bd_c,
-                ),
-                BPC::BPC16 => {
-                    let dst_u16: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(&mut bytes[..])
-                        .expect("dst alignment/size mismatch for u16 reinterpretation");
-                    itxfm_dispatch_16bpc(
-                        token,
-                        tx_size,
-                        tx_type as TxfmType,
-                        dst_u16,
-                        offset / 2,
-                        stride.unsigned_abs(),
-                        coeff_i16,
-                        eob,
-                        bd_c,
-                    )
-                }
-            },
-        )
+                )
+            }
+        })
     }
 }
 

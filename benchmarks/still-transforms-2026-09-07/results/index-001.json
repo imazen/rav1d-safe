@@ -1,5 +1,89 @@
 [
   {
+    "file": "inline16-screen-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline16-screen-provenance.json",
+    "bytes": 1598,
+    "sha256": "29ccbc8b274d0bb627f3926e258dfd5b928ed8f1c361b4792effce929ad33d7a"
+  },
+  {
+    "file": "inline16-screen-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline16-screen-summary.json",
+    "bytes": 5958,
+    "sha256": "56df1660e387a7a759fbe214ea95e2c59f2b34d9ca783e5f4fb756db3e7ead71"
+  },
+  {
+    "file": "inline16-screen-000.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline16-screen.jsonl",
+    "bytes": 24535,
+    "sha256": "8f113f08425f6bd034527b69e5b95138f741df9c09df12211da49173015ad2dd"
+  },
+  {
+    "file": "inline16-screen-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline16-screen.jsonl",
+    "bytes": 24579,
+    "sha256": "759c410ad269e7ed0945b265b32b3fd3c1f335f98a92a2395f5984900c1482d8"
+  },
+  {
+    "file": "inline16-screen-002.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline16-screen.jsonl",
+    "bytes": 24393,
+    "sha256": "d7e18dd9bcee1c76ee46ecbd70efad4d239e027c33ffcfb5fde029bc9c80e42b"
+  },
+  {
+    "file": "inline16-screen-003.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline16-screen.jsonl",
+    "bytes": 24371,
+    "sha256": "645c4ef65408fa2edbdaf59311da9fad0f11ca6997461f8795c135fcafeddaa8"
+  },
+  {
+    "file": "inline16-screen.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline16-screen.log",
+    "bytes": 1041,
+    "sha256": "c88b4cf7b3e6303912cf8c7c3167a328e56275c6cded9edd895c671cff5526ac"
+  },
+  {
+    "file": "inline16-source-audit.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline16-source-audit.json",
+    "bytes": 361,
+    "sha256": "0eeafb3e9d1a1f37b984b0f633dc7d02d4d924d946df4ccba9d363278ae6612c"
+  },
+  {
+    "file": "inline8-align5-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-align5-builds.json",
+    "bytes": 562,
+    "sha256": "3cd10f1907550b56ec0a648c0b7135e99afda5dd61de123c873733f2d37b5fec"
+  },
+  {
+    "file": "inline8-align5-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-align5-checked-build.log",
+    "bytes": 266,
+    "sha256": "cf68c03f25b38dfb54be7c22d2b098c9c2ce5cd986f06c9e55a401ded82ccab8"
+  },
+  {
+    "file": "inline8-align5-confirm-confidence.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-align5-confirm-confidence.json",
+    "bytes": 4304,
+    "sha256": "7e91f50e5d242225440dae1b1bb821fcb7906a8af665cdba2aad10f85283aef2"
+  },
+  {
+    "file": "inline8-align5-confirm-frame-reference.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-align5-confirm-frame-reference.json",
+    "bytes": 265,
+    "sha256": "21e218d5017615392f775c8da6f932c68bdf24a88711dc6480e1f545b6cddd0c"
+  },
+  {
+    "file": "inline8-align5-confirm-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-align5-confirm-provenance.json",
+    "bytes": 1306,
+    "sha256": "0919d9122989cf087564d523b249b8dcd47e90b4a4a661d4d7863c64f3ab45f7"
+  },
+  {
+    "file": "inline8-align5-confirm-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-align5-confirm-summary.json",
+    "bytes": 3571,
+    "sha256": "b45a18f63f5ed16c0dd7218502636a542eda30f57becbcc0f9a5fa85b34814fa"
+  },
+  {
     "file": "inline8-align5-confirm-000.jsonl.gz",
     "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-align5-confirm.jsonl",
     "bytes": 24978,
@@ -154,89 +238,5 @@
     "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-debug-fixtures.log",
     "bytes": 1528,
     "sha256": "914df8ed17dc0464a76da438d8fc48246bb39fa306684f557b15511ec5acddfe"
-  },
-  {
-    "file": "inline8-edit-recovery.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-edit-recovery.json",
-    "bytes": 572,
-    "sha256": "69c9160d989d6b7227db92bfffd479feefd95cd5a76ded11c6a3c061ac7b22f6"
-  },
-  {
-    "file": "inline8-screen-control-analysis.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-screen-control-analysis.json",
-    "bytes": 2395,
-    "sha256": "52c3b8e99cc63fc812bc1ff9852924f4d3afdf26612be52ff12cb43e8d50668a"
-  },
-  {
-    "file": "inline8-screen-frame-reference.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-screen-frame-reference.json",
-    "bytes": 351,
-    "sha256": "ce7b99ad00fdb51917fb9eb5c89bc0b8e3b8c824ecd4e5ea0db86e1402564940"
-  },
-  {
-    "file": "inline8-screen-provenance.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-screen-provenance.json",
-    "bytes": 1866,
-    "sha256": "642bbb6850b416113d9a5c69750fe91ce8a637d2e4bc2875b3c2eafec1df1b1d"
-  },
-  {
-    "file": "inline8-screen-summary.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-screen-summary.json",
-    "bytes": 6088,
-    "sha256": "ec7e208a071619cb8c7ac01d8de7ae532dc93a7f6820f81a1dfb6c120ce34017"
-  },
-  {
-    "file": "inline8-screen-000.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-screen.jsonl",
-    "bytes": 24576,
-    "sha256": "17712ee0a50774da4d87122cb5b7b98c7f90ca6211f6ec3042eea3ab458eea4c"
-  },
-  {
-    "file": "inline8-screen-001.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-screen.jsonl",
-    "bytes": 24568,
-    "sha256": "bb3b3650729c91eb887dfbe658e50f54270cf48b025ddf0720b41c88e651b5ab"
-  },
-  {
-    "file": "inline8-screen-002.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-screen.jsonl",
-    "bytes": 24584,
-    "sha256": "e2ec29c7bbaafdc10dccff1eeed42bcbaed6e5dad81c38488d1f01caabd8a3dd"
-  },
-  {
-    "file": "inline8-screen-003.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-screen.jsonl",
-    "bytes": 24430,
-    "sha256": "67282492072e710fb85a81f5ce300d32bd780a69d882832c6f46016cc05a09e5"
-  },
-  {
-    "file": "inline8-screen-004.jsonl.gz",
-    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-screen.jsonl",
-    "bytes": 4910,
-    "sha256": "cefa2afcd22d47e453ec36c7da4a2f8b1f2a33c89c6a3362d2c06a9cbb89f3e4"
-  },
-  {
-    "file": "inline8-screen.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-screen.log",
-    "bytes": 1060,
-    "sha256": "14da6dc95d79ba20ff5e25731330b7f8326bad7b817b36b37c8c5fe2b0269c0a"
-  },
-  {
-    "file": "inline8-source-audit.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-source-audit.json",
-    "bytes": 131,
-    "sha256": "5c6650f7f2d51daed681efce3d9ad68b4138f3ee928e04f2962adb8d24f26109"
-  },
-  {
-    "file": "inline8-specialized-builds.json.gz",
-    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-specialized-builds.json",
-    "bytes": 511,
-    "sha256": "07c73e97adc6fb1c5b442984e92d81452ef528e7cd21f8a9b01b6db7709eaaf6"
-  },
-  {
-    "file": "inline8-specialized-checked-build.log.gz",
-    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/inline8-specialized-checked-build.log",
-    "bytes": 271,
-    "sha256": "080dd209f73659d6e71e34ed12b2c6b609bf6f15e7cfc70c5da4abad96a95660"
   }
 ]
