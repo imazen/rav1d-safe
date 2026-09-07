@@ -33,5 +33,14 @@ for path in sorted(root.glob('*')):
 for path in sorted((root / 'profiles').glob('*')):
     if path.suffix in ['.txt', '.json']:
         save('profile-' + path.name, path.read_bytes(), path)
-(out / 'index.json').write_text(json.dumps(records, indent=2) + '\n')
+pages = []
+for first in range(0, len(records), 40):
+    name = f'index-{first // 40:03}.json'
+    data = (json.dumps(records[first:first + 40], indent=2) + '\n').encode()
+    assert len(data) < 30_000, name
+    (out / name).write_bytes(data)
+    pages.append(dict(file=name, records=len(records[first:first + 40]),
+                      sha256=hashlib.sha256(data).hexdigest()))
+(out / 'index.json').write_text(json.dumps(
+    dict(records=len(records), pages=pages), indent=2) + '\n')
 print(f'Archived {len(records)} evidence files from {root}')

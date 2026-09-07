@@ -86,9 +86,9 @@ this motivates a controlled-load repeat for that stratum, not outlier removal.
 These cases remain about 1.7–2.4× upstream in ratios of median times. They
 do not meet the 1.10 group / 1.25 cell goal. They are still only development
 seed images and do not establish video, lifecycle, memory, holdout, or ARM
-performance. The next measured lead is the remaining per-symbol SIMD call
-boundary: compare magetypes token-backed operations that can inline inside
-the scalar caller, with a dependency-only control build if dependencies change.
+performance. The follow-ups below test the remaining per-symbol SIMD call
+boundary, including a dependency-only control. Neither improves on the
+retained leaf CDF kernel.
 
 ## Reproduction and evidence
 
@@ -103,12 +103,13 @@ env TMPDIR=/home/lilith/tmp /home/lilith/work/zen/scripts/run-heavy --mem 16G --
 
 Exact comparison commands, immutable binary SHA-256s, inputs, frame counts,
 raw stdout, profiles, and test/build logs are in `results/*.gz`. Decompress
-JSONL chunks in numbered order to recover each original run log. `index.json`
-contains uncompressed checksums. The recorded `args` in each provenance JSON
+JSONL chunks in numbered order to recover each original run log. `results/index.json`
+lists index pages containing uncompressed checksums. The recorded `args` in each provenance JSON
 reproduce the corresponding `benchmarks/stills-2026-09-07/compare.py` command.
 
-`experiments/*.patch.gz` reconstruct each source experiment against baseline
-`d3231aea` (including its tests). They preserve rejected and intermediate
+The initial `experiments/*.patch.gz` reconstruct each source experiment against
+baseline `d3231aea` (including its tests); follow-ups name their base below.
+They preserve rejected and intermediate
 implementations for review; only the current source is compiled normally.
 
 Compiler: Rust 1.98.1 / LLVM 22.1.8, release fat LTO, one codegen unit,
@@ -222,8 +223,10 @@ CI exposed two independent issues, repaired in separate commits:
   [the ownership ledger](../../docs/OWNERSHIP_MODELS.md#7e-the-whole-plane-guard-audit-479-and-why-only-one-of-the-three-sites-was-a-bug).
 
 The default checked doctest gate passes (nine tests, 13 pre-existing ignored
-examples). Cross-platform CI and the remaining performance gates are still required;
-the draft is not ready to merge or release.
+examples). All 26 GitHub checks on `8b13ed69` pass, including both Miri models,
+x86/ARM conformance, native ARM and Windows builds, and threading gates.
+The remaining performance gates are still required; the draft is not ready
+to merge or release.
 
 ## Follow-up: move dispatch to a coefficient block
 
@@ -249,3 +252,66 @@ for byte. Results, code-generation counts, build hashes, and exact patch are
 retained. An independent four-lane array formulation also compiled to scalar
 shifts, so it was rejected at code inspection without a decode speed claim;
 its source and assembly are archived under `experiments/cdf-auto-codegen.*`.
+
+## Follow-up: inline through magetypes
+
+Use archmage source `7a67c74c569148e5c3470bc95538649dec60d8b4` (0.9.29),
+with a dependency-only control that keeps the retained CDF kernel. Freeze
+that standalone consumer lockfile and reuse it for every new-dependency arm.
+The build helper's optional `--archmage-repo`, `--lockfile`, and explicit
+`--refresh-lock` support this comparison; normal builds remain locked.
+
+The new CDF formulation uses safe `u16x8` operations with X64V3Token, falling
+back to the retained SSE2 kernel. On the unmodified dependency this leaves
+492 CDF/magetypes calls across the coefficient routines and their outlined
+helpers. A narrow generator change reuses the existing checked SSE2 baseline
+wrapper for 128-bit, 16-bit splat, comparison, and uniform shifts. It removes
+the magetypes calls in these routines, but grows each coefficient routine
+from about 38 KiB to about 46.6 KiB. This is a code-size observation, not proof
+that size alone explains the timings.
+
+Five rotated paired rounds, 150 ms calibrated upstream work, six cells and
+150 measured runs per screen. All ordered visible hashes match upstream and
+independent dav1d. Percentages are paired changes from the retained leaf
+kernel, using the same rounds for each comparison:
+
+| 4K input | Workers | Dependency only | Existing magetypes | SSE2 backend patch |
+|---|---:|---:|---:|---:|
+| Photo, minimum tiles | 1 | -0.06% | +42.32% | +0.88% |
+| Photo, minimum tiles | 8 | +0.27% | +40.58% | +1.25% |
+| Photo, eight tiles | 1 | +0.49% | +43.04% | +1.03% |
+| Photo, eight tiles | 8 | +2.71% | +37.12% | +4.54% |
+| Map, eight tiles | 1 | +0.34% | +28.14% | +0.80% |
+| Map, eight tiles | 8 | -0.29% | +20.42% | +1.21% |
+
+A second experiment caches the checked X64V3Token once in MsacContext,
+removing per-CDF token summoning. The other decoder and dependency changes
+remain the same. A fresh paired screen includes both controls:
+
+| 4K input | Workers | Dependency only | Patched, uncached | Patched, cached |
+|---|---:|---:|---:|---:|
+| Photo, minimum tiles | 1 | +0.38% | +1.16% | +1.91% |
+| Photo, minimum tiles | 8 | -0.16% | +1.66% | +2.13% |
+| Photo, eight tiles | 1 | +0.47% | +0.77% | +1.78% |
+| Photo, eight tiles | 8 | +3.98% | +4.28% | +8.85% |
+| Map, eight tiles | 1 | +0.68% | +0.88% | +1.99% |
+| Map, eight tiles | 8 | -2.64% | -1.81% | +0.37% |
+
+Reject all three decoder variants. The backend patch fixes the large
+out-of-line penalty but does not produce an overall improvement here;
+caching the token also fails to help. The tiled results have visible
+control variation and are screening evidence, not acceptance estimates.
+All 76 checked decoder unit/fixture tests pass for the patched uncached and
+cached variants. The patched dependency passes 584 selected integer/generic
+tests, including uniform shift edge counts. This does not substitute for its
+full release gate or establish explicit liveness of all three dispatch paths.
+No dependency change is retained in the implementation or proposed for release.
+
+`mage-sse2-backend.patch.gz` applies to archmage `7a67c74c` and includes both
+the generator and regenerated output. `mage-cached-decoder.patch.gz` applies
+to rav1d-safe `e4357c0d`; `mage-sse2-msac.rs.gz` preserves the uncached source.
+`mage-consumer.lock.gz` freezes dependencies. Build records and provenance
+contain immutable binary and lockfile hashes; `mage-*-screen*` contains all
+raw samples. Both repositories' source and the decoder Cargo files were
+restored byte for byte after archiving. The clean dependency's generator,
+registry, token, and soundness health checks also passed before editing.
