@@ -1,9 +1,10 @@
 # Expanded still corpus preparation — 2026-09-07
 
-This is a source-admission audit, **not a frozen workload or a completed
-holdout set**. No newly investigated source has been decoded for performance.
-The goal still requires at least twelve development and twelve distinct,
-untouched holdout sources with the full content and workload coverage.
+The initial admission audit below is now followed by a [24-source checkpoint](SOURCE_FREEZE.md):
+**12 development and 12 holdout source memberships/splits are pinned**. The
+encoder assignments, bitstreams, and full workload matrix are not frozen yet.
+No newly selected source has been decoded for AV1 performance. The historical
+registry/mirror findings below explain why additional sources were acquired.
 
 ## Canonical registry and exposure correction
 

@@ -1,0 +1,354 @@
+{
+  "status": "Candidates selected by content and metadata before any AV1 performance measurement; source validation and final workload freeze outstanding.",
+  "created_utc": "2026-09-07T18:01:26.402656+00:00",
+  "candidates": [
+    {
+      "id": "photo-emi-koussi",
+      "kind": "nasa",
+      "category": "photograph",
+      "family": "chad-emi-koussi",
+      "title": "Emi Koussi volcano and desert",
+      "nasa_id": "ISS072-E-423041",
+      "page_url": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS072&roll=E&frame=423041",
+      "expected_size": [
+        8256,
+        5504
+      ]
+    },
+    {
+      "id": "photo-new-orleans",
+      "kind": "nasa",
+      "category": "photograph",
+      "family": "louisiana-new-orleans",
+      "title": "New Orleans, Mississippi, and Lake Pontchartrain",
+      "nasa_id": "ISS064-E-40714",
+      "page_url": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS064&roll=E&frame=40714",
+      "expected_size": [
+        8256,
+        5504
+      ]
+    },
+    {
+      "id": "photo-naples",
+      "kind": "nasa",
+      "category": "photograph",
+      "family": "italy-naples",
+      "title": "Naples, Vesuvius, and mountains",
+      "nasa_id": "ISS064-E-40710",
+      "page_url": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS064&roll=E&frame=40710",
+      "expected_size": [
+        8256,
+        5504
+      ]
+    },
+    {
+      "id": "photo-kinshasa",
+      "kind": "nasa",
+      "category": "photograph",
+      "family": "congo-kinshasa",
+      "title": "Kinshasa and Congo River",
+      "nasa_id": "ISS073-E-1208",
+      "page_url": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS073&roll=E&frame=1208",
+      "expected_size": [
+        8256,
+        5504
+      ]
+    },
+    {
+      "id": "photo-el-salvador",
+      "kind": "nasa",
+      "category": "photograph",
+      "family": "el-salvador-santa-ana",
+      "title": "Santa Ana volcano and tropical forest",
+      "nasa_id": "ISS064-E-40735",
+      "page_url": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS064&roll=E&frame=40735",
+      "expected_size": [
+        8256,
+        5504
+      ]
+    },
+    {
+      "id": "photo-brazil-rivers",
+      "kind": "nasa",
+      "category": "photograph",
+      "family": "brazil-uruguay-ibicui",
+      "title": "Uruguay and Ibicui rivers, flooding and agriculture",
+      "nasa_id": "ISS073-E-248098",
+      "page_url": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS073&roll=E&frame=248098",
+      "expected_size": [
+        8256,
+        5504
+      ]
+    },
+    {
+      "id": "texture-apache-winter",
+      "kind": "commons",
+      "category": "natural_texture",
+      "family": "apache-winter",
+      "title": "File:Apache-Sitgreaves National Forests - Winter Scenes (20181207-FS-APACHE-SITGREAVES-LSC-0020).jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:Apache-Sitgreaves_National_Forests_-_Winter_Scenes_(20181207-FS-APACHE-SITGREAVES-LSC-0020).jpg",
+      "asset_url": "https://upload.wikimedia.org/wikipedia/commons/6/6c/Apache-Sitgreaves_National_Forests_-_Winter_Scenes_%2820181207-FS-APACHE-SITGREAVES-LSC-0020%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "expected_size": [
+        8256,
+        5504
+      ],
+      "expected_bytes": 35231825,
+      "expected_sha1": "dd8ef7fc0cc824be46b049a51ca964570bc934d2",
+      "license": {
+        "value": "Public domain",
+        "source": "commons-desc-page",
+        "hidden": ""
+      },
+      "author": {
+        "value": "<a rel=\"nofollow\" class=\"external text\" href=\"https://www.flickr.com/people/usdagov/\">USDAgov</a>",
+        "source": "commons-desc-page"
+      }
+    },
+    {
+      "id": "texture-armeria",
+      "kind": "commons",
+      "category": "natural_texture",
+      "family": "armeria",
+      "title": "File:Armeria maritima02(js).jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:Armeria_maritima02(js).jpg",
+      "asset_url": "https://upload.wikimedia.org/wikipedia/commons/a/af/Armeria_maritima02%28js%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "expected_size": [
+        7952,
+        5304
+      ],
+      "expected_bytes": 21673158,
+      "expected_sha1": "9b6330b5256faaed868c112190ddeae8b4835c08",
+      "license": {
+        "value": "CC BY-SA 4.0",
+        "source": "commons-desc-page",
+        "hidden": ""
+      },
+      "author": {
+        "value": "<a href=\"//commons.wikimedia.org/wiki/User:Jerzystrzelecki\" title=\"User:Jerzystrzelecki\">Jerzy Strzelecki</a>",
+        "source": "commons-desc-page"
+      }
+    },
+    {
+      "id": "texture-bergen-forest",
+      "kind": "commons",
+      "category": "natural_texture",
+      "family": "bergen-forest",
+      "title": "File:Bergen NH Edge of the forest seen from Paddenpad to the northeast.jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:Bergen_NH_Edge_of_the_forest_seen_from_Paddenpad_to_the_northeast.jpg",
+      "asset_url": "https://upload.wikimedia.org/wikipedia/commons/3/33/Bergen_NH_Edge_of_the_forest_seen_from_Paddenpad_to_the_northeast.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "expected_size": [
+        8256,
+        5504
+      ],
+      "expected_bytes": 36265377,
+      "expected_sha1": "67e24191ed5fda326a769a708844f6e52d421977",
+      "license": {
+        "value": "CC BY-SA 4.0",
+        "source": "commons-desc-page",
+        "hidden": ""
+      },
+      "author": {
+        "value": "<a href=\"//commons.wikimedia.org/wiki/User:Ymblanter\" title=\"User:Ymblanter\">Ymblanter</a>",
+        "source": "commons-desc-page"
+      }
+    },
+    {
+      "id": "texture-coleus",
+      "kind": "commons",
+      "category": "natural_texture",
+      "family": "coleus",
+      "title": "File:Coleus scutellarioides (cultivars) - Jardin universitaire Roger-Van den Hende, Quebec 36.jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:Coleus_scutellarioides_(cultivars)_-_Jardin_universitaire_Roger-Van_den_Hende,_Quebec_36.jpg",
+      "asset_url": "https://upload.wikimedia.org/wikipedia/commons/1/16/Coleus_scutellarioides_%28cultivars%29_-_Jardin_universitaire_Roger-Van_den_Hende%2C_Quebec_36.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "expected_size": [
+        8256,
+        5504
+      ],
+      "expected_bytes": 43187417,
+      "expected_sha1": "03c4297c96a60cbba46ced08090339e5695c8777",
+      "license": {
+        "value": "CC0",
+        "source": "commons-desc-page",
+        "hidden": ""
+      },
+      "author": {
+        "value": "<bdi><a href=\"https://www.wikidata.org/wiki/Q115464159\" class=\"extiw\" title=\"d:Q115464159\"><span title=\"developer analyst and photographer from Venezuela\">Wilfredor</span></a></bdi>",
+        "source": "commons-desc-page"
+      }
+    },
+    {
+      "id": "texture-galium",
+      "kind": "commons",
+      "category": "natural_texture",
+      "family": "galium",
+      "title": "File:Galium Saxalite - Alpine Flora.jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:Galium_Saxalite_-_Alpine_Flora.jpg",
+      "asset_url": "https://upload.wikimedia.org/wikipedia/commons/9/92/Galium_Saxalite_-_Alpine_Flora.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "expected_size": [
+        7952,
+        5304
+      ],
+      "expected_bytes": 15787852,
+      "expected_sha1": "f509bdc398d396122f4ca704910a7d876e66419c",
+      "license": {
+        "value": "CC BY-SA 4.0",
+        "source": "commons-desc-page",
+        "hidden": ""
+      },
+      "author": {
+        "value": "<a href=\"//commons.wikimedia.org/wiki/User:PicturElements\" title=\"User:PicturElements\">PicturElements</a>",
+        "source": "commons-desc-page"
+      }
+    },
+    {
+      "id": "texture-wood-wall",
+      "kind": "commons",
+      "category": "wood_texture",
+      "family": "wood-wall",
+      "title": "File:Moscow - 2026 - Wooden wall of the Kolomensky Palace.jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:Moscow_-_2026_-_Wooden_wall_of_the_Kolomensky_Palace.jpg",
+      "asset_url": "https://upload.wikimedia.org/wikipedia/commons/9/9e/Moscow_-_2026_-_Wooden_wall_of_the_Kolomensky_Palace.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "expected_size": [
+        8256,
+        5208
+      ],
+      "expected_bytes": 23797918,
+      "expected_sha1": "7e5b209b546ad5ba6d7aaae7718520496365013b",
+      "license": {
+        "value": "CC BY 4.0",
+        "source": "commons-desc-page",
+        "hidden": ""
+      },
+      "author": {
+        "value": "<a href=\"//commons.wikimedia.org/wiki/User:%D0%AE%D1%80%D0%B8%D0%B9_%D0%94.%D0%9A.\" title=\"User:\u042e\u0440\u0438\u0439 \u0414.\u041a.\">\u042e\u0440\u0438\u0439 \u0414.\u041a.</a>",
+        "source": "commons-desc-page"
+      }
+    },
+    {
+      "id": "map-gaar",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-gaar",
+      "title": "gaarmap1.pdf",
+      "page_url": "https://www.nps.gov/carto/hfc/carto/media/gaarmap1.pdf",
+      "asset_url": "https://www.nps.gov/carto/hfc/carto/media/gaarmap1.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1
+    },
+    {
+      "id": "map-grca",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-grca",
+      "title": "GRCAmap2.pdf",
+      "page_url": "https://www.nps.gov/grca/planyourvisit/upload/GRCAmap2.pdf",
+      "asset_url": "https://www.nps.gov/grca/planyourvisit/upload/GRCAmap2.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1
+    },
+    {
+      "id": "map-care",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-care",
+      "title": "CARE_Unigrid-map-2021.pdf",
+      "page_url": "https://www.nps.gov/care/planyourvisit/upload/CARE_Unigrid-map-2021.pdf",
+      "asset_url": "https://www.nps.gov/care/planyourvisit/upload/CARE_Unigrid-map-2021.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1
+    },
+    {
+      "id": "map-katm",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-katm",
+      "title": "KATM_Park-Map_for_web.pdf",
+      "page_url": "https://www.nps.gov/katm/learn/photosmultimedia/upload/KATM_Park-Map_for_web.pdf",
+      "asset_url": "https://www.nps.gov/katm/learn/photosmultimedia/upload/KATM_Park-Map_for_web.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1
+    },
+    {
+      "id": "map-dena",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-dena",
+      "title": "trail-map-letter-size.pdf",
+      "page_url": "https://www.nps.gov/dena/planyourvisit/upload/trail-map-letter-size.pdf",
+      "asset_url": "https://www.nps.gov/dena/planyourvisit/upload/trail-map-letter-size.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1
+    },
+    {
+      "id": "map-redw",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-redw",
+      "title": "HorseTrails_SB_2021-508-2.pdf",
+      "page_url": "https://www.nps.gov/redw/planyourvisit/upload/HorseTrails_SB_2021-508-2.pdf",
+      "asset_url": "https://www.nps.gov/redw/planyourvisit/upload/HorseTrails_SB_2021-508-2.pdf",
+      "provenance_revision": "187fbf338ce08e8e6654db7f04ddae58d5263da2",
+      "planned_pdf_page": 1
+    },
+    {
+      "id": "text-nasa-api",
+      "kind": "pdf",
+      "category": "text",
+      "family": "nasa-api",
+      "title": "NASA image library API documentation",
+      "page_url": "https://images.nasa.gov/docs/images.nasa.gov_api_docs.pdf",
+      "asset_url": "https://images.nasa.gov/docs/images.nasa.gov_api_docs.pdf",
+      "planned_pdf_page": 3
+    },
+    {
+      "id": "text-nist-sha",
+      "kind": "pdf",
+      "category": "text",
+      "family": "nist-sha",
+      "title": "NIST FIPS 180-4 hash standard",
+      "page_url": "https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf",
+      "asset_url": "https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf",
+      "planned_pdf_page": 15
+    },
+    {
+      "id": "text-irs-form",
+      "kind": "pdf",
+      "category": "text",
+      "family": "irs-form",
+      "title": "IRS Form 1040",
+      "page_url": "https://www.irs.gov/pub/irs-pdf/f1040.pdf",
+      "asset_url": "https://www.irs.gov/pub/irs-pdf/f1040.pdf",
+      "planned_pdf_page": 1
+    },
+    {
+      "id": "text-noaa-ian",
+      "kind": "pdf",
+      "category": "text",
+      "family": "noaa-ian",
+      "title": "NOAA Hurricane Ian report",
+      "page_url": "https://www.nhc.noaa.gov/data/tcr/AL092022_Ian.pdf",
+      "asset_url": "https://www.nhc.noaa.gov/data/tcr/AL092022_Ian.pdf",
+      "planned_pdf_page": 3
+    },
+    {
+      "id": "text-census-income",
+      "kind": "pdf",
+      "category": "text",
+      "family": "census-income",
+      "title": "Census income report P60-282",
+      "page_url": "https://www2.census.gov/library/publications/2024/demo/p60-282.pdf",
+      "asset_url": "https://www2.census.gov/library/publications/2024/demo/p60-282.pdf",
+      "planned_pdf_page": 9
+    },
+    {
+      "id": "text-cdc-mmwr",
+      "kind": "pdf",
+      "category": "text",
+      "family": "cdc-mmwr",
+      "title": "CDC MMWR 53(1)",
+      "page_url": "https://www.cdc.gov/mmwr/pdf/wk/mm5301.pdf",
+      "asset_url": "https://www.cdc.gov/mmwr/pdf/wk/mm5301.pdf",
+      "planned_pdf_page": 2
+    }
+  ]
+}

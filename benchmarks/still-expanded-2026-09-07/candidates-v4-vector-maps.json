@@ -1,0 +1,29 @@
+{
+  "status": "Source-admission only; source freeze outstanding",
+  "candidates": [
+    {
+      "id": "map-deva",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-deva",
+      "title": "Routes-from-Las-Vegas.pdf",
+      "page_url": "https://www.nps.gov/deva/planyourvisit/upload/Routes-from-Las-Vegas.pdf",
+      "asset_url": "https://www.nps.gov/deva/planyourvisit/upload/Routes-from-Las-Vegas.pdf",
+      "planned_pdf_page": 1,
+      "replaces": "map-dewa",
+      "reason": "Seek a native vector map body without a raster background or mostly empty media box. No AV1 performance data has been collected."
+    },
+    {
+      "id": "map-yose",
+      "kind": "pdf",
+      "category": "map",
+      "family": "nps-yose",
+      "title": "yosemitecampgroundmap2013.pdf",
+      "page_url": "https://www.nps.gov/yose/planyourvisit/upload/yosemitecampgroundmap2013.pdf",
+      "asset_url": "https://www.nps.gov/yose/planyourvisit/upload/yosemitecampgroundmap2013.pdf",
+      "planned_pdf_page": 1,
+      "replaces": "map-fova",
+      "reason": "Seek a native vector map body without a raster background or mostly empty media box. No AV1 performance data has been collected."
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+[
+  {
+    "id": "map-muwo",
+    "svg_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v3/map-muwo.svg",
+    "svg_sha256": "d85868c7500927fae886e49090ff3c8a5aaf966db772634d57776d4e6531bf47",
+    "page_points": [
+      792.0,
+      612.0
+    ],
+    "crop_points": [
+      0.0,
+      83.25,
+      792.0,
+      528.75
+    ],
+    "raster_uses": [
+      {
+        "id": "source-5",
+        "bounds": [
+          720.617473,
+          22.680888,
+          761.952363,
+          75.52375599999999
+        ],
+        "outside_crop": true
+      }
+    ],
+    "scope": "Source-specific Cairo SVG image uses, including mask definitions; all ancestor transforms absent. Not a general PDF verifier."
+  },
+  {
+    "id": "map-shen",
+    "svg_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v3/map-shen.svg",
+    "svg_sha256": "3563f976ab6281f0935d957156ee550e2ded2da415c2ac823bef31a7217a21ab",
+    "page_points": [
+      612.0,
+      792.0
+    ],
+    "crop_points": [
+      0.0,
+      223.875,
+      612.0,
+      568.125
+    ],
+    "raster_uses": [
+      {
+        "id": "source-10",
+        "bounds": [
+          564.392456,
+          25.852983,
+          594.376214,
+          65.067873
+        ],
+        "outside_crop": true
+      }
+    ],
+    "scope": "Source-specific Cairo SVG image uses, including mask definitions; all ancestor transforms absent. Not a general PDF verifier."
+  },
+  {
+    "id": "text-noaa-ian",
+    "svg_path": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/text-noaa-ian.svg",
+    "svg_sha256": "0c5973a2c1426d5507015dd08df91cc16d555c8a2e5b8bbb9fa2d000374df59a",
+    "page_points": [
+      612.0,
+      792.0
+    ],
+    "crop_points": [
+      0.0,
+      223.875,
+      612.0,
+      568.125
+    ],
+    "raster_uses": [
+      {
+        "id": "source-7",
+        "bounds": [
+          70.55,
+          24.805,
+          115.899974,
+          46.400002
+        ],
+        "outside_crop": true
+      },
+      {
+        "id": "source-6",
+        "bounds": [
+          70.55,
+          24.805,
+          115.899974,
+          46.400002
+        ],
+        "outside_crop": true
+      }
+    ],
+    "scope": "Source-specific Cairo SVG image uses, including mask definitions; all ancestor transforms absent. Not a general PDF verifier."
+  }
+]

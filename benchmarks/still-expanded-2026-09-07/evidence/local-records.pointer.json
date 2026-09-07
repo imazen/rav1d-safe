@@ -1,0 +1,36 @@
+{
+  "root": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07",
+  "off_host_backup_verified": false,
+  "records": [
+    {
+      "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/validation.json",
+      "bytes": 832086,
+      "sha256": "79a11aa2e2102b95efa9efa70c7bb867237ff372caf78c0db3b9c321acbafd45",
+      "reason": "Large local source-preparation record; reproducible from pinned sources and scripts."
+    },
+    {
+      "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v3/map-shen.svg",
+      "bytes": 289827,
+      "sha256": "3563f976ab6281f0935d957156ee550e2ded2da415c2ac823bef31a7217a21ab",
+      "reason": "Large local source-preparation record; reproducible from pinned sources and scripts."
+    },
+    {
+      "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v3/map-muwo.svg",
+      "bytes": 724873,
+      "sha256": "d85868c7500927fae886e49090ff3c8a5aaf966db772634d57776d4e6531bf47",
+      "reason": "Large local source-preparation record; reproducible from pinned sources and scripts."
+    },
+    {
+      "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/validation-v1/text-noaa-ian.svg",
+      "bytes": 420697,
+      "sha256": "0c5973a2c1426d5507015dd08df91cc16d555c8a2e5b8bbb9fa2d000374df59a",
+      "reason": "Large local source-preparation record; reproducible from pinned sources and scripts."
+    },
+    {
+      "source": "/home/lilith/tmp/rav1d-still-expanded-2026-09-07/acquisition-v1/map-care/pdfimages.txt",
+      "bytes": 738269,
+      "sha256": "51f6946059d37a1a96c83787ec664c8a65bf2ef7f493bd8cb45ea62216673204",
+      "reason": "Large local source-preparation record; reproducible from pinned sources and scripts."
+    }
+  ]
+}

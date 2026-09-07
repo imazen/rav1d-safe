@@ -5,6 +5,9 @@ and **25% per-cell** slowdown allowance, replacing the proposed 5%/10% limits.
 Implementation and evidence are developed in a draft PR for review. This goal
 does not authorize publishing a crate.
 
+Current measured progress and outstanding gates are recorded in
+[STILL_PARITY_CHECKPOINT.md](STILL_PARITY_CHECKPOINT.md).
+
 ## Copyable goal
 
 > Bring the default, checked, safe-Rust build of rav1d-safe to performance

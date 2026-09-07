@@ -1,0 +1,42 @@
+{
+  "status": "Pre-performance content selection; target final balance 8 photos, 6 textures, 6 texts, 4 maps (24 sources). Raster-bearing map experiments remain excluded.",
+  "candidates": [
+    {
+      "id": "photo-london-tram",
+      "kind": "commons",
+      "category": "photograph",
+      "family": "london-kingsway-tram-tunnel",
+      "title": "File:Kingsway Tram Tunnel 2024-02-10.jpg",
+      "page_url": "https://commons.wikimedia.org/wiki/File:Kingsway_Tram_Tunnel_2024-02-10.jpg",
+      "asset_url": "https://upload.wikimedia.org/wikipedia/commons/0/03/Kingsway_Tram_Tunnel_2024-02-10.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "expected_size": [
+        7952,
+        5304
+      ],
+      "expected_bytes": 33829599,
+      "expected_sha1": "cc39a62a5d22501ff792f19d1245e7c903875c51",
+      "license": {
+        "value": "CC BY-SA 2.0",
+        "source": "commons-desc-page",
+        "hidden": ""
+      },
+      "author": {
+        "value": "Tom Page",
+        "source": "commons-desc-page"
+      }
+    },
+    {
+      "id": "photo-orenburg-snow",
+      "kind": "nasa",
+      "category": "photograph",
+      "family": "orenburg-winter-rivers",
+      "title": "Orenburg snow and Ural/Sakmara rivers",
+      "nasa_id": "ISS064-E-35934",
+      "page_url": "https://eol.jsc.nasa.gov/SearchPhotos/photo.pl?mission=ISS064&roll=E&frame=35934",
+      "expected_size": [
+        8256,
+        5504
+      ]
+    }
+  ]
+}
