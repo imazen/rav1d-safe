@@ -4086,6 +4086,42 @@ fn lpf_h_sb_uv_8bpc_inner(
 
                 let idx = if vmask[1] & xy != 0 { 6 } else { 4 };
 
+                // Two adjacent six-tap groups with equal levels touch
+                // independent positions in the existing checked window.
+                #[cfg(target_arch = "x86_64")]
+                {
+                    let next_xy = xy.wrapping_shl(1);
+                    if idx == 6
+                        && bitdepth_max == 255
+                        && next_xy != 0
+                        && vmask[1] & next_xy != 0
+                        && stride.unsigned_abs() >= 6
+                    {
+                        let next_offset = lvl_offset + b4_stridea;
+                        let next_value = read_lvl(lvl, next_offset, lvl_byte_idx);
+                        let next_level = if next_value != 0 {
+                            next_value
+                        } else if next_offset >= b4_strideb {
+                            read_lvl(lvl, next_offset - b4_strideb, lvl_byte_idx)
+                        } else {
+                            0
+                        };
+                        if next_level == l {
+                            packed6::apply::<true>(
+                                _token,
+                                buf,
+                                dst_offset,
+                                stride,
+                                [e as u8, i as u8, h as u8],
+                            );
+                            xy = next_xy << 1;
+                            dst_offset = signed_idx(dst_offset, 8 * stridea);
+                            lvl_offset += 2 * b4_stridea;
+                            continue;
+                        }
+                    }
+                }
+
                 loop_filter_4_8bpc(
                     #[cfg(target_arch = "x86_64")]
                     _token,
@@ -4154,6 +4190,42 @@ fn lpf_v_sb_uv_8bpc_inner(
                 let i = lut.i[l as usize] as i32;
 
                 let idx = if vmask[1] & xy != 0 { 6 } else { 4 };
+
+                // Two adjacent six-tap groups with equal levels touch
+                // independent positions in the existing checked window.
+                #[cfg(target_arch = "x86_64")]
+                {
+                    let next_xy = xy.wrapping_shl(1);
+                    if idx == 6
+                        && bitdepth_max == 255
+                        && next_xy != 0
+                        && vmask[1] & next_xy != 0
+                        && stride.unsigned_abs() >= 8
+                    {
+                        let next_offset = lvl_offset + b4_stridea;
+                        let next_value = read_lvl(lvl, next_offset, lvl_byte_idx);
+                        let next_level = if next_value != 0 {
+                            next_value
+                        } else if next_offset >= b4_strideb {
+                            read_lvl(lvl, next_offset - b4_strideb, lvl_byte_idx)
+                        } else {
+                            0
+                        };
+                        if next_level == l {
+                            packed6::apply::<false>(
+                                _token,
+                                buf,
+                                dst_offset,
+                                stride,
+                                [e as u8, i as u8, h as u8],
+                            );
+                            xy = next_xy << 1;
+                            dst_offset = signed_idx(dst_offset, 8 * stridea);
+                            lvl_offset += 2 * b4_stridea;
+                            continue;
+                        }
+                    }
+                }
 
                 loop_filter_4_8bpc(
                     #[cfg(target_arch = "x86_64")]
@@ -5778,3 +5850,6 @@ mod tests {
         assert_eq!(iclip_diff(-200, 0), -128);
     }
 }
+
+include!("loopfilter_parity.rs");
+include!("loopfilter_packed6.rs");

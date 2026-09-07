@@ -149,7 +149,20 @@ mixed 8×8 baseline; the last column is the one-sided 95% upper bound for
 cells, but threaded results remain unresolved. Eight-worker 8K map has a
 +1.60% median with upper 1.0328; this is a reason to investigate, not a
 universal speedup claim. No runtime change from this experiment is retained.
-Longer measurements, code-placement controls, and the direct scalar and
-adversarial tests above are still needed before deciding whether to keep it.
+Longer measurements and code-placement controls are still needed before
+deciding whether to keep the early-return variant. The later direct scalar
+and adversarial gates are recorded in the follow-up below.
 The diagnostic census and timing binaries are distinct, and both scripts
 restore the production baseline after their builds.
+
+
+## Packed six-tap follow-up
+
+The [packed six-tap record](PACKED6.md) adds a direct production-scalar oracle,
+5,200 original-kernel cells, and a mutation that proves the partial-mask gate
+can reject an incorrect early return. The early-return implementation remains
+experimental. Six-tap kernels reject few groups, so a separate candidate
+combines adjacent equal-level UV groups in eight signed 16-bit lanes. Its
+6,000 leaf cells, 64 production-grouping cases, arithmetic and memory argument,
+corrected conformance worker-setting record, and independent timing results
+are documented there. This follow-up changes no tracker or picture footprint.
