@@ -7,10 +7,11 @@ from pathlib import Path
 
 p = argparse.ArgumentParser()
 p.add_argument('--work-dir', type=Path, required=True)
+p.add_argument('--output-dir', type=Path, help='Archive a separate experiment campaign')
 a = p.parse_args()
 root = a.work_dir.resolve()
-out = Path(__file__).resolve().parent / 'results'
-out.mkdir(exist_ok=True)
+out = a.output_dir or (Path(__file__).resolve().parent / 'results')
+out.mkdir(parents=True, exist_ok=True)
 records = []
 
 
