@@ -31,3 +31,4 @@ include!("itx/part07_32x32_64x64_dct.rs");
 include!("itx/part08_rect_dct_adst_16bpc.rs");
 include!("itx/part09_identity_hybrid_16bpc.rs");
 include!("itx/part10_dispatch.rs");
+include!("itx/part11_mixed_parity.rs");

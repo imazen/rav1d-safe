@@ -1,10 +1,12 @@
 # Still transform specialization — 2026-09-07
 
-Retain the 8×8, 8-bit fallback specialization: it reduces decode time by
-2.2–3.4% on the confirmed 2K/4K photo cells, with a smaller serial 8K gain.
-The gain persists with a second matched function alignment. The arithmetic
-and borrow footprint are unchanged; generated transform code grows about
-53 KiB. Threaded 8K gains remain unresolved, and upstream parity is unmet.
+Retain the 8×8 fallback specialization and connect fourteen existing mixed
+16×16 SIMD kernels to checked dispatch. The first change cuts 2.2–3.4% from
+the confirmed 2K/4K photo cells. Against that improved baseline, the dispatch
+connection cuts about 6.1–6.2% from 8K photo decoding at one and eight workers.
+Both gains survive matched alternate-alignment checks. Arithmetic and
+reference construction are unchanged. The latest candidate still takes
+1.64–2.28× upstream time; parity and release acceptance remain unmet.
 
 Draft [PR #528](https://github.com/imazen/rav1d-safe/pull/528), following
 `docs/PERFORMANCE_PARITY_GOAL.md`. The entropy experiments retain the earlier
@@ -172,3 +174,183 @@ fixtures pass in debug with overflow checks. The 76-test checked release
 unit/fixture gate, formatting, and strict release and debug Clippy also pass.
 Cross-platform CI and
 the remaining performance acceptance gates still apply.
+
+## Rejected 16×16 scalar specialization
+
+`inline16.patch.gz`, against `0c0a9eac`, extends the retained same-body
+specialization to 16×16, 8-bit fallbacks. Affected 16×16/shared-fallback
+symbols grow from 12,084 to 65,986 bytes (about 53 KiB). This additional
+specialization is reverted; the retained 8×8 implementation is unchanged.
+
+Five rotated paired rounds, 150 ms calibrated upstream work, validate all
+150 measured runs. Baseline is the retained 8×8 specialization. No cell's
+one-sided 95% upper ratio is below 1.0:
+
+| Input | Workers | Paired change | Upper ratio |
+|---|---:|---:|---:|
+| photo-2k-min | 1 | -0.24% | 1.0008 |
+| photo-2k-min | 8 | -0.69% | 1.0083 |
+| photo-4k-t8 | 1 | -0.02% | 1.0002 |
+| photo-4k-t8 | 8 | -2.00% | 1.0523 |
+| photo-8k-t8 | 1 | -0.40% | 1.0018 |
+| photo-8k-t8 | 8 | -0.63% | 1.0309 |
+| map-4k-t8 | 1 | -0.20% | 1.0001 |
+| map-4k-t8 | 8 | +1.59% | 1.0286 |
+| map-8k-t8 | 1 | -0.43% | 1.0052 |
+| map-8k-t8 | 8 | +2.35% | 1.0374 |
+
+The short screen does not justify the code-size cost or promotion; no
+longer confirmation was run. The next lead is that checked dispatch skips
+existing mixed 16×16 SIMD kernels. Connecting them requires differential
+validation against the real scalar fallback before measuring speed.
+
+## Mixed 16×16 SIMD dispatch candidate
+
+The checked x86 dispatcher omitted all fourteen mixed 16×16, 8-bit
+transforms even though their safe SIMD kernels already exist. The candidate
+connects those kernels through the existing token and block-view path.
+Kernel names list row then column; `TxfmType` lists column then row. No
+transform arithmetic or borrowing helper changes. The executable's ELF text
+grows 29,520 bytes; the selected dispatcher/16×16 symbols grow 16,219 bytes.
+
+The new test calls production dispatch and the real scalar fallback. It
+checks 5,824 combinations of all fourteen types, scan-reachable coefficient
+prefixes, extreme/random coefficients, two strides and two offsets. Whole
+output buffers and coefficient tails are compared, including sentinel pixels
+outside the block. A token sweep additionally exercises 504 SIMD and 336
+declined cells on this host; declined calls must leave both buffers intact.
+The test uses aligned picture storage and serializes token-state testing.
+All 78 release library/committed-fixture tests pass. The first broader test
+invocation named a nonexistent `decode_md5` target and exited before building;
+the corrected `decode_md5_committed` invocation is archived separately.
+
+Five rotated paired rounds validate all 150 measured image runs against
+both references. Baseline is the retained 8×8 specialization:
+
+| Input | Workers | Paired change | Upper ratio |
+|---|---:|---:|---:|
+| photo-2k-min | 1 | -1.87% | 0.9873 |
+| photo-2k-min | 8 | -2.25% | 1.0015 |
+| photo-4k-t8 | 1 | -3.47% | 0.9671 |
+| photo-4k-t8 | 8 | -5.16% | 0.9937 |
+| photo-8k-t8 | 1 | -5.99% | 0.9444 |
+| photo-8k-t8 | 8 | -7.21% | 0.9632 |
+| map-4k-t8 | 1 | +0.44% | 1.0106 |
+| map-4k-t8 | 8 | -1.21% | 1.0204 |
+| map-8k-t8 | 1 | -0.40% | 1.0038 |
+| map-8k-t8 | 8 | +0.28% | 1.0274 |
+
+This screen supports longer confirmation for photos. Map changes are
+unresolved; the candidate has not established a general workload benefit.
+`wire16-dispatch.patch.gz` records the production dispatch change against
+`0c0a9eac`. The standalone binary includes the same retained 8×8/CDF changes;
+`wire16-source-audit.json.gz` records its inputs and
+`wire16-final-source-audit.json.gz` records the final test-harness source.
+Runtime sources are identical between those two audits.
+
+## Mixed 16×16 longer confirmation
+
+Nine rotated paired rounds, 500 ms calibrated upstream work; all 324
+measured runs match both references. No samples discarded. Peak host load
+3.51, minimum available memory 27,265 MiB. Baseline includes the retained
+8×8 specialization and CDF kernel.
+
+| Input | Workers | Baseline ms | Candidate ms | Upstream ms | Paired change | Upper ratio |
+|---|---:|---:|---:|---:|---:|---:|
+| photo-2k-min | 1 | 30.979 | 30.467 | 17.369 | -1.83% | 0.9848 |
+| photo-2k-min | 8 | 33.150 | 32.652 | 19.837 | -1.66% | 0.9977 |
+| photo-4k-min | 1 | 108.936 | 105.087 | 59.878 | -3.40% | 0.9677 |
+| photo-4k-min | 8 | 110.478 | 106.104 | 64.828 | -3.68% | 0.9689 |
+| photo-4k-t8 | 1 | 108.319 | 104.687 | 59.843 | -3.35% | 0.9673 |
+| photo-4k-t8 | 8 | 26.142 | 24.857 | 13.109 | -3.02% | 0.9957 |
+| photo-8k-t8 | 1 | 260.301 | 244.642 | 146.309 | -6.10% | 0.9445 |
+| photo-8k-t8 | 8 | 59.918 | 56.542 | 31.140 | -6.19% | 0.9470 |
+| map-4k-t8 | 1 | 106.823 | 107.099 | 57.361 | +0.23% | 1.0065 |
+| map-4k-t8 | 8 | 32.955 | 32.223 | 14.287 | -2.12% | 0.9818 |
+| map-8k-t8 | 1 | 315.902 | 314.725 | 163.901 | -0.32% | 0.9998 |
+| map-8k-t8 | 8 | 90.890 | 88.415 | 38.648 | -3.10% | 0.9838 |
+
+All photo cells pass the confidence rule for improvement: about 1.7–1.8%
+at 2K, 3.0–3.7% at 4K, and 6.1–6.2% at 8K. Threaded maps improve in this
+confirmation, while serial 4K map remains unresolved (median +0.23%).
+The serial 8K map upper bound is only just below 1.0, so its tiny change is
+not a useful headline. Candidate/upstream paired medians still range from
+1.64 to 2.28×, outside the parity goal.
+
+The dispatch change reuses the existing `with_block_mut` callback, so its
+picture/owned-band reference construction and token gate are unchanged.
+Each selected kernel consumes and clears the 256 transform coefficients and
+writes sixteen pixels in each of sixteen rows. Scan-prefix and sentinel
+checks exercise those footprints; the full decoder conformance checks the
+result against independently recorded images. These checks are evidence for
+this dispatch change, not a proof of the whole decoder's soundness.
+
+`mutation.py` deliberately maps `ADST_DCT` to the transposed kernel. The
+new scalar differential test fails on pixel comparison, and the script
+restores the exact candidate source in `finally`. Full checked conformance
+then passes 766 vectors at one worker and again at eight workers, with two
+existing infrastructure exclusions each. The selected CPU-permutation
+smoke/CDF tests also pass. The test logs retain the expected mutation failure.
+
+## Mixed 16×16 alignment confirmation
+
+`alignment.py --variant wire16 --baseline-revision 0c0a9eac` builds both
+arms with LLVM function alignment 5 instead of 4. Every named Rust decoder
+text symbol (1,096 baseline, 1,116 candidate) is verified 32-byte aligned.
+The script restores candidate dispatch in `finally`; test-only additions
+are present but excluded from both standalone release consumers.
+Upstream is used only for calibration and image validation in this check.
+
+Nine paired rounds, 500 ms calibrated work, 108 validated measured runs:
+
+| Input | Workers | Paired change | Upper ratio |
+|---|---:|---:|---:|
+| photo-2k-min | 1 | -1.90% | 0.9831 |
+| photo-2k-min | 8 | -2.38% | 0.9817 |
+| photo-4k-t8 | 1 | -3.76% | 0.9647 |
+| photo-4k-t8 | 8 | -2.22% | 0.9894 |
+| photo-8k-t8 | 1 | -6.43% | 0.9374 |
+| photo-8k-t8 | 8 | -7.88% | 0.9380 |
+
+All selected photo gains survive the alignment change. This supports
+retaining the dispatch connection as an incremental improvement in the draft.
+The primary confirmation remains the headline result; alternate-alignment
+measurements are not substituted for it. Holdout, lifecycle, memory, video,
+and remaining concurrency performance gates still apply.
+
+## Candidate profiles and final local checks
+
+Nine timer-only profiles cover baseline/candidate/upstream for serial 4K,
+serial 8K, and eight-worker 8K photos. Each samples about three seconds of
+measured decode work with `cycles:u` at 499 Hz; output validation succeeds
+for every run. `profile_summary.py` groups reported self-cycle percentages:
+
+| Checked build and workload | Entropy | Transforms | Loopfilter | Tracker |
+|---|---:|---:|---:|---:|
+| photo-4k-t8-t1-baseline | 44.82% | 15.95% | 9.44% | 6.19% |
+| photo-4k-t8-t1-wire16 | 46.15% | 11.78% | 10.61% | 7.97% |
+| photo-8k-t8-t1-baseline | 46.44% | 16.57% | 12.22% | 5.11% |
+| photo-8k-t8-t1-wire16 | 43.00% | 12.43% | 12.77% | 8.48% |
+| photo-8k-t8-t8-baseline | 33.54% | 12.28% | 18.58% | 13.77% |
+| photo-8k-t8-t8-wire16 | 35.55% | 8.84% | 17.23% | 14.09% |
+
+Transform self share drops in each paired profile. This is not an absolute
+stage-time estimate: inlining, sampling variation, and the changing total
+cost affect percentages. Upstream reports include 10–14% anonymous NASM
+labels; their ownership has not been resolved, so incomplete named stage
+sums cannot establish a stage-level slowdown ratio.
+
+Entropy remains the largest serial target. Scalar ADST-8/DCT-8 and mixed 8×8
+fallbacks remain visible, making their coefficient layout/intermediate
+rounding and existing SIMD helpers the next transform lead to validate.
+Loopfilter and tracker work have larger shares at eight workers. These
+profiles do not provide new evidence of substantial spinning.
+
+Final local checks pass all seven selected debug tests (the new differential
+and token sweeps plus five committed-vector/concurrency fixtures), strict
+release/debug Clippy, root formatting and formatting of the included files.
+The measured production sources match their recorded hashes after the
+mutation and alignment builds. No public source declaration, dependency,
+borrow policy or constructor changes. The declaration audit is narrower
+than a cargo-semver-checks run. Cross-platform CI on this new dispatch
+commit and the remaining performance acceptance gates still apply.

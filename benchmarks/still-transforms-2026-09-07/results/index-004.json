@@ -1,0 +1,20 @@
+[
+  {
+    "file": "profile-photo-8k-t8-t8-baseline.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-8k-t8-t8-baseline.txt",
+    "bytes": 19080,
+    "sha256": "5ee265c028e47eb166d58903883fac4d56d58203bd8ad03eb1fd6d55e0b813b7"
+  },
+  {
+    "file": "profile-photo-8k-t8-t8-upstream.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-8k-t8-t8-upstream.txt",
+    "bytes": 8860,
+    "sha256": "aae1b62c3268c28ee6f416d6a0233762eff9dff19ce82176ee5056a6dc35e72f"
+  },
+  {
+    "file": "profile-photo-8k-t8-t8-wire16.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-8k-t8-t8-wire16.txt",
+    "bytes": 19596,
+    "sha256": "b2f9ec8a59ded443bdec5e48142f139b3a36bcaf18de3778033d4a10f14f7f2c"
+  }
+]
