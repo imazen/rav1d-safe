@@ -7,10 +7,12 @@ import re
 
 p = argparse.ArgumentParser()
 p.add_argument('--work-dir', type=Path, required=True)
+p.add_argument('--name', default='wire16')
+p.add_argument('--profile-dir', default='profiles')
 a = p.parse_args()
 root = a.work_dir.resolve()
 records = []
-for path in sorted((root / 'profiles').glob('*.txt')):
+for path in sorted((root / a.profile_dir).glob('*.txt')):
     groups = dict(entropy=0.0, transforms=0.0, loopfilter=0.0, tracker=0.0,
                   anonymous_asm=0.0, other=0.0)
     symbols = []
@@ -45,7 +47,7 @@ result = dict(method='Summed perf report --no-children self cycle percentages by
                     'the 0.05% report threshold are absent. Anonymous NASM labels remain '
                     'unattributed; upstream group totals are incomplete and cannot establish '
                     'stage-level slowdown ratios. Group rules are in profile_summary.py.',
-              profiles=records)
-(root / 'wire16-profile-summary.json').write_text(json.dumps(result, indent=2) + '\n')
+              profile_directory=a.profile_dir, profiles=records)
+(root / (a.name + '-profile-summary.json')).write_text(json.dumps(result, indent=2) + '\n')
 for r in records:
     print(r['profile'], r['groups'])

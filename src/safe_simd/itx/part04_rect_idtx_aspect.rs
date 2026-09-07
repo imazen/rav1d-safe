@@ -149,8 +149,8 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_16x32_8bpc_avx2(
 
 /// SIMD row ADST-8 for 8xN transforms, 8bpc. Same shape as
 /// `simd_row_dct8_8bpc_8rows` but calls `adst8_1d_cols8`. If `flipped`,
-/// reverses output order after ADST (flipadst). Currently unwired — kept
-/// for the future 8x16/8x32 mixed-row adst transform refactor.
+/// reverses output order after ADST (flipadst). Used by the mixed 8x8 path;
+/// rectangular callers can select their own scaling and intermediate shift.
 #[cfg(target_arch = "x86_64")]
 #[rite]
 #[inline(always)]
@@ -4483,4 +4483,3 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_8bpc_avx2(
         bitdepth_max,
     );
 }
-

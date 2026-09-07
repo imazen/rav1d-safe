@@ -40,6 +40,7 @@ mod mixed_parity_tests {
     }
 
     fn check_cell(
+        tx: TxfmSize,
         tx_type: TxfmType,
         eob: usize,
         pattern: usize,
@@ -47,17 +48,18 @@ mod mixed_parity_tests {
         offset: usize,
         live: bool,
     ) {
-        let tx = TxfmSize::S16x16;
+        let (w, h) = tx.to_wh();
+        let count = w * h;
         let bd = BitDepth8::new(());
         let mut state = 0xdeca_fbad_f00d_u64 ^ u64::from(tx_type) ^ (eob as u64) << 8;
         // Extra coefficients and full rows around the destination are sentinels.
-        let mut input = vec![0i16; 256 + 16];
-        input[256..].fill(0x1234);
+        let mut input = vec![0i16; count + 16];
+        input[count..].fill(0x1234);
         for i in 0..=eob {
             let pos = match dav1d_tx_type_class[tx_type as usize] {
                 TxClass::TwoD => dav1d_scans[tx as usize][i].get() as usize,
                 TxClass::H => i,
-                TxClass::V => (i & 15) * 16 + (i >> 4),
+                TxClass::V => (i & (w - 1)) * h + (i >> w.trailing_zeros()),
             };
             input[pos] = match pattern {
                 0 => 1,
@@ -86,7 +88,7 @@ mod mixed_parity_tests {
                 input[pos] = 1;
             }
         }
-        let pixels: Vec<u8> = (0..stride * 18)
+        let pixels: Vec<u8> = (0..(stride * (h + 2)).next_multiple_of(64))
             .map(|i| match i % 4 {
                 0 => 0,
                 1 => 128,
@@ -134,56 +136,56 @@ mod mixed_parity_tests {
         let expected = run(false);
         assert_eq!(
             actual.0, expected.0,
-            "pixels: type={tx_type}, eob={eob}, pattern={pattern}, stride={stride}, offset={offset}"
+            "pixels: {w}x{h}, type={tx_type}, eob={eob}, pattern={pattern}, stride={stride}, offset={offset}"
         );
         assert_eq!(actual.1, expected.1, "coefficient clearing: type={tx_type}");
-        assert!(actual.1[..256].iter().all(|&c| c == 0));
-        assert_eq!(&actual.1[256..], &input[256..]);
+        assert!(actual.1[..count].iter().all(|&c| c == 0));
+        assert_eq!(&actual.1[count..], &input[count..]);
         for (i, (&out, &old)) in actual.0.iter().zip(&pixels).enumerate() {
-            let in_block = i >= offset && (i - offset) / stride < 16 && (i - offset) % stride < 16;
+            let in_block = i >= offset && (i - offset) / stride < h && (i - offset) % stride < w;
             if !in_block {
                 assert_eq!(out, old, "write outside block at {i}");
             }
         }
     }
 
-    #[test]
-    fn test_mixed16_dispatch_matches_scalar() {
+    fn sweep(tx: TxfmSize, eobs: &[usize], expected_cells: usize) {
         let _lock = crate::src::safe_simd::token_test_lock();
         if crate::src::cpu::summon_avx2().is_none() {
-            eprintln!("Skipping mixed 16x16 SIMD sweep: AVX2 token unavailable");
+            eprintln!("Skipping mixed SIMD sweep: AVX2 token unavailable");
             return;
         }
+        let (w, h) = tx.to_wh();
         let mut cells = 0;
         for tx_type in TYPES {
-            for eob in [0, 1, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255] {
+            for &eob in eobs {
                 for pattern in 0..8 {
-                    for stride in [32, 64] {
+                    for stride in [w * 2, w * 4] {
                         for offset in [0, stride + 3] {
-                            check_cell(tx_type, eob, pattern, stride, offset, true);
+                            check_cell(tx, tx_type, eob, pattern, stride, offset, true);
                             cells += 1;
                         }
                     }
                 }
             }
         }
-        assert_eq!(cells, 5824);
-        eprintln!("mixed 16x16: {cells} live production dispatch cells match scalar");
+        assert_eq!(cells, expected_cells);
+        eprintln!("mixed {w}x{h}: {cells} live production dispatch cells match scalar");
     }
 
-    #[test]
-    fn test_mixed16_dispatch_cpu_permutations() {
+    fn token_sweep(tx: TxfmSize) {
         use archmage::testing::{CompileTimePolicy, for_each_token_permutation};
         let _lock = crate::src::safe_simd::token_test_lock();
         let supported = crate::src::cpu::summon_avx2().is_some();
+        let (w, h) = tx.to_wh();
         let mut live_cells = 0;
         let mut declined_cells = 0;
         let report = for_each_token_permutation(CompileTimePolicy::WarnStderr, |_| {
             let live = crate::src::cpu::summon_avx2().is_some();
             for tx_type in TYPES {
-                for eob in [0, 31, 255] {
+                for eob in [0, 31, w * h - 1] {
                     for pattern in [5, 7] {
-                        check_cell(tx_type, eob, pattern, 32, 35, live);
+                        check_cell(tx, tx_type, eob, pattern, 32, 35, live);
                         if live {
                             live_cells += 1;
                         } else {
@@ -199,6 +201,79 @@ mod mixed_parity_tests {
             "SIMD dispatch was never exercised"
         );
         assert!(declined_cells > 0, "disabled dispatch was never exercised");
-        eprintln!("mixed 16x16 token sweep: {live_cells} SIMD, {declined_cells} declined");
+        eprintln!("mixed {w}x{h} token sweep: {live_cells} SIMD, {declined_cells} declined");
+    }
+
+    #[test]
+    fn test_mixed16_dispatch_matches_scalar() {
+        sweep(
+            TxfmSize::S16x16,
+            &[0, 1, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255],
+            5824,
+        );
+    }
+
+    #[test]
+    fn test_mixed16_dispatch_cpu_permutations() {
+        token_sweep(TxfmSize::S16x16);
+    }
+
+    #[test]
+    fn test_mixed8_dispatch_matches_scalar() {
+        sweep(
+            TxfmSize::S8x8,
+            &[0, 1, 3, 4, 7, 8, 15, 16, 31, 32, 63],
+            4928,
+        );
+    }
+
+    #[test]
+    fn test_mixed8_dispatch_cpu_permutations() {
+        token_sweep(TxfmSize::S8x8);
+    }
+
+    #[test]
+    fn test_mixed8_api_rejects_invalid_views_before_writing() {
+        let _lock = crate::src::safe_simd::token_test_lock();
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            return;
+        };
+        // These entry points share the checked-prefix macro. Test refusal
+        // before writes, including arithmetic overflow and the final pixel.
+        for (dst_len, stride, coeff_len) in [
+            (0, 8, 64),
+            (63, 8, 64),
+            (64, 8, 63),
+            (64, 8, 0),
+            (126, 17, 64),
+            (128, usize::MAX, 64),
+            (128, usize::MAX / 7, 64),
+        ] {
+            let mut pixels = [128; 128];
+            let mut coeff = [64; 64];
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                inv_txfm_add_adst_adst_8x8_8bpc_avx2_inner(
+                    token,
+                    &mut pixels[..dst_len],
+                    stride,
+                    &mut coeff[..coeff_len],
+                    63,
+                    255,
+                );
+            }));
+            assert!(
+                result.is_err(),
+                "invalid view accepted: {dst_len}, {stride}, {coeff_len}"
+            );
+            assert_eq!(pixels, [128; 128], "rejected call changed pixels");
+            assert_eq!(coeff, [64; 64], "rejected call changed coefficients");
+        }
+        // Positive control: exactly sized views must still be accepted.
+        let mut pixels = [128; 64];
+        let mut coeff = [0; 64];
+        coeff[0] = 1024;
+        inv_txfm_add_adst_adst_8x8_8bpc_avx2_inner(token, &mut pixels, 8, &mut coeff, 0, 255);
+        assert!(pixels.iter().any(|&p| p != 128));
+        assert_eq!(coeff, [0; 64]);
     }
 }

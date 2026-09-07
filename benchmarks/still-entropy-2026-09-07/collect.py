@@ -31,9 +31,13 @@ for path in sorted(root.glob('*')):
         for first in range(0, len(rows), 40):
             save(f'{path.stem}-{first // 40:03}.jsonl',
                  b''.join(rows[first:first + 40]), path)
-for path in sorted((root / 'profiles').glob('*')):
-    if path.suffix in ['.txt', '.json']:
-        save('profile-' + path.name, path.read_bytes(), path)
+for directory in sorted(root.glob('profiles*')):
+    if not directory.is_dir():
+        continue
+    prefix = 'profile' if directory.name == 'profiles' else directory.name.replace('profiles-', 'profile-', 1)
+    for path in sorted(directory.glob('*')):
+        if path.suffix in ['.txt', '.json']:
+            save(prefix + '-' + path.name, path.read_bytes(), path)
 pages = []
 for first in range(0, len(records), 40):
     name = f'index-{first // 40:03}.json'

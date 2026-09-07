@@ -1,5 +1,6 @@
 """Profile still decode timers; validate output, keep probes out of speed data."""
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -11,16 +12,27 @@ p.add_argument('--work-dir', type=Path, required=True)
 p.add_argument('--arms', nargs='+', required=True, help='label=/absolute/binary')
 p.add_argument('--cases', nargs='+', required=True, help='input:threads:arm')
 p.add_argument('--seconds', type=float, default=2)
+p.add_argument('--output-subdir', default='profiles', help='Fresh profile directory inside work-dir')
 a = p.parse_args()
 root = a.work_dir.resolve()
 arms = dict(arm.split('=', 1) for arm in a.arms)
 corpus = {c['name']: c for c in json.loads((root / 'corpus.json').read_text())}
-out = root / 'profiles'
+assert Path(a.output_subdir).name == a.output_subdir and a.output_subdir.startswith('profiles')
+out = root / a.output_subdir
 out.mkdir(exist_ok=True)
+assert not (out / 'commands.json').exists(), 'refuse to overwrite previous profile evidence'
+assert not (out / 'provenance.json').exists(), 'refuse to overwrite previous profile provenance'
+(out / 'provenance.json').write_text(json.dumps(dict(
+    arms={label: dict(path=binary, sha256=hashlib.sha256(Path(binary).read_bytes()).hexdigest())
+          for label, binary in arms.items()},
+    corpus_sha256=hashlib.sha256((root / 'corpus.json').read_bytes()).hexdigest(),
+    cases=a.cases, seconds=a.seconds,
+), indent=2) + '\n')
 records = []
 for case in a.cases:
     name, threads, arm = case.split(':')
     source = corpus[name]
+    assert hashlib.sha256(Path(source['path']).read_bytes()).hexdigest() == source['sha256']
     md5 = (root / (name + '.dav1d.md5')).read_text().split()[0]
     expected = f"FRAME\t0\t{source['width']}x{source['height']}\t{source['bit_depth']}\t{md5}"
     env = {k: v for k, v in os.environ.items() if not k.startswith('RAV1D_')}

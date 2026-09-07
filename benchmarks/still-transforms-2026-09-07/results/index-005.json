@@ -1,0 +1,242 @@
+[
+  {
+    "file": "wire8-row-alignment-repeat-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-alignment-repeat-summary.json",
+    "bytes": 1506,
+    "sha256": "9940491e2db4a7b818d8c9e8bb946f5d3fb03cefc4dd3c7d2173e2bcc0460de8"
+  },
+  {
+    "file": "wire8-row-alignment-repeat-000.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-alignment-repeat.jsonl",
+    "bytes": 24971,
+    "sha256": "a9331f903f23de7d6cc0a5343703459e89b4346be3e802e327023272d45a89e4"
+  },
+  {
+    "file": "wire8-row-alignment-repeat-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-alignment-repeat.jsonl",
+    "bytes": 13124,
+    "sha256": "008cc09f37dd53d97351d218214e222cfd2ee6ed07447eb2a6ff007ecdb9ccce"
+  },
+  {
+    "file": "wire8-row-alignment-repeat.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-alignment-repeat.log",
+    "bytes": 873,
+    "sha256": "6acba7d7564f224458270e8dc1eeb972088b58949b43f0f1e3c5d39384ceb471"
+  },
+  {
+    "file": "wire8-row-alignment-symbol-audit.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-alignment-symbol-audit.json",
+    "bytes": 669,
+    "sha256": "62b379046917dd6775d98418a338aaacbca8aed63c0214dfcfff1ec05154d545"
+  },
+  {
+    "file": "wire8-row-api-source-audit.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-api-source-audit.json",
+    "bytes": 1169,
+    "sha256": "7020c55e84be4c303141f6ea7b2e4f735922df23d8e6c49093fd098c53df0b8e"
+  },
+  {
+    "file": "wire8-row-baseline-align5-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-baseline-align5-builds.json",
+    "bytes": 573,
+    "sha256": "e3b278e7d7f8ba134b81355dd0dd06b3f00b20559d94f6ad416875b90762b8a9"
+  },
+  {
+    "file": "wire8-row-baseline-align5-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-baseline-align5-checked-build.log",
+    "bytes": 277,
+    "sha256": "e16f8507c7db4eb70f542e9409f4f1daf118ce6e83e49e59044b50ca9e0f3a4e"
+  },
+  {
+    "file": "wire8-row-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-build.log",
+    "bytes": 446,
+    "sha256": "acc5a4be72a74d11e650f08ee579b2ff59a0ceb8bcfbe9ce7e8cc0ebd5fbeecf"
+  },
+  {
+    "file": "wire8-row-builds.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-builds.json",
+    "bytes": 557,
+    "sha256": "f48e70247a65cc8aff19f2342edc6002a46130de7dad2d29511da61c374946a8"
+  },
+  {
+    "file": "wire8-row-checked-build.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-checked-build.log",
+    "bytes": 261,
+    "sha256": "936bfde1fa9a1300879608bf948d2f5d45a97a5f597a9dd5e1615cdb3033a396"
+  },
+  {
+    "file": "wire8-row-clippy-debug.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-clippy-debug.log",
+    "bytes": 404,
+    "sha256": "c7a682b886e09571e2379ef6d99d9b231a435a8de986d853950089b05e9d83e1"
+  },
+  {
+    "file": "wire8-row-clippy-release.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-clippy-release.log",
+    "bytes": 416,
+    "sha256": "e513973018ccc357f73028e8218a600428bc896d3caf16fed4a0fc5be92ec580"
+  },
+  {
+    "file": "wire8-row-conformance-t1.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-conformance-t1.log",
+    "bytes": 3601,
+    "sha256": "3dee9e025c83faa5451f37ec6a026fb7148d5b7446fb04d645575dd27b37396f"
+  },
+  {
+    "file": "wire8-row-conformance-t8.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-conformance-t8.log",
+    "bytes": 2439,
+    "sha256": "0505010dc250b995f339b20b2a3bfde7bdccfcdac720913e39abd50019c14d01"
+  },
+  {
+    "file": "wire8-row-debug-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-debug-tests.log",
+    "bytes": 8989,
+    "sha256": "3b25f23374c18f649a2e4e8efef8c49d43fd644df8f20864d4fb1ec63cc97e70"
+  },
+  {
+    "file": "wire8-row-decoder-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-decoder-tests.log",
+    "bytes": 50467,
+    "sha256": "64befbcc47f5d7e5e804101ec91f5efa603fb8da1a3156439fcec7647639e275"
+  },
+  {
+    "file": "wire8-row-final-checks.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-final-checks.json",
+    "bytes": 2916,
+    "sha256": "c7561b52eb6c2efc5a17c0c74833806cc3ff4ed215d4d1b864a53f2223be08a2"
+  },
+  {
+    "file": "wire8-row-format.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-format.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "file": "wire8-row-included-format.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-included-format.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "file": "wire8-row-source-audit.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-source-audit.json",
+    "bytes": 555,
+    "sha256": "b732d0c2641538b860127be546a5448de3b181f50de72bd7098812b1847421da"
+  },
+  {
+    "file": "wire8-row-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-tests.log",
+    "bytes": 5387,
+    "sha256": "5ecfae9112dd2328813587e827737b3682d8cbe64b53a347c46fbfdb8a263f72"
+  },
+  {
+    "file": "wire8-row-unchecked-tests.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-row-unchecked-tests.log",
+    "bytes": 5995,
+    "sha256": "1242ac610d95f740de51fee829dfe98845c201019b70c0cf066004559f7538d8"
+  },
+  {
+    "file": "wire8-screen-confidence.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-screen-confidence.json",
+    "bytes": 13146,
+    "sha256": "917fe15659bd71aae2f9403434defe4b3545b35884d7c7c6cd0427c2a813dffd"
+  },
+  {
+    "file": "wire8-screen-frame-reference.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-screen-frame-reference.json",
+    "bytes": 435,
+    "sha256": "f25b040c1204530dcf34f87950903bb2c692d5c93d5330fa94a0f2cc10fc55db"
+  },
+  {
+    "file": "wire8-screen-provenance.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-screen-provenance.json",
+    "bytes": 1840,
+    "sha256": "e401a8f97d956c6836f121ca3ae44f4abfc0ebc650ba6559c9d8eadefa14525e"
+  },
+  {
+    "file": "wire8-screen-summary.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-screen-summary.json",
+    "bytes": 7288,
+    "sha256": "1dc2a202b531ba243c8286d584f47a4e0f0197b4b0d44b78fa29fd4e8b8e9559"
+  },
+  {
+    "file": "wire8-screen-000.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-screen.jsonl",
+    "bytes": 24380,
+    "sha256": "29abdb2092ad785de585faf49ccf81e3c1a85c57470ef3f4770ec314cb5d08be"
+  },
+  {
+    "file": "wire8-screen-001.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-screen.jsonl",
+    "bytes": 24363,
+    "sha256": "de7b8dc3379e4ec7c2d4315a8220c5fd3b187edc219bfbf00bb72570d8674b3e"
+  },
+  {
+    "file": "wire8-screen-002.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-screen.jsonl",
+    "bytes": 24307,
+    "sha256": "f4388be48039e065a8914a8e273895ab82aa38f997303a7705defe1a0801f10f"
+  },
+  {
+    "file": "wire8-screen-003.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-screen.jsonl",
+    "bytes": 24207,
+    "sha256": "83f9217732dbf8afbd0e62f61253e589d8147d1ce7824b2bd5e753018287503f"
+  },
+  {
+    "file": "wire8-screen-004.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-screen.jsonl",
+    "bytes": 24163,
+    "sha256": "22a6b80658d4aa6f56bdf6033124be3bf7201def7de83c879469aa5eef8305b6"
+  },
+  {
+    "file": "wire8-screen-005.jsonl.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-screen.jsonl",
+    "bytes": 6030,
+    "sha256": "31c14d23a0d0a167dfed0cab6dbd352118d9b9786416a8d15eff0095b2bebf3e"
+  },
+  {
+    "file": "wire8-screen.log.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-screen.log",
+    "bytes": 1095,
+    "sha256": "128fa2807d3ef21e1e2c3da69fbde97c06e8f4ae260857eb7ecdede2a72c5026"
+  },
+  {
+    "file": "wire8-test-boundary-correction.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/wire8-test-boundary-correction.json",
+    "bytes": 266,
+    "sha256": "c7b20ba161992a2aff5ecb09fb3cf87908b4bb113b4cfe376b0c51037d702b33"
+  },
+  {
+    "file": "profile-commands.json.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/commands.json",
+    "bytes": 16433,
+    "sha256": "6b80fb0e96bd432e1764d361322f0e5ac818de4660240dd6130faecd42a6fa40"
+  },
+  {
+    "file": "profile-photo-4k-t8-t1-baseline.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-4k-t8-t1-baseline.txt",
+    "bytes": 20370,
+    "sha256": "db5349e6d4d3c9145610bd93c696825a82a6664c501485d6bcd7ea3753ae0aa8"
+  },
+  {
+    "file": "profile-photo-4k-t8-t1-upstream.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-4k-t8-t1-upstream.txt",
+    "bytes": 12114,
+    "sha256": "1b72ee07150e92c00a0ea623c310e85e76bfc7fce26b62db308f132aaa0b00eb"
+  },
+  {
+    "file": "profile-photo-4k-t8-t1-wire16.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-4k-t8-t1-wire16.txt",
+    "bytes": 21144,
+    "sha256": "7ceccd5853fe8af7c51e0d6c088efc0a591a44d4ede7b8d3146b670f622ee264"
+  },
+  {
+    "file": "profile-photo-8k-t8-t1-baseline.txt.gz",
+    "source": "/home/lilith/tmp/rav1d-still-transforms-2026-09-07/profiles/photo-8k-t8-t1-baseline.txt",
+    "bytes": 20370,
+    "sha256": "26f7cf07888b998660c1a8b9db5e031769a63bee10cc055c1c808470c8ab2779"
+  }
+]
