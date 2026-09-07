@@ -14,7 +14,7 @@ import re
 p = argparse.ArgumentParser()
 p.add_argument('--repo', type=Path, required=True)
 p.add_argument('--output', type=Path, required=True)
-p.add_argument('--wide-prototype', type=Path)
+p.add_argument('--wide-kernel', '--wide-prototype', dest='wide_kernel', type=Path)
 a = p.parse_args()
 path = a.repo / 'src/safe_simd/loopfilter_packed6.rs'
 source = path.read_text()
@@ -100,46 +100,52 @@ record['six_tap'] = sums(source, ['p2_v', 'p1_v', 'p0_v', 'q0_v', 'q1_v', 'q2_v'
 # Unpack operates on groups of 1, 2, or 4 original i16 lanes. Tracking every
 # distinct input lane through the actual source's network proves the modeled
 # permutation for arbitrary values, rather than one random matrix.
-transpose = source.split('fn transpose8', 1)[1].split('// Inputs are', 1)[0]
-ctx = {'m': [[(r, c) for c in range(8)] for r in range(8)]}
+def verify_transpose(text):
+    section = text[text.index('fn transpose8'):]
+    transpose = section[:section.index('\n    }')]
+    ctx = {'m': [[(r, c) for c in range(8)] for r in range(8)]}
 
 
-def permute(node):
-    if isinstance(node, ast.Name):
-        return ctx[node.id]
-    if isinstance(node, ast.Subscript):
-        return ctx[node.value.id][node.slice.value]
-    assert isinstance(node, ast.Call), ast.dump(node)
-    match = re.fullmatch(r'_mm_unpack(lo|hi)_epi(16|32|64)', node.func.id)
-    assert match, ast.dump(node)
-    group = int(match[2]) // 16
-    x, y = [permute(arg) for arg in node.args]
-    begin = 0 if match[1] == 'lo' else 4
-    out = []
-    for i in range(begin, begin + 4, group):
-        out += x[i:i + group] + y[i:i + group]
-    return out
+    def permute(node):
+        if isinstance(node, ast.Name):
+            return ctx[node.id]
+        if isinstance(node, ast.Subscript):
+            return ctx[node.value.id][node.slice.value]
+        assert isinstance(node, ast.Call), ast.dump(node)
+        match = re.fullmatch(r'_mm_unpack(lo|hi)_epi(16|32|64)', node.func.id)
+        assert match, ast.dump(node)
+        group = int(match[2]) // 16
+        x, y = [permute(arg) for arg in node.args]
+        begin = 0 if match[1] == 'lo' else 4
+        out = []
+        for i in range(begin, begin + 4, group):
+            out += x[i:i + group] + y[i:i + group]
+        return out
 
 
-for name, expr in re.findall(r'let (\w+) = ([^;]+);', transpose):
-    ctx[name] = permute(ast.parse(expr, mode='eval').body)
-tail = transpose.rsplit(';', 1)[1]
-exprs = re.findall(r'_mm_unpack(?:lo|hi)_epi64\([^)]*\)', tail)
-actual = [permute(ast.parse(expr, mode='eval').body) for expr in exprs]
-expected = [[(r, c) for r in range(8)] for c in range(8)]
-assert actual == expected
-record['transpose'] = dict(verified_input_lanes=64, permutation=actual)
+    for name, expr in re.findall(r'let (\w+) = ([^;]+);', transpose):
+        ctx[name] = permute(ast.parse(expr, mode='eval').body)
+    tail = transpose.rsplit(';', 1)[1]
+    exprs = re.findall(r'_mm_unpack(?:lo|hi)_epi64\([^)]*\)', tail)
+    actual = [permute(ast.parse(expr, mode='eval').body) for expr in exprs]
+    expected = [[(r, c) for r in range(8)] for c in range(8)]
+    assert actual == expected
+    return dict(verified_input_lanes=64, permutation=actual)
 
-if a.wide_prototype:
-    wide = a.wide_prototype.read_text()
+
+record['transpose'] = verify_transpose(source)
+
+if a.wide_kernel:
+    wide = a.wide_kernel.read_text()
     taps = [f'{side}{i}_v' for side, indices in [('p', range(6, -1, -1)), ('q', range(7))]
             for i in indices]
-    record['uncompiled_wide_proposal'] = dict(
-        source=str(a.wide_prototype), sha256=hashlib.sha256(a.wide_prototype.read_bytes()).hexdigest(),
-        analysis=sums(wide, taps, 'let p6_5 =', '// Narrow filter', 18, 4088))
+    record['wide_kernel'] = dict(
+        source=str(a.wide_kernel), sha256=hashlib.sha256(a.wide_kernel.read_bytes()).hexdigest(),
+        analysis=sums(wide, taps, 'let p6_5 =', '// Narrow filter', 18, 4088),
+        transpose=verify_transpose(wide))
 
 with a.output.open('x') as output:
     output.write(json.dumps(record, indent=2) + '\n')
 print('Verified six-tap weighted bounds and all 64 transpose lanes.')
-if a.wide_prototype:
-    print('Verified 12 wide and 6 mid-filter weight sums in the uncompiled proposal.')
+if a.wide_kernel:
+    print('Verified 12 wide and 6 mid-filter weight sums and the wide-kernel transpose.')

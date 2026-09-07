@@ -18,23 +18,31 @@ p.add_argument('--work-dir', type=Path, required=True)
 p.add_argument('--baseline-revision', required=True)
 p.add_argument('--shared-target', type=Path, required=True)
 p.add_argument('--alignment', type=int, choices=range(3, 7), default=5)
+p.add_argument('--experiment', choices=['packed6', 'packed16'], default='packed6')
 a = p.parse_args()
 repo, root = a.repo.resolve(), a.work_dir.resolve()
-existing = ['src/loopfilter.rs', 'src/safe_simd/loopfilter.rs']
-new = ['src/safe_simd/loopfilter_packed6.rs', 'src/safe_simd/loopfilter_parity.rs']
-before = {name: (repo / name).read_bytes() for name in existing + new}
-audit = json.loads((root / 'packed6-source-audit.json').read_text())
+if a.experiment == 'packed6':
+    existing = ['src/loopfilter.rs', 'src/safe_simd/loopfilter.rs']
+    new = ['src/safe_simd/loopfilter_packed6.rs', 'src/safe_simd/loopfilter_parity.rs']
+    unchanged = []
+else:
+    existing = ['src/safe_simd/loopfilter.rs', 'src/safe_simd/loopfilter_parity.rs']
+    new = ['src/safe_simd/loopfilter_packed16.rs']
+    unchanged = ['src/loopfilter.rs', 'src/safe_simd/loopfilter_packed6.rs']
+before = {name: (repo / name).read_bytes() for name in existing + new + unchanged}
+audit = json.loads((root / f'{a.experiment}-source-audit.json').read_text())
 assert {name: hashlib.sha256(data).hexdigest() for name, data in before.items()} == audit['files']
 baseline = {name: subprocess.check_output(
     ['git', 'show', a.baseline_revision + ':' + name], cwd=repo) for name in existing}
 assert 'codex-still-parity' in (repo / '.workongoing').read_text()
-labels = [(f'packed6-align{a.alignment}', before),
-          (f'packed6-baseline-align{a.alignment}', baseline)]
+labels = [(f'{a.experiment}-align{a.alignment}', before),
+          (f'{a.experiment}-baseline-align{a.alignment}', baseline)]
 for label, _ in labels:
     assert not (root / 'bin' / (label + '-checked')).exists(), label
-record_path = root / f'packed6-placement-align{a.alignment}-sources.json'
+record_path = root / f'{a.experiment}-placement-align{a.alignment}-sources.json'
 assert not record_path.exists(), record_path
-record = dict(baseline_revision=a.baseline_revision, variants=[], restored=False)
+record = dict(baseline_revision=a.baseline_revision, experiment=a.experiment,
+              unreferenced_in_baseline=new, variants=[], restored=False)
 
 
 def save():
@@ -68,4 +76,4 @@ finally:
     record['restored'] = all((repo / name).read_bytes() == data for name, data in before.items())
     save()
     (repo / '.workongoing').write_text(datetime.now(timezone.utc).isoformat()
-        + ' codex-still-parity placement builds ended; packed6 source restored\n')
+        + f' codex-still-parity placement builds ended; {a.experiment} source restored\n')

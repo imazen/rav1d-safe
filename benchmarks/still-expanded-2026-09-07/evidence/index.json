@@ -1,0 +1,46 @@
+{
+  "records": [
+    {
+      "file": "div8k-head-probes.json.gz",
+      "bytes": 146,
+      "sha256": "de45205d5e2156dc1ab5a698c00d86f45e2d0267516cfc3f19f5b48e07612aaa",
+      "compressed_sha256": "6595c2a4d296a4fe1d46c92ba625535d20f709e9a1d719904955e0c4e05ea9eb"
+    },
+    {
+      "file": "div8k-inventory-headers.json.gz",
+      "bytes": 17344,
+      "sha256": "02552869df6072de1f541a79ce10c9852e6bf8f392d4daadc85e5c3161935ce9",
+      "compressed_sha256": "53aba2aa4acc7ec1d47cd7b0472130269eeb358c464fca980cb594ac542a295f"
+    },
+    {
+      "file": "div8k-inventory-ranges.json.gz",
+      "bytes": 38519,
+      "sha256": "8b3ef7e744ba97024c5154e0fe359f557e3564224cf78e3e81d5934e50e75e6b",
+      "compressed_sha256": "d6e46b39f83be71d47da105e5b871eb7ac2e25dc57d034c562e897cbfbad1fde"
+    },
+    {
+      "file": "div8k-inventory-summary.json.gz",
+      "bytes": 644,
+      "sha256": "98c5c949fbc950bc780f79f9beb1e824da4042019214cdaf45cba49a1596c262",
+      "compressed_sha256": "cd5d6112420573c55d03ddbcaff1cf40fdbb472c0f1ac5ced2ad76d4186407f7"
+    },
+    {
+      "file": "div8k-mirror-info.json.gz",
+      "bytes": 1036,
+      "sha256": "ac6498dad685666eba792f375fc159d9edfd761daaf1709db2bd6b96ab7980b9",
+      "compressed_sha256": "e9f1b446c56372770609804cdc202fb17253b6c5f4abd697276ba0e0aa2b6625"
+    },
+    {
+      "file": "div8k-mirror-tree.json.gz",
+      "bytes": 495,
+      "sha256": "002ccfc50b811ab516047ef6ec2fedf1757d89198ca648fb87a38dd6b1f33538",
+      "compressed_sha256": "247d3a6bb26eab70b990175948614401813324cb4ebf29b4757a3001c9e745ca"
+    },
+    {
+      "file": "div8k-range-probe.json.gz",
+      "bytes": 451,
+      "sha256": "68c58c2f96131ccdd266b289540d0d6becf76eaf8534c3ba29fcb9a8caa5f15a",
+      "compressed_sha256": "b89add7aad6b9f6028bb2d7115cfec3aa4b9e63dd3f88f86d2225d2eff3df56d"
+    }
+  ]
+}

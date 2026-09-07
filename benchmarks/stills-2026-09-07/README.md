@@ -1,6 +1,6 @@
 # 2K / 4K / 8K still decoding, 2026-09-07
 
-The default checked decoder remains about **1.9× upstream for serial stills**
+At the historical baseline below, the default checked decoder takes about **1.9× upstream for serial stills**
 and **2.1–2.5× for the eight-tile, eight-worker stills in this development set**.
 Disabling slice checks does little for serial decoding. The next substantial
 opportunities are coefficient/entropy decoding, scalar inverse-transform
@@ -12,13 +12,19 @@ misleading threading documentation. The measured decoder implementation is
 the previously shipped `b50ac0d6e0a239167f5ac13231fc82ffdea259ca`; no decoder
 algorithm or borrow-exclusion rule was changed in this investigation.
 The [proposed parity goal](../../docs/PERFORMANCE_PARITY_GOAL.md) defines the
-larger campaign and its completion criteria. It has not been activated.
+larger campaign and its completion criteria. The user subsequently activated
+it with 10% per-group and 25% per-cell limits; these remain historical baseline
+results, not the current implementation's performance.
 
 ## Inputs and comparison
 
 The size names mean **1920×1080**, **3840×2160**, and **7680×4320**, respectively.
-Two native large sources from the imazen-26 **training** split were center
-cropped and downsampled, never upscaled:
+Two native large imazen-26 sources were center cropped and downsampled,
+never upscaled. The earlier description of them as **training** images was
+incorrect: the pinned canonical registry places both in its **test** split.
+They have already been used for optimization and therefore cannot count as
+untouched holdouts for this campaign. Their hashes match that registry; see
+the [source audit](../still-expanded-2026-09-07/README.md).
 
 - Photo: image 1407, rocky coastline, 8160×6120, Lilith, PD-own.
 - Map: image 5017, Great Smoky Mountains trail map, 9146×5272, NPS,
