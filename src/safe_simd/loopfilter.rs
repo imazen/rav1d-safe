@@ -3450,7 +3450,7 @@ fn loop_filter_4_8bpc_wd16_simd_h(
     store_4bytes(buf, pack_row(back_c2[3]), 3, 1);
     // Store q5 only at offset 5 per row (scalar — extract lane k from final_5)
     let mut q5_arr = [0i32; 4];
-    safe_unaligned_simd::x86_64::_mm_storeu_si128(&mut q5_arr, final_5);
+    archmage::intrinsics::x86_64::_mm_storeu_si128(&mut q5_arr, final_5);
     for k in 0..4 {
         let start = signed_idx(base, k as isize * stridea + 5);
         buf[start] = q5_arr[k] as u8;

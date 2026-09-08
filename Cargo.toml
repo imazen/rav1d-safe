@@ -64,11 +64,12 @@ to_method = "1.1.0"
 zerocopy = { version = "0.8", features = ["derive", "alloc"] }
 
 # Safe SIMD dependencies
-archmage = { version = "0.9.29", git = "https://github.com/imazen/archmage", rev = "7a67c74c569148e5c3470bc95538649dec60d8b4", features = ["macros", "avx512"] }
+archmage = { version = "0.9.29", features = ["macros", "avx512"] }
+# Size-bound traits are not re-exported by archmage::intrinsics.
 safe_unaligned_simd = { version = "0.2.5", features = ["avx512"] }
 
 [dev-dependencies]
-archmage = { version = "0.9.29", git = "https://github.com/imazen/archmage", rev = "7a67c74c569148e5c3470bc95538649dec60d8b4", features = ["macros", "avx512", "testable_dispatch"] }
+archmage = { version = "0.9.29", features = ["macros", "avx512", "testable_dispatch"] }
 divan = "0.1"
 md5 = "0.8.0"
 zenbench = "0.1.2"

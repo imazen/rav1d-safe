@@ -50,10 +50,11 @@ for path in sorted((root / 'src/safe_simd').rglob('*.rs')):
 assert len(contracts) == 237, f'Update the reviewed inventory intentionally: {len(contracts)}'
 (work / 'contracts.json').write_text(json.dumps(contracts, indent=2) + '\n')
 dep = tomllib.loads((root / 'Cargo.toml').read_text())['dependencies']['archmage']
+dependency = ', '.join(f'{key} = {json.dumps(dep[key])}'
+                       for key in ('version', 'git', 'rev') if key in dep)
 (work / 'Cargo.toml').write_text('[package]\nname="wrapper-context-contracts"\nversion="0.0.0"\nedition="2024"\n'
-                                '[workspace]\n[dependencies]\narchmage = { git = '
-                                + json.dumps(dep['git']) + ', rev = ' + json.dumps(dep['rev'])
-                                + ', features = ["macros", "avx512"] }\n')
+                                '[workspace]\n[dependencies]\narchmage = { '
+                                + dependency + ', features = ["macros", "avx512"] }\n')
 # Seed transitive versions from the decoder lockfile; Cargo removes unrelated packages.
 shutil.copyfile(root / 'Cargo.lock', work / 'Cargo.lock')
 selected = [c for c in contracts if c['tier'] == ('neon' if a.target.startswith('aarch64') else 'v3')]
