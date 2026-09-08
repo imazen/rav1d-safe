@@ -203,3 +203,12 @@ bytes and safe SIMD Rust for 3,734,957. These are source archives, not linked
 binary sizes or dependency downloads. [Sizes, hashes and largest files](../release/0.6.0/package-sizes.json)
 identify these tested artifacts; subsequent documentation edits change archive
 identity and require final packaging again at the release revision.
+
+## Final gate correction
+
+The local release run found the guard-extent test still gated by the old
+`probe-sites` name. The CI job had therefore reported success with zero tests.
+Its cfg now uses `__probe_sites`; CI first checks for the exact test name to
+prevent recurrence. The restored test passes with `RAV1D_EXTENT_GATE_CORPUS=1`
+over the committed vectors and dav1d corpus. Earlier green results for this
+job after the feature rename were vacuous and are not validation evidence.
