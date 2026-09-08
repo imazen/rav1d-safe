@@ -1,0 +1,337 @@
+{
+  "date_utc": "2026-09-08",
+  "runtime_source_commit": "e233adcb9d1a6336cad8c77fbd98761bb2c7dcb9",
+  "status": "publication blocked; preparation checks recorded",
+  "checks": [
+    {
+      "name": "disjoint-package",
+      "command": [
+        "cargo",
+        "package",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--features",
+        "aligned,pic-buf,zerocopy"
+      ],
+      "exit": 0,
+      "seconds": 0.39,
+      "log_sha256": "9fe151e5f944f9548a8194d938d37363cf06148985b10b8a0d82ec6fb4b904fa"
+    },
+    {
+      "name": "decoder-package-dry-run",
+      "command": [
+        "cargo",
+        "publish",
+        "-p",
+        "rav1d-safe",
+        "--dry-run"
+      ],
+      "exit": 101,
+      "seconds": 0.54,
+      "log_sha256": "a2dbe505dd02979509e419492153553ef2830ab30e99872f21353a812952f239"
+    },
+    {
+      "name": "decoder-msrv",
+      "command": [
+        "cargo",
+        "+1.89.0",
+        "check",
+        "-p",
+        "rav1d-safe",
+        "--lib",
+        "--locked"
+      ],
+      "exit": 0,
+      "seconds": 9.14,
+      "log_sha256": "3fa65d4a9c07156b5405c135bc579026232642e99a6f7331a0ec6f0a96355ddd"
+    }
+  ],
+  "package_source_builds": [
+    {
+      "features": "default",
+      "command": [
+        "cargo",
+        "build",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-release-prep-2026-09-08/package-after/source/Cargo.toml",
+        "--lib"
+      ],
+      "exit": 0,
+      "seconds": 10.39,
+      "log_sha256": "d1aa78f495d1e9de96de4b39ce7361b1ed2c49110f0c446a66de1601df68ba74"
+    },
+    {
+      "features": "unchecked",
+      "command": [
+        "cargo",
+        "build",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-release-prep-2026-09-08/package-after/source/Cargo.toml",
+        "--lib",
+        "--features",
+        "unchecked"
+      ],
+      "exit": 0,
+      "seconds": 7.43,
+      "log_sha256": "636acef4a0a7b2c56282f63bec3a96c0470d3fb3944fd24f8cb78d7b150e176c"
+    },
+    {
+      "features": "c-ffi",
+      "command": [
+        "cargo",
+        "build",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-release-prep-2026-09-08/package-after/source/Cargo.toml",
+        "--lib",
+        "--features",
+        "c-ffi"
+      ],
+      "exit": 0,
+      "seconds": 7.59,
+      "log_sha256": "90edd2cb3ab63a3edd4cd04b82d667339aec475a5fe492a144f87941cbde5293"
+    },
+    {
+      "features": "asm",
+      "command": [
+        "cargo",
+        "build",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-release-prep-2026-09-08/package-after/source/Cargo.toml",
+        "--lib",
+        "--features",
+        "asm"
+      ],
+      "exit": 0,
+      "seconds": 16.86,
+      "log_sha256": "094f2bd5af1dfe44028b8a901e1865843f196b57bf6419f8fabe6e13bff2a8dd"
+    },
+    {
+      "features": "partial_asm",
+      "command": [
+        "cargo",
+        "build",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-release-prep-2026-09-08/package-after/source/Cargo.toml",
+        "--lib",
+        "--features",
+        "partial_asm"
+      ],
+      "exit": 0,
+      "seconds": 8.51,
+      "log_sha256": "aeae5b5d531e5faa0f0c6d9117ac62f0fcb325e7a0469202e2d946a87e1f7156"
+    }
+  ],
+  "disjoint_native_checks": [
+    {
+      "gate": "native",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--features",
+        "aligned,pic-buf,zerocopy",
+        "--all-targets"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "seconds": 5.45,
+      "log": "native.log",
+      "log_sha256": "dc4935016833223a1b374818ca4ae24a81f4d5bb51c2099ca822df3b12d3aac3",
+      "finished_utc": "2026-09-08T04:58:47.146803+00:00"
+    },
+    {
+      "gate": "no-std-storage",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--no-default-features",
+        "--features",
+        "aligned,pic-buf,zerocopy"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "seconds": 5.56,
+      "log": "no-std-storage.log",
+      "log_sha256": "050e08b8262535fb0e1b5fbb6d31d0dca6e86b2231a36f1dc283d2d69c14adcb",
+      "finished_utc": "2026-09-08T04:58:52.709170+00:00"
+    },
+    {
+      "gate": "docs",
+      "command": [
+        "cargo",
+        "test",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--features",
+        "aligned,pic-buf,zerocopy",
+        "--doc"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "seconds": 0.24,
+      "log": "docs.log",
+      "log_sha256": "fc069792c707cf912be440a6c37420af400baea66d53753a11cc750f0c007dc1",
+      "finished_utc": "2026-09-08T04:58:52.953057+00:00"
+    },
+    {
+      "gate": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--all-targets",
+        "--features",
+        "aligned,pic-buf,zerocopy",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "seconds": 0.35,
+      "log": "clippy.log",
+      "log_sha256": "ec8aa1eb83e380a1b9481d1604241586283932572b7f5d56070c8d12e1807d91",
+      "finished_utc": "2026-09-08T04:58:53.301757+00:00"
+    },
+    {
+      "gate": "clippy-no-std",
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--no-default-features",
+        "--features",
+        "aligned,pic-buf,zerocopy",
+        "--lib",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "seconds": 0.18,
+      "log": "clippy-no-std.log",
+      "log_sha256": "de6a6f5966bd0489955503df86dcd5eb255faa3a63e601a895e9da7355bfef26",
+      "finished_utc": "2026-09-08T04:58:53.484095+00:00"
+    },
+    {
+      "gate": "i686",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--features",
+        "aligned,pic-buf,zerocopy",
+        "--target",
+        "i686-unknown-linux-gnu"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "seconds": 0.27,
+      "log": "i686.log",
+      "log_sha256": "33329fd0f2169a0cb6a556dd7286e575f4928506bb964685076958739b8e01f1",
+      "finished_utc": "2026-09-08T04:58:53.756141+00:00"
+    },
+    {
+      "gate": "wasm-no-std",
+      "command": [
+        "cargo",
+        "check",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--no-default-features",
+        "--target",
+        "wasm32-unknown-unknown"
+      ],
+      "env": {},
+      "exit_code": 0,
+      "seconds": 0.2,
+      "log": "wasm-no-std.log",
+      "log_sha256": "4ec273de6e0359424ae1075570006050667de7abfa92069fef92d6ad057393fb",
+      "finished_utc": "2026-09-08T04:58:53.954944+00:00"
+    }
+  ],
+  "disjoint_package": {
+    "name": "rav1d-disjoint-mut-0.3.2.crate",
+    "bytes": 162482,
+    "sha256": "a6b8f53d3903b45f61186f437feeb375263c31f2534cf7d65fdb1f65a98a7d2a",
+    "source_commit": "e233adcb9d1a6336cad8c77fbd98761bb2c7dcb9"
+  },
+  "registry_versions": {
+    "archmage": "0.9.28",
+    "archmage-macros": "0.9.28",
+    "rav1d-disjoint-mut": "0.3.1",
+    "rav1d-safe": "0.5.7"
+  },
+  "limitations": [
+    "Source package rehearsal retains Git/local dependencies, not registry package verification.",
+    "Full new-head CI pending.",
+    "Experimental feature table still needs release review.",
+    "Confirmed unchecked regression remains unresolved."
+  ],
+  "additional_checks": [
+    {
+      "name": "safe-feature-boundary",
+      "command": [
+        "bash",
+        "scripts/review-feature-gate.sh"
+      ],
+      "exit": 0,
+      "seconds": 0.74,
+      "log_sha256": "f906a45a8d1a4c5fbb3043194637d8625a36e6dfa04920155a8f0b7d64f8170b"
+    },
+    {
+      "name": "disjoint-native",
+      "command": [
+        "python3",
+        "scripts/review-const-032.py",
+        "native",
+        "--output",
+        "/home/lilith/tmp/rav1d-release-prep-2026-09-08/disjoint-native"
+      ],
+      "exit": 0,
+      "seconds": 12.28,
+      "log_sha256": "ae2d9c7fa62d6b8483d144963c47b0e3a83673ef8798b0ee5d9bc395a73aef27"
+    },
+    {
+      "name": "decoder-semver",
+      "command": [
+        "cargo",
+        "semver-checks",
+        "-p",
+        "rav1d-safe",
+        "--baseline-version",
+        "0.5.7",
+        "--release-type",
+        "minor",
+        "--default-features"
+      ],
+      "exit": 100,
+      "seconds": 9.28,
+      "log_sha256": "8e58ffd3d3b465e4b3fc699303ed65a5059649c6c9cdf83dc4eb6c1ec1055cfb"
+    }
+  ],
+  "disjoint_patch_semver": {
+    "command": [
+      "cargo",
+      "semver-checks",
+      "-p",
+      "rav1d-disjoint-mut",
+      "--baseline-version",
+      "0.3.1",
+      "--release-type",
+      "patch",
+      "--default-features"
+    ],
+    "log_sha256": "85e9ac8df15c36b402950738e58ead35bbcfecb8655a94253583fd13ea8d6333",
+    "exit": 0,
+    "checks_passed": 223,
+    "checks_skipped": 30
+  }
+}

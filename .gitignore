@@ -52,3 +52,5 @@ benchmarks/wrapper-contexts-2026-09-07/**/*.gz
 
 !examples/rust-codec-workflow/Cargo.lock
 benchmarks/noasm-2026-09-08/**/*.gz
+
+benchmarks/release-prep-2026-09-08/**/*.gz

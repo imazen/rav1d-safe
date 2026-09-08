@@ -348,7 +348,7 @@ Run conformance tests with `cargo test --release --test decode_cpu_levels`.
 
 ## Building
 
-Use a current stable Rust toolchain. The package manifest declares Rust 1.89 as its minimum; the new workflow examples and benchmark record the exact compiler used. Install via [rustup.rs](https://rustup.rs).
+Use a current stable Rust toolchain. The default checked library is tested on its declared Rust 1.89 minimum; the workflow examples and benchmarks record their exact compiler versions. Install via [rustup.rs](https://rustup.rs).
 
 ```sh
 # Default safe-SIMD build (recommended)
