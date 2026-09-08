@@ -195,6 +195,8 @@ pub mod src {
     pub mod dav1d_api;
 
     // === Modules WITHOUT unsafe_code (enforced by deny) ===
+    #[cfg(all(feature = "asm", any(target_arch = "arm", target_arch = "aarch64")))]
+    mod arm_asm_offsets;
     mod cdef_apply;
     mod cdf;
     mod const_fn;

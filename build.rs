@@ -101,6 +101,7 @@ mod asm {
             define(Define::bool("ARCH_X86_64", arch == ArchX86::X86_64));
         }
         if let Arch::Arm(arch) = arch {
+            println!("cargo:rerun-if-changed=src/arm/asm-offsets.h");
             define(Define::bool("ARCH_ARM", arch == ArchArm::Arm32));
             define(Define::bool("ARCH_AARCH64", arch == ArchArm::Arm64));
 

@@ -1,0 +1,155 @@
+{
+  "failed_job": "https://github.com/imazen/rav1d-safe/actions/runs/34191377199/job/101949972293",
+  "source_parent": "ba877a3c8f3f38a086018aa3c432655c4b31c0bd",
+  "header_source": "memorysafety/rav1d d3d1cd67059f47803919be8276650e5870c9fd02 src/arm/asm-offsets.h",
+  "header_sha256": "b658d1084ebb60e504050fd85800c7d3b5658eb4a76d24ed9c59bb49af96d94f",
+  "layout_assertions": 21,
+  "target": "aarch64-unknown-linux-gnu",
+  "compiler_env": {
+    "CC_aarch64_unknown_linux_gnu": "clang",
+    "AR_aarch64_unknown_linux_gnu": "llvm-ar"
+  },
+  "initial_builds": [
+    {
+      "features": "default",
+      "command": [
+        "cargo",
+        "build",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-arm-package-2026-09-08/source/Cargo.toml",
+        "--lib",
+        "--target",
+        "aarch64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "seconds": 9.35,
+      "log_sha256": "153b6060baf0a0eea78dc168a8e998a8de3bdd5ed0bb326c07f91fbd71b35efc"
+    },
+    {
+      "features": "unchecked",
+      "command": [
+        "cargo",
+        "build",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-arm-package-2026-09-08/source/Cargo.toml",
+        "--lib",
+        "--target",
+        "aarch64-unknown-linux-gnu",
+        "--features",
+        "unchecked"
+      ],
+      "exit": 0,
+      "seconds": 5.98,
+      "log_sha256": "7e24c1039a722c62d252b641660c7a36a0fb0e93cc30e5a336d3fb5cc73af84b"
+    },
+    {
+      "features": "c-ffi",
+      "command": [
+        "cargo",
+        "build",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-arm-package-2026-09-08/source/Cargo.toml",
+        "--lib",
+        "--target",
+        "aarch64-unknown-linux-gnu",
+        "--features",
+        "c-ffi"
+      ],
+      "exit": 0,
+      "seconds": 6.13,
+      "log_sha256": "c0aecd5d457f16a0d14ad732da80f727c8d31157a34b02b14ad92245710db318"
+    },
+    {
+      "features": "asm",
+      "command": [
+        "cargo",
+        "build",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-arm-package-2026-09-08/source/Cargo.toml",
+        "--lib",
+        "--target",
+        "aarch64-unknown-linux-gnu",
+        "--features",
+        "asm"
+      ],
+      "exit": 101,
+      "seconds": 4.79,
+      "log_sha256": "e0a061656299709b808e4d8206288b63d951bc8901fb267ea57714fcbcbc993b"
+    }
+  ],
+  "corrected_builds": [
+    {
+      "mode": "asm",
+      "command": [
+        "cargo",
+        "build",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-arm-package-2026-09-08/source/Cargo.toml",
+        "--lib",
+        "--target",
+        "aarch64-unknown-linux-gnu",
+        "--features",
+        "asm"
+      ],
+      "exit": 0,
+      "seconds": 6.18,
+      "log_sha256": "fa9cbdc1e1aebca97571a6c8f970622d127d0ef6ba2077f4db02146d2cf6fcf7"
+    },
+    {
+      "mode": "partial_asm",
+      "command": [
+        "cargo",
+        "build",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-arm-package-2026-09-08/source/Cargo.toml",
+        "--lib",
+        "--target",
+        "aarch64-unknown-linux-gnu",
+        "--features",
+        "partial_asm"
+      ],
+      "exit": 0,
+      "seconds": 6.26,
+      "log_sha256": "3a7f72cbee691148386fae1d7001e947e776be06c4efcdfab86085c02a9a2e30"
+    }
+  ],
+  "layout_negative_control": [
+    {
+      "case": "wrong-offset",
+      "command": [
+        "cargo",
+        "check",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-arm-package-2026-09-08/source/Cargo.toml",
+        "--lib",
+        "--target",
+        "aarch64-unknown-linux-gnu",
+        "--features",
+        "asm"
+      ],
+      "exit": 101,
+      "expected_pass": false,
+      "seconds": 4.82,
+      "log_sha256": "c34ea9eac37519c753d7c844daeae22d1ba774fc0eeb1546f583e72d5538007c"
+    },
+    {
+      "case": "restored-offset",
+      "command": [
+        "cargo",
+        "check",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-arm-package-2026-09-08/source/Cargo.toml",
+        "--lib",
+        "--target",
+        "aarch64-unknown-linux-gnu",
+        "--features",
+        "asm"
+      ],
+      "exit": 0,
+      "expected_pass": true,
+      "seconds": 4.58,
+      "log_sha256": "4890944d74e87c2326b29a8a184d13294f1349cf84c45455c688d2a5cfc70aaf"
+    }
+  ],
+  "scope": "Cross-compiled library package-source builds. Native ARM runtime tests added to CI; pending."
+}

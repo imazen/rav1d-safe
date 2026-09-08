@@ -9,6 +9,10 @@ Release candidate notes and remaining publication gates are in
 published; the historical staging date below is not a release date.
 
 ### Release preparation
+- Restore the ARM assembly offset header required by film grain and reference
+  motion vectors, include headers in the crate archive, and check all 21 numeric
+  offsets against the target Rust layouts at compile time. ARM package builds
+  now catch missing headers before compilation and support local cross-checks.
 - Prefix 45 experimental feature names with `__`, remove three obsolete no-op
   switches, and update executable consumers. Supported public mode names and
   disjoint-mut's published `instrument` feature are unchanged.

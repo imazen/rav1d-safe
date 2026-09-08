@@ -2046,7 +2046,7 @@ mod neon {
             bd: BD,
         ) {
             const { assert!(N == 2 || N == 4) };
-            let tmp = tmp.0.as_mut_ptr();
+            let tmp = tmp.as_mut_ptr();
             let src_ptr = src.as_ptr::<BD>().cast();
             let src_stride = src.stride();
             let a_ptrs = a_ptrs.as_mut_ptr();
@@ -2144,8 +2144,8 @@ mod neon {
         ) {
             let dst_ptr = dst.as_mut_ptr::<BD>().cast();
             let dst_stride = dst.stride();
-            let t1 = t1.0.as_ptr();
-            let t2 = t2.0.as_ptr();
+            let t1 = t1.as_ptr();
+            let t2 = t2.as_ptr();
             let wt = wt.as_ptr();
             let bd = bd.into_c();
             // SAFETY: asm should be safe.
@@ -2169,8 +2169,8 @@ mod neon {
         w1: c_int,
         bd: BD,
     ) {
-        let mut tmp5 = Aligned([0; 2 * FILTER_OUT_STRIDE]);
-        let mut tmp3 = Aligned([0; 2 * FILTER_OUT_STRIDE]);
+        let mut tmp5: Align16<_> = Aligned([0; 2 * FILTER_OUT_STRIDE]);
+        let mut tmp3: Align16<_> = Aligned([0; 2 * FILTER_OUT_STRIDE]);
 
         sgr_finish_filter_2rows::Fn::neon2::<BD>()
             .call(&mut tmp5, *dst, a5_ptrs, b5_ptrs, w, h, bd);
@@ -2202,16 +2202,16 @@ mod neon {
 
         const BUF_STRIDE: usize = 384 + 16;
 
-        let mut sumsq_buf = Aligned([0; BUF_STRIDE * 3 + 16]);
-        let mut sum_buf = Aligned([0; BUF_STRIDE * 3 + 16]);
+        let mut sumsq_buf: Align16<_> = Aligned([0; BUF_STRIDE * 3 + 16]);
+        let mut sum_buf: Align16<_> = Aligned([0; BUF_STRIDE * 3 + 16]);
 
         let mut sumsq_ptrs;
         let mut sum_ptrs;
         let sumsq_rows = array::from_fn(|i| sumsq_buf[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
         let sum_rows = array::from_fn(|i| sum_buf[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
 
-        let mut a_buf = Aligned([0; BUF_STRIDE * 3 + 16]);
-        let mut b_buf = Aligned([0; BUF_STRIDE * 3 + 16]);
+        let mut a_buf: Align16<_> = Aligned([0; BUF_STRIDE * 3 + 16]);
+        let mut b_buf: Align16<_> = Aligned([0; BUF_STRIDE * 3 + 16]);
 
         let mut a_ptrs = array::from_fn(|i| a_buf[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
         let mut b_ptrs = array::from_fn(|i| b_buf[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
@@ -2482,8 +2482,8 @@ mod neon {
 
         const BUF_STRIDE: usize = 384 + 16;
 
-        let mut sumsq_buf = Aligned([0; BUF_STRIDE * 5 + 16]);
-        let mut sum_buf = Aligned([0; BUF_STRIDE * 5 + 16]);
+        let mut sumsq_buf: Align16<_> = Aligned([0; BUF_STRIDE * 5 + 16]);
+        let mut sum_buf: Align16<_> = Aligned([0; BUF_STRIDE * 5 + 16]);
 
         let mut sumsq_ptrs;
         let mut sum_ptrs;
@@ -2492,8 +2492,8 @@ mod neon {
         let sum_rows: [_; 5] =
             array::from_fn(|i| sum_buf[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
 
-        let mut a_buf = Aligned([0; BUF_STRIDE * 2 + 16]);
-        let mut b_buf = Aligned([0; BUF_STRIDE * 2 + 16]);
+        let mut a_buf: Align16<_> = Aligned([0; BUF_STRIDE * 2 + 16]);
+        let mut b_buf: Align16<_> = Aligned([0; BUF_STRIDE * 2 + 16]);
 
         let mut a_ptrs = array::from_fn(|i| a_buf[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
         let mut b_ptrs = array::from_fn(|i| b_buf[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
@@ -2899,30 +2899,30 @@ mod neon {
 
         const BUF_STRIDE: usize = 384 + 16;
 
-        let mut sumsq5_buf = Aligned([0; BUF_STRIDE * 5 + 16]);
-        let mut sum5_buf = Aligned([0; BUF_STRIDE * 5 + 16]);
+        let mut sumsq5_buf: Align16<_> = Aligned([0; BUF_STRIDE * 5 + 16]);
+        let mut sum5_buf: Align16<_> = Aligned([0; BUF_STRIDE * 5 + 16]);
 
         let sumsq5_rows: [_; 5] =
             array::from_fn(|i| sumsq5_buf[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
         let sum5_rows: [_; 5] =
             array::from_fn(|i| sum5_buf[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
 
-        let mut sumsq3_buf = Aligned([0; BUF_STRIDE * 3 + 16]);
-        let mut sum3_buf = Aligned([0; BUF_STRIDE * 3 + 16]);
+        let mut sumsq3_buf: Align16<_> = Aligned([0; BUF_STRIDE * 3 + 16]);
+        let mut sum3_buf: Align16<_> = Aligned([0; BUF_STRIDE * 3 + 16]);
 
         let sumsq3_rows: [_; 3] =
             array::from_fn(|i| sumsq3_buf[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
         let sum3_rows: [_; 3] =
             array::from_fn(|i| sum3_buf[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
 
-        let mut a5_buf = Aligned([0; BUF_STRIDE * 2 + 16]);
-        let mut b5_buf = Aligned([0; BUF_STRIDE * 2 + 16]);
+        let mut a5_buf: Align16<_> = Aligned([0; BUF_STRIDE * 2 + 16]);
+        let mut b5_buf: Align16<_> = Aligned([0; BUF_STRIDE * 2 + 16]);
 
         let mut a5_ptrs = array::from_fn(|i| a5_buf[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
         let mut b5_ptrs = array::from_fn(|i| b5_buf[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
 
-        let mut a3_buf = Aligned([0; BUF_STRIDE * 4 + 16]);
-        let mut b3_buf = Aligned([0; BUF_STRIDE * 4 + 16]);
+        let mut a3_buf: Align16<_> = Aligned([0; BUF_STRIDE * 4 + 16]);
+        let mut b3_buf: Align16<_> = Aligned([0; BUF_STRIDE * 4 + 16]);
 
         let mut a3_ptrs = array::from_fn(|i| a3_buf[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
         let mut b3_ptrs = array::from_fn(|i| b3_buf[i * BUF_STRIDE..][..BUF_STRIDE].as_mut_ptr());
