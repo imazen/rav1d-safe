@@ -58,11 +58,12 @@ def verified_files(data, manifest):
 def main():
     root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--manifest', type=Path, default=root / 'benchmarks/EXTERNAL_ARTIFACTS.json')
     parser.add_argument('--destination', type=Path, default=root)
     parser.add_argument('--archive', type=Path, help='Use a downloaded bundle instead of fetching R2')
     parser.add_argument('--check-only', action='store_true')
     args = parser.parse_args()
-    manifest = json.loads((root / 'benchmarks/EXTERNAL_ARTIFACTS.json').read_text())
+    manifest = json.loads(args.manifest.read_text())
     if args.archive:
         data = args.archive.read_bytes()
     else:

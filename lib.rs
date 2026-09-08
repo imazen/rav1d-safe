@@ -1,10 +1,35 @@
+//! AV1 decoding through a native Rust API.
+//!
+//! Import [`Decoder`], [`Settings`], [`Frame`], and [`Planes`] directly from this
+//! crate. Default features select checked Rust SIMD; Rust callers do not need
+//! the optional C FFI or assembly features.
+//!
+//! Feed raw AV1 OBU data, such as packets emitted by zenrav1e. For complete AVIF
+//! files and RGB output, use zenavif, which wraps this decoder with container
+//! handling and color conversion. Decoded [`Frame`] values expose borrowed YUV
+//! plane views and own the storage that keeps those views alive.
+//!
+//! ```no_run
+//! use rav1d_safe::{Decoder, Frame};
+//!
+//! fn decode_still(obu: &[u8]) -> rav1d_safe::Result<Vec<Frame>> {
+//!     let mut decoder = Decoder::new()?;
+//!     let mut frames = Vec::new();
+//!     if let Some(frame) = decoder.decode(obu)? {
+//!         frames.push(frame);
+//!     }
+//!     frames.extend(decoder.flush()?);
+//!     Ok(frames)
+//! }
+//! ```
+
 #![allow(non_upper_case_globals)]
 #![cfg_attr(target_arch = "arm", feature(stdarch_arm_feature_detection))]
 #![cfg_attr(
     any(target_arch = "riscv32", target_arch = "riscv64"),
     feature(stdarch_riscv_feature_detection)
 )]
-// Crate-wide forbid(unsafe_code) when neither `asm` nor `c-ffi` is enabled.
+// Crate-wide forbid(unsafe_code) unless `asm`, `c-ffi`, or `unchecked` is enabled.
 // All unsafe must live in separate crates (rav1d-disjoint-mut, rav1d-align, etc.)
 // or be gated behind cfg(feature = "asm") / cfg(feature = "c-ffi").
 // forbid cannot be overridden by #[allow] — any unsafe in the default build is a hard error.

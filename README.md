@@ -1,15 +1,21 @@
 # rav1d-safe [![CI](https://img.shields.io/github/actions/workflow/status/imazen/rav1d-safe/ci.yml?style=flat-square)](https://github.com/imazen/rav1d-safe/actions/workflows/ci.yml) [![crates.io](https://img.shields.io/crates/v/rav1d-safe?style=flat-square)](https://crates.io/crates/rav1d-safe) [![lib.rs](https://img.shields.io/badge/lib.rs-rav1d--safe-orange?style=flat-square)](https://lib.rs/crates/rav1d-safe) [![docs.rs](https://img.shields.io/docsrs/rav1d-safe?style=flat-square)](https://docs.rs/rav1d-safe) [![license](https://img.shields.io/crates/l/rav1d-safe?style=flat-square)](https://github.com/imazen/rav1d-safe#license)
 
-A safe Rust AV1 decoder. Forked from [rav1d](https://github.com/memorysafety/rav1d), with 160k lines of hand-written x86/ARM assembly replaced by safe Rust SIMD intrinsics.
+An AV1 decoder with a native **Rust API**: `Decoder`, `Settings`, `Frame`, and
+borrowed pixel-plane views are available directly from `rav1d_safe`. Forked from
+[rav1d](https://github.com/memorysafety/rav1d), with checked safe Rust SIMD enabled
+by default. Rust callers need neither a C FFI wrapper nor the `c-ffi` feature.
 
-578 commits since the fork (+90,813 / -6,958 lines across 1,194 files). 68k of those net new lines are safe SIMD in `src/safe_simd/`.
+Use [zenrav1e](https://github.com/imazen/zenrav1e) to encode raw AV1 and
+[zenavif](https://github.com/imazen/zenavif) for complete AVIF files, including
+container handling and color conversion. See the
+[compiled Rust round-trip examples](docs/RUST_CODEC_WORKFLOW.md).
 
 ## Quick Start
 
 Add to your `Cargo.toml`:
 ```toml
 [dependencies]
-rav1d-safe = "0.5"
+rav1d-safe = "0.5.7"
 ```
 
 Decode an AV1 bitstream:
@@ -44,6 +50,10 @@ fn decode(obu_data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 ## API Overview
+
+The reference below describes the staged 0.6.0 API. `Strictness` and cooperative
+cancellation are additions to the published 0.5.7 API used by the quick start
+and [runnable codec examples](docs/RUST_CODEC_WORKFLOW.md).
 
 The public API lives in `src/managed.rs` and is re-exported at the crate root, so **every public type is reachable directly from `rav1d_safe`** — no `src::managed::` path needed. One canonical import covering the whole surface:
 
@@ -89,7 +99,7 @@ downstream callers use field assignment rather than a struct literal.
 | `PlaneView8` / `PlaneView16` | Zero-copy 2D view: `row(y)`, `pixel(x, y)`, `rows()`, `width()`, `height()`, `stride()` |
 | `Settings` | Thread count, film grain, frame size limit, inloop filters, CPU level, etc. |
 | `CpuLevel` | SIMD dispatch level (`Scalar`, `X86V2`, `X86V3`, `X86V4`, `Neon`, `Native`) |
-| `Error` | Enum: `InvalidData`, `OutOfMemory`, `NeedMoreData`, `InvalidSettings(&str)`, `InitFailed`, `Other(String)` |
+| `Error` | Enum: `InvalidData`, `OutOfMemory`, `NeedMoreData`, `InvalidSettings(&str)`, `InitFailed`, `Cancelled`, `Other(String)` |
 
 > **Naming note (reconciles the example above):** `Depth8` / `Depth16` are the *variants* of the `Planes` enum — you write `Planes::Depth8(..)` in a `match`. `Planes8` / `Planes16` are the *struct types* those variants wrap, and are also re-exported at the crate root so you can name them in signatures. Both are correct; they refer to different things.
 
@@ -97,7 +107,7 @@ downstream callers use field assignment rather than a struct literal.
 
 ### Input Format
 
-The decoder expects raw AV1 Open Bitstream Unit (OBU) data. If you have IVF or WebM containers, strip the container framing first and pass the OBU payload. See `tests/ivf_parser.rs` for an IVF parser example. For AVIF images, use [zenavif-parse](https://crates.io/crates/zenavif-parse) to extract the OBU data from the ISOBMFF container.
+The decoder expects raw AV1 Open Bitstream Unit (OBU) data. If you have IVF or WebM containers, strip the container framing first and pass the OBU payload. See `tests/ivf_parser.rs` for an IVF parser example. For complete AVIF images, use [zenavif](https://crates.io/crates/zenavif), which uses rav1d-safe’s Rust API and handles the container, alpha, and color conversion. Use [zenavif-parse](https://crates.io/crates/zenavif-parse) directly only when implementing that container layer yourself; AVIF files can contain multiple image items or tiles, not just one OBU payload.
 
 ### Output Format
 
@@ -134,20 +144,17 @@ use rav1d_safe::{Decoder, Settings, CpuLevel};
 // Single-threaded (default) — synchronous, deterministic
 let decoder = Decoder::new()?;
 
-// Multi-threaded — frame threading, better throughput
-let decoder = Decoder::with_settings(Settings {
-    threads: 0, // auto-detect core count
-    ..Default::default()
-})?;
+// Tile threading within a frame; safe checked mode supports this.
+let mut settings = Settings::default();
+settings.threads = 4;
+settings.max_frame_delay = 1;
+let decoder = Decoder::with_settings(settings)?;
 
 // Constrained decoding — limit frame size and CPU features
-let decoder = Decoder::with_settings(Settings {
-    // Unit is TOTAL PIXELS (width * height), NOT bytes and NOT max-dimension.
-    // 3840 * 2160 here means "reject any frame whose width*height exceeds ~8.3 MP" (a 4K cap).
-    frame_size_limit: 3840 * 2160,
-    cpu_level: CpuLevel::Native,   // use best available SIMD
-    ..Default::default()
-})?;
+let mut settings = Settings::default();
+settings.frame_size_limit = 3840 * 2160; // total pixels, not bytes
+settings.cpu_level = CpuLevel::Native;
+let decoder = Decoder::with_settings(settings)?;
 ```
 
 #### `frame_size_limit` — the pre-decode DoS guard (read this before decoding untrusted AV1)
@@ -205,25 +212,36 @@ Fallible operations return the crate's `Result<T>` alias, which is `Result<T, wh
 
 ### Cancellation
 
-**There is no in-flight decode cancellation.** The decoder exposes no stop/cancel/abort token — once `decode()` (or `flush()`) starts processing a frame, it runs to completion on the calling thread (plus any worker threads); you cannot interrupt a slow-but-valid decode from another thread, and dropping the `Decoder` joins its workers rather than aborting mid-frame.
-
-For untrusted input this means the **only pre-decode guard is `frame_size_limit`** (see above), which bounds declared frame dimensions but not wall-clock decode time. If you need a hard time bound on a server, enforce it *around* the decoder — e.g. run `decode()` on a worker thread/task with your own timeout and abandon the result (the decode still finishes in the background; budget for that), or pre-screen stream size/frame count before feeding OBUs. A first-class cooperative-cancellation token (e.g. via the `enough` crate) is **not** currently implemented; this is tracked upstream.
+The staged 0.6.0 Rust API provides `Decoder::set_stop`, accepting an
+`Option<Arc<dyn enough::Stop>>`. Single-threaded decoding checks at superblock-row
+boundaries; tile workers also check for cancellation. A triggered token returns
+`Error::Cancelled`. `None` disables cancellation checks. This is cooperative
+cancellation, not a hard wall-clock deadline; `frame_size_limit` remains useful
+as a separate bound on declared dimensions. This API is not in published 0.5.7.
 
 ## Safety Model
 
-The default build (`forbid(unsafe_code)` crate-wide) contains zero `unsafe` in the main crate. The only unsafe code lives in the [rav1d-disjoint-mut](crates/rav1d-disjoint-mut/) workspace sub-crate, a provably sound `RefCell`-for-ranges abstraction with always-on bounds checking.
+The default library compiles under crate-wide `forbid(unsafe_code)` and uses
+runtime borrow-overlap checks. Unsafe implementations behind dependency APIs
+remain part of the trust boundary, including `rav1d-disjoint-mut`, alignment
+helpers, archmage, and SIMD memory-access helpers. This is not a proof of the
+whole decoder or its dependencies.
 
-The SIMD path uses:
-- [archmage](https://crates.io/crates/archmage) for token-based target-feature dispatch (no manual `#[target_feature]`)
-- [safe_unaligned_simd](https://crates.io/crates/safe_unaligned_simd) for reference-based SIMD load/store (no raw pointers)
-- Value-type SIMD intrinsics, which are safe functions since Rust 1.93
-- Slice-based APIs throughout — no pointer arithmetic in SIMD code
+Enabling `unchecked`, `c-ffi`, or `asm` removes the crate-wide prohibition.
+`c-ffi` implies `unchecked`; `asm` implies `c-ffi`; `partial_asm` also implies
+`unchecked`. In unchecked SIMD paths, local exceptions allow raw loads/stores,
+and untracked buffer constructors bypass runtime overlap tracking. Some modules
+retain their own prohibitions. Normal Rust callers need none of these features.
+
+The default SIMD path uses archmage for feature-token dispatch and
+`safe_unaligned_simd` for reference-based loads/stores, with slice-based kernel
+interfaces.
 
 Verify at runtime with `rav1d_safe::enabled_features()` — returns a comma-delimited list including the active safety level (e.g. `"bitdepth_8, bitdepth_16, safety:forbid-unsafe"`).
 
 ## What's Been Ported
 
-The default build compiles under `forbid(unsafe_code)` in the main crate. All SIMD work lives in `src/safe_simd/` (59k lines of safe Rust replacing 233k lines of hand-written assembly across x86 and ARM).
+The default build compiles under `forbid(unsafe_code)` in the main crate. SIMD kernels live in `src/safe_simd/`, with additional entropy specialization in `src/msac.rs`.
 
 ### Ported: All DSP Kernels (AVX2 + NEON)
 
@@ -243,7 +261,7 @@ Every DSP kernel family has a safe Rust SIMD implementation that compiles under 
 | msac (entropy decoder) | 1 file (shared) | 1 file (shared) | inline in `msac.rs` |
 | cpuid | 1 file (55 lines) | — | replaced by `std::arch` detection in `cpu.rs` |
 
-msac uses branchless scalar for adapt4/adapt8 and a serial loop with early exit for adapt16. When the `unchecked` feature is enabled on x86_64, adapt4/adapt8/hi_tok switch to inlined SSE2 intrinsics via the `sse2!()` macro pattern (no function call overhead). The bool functions (bool_adapt, bool_equi) stay scalar — they have no data parallelism to exploit.
+The entropy decoder combines scalar routines with selected safe SIMD specialization; see the [measured entropy experiments](benchmarks/still-entropy-2026-09-07/README.md).
 
 ### Not Ported (With Rationale)
 
@@ -259,7 +277,18 @@ msac uses branchless scalar for adapt4/adapt8 and a serial loop with early exit 
 
 ## Performance
 
-All benchmarks: x86_64 (Zen 4, AVX2), single-threaded, Rust 1.93+, fat LTO. Run with `just profile` (500 iterations for IVF, 20 iterations for AVIF).
+For the current assembly-disabled upstream comparison, see the
+[matched 2K/4K/8K benchmark](benchmarks/noasm-2026-09-08/README.md).
+Upstream rav1d has no memory-safe feature mode; turning off its assembly selects
+its Rust implementation, which still contains unsafe code. Checked rav1d-safe
+retains safe SIMD and overlap checks.
+
+### Historical feature-mode measurements
+
+The following older measurements compare rav1d-safe's own feature modes. They
+are not the new upstream no-assembly comparison.
+
+Historical benchmark setup: x86_64 (Zen 4, AVX2), single-threaded, Rust 1.93+, fat LTO. Run with `just profile` (500 iterations for IVF, 20 iterations for AVIF).
 
 ### Real photographs (AVIF decode, single image)
 
@@ -319,7 +348,7 @@ Run conformance tests with `cargo test --release --test decode_cpu_levels`.
 
 ## Building
 
-Requires Rust 1.93+ (stable). Install via [rustup.rs](https://rustup.rs).
+Use a current stable Rust toolchain. The package manifest declares Rust 1.89 as its minimum; the new workflow examples and benchmark record the exact compiler used. Install via [rustup.rs](https://rustup.rs).
 
 ```sh
 # Default safe-SIMD build (recommended)
