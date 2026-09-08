@@ -845,6 +845,16 @@ feature renamed to `__simd_test`), hence 0.6.0 rather than a 0.5.x patch.
 - **Testing-only feature `simd_test` renamed to `__simd_test`** (with the new
   `__simd_test_log` inventory variant). The old feature name no longer exists;
   it was never meant for downstream use.
+- **`Rav1dPictureData` no longer implements `UnwindSafe`** (recorded after
+  publication, on 2026-09-08). The earlier `--default-features` semver run did
+  not surface it; the full-feature run does. It follows from the
+  rav1d-disjoint-mut guard correction: the guards hold `NonNull<V>` rather than
+  `&'a mut V`, and the lazy tracker adds a `spin::Once`, neither of which
+  carries the auto trait the reference fields did. A caller passing a picture
+  through `catch_unwind` wraps it in `AssertUnwindSafe`. `UnwindSafe` is
+  advisory with that escape hatch, so nothing that was sound becomes unsound.
+- **`Settings.strict_std_compliance` is now `#[deprecated]`**, superseded by
+  `Strictness`. Reading the field still compiles, with a warning.
 
 ### Added
 - **Cooperative in-flight decode cancellation** (issue #412). `Decoder::set_stop(Some(Arc<dyn Stop>))` installs an [`enough`](https://github.com/imazen/enough) `Stop` token that the decode loop polls at superblock-row granularity; when it fires, the in-flight frame is aborted and the `decode`/`get_frame`/`flush` call returns the new `Error::Cancelled` instead of running a crafted-but-spec-legal stream to completion. Both decode paths honor it: the single-threaded loop checks per sbrow (`src/decode.rs`), and tile-threaded workers check per task and abort via the same per-frame error path the internal flush uses (`src/thread_task.rs`). `None` (default) means never check — zero overhead (`enough::Stop::may_stop` short-circuits). Re-exports `Stop`/`StopReason`/`Unstoppable` from `managed`; adds internal `Rav1dError::ECANCELED`. Lets an untrusted-AV1 server bound a slow decode without abandoning the worker thread. Tested in `tests/cancellation.rs` (single-threaded + tile-threaded). Pure safe Rust; default `forbid(unsafe_code)` build unaffected.

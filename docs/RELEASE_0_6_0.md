@@ -15,6 +15,9 @@ ordinary owned-reconstruction policy is fixed to its prior environment-unset beh
   Callers matching managed errors use `err.error()` or `err.decompose().0`.
   Exhaustive matches must handle cancellation. Strict parsing is the default;
   `Strictness::Lenient` is available for dav1d-compatible acceptance behavior.
+  A fourth break, `Rav1dPictureData` no longer implementing `UnwindSafe`, was
+  identified after publication and is recorded under
+  [published release verification](#published-release-verification-2026-09-08).
 - **rav1d-disjoint-mut 0.3.2**, upgrading from published 0.3.1. It preserves
   `const fn new()` and `const is_checked()`; `new_eager()` and rectangle APIs
   are additive. No 0.4.0 is required for this soundness correction. Previously
@@ -212,3 +215,59 @@ Its cfg now uses `__probe_sites`; CI first checks for the exact test name to
 prevent recurrence. The restored test passes with `RAV1D_EXTENT_GATE_CORPUS=1`
 over the committed vectors and dav1d corpus. Earlier green results for this
 job after the feature rename were vacuous and are not validation evidence.
+
+## Published release verification (2026-09-08)
+
+Published source revision: `7a1fffd4b2f020a64bfeec4708750d7c2c9dee70`, which is
+`1d27c299` plus the guard-extent gate restoration (#529). Packaging at
+`1bcd6ce6` above predates that commit, so the archive identity below supersedes
+`release/0.6.0/package-sizes.json`.
+
+`cargo package --workspace --features
+rav1d-disjoint-mut/aligned,rav1d-disjoint-mut/pic-buf,rav1d-disjoint-mut/zerocopy`
+packaged and verified both crates at that revision:
+
+| Crate | Files | Compressed | SHA256 |
+|---|---|---|---|
+| `rav1d-disjoint-mut-0.3.2` | 22 | 162,629 | `e5d170ff0b912935f0d796c3b28bdacf46311840161e91f120f485cc92f1f977` |
+| `rav1d-safe-0.6.0` | 268 | 2,191,227 | `551b803ca7c71642c849af7078df4c46295e3fddfc52d3c06642a316dac44c0f` |
+
+The `rav1d-safe` archive carries 48 `.asm` files including `src/ext/x86/x86inc.asm`
+and `src/arm/asm-offsets.h`. The published `0.5.7` archive carries zero, which is
+why `cargo semver-checks` cannot build a registry baseline for it: every
+`nasm` input is absent and `cc-rs` fails at `ar s librav1dasm.a`. The
+git-tag baseline builds.
+
+### Semver evidence for the 0.5.7 to 0.6.0 bump
+
+`cargo semver-checks check-release -p rav1d-safe --baseline-rev v0.5.7` reports
+`0 checks, 254 skip` because 0.5.7 to 0.6.0 is already a major change for a 0.x
+crate, so every major lint is skipped as satisfied. That result confirms the bump
+is sufficient but not that it is required. Forcing enforcement with
+`--release-type patch` runs 223 checks: 219 pass, 4 fail, 31 skip, and reports
+`semver requires new major version`. The four:
+
+| Lint | Item | In migration notes |
+|---|---|---|
+| `enum_variant_added` (major) | `Error::Cancelled`, `src/managed.rs:78` | yes |
+| `feature_missing` (major) | `simd_test`, renamed `__simd_test` | yes |
+| `auto_trait_impl_removed` (major) | `Rav1dPictureData` is no longer `UnwindSafe`, `include/dav1d/picture.rs:2007` | **no, recorded here** |
+| `struct_field_marked_deprecated` (minor) | `Settings.strict_std_compliance`, `src/managed.rs:178` | yes, superseded by `Strictness` |
+
+`Rav1dPictureData` loses `UnwindSafe` as a consequence of the disjoint-mut guard
+correction: the guards hold `NonNull<V>` rather than `&'a mut V`, and the lazy
+tracker adds a `spin::Once`, neither of which carries the auto trait the
+reference fields did. Callers that pass a picture through `catch_unwind` wrap it
+in `AssertUnwindSafe`. `UnwindSafe` is advisory and has that escape hatch, so this
+does not change what is sound; it is recorded because the break is real and was
+not in the migration list.
+
+`cargo semver-checks check-release -p rav1d-disjoint-mut --baseline-version 0.3.1`
+runs 196 checks, 196 pass, 58 skip, `no semver update required`, confirming the
+patch level.
+
+### Local gates at the published revision
+
+`cargo nextest run --no-default-features --features bitdepth_8,bitdepth_16
+--release`: 182 tests run, 182 passed, 18 skipped. Doctests: 10 passed, 13
+ignored. Peak RSS 1.12 GiB.
