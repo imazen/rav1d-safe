@@ -1,5 +1,9 @@
 # Still transform specialization — 2026-09-07
 
+Raw `.gz` evidence is in [verified R2 storage](../EXTERNAL_ARTIFACTS.md).
+Run `python3 tools/fetch-benchmark-artifacts.py` from the repository root to
+restore the original paths referenced below. Reports and manifests remain here.
+
 Retain the 8×8 fallback specialization and connect fourteen existing mixed
 16×16 SIMD kernels to checked dispatch. The first change cuts 2.2–3.4% from
 the confirmed 2K/4K photo cells. Against that improved baseline, the dispatch

@@ -1,5 +1,9 @@
 # Checked still entropy experiments — 2026-09-07
 
+Raw `.gz` evidence is in [verified R2 storage](../EXTERNAL_ARTIFACTS.md).
+Run `python3 tools/fetch-benchmark-artifacts.py` from the repository root to
+restore the original paths referenced below. Reports and manifests remain here.
+
 Draft PR: https://github.com/imazen/rav1d-safe/pull/528. This is an ongoing
 investigation, not a parity or release claim. The active acceptance limits
 are 10% per group and 25% per mandatory cell, with the full corpus and
