@@ -19,7 +19,7 @@
 //! `include/dav1d/picture.rs::note_pic_extent`, at the single funnel every
 //! tracked picture-plane reservation passes through. It is compiled under
 //! `debug_assertions` (so plain `cargo test` catches a widening) or under
-//! `--features probe-sites` (so this gate can run it in RELEASE, over real
+//! `--features __probe_sites` (so this gate can run it in RELEASE, over real
 //! decodes, at the speed that needs). The default release build has no
 //! counter, no atomic load and no branch there.
 //!
@@ -42,15 +42,15 @@
 //! # Running
 //!
 //! ```text
-//! cargo test --release --features probe-sites --test guard_extent_budget -- --nocapture
-//! RAV1D_EXTENT_GATE_CORPUS=1 cargo test --release --features probe-sites \
+//! cargo test --release --features __probe_sites --test guard_extent_budget -- --nocapture
+//! RAV1D_EXTENT_GATE_CORPUS=1 cargo test --release --features __probe_sites \
 //!     --test guard_extent_budget -- --nocapture     # + the dav1d corpus leg
 //! ```
 //!
 //! The corpus leg is opt-in **from the caller** (CI sets it), never decided
 //! inside the test body.
 
-#![cfg(feature = "probe-sites")]
+#![cfg(feature = "__probe_sites")]
 
 use rav1d_safe::include::dav1d::picture::{
     TILE_THREADED_PIC_EXTENT_MAX_BYTES, extent_budget, pic_extent_ceiling_const,
@@ -255,7 +255,7 @@ fn picture_reservations_stay_inside_the_measured_ceiling() {
     //
     // Redundant with the in-decoder panic (which fires first, inside whichever
     // worker took the guard), and deliberately so: this restates it as a test
-    // assertion so a `--features probe-sites` run that somehow swallowed the
+    // assertion so a `--features __probe_sites` run that somehow swallowed the
     // panic still reports.
     assert!(
         over.is_empty(),

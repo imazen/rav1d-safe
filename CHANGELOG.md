@@ -8,6 +8,8 @@ Migration notes and validation history are in
 [the 0.6.0 release record](docs/RELEASE_0_6_0.md).
 
 ### Release preparation
+- Keep the guard-extent corpus test enabled after the `__probe_sites` rename;
+  CI verifies the intended test is present before executing the gate.
 - Refresh workspace dependency requirements and lockfile, including cc 1.4.5,
   zenbench 0.1.9, tango-bench 0.8.0, zenavif-parse 0.6.2 and Criterion 0.8.2.
   Decoder development tools need Rust 1.93; library minimums remain unchanged.
