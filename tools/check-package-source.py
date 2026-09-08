@@ -17,6 +17,7 @@ import time
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--work-dir', type=Path, required=True)
+p.add_argument('--target', help='Optional Rust cross-compilation target')
 p.add_argument('--features', nargs='+', default=['default', 'unchecked', 'c-ffi', 'asm', 'partial_asm'])
 a = p.parse_args()
 root = Path(__file__).resolve().parents[1]
@@ -37,7 +38,7 @@ for name in listing.stdout.splitlines():
     shutil.copyfile(source, target)
     records.append({'path': name, 'sha256': hashlib.sha256(source.read_bytes()).hexdigest()})
 required = ['src/ext/x86/x86inc.asm', 'src/x86/msac.asm', 'src/arm/asm.S',
-            'src/arm/32/msac.S', 'src/arm/64/msac.S', 'docs/RUST_CODEC_WORKFLOW.md']
+            'src/arm/asm-offsets.h', 'src/arm/32/msac.S', 'src/arm/64/msac.S', 'docs/RUST_CODEC_WORKFLOW.md']
 for name in required:
     assert (stage / name).is_file(), 'Missing package input: ' + name
 manifest = (stage / 'Cargo.toml').read_text()
@@ -55,6 +56,8 @@ env['CARGO_TERM_COLOR'] = 'never'
 results = []
 for features in a.features:
     command = ['cargo', 'build', '--manifest-path', str(stage / 'Cargo.toml'), '--lib']
+    if a.target:
+        command += ['--target', a.target]
     if features != 'default':
         command += ['--features', features]
     start = time.monotonic()

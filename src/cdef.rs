@@ -926,7 +926,7 @@ mod neon {
         let bottom = bottom.cast();
         let bd = BD::from_c(bitdepth_max);
 
-        let mut tmp_buf = Aligned([0; TMP_LEN]);
+        let mut tmp_buf: Align16<_> = Aligned([0; TMP_LEN]);
         let tmp = &mut tmp_buf[2 * TMP_STRIDE + 8..];
         padding::Fn::neon::<BD, W>().call::<BD>(tmp, dst, stride, left, top, bottom, H, edges);
         filter::Fn::neon::<BD, W>().call(

@@ -1224,7 +1224,7 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
     /// [`Self::close`] are untouched by the choice.
     #[inline]
     fn filter_run(&mut self, params: &[(u8, u8, u8, c_int)], wd: c_int, bd: BD) {
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(all(target_arch = "aarch64", not(feature = "asm")))]
         {
             use zerocopy::IntoBytes as _;
             if crate::src::safe_simd::loopfilter_arm::lf_compact_run_neon(
@@ -1253,7 +1253,7 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
     /// answers the same question, not a looser one.
     #[inline(always)]
     fn changed_span(&self, row: usize) -> Option<(usize, usize)> {
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(all(target_arch = "aarch64", not(feature = "asm")))]
         {
             use zerocopy::IntoBytes as _;
             if let Some(span) = crate::src::safe_simd::loopfilter_arm::lf_diff_span(

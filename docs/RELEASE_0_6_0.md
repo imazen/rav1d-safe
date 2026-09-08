@@ -116,3 +116,22 @@ No credentials are needed, and conflicting local files are refused.
 
 A successful local source rehearsal cannot satisfy steps 3–5. No tag, GitHub
 release, crate publication, dependency publication, or yank was performed.
+
+## ARM package follow-up
+
+The new ARM package job exposed a missing `src/arm/asm-offsets.h` and then
+previously uncompiled ARM-ASM Rust paths. The header is restored from the pinned
+upstream source and included in the package; 21 compile-time assertions parse
+its numeric constants and check the actual target Rust layouts. Changing the
+seed offset deliberately fails its intended assertion; restoring it passes.
+The ARM-only aligned scratch buffers now state their 16-byte alignment and use
+the current pointer-access API. Compact loop-filter helpers use their existing
+scalar fallbacks when the safe-SIMD module is excluded by `asm`.
+
+All five ARM package-source modes cross-compile with Clang. Native ARM ASM unit
+and committed-vector execution now has its own CI matrix entry; cross-compilation
+does not substitute for those runtime checks. [Commands and scope](../release/0.6.0/arm-package.json).
+
+The [raw log bundle](../release/0.6.0/ARM_PACKAGE_EVIDENCE.json) is public and
+hash-verified; restore it with `python3 tools/fetch-benchmark-artifacts.py
+--manifest release/0.6.0/ARM_PACKAGE_EVIDENCE.json`.

@@ -150,10 +150,13 @@ jobs:
             features: "bitdepth_8,bitdepth_16"
             label: safe-simd
 
-          # ASM builds (original hand-written assembly, x86_64 only)
+          # ASM builds on native x86_64 and ARM64 hardware
           - os: ubuntu-latest
             features: "asm,bitdepth_8,bitdepth_16"
             label: asm
+          - os: ubuntu-24.04-arm
+            features: "asm,bitdepth_8,bitdepth_16"
+            label: asm-arm64
 
           # 32-bit builds (safe-simd, no SIMD dispatch — exercises scalar paths)
           - os: ubuntu-latest
@@ -183,7 +186,7 @@ jobs:
         uses: taiki-e/install-action@nextest
 
       - name: Install NASM (Linux)
-        if: runner.os == 'Linux' && contains(matrix.features, 'asm')
+        if: runner.os == 'Linux' && runner.arch == 'X64' && contains(matrix.features, 'asm')
         run: sudo apt-get update && sudo apt-get install -y nasm
 
       - name: Install NASM (macOS)
