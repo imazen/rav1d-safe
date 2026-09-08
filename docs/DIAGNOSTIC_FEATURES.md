@@ -108,3 +108,12 @@ source inventory and the candidate patch against the recorded parent:
 ```sh
 python3 tools/fetch-benchmark-artifacts.py --manifest release/0.6.0/FEATURE_EVIDENCE.json
 ```
+
+## Benchmark tooling
+
+Disjoint-mut's `__bench` enables Criterion 0.8.2 for the `lock_overhead`
+benchmark. Run `cargo bench -p rav1d-disjoint-mut --features __bench --bench
+lock_overhead` on Rust 1.86 or newer. It is optional so the crate and its const
+API tests retain Rust 1.85 support. It adds no library environment overrides.
+The decoder's current test/example/benchmark dependencies require Rust 1.93
+because of zenavif-parse 0.6.2; the library itself retains Rust 1.89 support.

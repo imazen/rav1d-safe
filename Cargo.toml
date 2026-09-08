@@ -45,23 +45,23 @@ path = "lib.rs"
 crate-type = ["rlib"]
 
 [dependencies]
-aligned = "0.4"
+aligned = "0.4.3"
 assert_matches = "1.5.0"
 whereat = "0.1.5"
-atomig = { version = "0.4.1", features = ["derive"] }
-bitflags = "2.4.0"
-cfg-if = "1.0.0"
+atomig = { version = "0.4.3", features = ["derive"] }
+bitflags = "2.13.1"
+cfg-if = "1.0.4"
 # Cooperative cancellation token (issue #412). no_std trait crate; the `Stop`
 # trait is Send+Sync and object-safe, so we store `Arc<dyn Stop>` in the context.
 enough = "0.4.4"
 rav1d-disjoint-mut = { version = "0.3.2", path = "crates/rav1d-disjoint-mut", default-features = false, features = ["std", "aligned", "pic-buf", "zerocopy"] }
-libc = { version = "0.2", optional = true }
-parking_lot = "0.12.2"
-paste = "1.0.14"
-raw-cpuid = "11.0.1"
-strum = { version = "0.28", features = ["derive"] }
+libc = { version = "0.2.189", optional = true }
+parking_lot = "0.12.5"
+paste = "1.0.15"
+raw-cpuid = "11.6.0"
+strum = { version = "0.28.0", features = ["derive"] }
 to_method = "1.1.0"
-zerocopy = { version = "0.8", features = ["derive", "alloc"] }
+zerocopy = { version = "0.8.56", features = ["derive", "alloc"] }
 
 # Safe SIMD dependencies
 archmage = { version = "0.9.29", features = ["macros", "avx512"] }
@@ -69,19 +69,20 @@ archmage = { version = "0.9.29", features = ["macros", "avx512"] }
 safe_unaligned_simd = { version = "0.2.5", features = ["avx512"] }
 
 [dev-dependencies]
+# Current AVIF test tooling requires Rust 1.93; library MSRV remains 1.89.
 archmage = { version = "0.9.29", features = ["macros", "avx512", "testable_dispatch"] }
-divan = "0.1"
-md5 = "0.8.0"
-zenbench = "0.1.2"
-zenavif-parse = { version = "0.5.1", features = ["eager"] }
+divan = "0.1.21"
+md5 = "0.8.1"
+zenbench = "0.1.9"
+zenavif-parse = { version = "0.6.2", features = ["eager"] }
 
-# tango-bench depends on libloading which doesn't support wasm32
+# tango-bench uses native shared memory and process APIs unavailable on wasm32
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
-tango-bench = "0.7"
+tango-bench = "0.8.0"
 
 [build-dependencies]
-cc = "1.0.79"
-nasm-rs = { version = "0.3", features = ["parallel"] }
+cc = "1.4.5"
+nasm-rs = { version = "0.3.2", features = ["parallel"] }
 
 [features]
 # Default: forbid(unsafe_code), multithreaded, bounds-checked

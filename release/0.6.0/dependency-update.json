@@ -1,0 +1,216 @@
+{
+  "date": "2026-09-08",
+  "scope": "Current rav1d-safe and rav1d-disjoint-mut workspace dependencies; historical benchmark snapshots retain their measured dependencies.",
+  "registry_latest": {
+    "divan": [
+      "0.1.21",
+      "1.80.0"
+    ],
+    "strum": [
+      "0.28.0",
+      "1.71"
+    ],
+    "zenavif-parse": [
+      "0.6.2",
+      "1.93"
+    ],
+    "rav1d-disjoint-mut": [
+      "0.3.1",
+      "1.85"
+    ],
+    "whereat": [
+      "0.1.5",
+      "1.85"
+    ],
+    "safe_unaligned_simd": [
+      "0.2.5",
+      "1.88"
+    ],
+    "tango-bench": [
+      "0.8.0",
+      null
+    ],
+    "cfg-if": [
+      "1.0.4",
+      "1.32"
+    ],
+    "paste": [
+      "1.0.15",
+      "1.31"
+    ],
+    "atomig": [
+      "0.4.3",
+      null
+    ],
+    "assert_matches": [
+      "1.5.0",
+      null
+    ],
+    "nasm-rs": [
+      "0.3.2",
+      null
+    ],
+    "libc": [
+      "0.2.189",
+      "1.65"
+    ],
+    "parking_lot": [
+      "0.12.5",
+      "1.71"
+    ],
+    "md5": [
+      "0.8.1",
+      null
+    ],
+    "zerocopy": [
+      "0.8.56",
+      "1.56.0"
+    ],
+    "archmage": [
+      "0.9.29",
+      "1.89"
+    ],
+    "spin": [
+      "0.12.3",
+      "1.71"
+    ],
+    "loom": [
+      "0.7.2",
+      "1.65"
+    ],
+    "cc": [
+      "1.4.5",
+      "1.65.0"
+    ],
+    "criterion": [
+      "0.8.2",
+      "1.86"
+    ],
+    "bitflags": [
+      "2.13.1",
+      "1.56.0"
+    ],
+    "zenbench": [
+      "0.1.9",
+      "1.85"
+    ],
+    "to_method": [
+      "1.1.0",
+      null
+    ],
+    "aligned-vec": [
+      "0.6.4",
+      null
+    ],
+    "enough": [
+      "0.4.4",
+      "1.85"
+    ],
+    "raw-cpuid": [
+      "11.6.0",
+      null
+    ],
+    "aligned": [
+      "0.4.3",
+      null
+    ]
+  },
+  "checks": [
+    {
+      "command": [
+        "cargo",
+        "check",
+        "--workspace",
+        "--all-targets",
+        "--release",
+        "--features",
+        "rav1d-disjoint-mut/__bench"
+      ],
+      "exit": 0,
+      "seconds": 5.0
+    },
+    {
+      "command": [
+        "cargo",
+        "+1.89.0",
+        "check",
+        "-p",
+        "rav1d-safe",
+        "--lib",
+        "--locked"
+      ],
+      "exit": 0,
+      "seconds": 7.17
+    },
+    {
+      "command": [
+        "cargo",
+        "+1.85.0",
+        "test",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--no-default-features",
+        "--test",
+        "const_constructor",
+        "--locked"
+      ],
+      "exit": 0,
+      "seconds": 0.72
+    },
+    {
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--test",
+        "decode_md5_committed",
+        "--test",
+        "safe_simd_crashes",
+        "--test",
+        "fuzz_regression",
+        "--test-threads",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 16.22
+    },
+    {
+      "command": [
+        "cargo",
+        "check",
+        "--tests",
+        "--lib",
+        "--target",
+        "aarch64-unknown-linux-gnu",
+        "--no-default-features",
+        "--features",
+        "asm,bitdepth_8,bitdepth_16",
+        "--release"
+      ],
+      "exit": 0,
+      "seconds": 5.55
+    },
+    {
+      "command": [
+        "python3",
+        "tools/check-feature-policy.py"
+      ],
+      "exit": 0,
+      "seconds": 2.25
+    }
+  ],
+  "transitives": "cargo update refreshed compatible versions; transitive major-version requirements belong to their upstream crates.",
+  "library_msrv": {
+    "rav1d-safe": "1.89",
+    "rav1d-disjoint-mut": "1.85"
+  },
+  "development_msrv": {
+    "decoder": "1.93",
+    "disjoint-mut __bench": "1.86"
+  },
+  "asm_nextest": {
+    "command": "cargo nextest run --profile ci --no-default-features --features asm,bitdepth_8,bitdepth_16 --release --lib",
+    "target": "x86_64-unknown-linux-gnu",
+    "passed": 23
+  }
+}

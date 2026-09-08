@@ -167,3 +167,21 @@ On the fix, the exact CI nextest command (`--profile ci --no-default-features
 `cargo check --tests --lib --target aarch64-unknown-linux-gnu` with the same
 features and release profile passes with a staged ARM C sysroot. This is ARM
 compile validation; native ARM runtime validation remains the CI job.
+
+## Workspace dependency refresh
+
+All direct external dependency requirements in both workspace crates now name
+current stable crates.io releases. Cargo.lock refreshes compatible transitive
+versions. This includes cc 1.4.5, zenbench 0.1.9, tango-bench 0.8.0,
+zenavif-parse 0.6.2 and Criterion 0.8.2. Local disjoint-mut remains the reviewed
+0.3.2 candidate. Historical benchmark and published-workflow snapshots retain
+the dependencies they actually measured.
+
+All-target release compilation, 22 selected runtime regressions, ARM ASM test
+cross-compilation and feature-policy validation pass. The library still builds
+on Rust 1.89 and disjoint-mut const API tests pass on Rust 1.85. Decoder dev
+tooling now needs Rust 1.93; optional Criterion tooling needs Rust 1.86 and is
+gated by `__bench`. See [dependency versions and checks](../release/0.6.0/dependency-update.json).
+
+The preceding ARM ASM gate fix also passed native ARM CI job `asm-arm64` in
+run 34195096629; that run predates this dependency refresh.
