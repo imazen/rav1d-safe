@@ -153,3 +153,17 @@ The new publish dry run gets past archmage and fails on the still-unpublished
 `rav1d-disjoint-mut ^0.3.2`. No upload occurred. Memory wrappers re-export the
 same implementations, but the published proc macros differ from the prior Git
 pin; performance has not been remeasured for this candidate.
+
+## ARM ASM unit-test gate follow-up
+
+The ARM ASM library and packaged-source builds passed, but its first unit-test
+build exposed `neon_parity` importing the excluded `safe_simd` module. Gate that
+module with `not(feature = "asm")`, matching the implementation it tests. The
+safe-SIMD ARM job continues to run those parity tests; the ASM job still runs
+its library tests and committed-vector regressions.
+
+On the fix, the exact CI nextest command (`--profile ci --no-default-features
+--features asm,bitdepth_8,bitdepth_16 --release --lib`) passes 23 tests on x86.
+`cargo check --tests --lib --target aarch64-unknown-linux-gnu` with the same
+features and release profile passes with a staged ARM C sysroot. This is ARM
+compile validation; native ARM runtime validation remains the CI job.

@@ -2040,7 +2040,7 @@ mod compact_window {
 /// group count) cell is covered, and the pixel generator sweeps noise
 /// amplitude so each cell exercises the no-filter, narrow, hev, flat and wide
 /// branches rather than only whichever one random data happens to hit.
-#[cfg(all(test, target_arch = "aarch64"))]
+#[cfg(all(test, target_arch = "aarch64", not(feature = "asm")))]
 mod neon_parity {
     use super::*;
     use crate::include::common::bitdepth::BitDepth8;
