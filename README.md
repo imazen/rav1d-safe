@@ -15,7 +15,7 @@ container handling and color conversion. See the
 Add to your `Cargo.toml`:
 ```toml
 [dependencies]
-rav1d-safe = "0.5.7"
+rav1d-safe = "0.6.0"
 ```
 
 Decode an AV1 bitstream:
@@ -51,9 +51,9 @@ fn decode(obu_data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
 
 ## API Overview
 
-The reference below describes the staged 0.6.0 API. `Strictness` and cooperative
-cancellation are additions to the published 0.5.7 API used by the quick start
-and [runnable codec examples](docs/RUST_CODEC_WORKFLOW.md).
+The reference below describes the 0.6.0 API, including `Strictness` and
+cooperative cancellation. The [historical runnable codec examples](docs/RUST_CODEC_WORKFLOW.md)
+remain pinned to the published versions used for their recorded validation.
 
 The public API lives in `src/managed.rs` and is re-exported at the crate root, so **every public type is reachable directly from `rav1d_safe`** — no `src::managed::` path needed. One canonical import covering the whole surface:
 
@@ -174,7 +174,7 @@ With `threads >= 2` or `threads == 0`, the decoder uses tile threading to parall
 **Tile threading works under `forbid(unsafe_code)` without the `unchecked` feature.** No special feature flags needed:
 
 ```toml
-rav1d-safe = { version = "0.5", features = ["bitdepth_8", "bitdepth_16"] }
+rav1d-safe = { version = "0.6.0", features = ["bitdepth_8", "bitdepth_16"] }
 ```
 
 Still-image scaling depends on the encoded tile layout. A single-tile image
@@ -208,11 +208,11 @@ let color = frame.color_info();
 
 ### Error Handling
 
-Fallible operations return the crate's `Result<T>` alias, which is `Result<T, whereat::At<Error>>` — the `Error` is wrapped in [`whereat`]'s `At<…>`, recording the source location where the failure surfaced (handy for server logs). Unwrap the inner `Error` with `err.error()` (borrow) or `err.decompose().0` (owned). `Error` variants: `InvalidData`, `OutOfMemory`, `NeedMoreData`, `InitFailed`, `InvalidSettings(&str)`, `Other(String)`. (`From<Rav1dError>` maps the internal `EAGAIN → NeedMoreData`, `ENOMEM → OutOfMemory`, `EINVAL → InvalidData`, and everything else — including the `frame_size_limit` `ERANGE` — to `Other`.)
+Fallible operations return the crate's `Result<T>` alias, which is `Result<T, whereat::At<Error>>` — the `Error` is wrapped in [`whereat`]'s `At<…>`, recording the source location where the failure surfaced (handy for server logs). Unwrap the inner `Error` with `err.error()` (borrow) or `err.decompose().0` (owned). `Error` variants: `InvalidData`, `OutOfMemory`, `NeedMoreData`, `InitFailed`, `InvalidSettings(&str)`, `Cancelled`, `Other(String)`. (`From<Rav1dError>` maps the internal `EAGAIN → NeedMoreData`, `ENOMEM → OutOfMemory`, `EINVAL → InvalidData`, and everything else — including the `frame_size_limit` `ERANGE` — to `Other`.)
 
 ### Cancellation
 
-The staged 0.6.0 Rust API provides `Decoder::set_stop`, accepting an
+The 0.6.0 Rust API provides `Decoder::set_stop`, accepting an
 `Option<Arc<dyn enough::Stop>>`. Single-threaded decoding checks at superblock-row
 boundaries; tile workers also check for cancellation. A triggered token returns
 `Error::Cancelled`. `None` disables cancellation checks. This is cooperative

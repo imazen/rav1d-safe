@@ -2,7 +2,7 @@
 
 All notable changes to `rav1d-disjoint-mut` are documented in this file. Format follows [Keep a Changelog](https://keepachangelog.com/). Versions before `0.3.1` were not changelogged; see git history.
 
-## [0.3.2] - Unreleased
+## [0.3.2] - 2026-09-08
 
 This release keeps the current sharded tracker and soundness fixes while
 preserving the published `const fn DisjointMut::new` API. A 0.4.0 bump is not
