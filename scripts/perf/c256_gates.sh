@@ -59,8 +59,8 @@ corpus() { # <arm> <features> <threads>
 corpus default - 1
 corpus default - 8
 # The two arms that change the tracker's own machinery rather than a constant.
-corpus lockpark probe-lock-park 8
-corpus lockrelax probe-lock-relax 8
+corpus lockpark __probe_lock_park 8
+corpus lockrelax __probe_lock_relax 8
 
 python3 scripts/perf/md5_setdiff.py "$OUT/corpus_default_t1.tsv" "$OUT/corpus_default_t8.tsv" \
   > "$OUT/setdiff_default_t1_vs_t8.txt" 2>&1
@@ -102,9 +102,9 @@ run "aarch64 clippy"
 nice -n 19 cargo clippy --release --all-targets -- -D warnings > "$OUT/clippy_arm.log" 2>&1
 echo "clippy arm rc=$?" >&2
 run "aarch64 clippy, the new arms"
-nice -n 19 cargo clippy --release --features probe-lock-park,probe-wide --all-targets \
+nice -n 19 cargo clippy --release --features __probe_lock_park,__probe_wide --all-targets \
   -- -D warnings > "$OUT/clippy_arm_park.log" 2>&1
-echo "clippy arm probe-lock-park,probe-wide rc=$?" >&2
+echo "clippy arm __probe_lock_park,__probe_wide rc=$?" >&2
 
 run "the EXACT CI legs"
 nice -n 19 cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16" \

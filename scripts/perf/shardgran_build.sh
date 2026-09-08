@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build one `bench_ab_decode` per rung of the shard-GRANULARITY ladder, plus the
-# probe-tasktime twin of each (that is where `TAIL_CONC` lives) and the
+# __probe_tasktime twin of each (that is where `TAIL_CONC` lives) and the
 # tracker-removed ceiling.
 #
 # The ladder knob is `BPS` (blocks per shard the adaptive block shift aims for,
@@ -30,19 +30,19 @@ cd "$(dirname "$0")/../.."
 # arm=cargo-features ("-" = default features)
 ARMS=(
   "plain=-"
-  "bpsq=bps-quarter"
-  "bpshalf=bps-half"
-  "bps1=bps-1"
-  "bps4=bps-4"
-  "bps8=bps-8"
-  "untracked=probe-untracked"
-  "tt=probe-tasktime"
-  "tt_bpsq=probe-tasktime,bps-quarter"
-  "tt_bpshalf=probe-tasktime,bps-half"
-  "tt_bps1=probe-tasktime,bps-1"
-  "tt_bps4=probe-tasktime,bps-4"
-  "tt_bps8=probe-tasktime,bps-8"
-  "ttu=probe-tasktime-untracked"
+  "bpsq=__bps_quarter"
+  "bpshalf=__bps_half"
+  "bps1=__bps_1"
+  "bps4=__bps_4"
+  "bps8=__bps_8"
+  "untracked=__probe_untracked"
+  "tt=__probe_tasktime"
+  "tt_bpsq=__probe_tasktime,__bps_quarter"
+  "tt_bpshalf=__probe_tasktime,__bps_half"
+  "tt_bps1=__probe_tasktime,__bps_1"
+  "tt_bps4=__probe_tasktime,__bps_4"
+  "tt_bps8=__probe_tasktime,__bps_8"
+  "ttu=__probe_tasktime_untracked"
 )
 
 for spec in "${ARMS[@]}"; do

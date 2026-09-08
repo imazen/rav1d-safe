@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "source_commit": "ddfdd3ecd7e4f745f547f865994accf8af4755eb",
+  "artifact_count": 31,
+  "artifact_bytes": 71322,
+  "archive": {
+    "url": "https://codec-corpus.r2.imazen.org/benchmarks/rav1d-safe/pr-528/sha256/25f62fc04e4feef4b9b561b6108bb8b5b98fa078d38efe7cf83f9960e1b80f71.tar.gz",
+    "bucket": "codec-corpus",
+    "key": "benchmarks/rav1d-safe/pr-528/sha256/25f62fc04e4feef4b9b561b6108bb8b5b98fa078d38efe7cf83f9960e1b80f71.tar.gz",
+    "bytes": 74848,
+    "sha256": "25f62fc04e4feef4b9b561b6108bb8b5b98fa078d38efe7cf83f9960e1b80f71"
+  },
+  "index": {
+    "member": "ARTIFACT_INDEX",
+    "bytes": 6348,
+    "sha256": "75d65c6e4bd753c54c71eb93dd5be05cd873f4dd8a588e723ee72c42dfe8733c"
+  }
+}

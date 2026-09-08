@@ -741,7 +741,7 @@ fn decode_coefs<BD: BitDepth>(
         }
 
         #[cfg_attr(
-            any(debug_assertions, feature = "probe-sites", feature = "probe-usage"),
+            any(debug_assertions, feature = "__probe_sites", feature = "__probe_usage"),
             track_caller
         )]
         pub fn get(&self, rc: u16) -> i32 {
@@ -749,7 +749,7 @@ fn decode_coefs<BD: BitDepth>(
         }
 
         #[cfg_attr(
-            any(debug_assertions, feature = "probe-sites", feature = "probe-usage"),
+            any(debug_assertions, feature = "__probe_sites", feature = "__probe_usage"),
             track_caller
         )]
         pub fn set<T: ToPrimitive<BD::Coef>>(&mut self, rc: u16, value: T) {

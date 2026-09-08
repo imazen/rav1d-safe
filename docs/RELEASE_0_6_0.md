@@ -3,8 +3,8 @@
 Prepared 2026-09-08 UTC on PR #528. **Not published or release-ready yet.**
 This record separates preparation checks from publication gates. The current
 candidate retains checked safe SIMD, runtime borrow/bounds checks, and the
-crate-wide `forbid(unsafe_code)` default. No decoder algorithm changes are
-part of this preparation.
+crate-wide `forbid(unsafe_code)` default. The diagnostic environment policy now requires explicit private features;
+ordinary owned-reconstruction policy is fixed to its prior environment-unset behavior.
 
 ## Versions and migration
 
@@ -75,8 +75,8 @@ warmed decoders, input limits and all 360 output-validated runs.
 
 The archmage migration has confirmed unchecked regressions at eight workers:
 photo-2k-t8 +4.08%, map-8k-min +2.46%, map-8k-t8 +4.86%. Checked and ASM aggregate
-results do not erase these cells. Resolve them or explicitly retain and disclose
-them in the final release decision. The broader performance-parity goal remains
+results do not erase these cells. The user explicitly accepted these slowdowns for release. They remain
+disclosed and are no longer a release blocker. The broader performance-parity goal remains
 unfinished; this candidate makes no parity or universal soundness-proof claim.
 
 The fresh disjoint-mut patch-level API gate passes all 223 executed checks
@@ -95,25 +95,22 @@ No credentials are needed, and conflicting local files are refused.
 
 ## Remaining publication sequence
 
-1. Finish feature-surface review: both manifests still expose historical
-   measurement features marked as never-publish. Five check-disabling probes
-   now deliberately refuse compilation, but this does not make the whole
-   experimental feature table a supported release API. Decide the release
-   feature surface and rerun package/semver checks after changing it. Never
-   remove the enforcement compile errors to make `--all-features` pass.
+1. Diagnostic feature cleanup is complete: all experimental switches use `__`,
+   three obsolete no-ops are removed, and runtime environment overrides require
+   a private feature. See [the inventory and enforcement](DIAGNOSTIC_FEATURES.md).
+   Published disjoint-mut `instrument` retains its name for patch compatibility.
 2. Obtain successful full disjoint-mut platform/Miri/Loom CI on the candidate
    head, and successful decoder CI including the new package and MSRV jobs.
    The earlier interrupted local broad Miri run is not a passing result.
 3. Publish the reviewed archmage-macros/archmage dependency release in dependency
-   order, and rav1d-disjoint-mut 0.3.2 after its own gates. This preparation
-   authorizes none of those irreversible registry operations by itself.
+   order, and rav1d-disjoint-mut 0.3.2 after its own gates.
 4. Replace both Git archmage declarations with registry requirements, refresh
    the lockfile, and rerun tests/conformance and the affected performance cells
    against the actual registry artifacts. Verify source equivalence to the pin.
 5. Run `cargo publish --dry-run -p rav1d-safe` with registry dependencies and
    verify the resulting `.crate` in supported modes and Rust 1.89. Retain its
    SHA256, normalized manifest, included-file list and exact source revision.
-6. Complete PR review and the regression decision. Squash merge keeps old raw
+6. Complete PR review; the measured unchecked slowdown is accepted. Squash merge keeps old raw
    evidence blobs out of main history. Build/verify the final merged revision,
    date the release notes, then publish/tag that same verified source.
 

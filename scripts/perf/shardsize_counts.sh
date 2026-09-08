@@ -12,7 +12,7 @@
 #   shifts                             the block shift the instance actually used
 #                                      (also this rung's liveness proof: a rung whose
 #                                      shifts equal the default's did not arm)
-#   multi / w_shards (probe-wide)      the SHIPPED multi-shard and all-shards counts
+#   multi / w_shards (__probe_wide)      the SHIPPED multi-shard and all-shards counts
 #
 # So this runs first and the wall clock only has to confirm it. NICED, no
 # measurement lock — `__probe_bounds` publishes/fences/scans on every registration

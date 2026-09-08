@@ -1,0 +1,9 @@
+[package]
+name = "rav1d-feature-policy"
+version = "0.0.0"
+edition = "2024"
+publish = false
+[workspace]
+[dependencies]
+syn = { version = "2", features = ["full", "visit", "parsing"] }
+quote = "1"

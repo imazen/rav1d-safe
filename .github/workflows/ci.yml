@@ -19,6 +19,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  feature-policy:
+    name: Diagnostic feature and environment policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python3 tools/check-feature-policy.py
+      - run: cargo test --locked --manifest-path tools/feature-policy/Cargo.toml
+      - run: cargo test --lib ordinary_build_keeps_owned_recon_enabled
+        env:
+          RAV1D_OWNED_RECON: "0"
+      - run: cargo test --lib --features __probe_owned_recon diagnostic_build_can_disable_owned_recon -- --ignored
+        env:
+          RAV1D_OWNED_RECON: "0"
+
   package-source:
     name: Packaged source feature builds (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -330,16 +345,16 @@ jobs:
       - name: Clippy (c-ffi)
         run: cargo clippy --no-default-features --features "c-ffi,bitdepth_8,bitdepth_16" -- -D warnings
 
-      # `probe-sites` build (strict — must pass). Nothing else lints it, and it
+      # `__probe_sites` build (strict — must pass). Nothing else lints it, and it
       # compiles code the other two legs never see: `rav1d-disjoint-mut`'s
       # `site_probe.rs` (which was carrying two `-D warnings` failures nobody
       # could observe), and — since b6bf82ab — the #524 loop-filter window
       # invariants in `loopfilter_sb_direct`, which are gated on
       # `debug_assertions` OR this feature. The `extent-gate` job below already
-      # RUNS a `--features probe-sites` test, so this configuration has to keep
+      # RUNS a `--features __probe_sites` test, so this configuration has to keep
       # building regardless; linting it is the cheap half of that.
-      - name: Clippy (probe-sites)
-        run: cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16,probe-sites" -- -D warnings
+      - name: Clippy (__probe_sites)
+        run: cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16,__probe_sites" -- -D warnings
 
   # ==========================================================================
   # Format check
@@ -468,7 +483,7 @@ jobs:
   # ==========================================================================
   #
   # `include/dav1d/picture.rs::note_pic_extent` compiles under
-  # `debug_assertions` OR `--features probe-sites`, so plain `cargo test`
+  # `debug_assertions` OR `--features __probe_sites`, so plain `cargo test`
   # already carries it. This job runs it in RELEASE over the whole corpus,
   # which is the only configuration where the decoder is fast enough to reach
   # the ~575 M reservations the per-file maxima were measured over — a debug
@@ -498,7 +513,7 @@ jobs:
           # Caller-side skip control, per the no-graceful-skips rule: the test
           # body never decides to skip the corpus leg, this line does.
           RAV1D_EXTENT_GATE_CORPUS: "1"
-        run: cargo test --release --features probe-sites --test guard_extent_budget -- --nocapture
+        run: cargo test --release --features __probe_sites --test guard_extent_budget -- --nocapture
         timeout-minutes: 30
 
   # ==========================================================================

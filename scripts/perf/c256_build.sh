@@ -5,7 +5,7 @@
 #   L1  let the derived rows rule go FINER than the block-count answer. The
 #       shipped rule ends in `base.max(rows_shift.min(cap_shift))`, so it can
 #       only coarsen; on a 256-wide plane the block-count answer is already
-#       8 rows/block and the rows target of 4 is unreachable. `probe-shiftpin`
+#       8 rows/block and the rows target of 4 is unreachable. `__probe_shiftpin`
 #       pins a shift directly and is the ONLY instrument that can go finer, and
 #       the only one that separates luma from chroma.
 #   L2  the shard lock's WAITING policy, re-opened on the one cell where
@@ -26,18 +26,18 @@ cd "$(dirname "$0")/../.."
 
 TIMED=(
   "plain=-"                       # HEAD/base: the shipped decoder
-  "pin=probe-shiftpin"            # the L1 ladder (env-var driven)
-  "untracked=probe-untracked"     # tracker-removed ceiling (bit-identical)
-  "lockbackoff=probe-lock-backoff" # L2: spin 64 -> yield
-  "lockyield=probe-lock-yield"    # L2: yield every iteration
-  "lockpark=probe-lock-park"      # L2: parking_lot::RawMutex, a real park
+  "pin=__probe_shiftpin"            # the L1 ladder (env-var driven)
+  "untracked=__probe_untracked"     # tracker-removed ceiling (bit-identical)
+  "lockbackoff=__probe_lock_backoff" # L2: spin 64 -> yield
+  "lockyield=__probe_lock_yield"    # L2: yield every iteration
+  "lockpark=__probe_lock_park"      # L2: parking_lot::RawMutex, a real park
 )
 COUNT=(
-  "pin__probewide=probe-wide,probe-shiftpin"
-  "pin__probebounds=__probe_bounds,probe-shiftpin"
-  "plain__probewide=probe-wide"
-  "park__probewide=probe-wide,probe-lock-park"
-  "backoff__probewide=probe-wide,probe-lock-backoff"
+  "pin__probewide=__probe_wide,__probe_shiftpin"
+  "pin__probebounds=__probe_bounds,__probe_shiftpin"
+  "plain__probewide=__probe_wide"
+  "park__probewide=__probe_wide,__probe_lock_park"
+  "backoff__probewide=__probe_wide,__probe_lock_backoff"
 )
 
 build_one() { # <example> <outname> <features>

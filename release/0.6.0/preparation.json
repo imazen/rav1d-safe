@@ -271,9 +271,7 @@
   },
   "limitations": [
     "Source package rehearsal retains Git/local dependencies, not registry package verification.",
-    "Full new-head CI pending.",
-    "Experimental feature table still needs release review.",
-    "Confirmed unchecked regression remains unresolved."
+    "Full new-head CI pending."
   ],
   "additional_checks": [
     {
@@ -333,5 +331,9 @@
     "exit": 0,
     "checks_passed": 223,
     "checks_skipped": 30
+  },
+  "followup": {
+    "unchecked_slowdown": "Accepted for release by the user; retain disclosure.",
+    "feature_policy": "See docs/DIAGNOSTIC_FEATURES.md; experimental names and environment gates consolidated."
   }
 }

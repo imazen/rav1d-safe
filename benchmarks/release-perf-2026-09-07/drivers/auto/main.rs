@@ -179,7 +179,7 @@ fn main() {
                 let mut dec = decoder(1);
                 run(&mut dec, &input, |f| {
                     let hash = frame_md5(&f);
-                    #[cfg(feature = "probe-tasktime")]
+                    #[cfg(feature = "__probe_tasktime")]
                     println!(
                         "GEOMETRY\t{}\t{}\t{}\t{:?}",
                         reference.len(),
@@ -211,9 +211,9 @@ fn main() {
         instances,
         passes,
         reps,
-        cfg!(feature = "probe-usage"),
-        cfg!(feature = "probe-wide"),
-        cfg!(feature = "probe-tasktime")
+        cfg!(feature = "__probe_usage"),
+        cfg!(feature = "__probe_wide"),
+        cfg!(feature = "__probe_tasktime")
     );
     let gate = Arc::new(Barrier::new(instances + 1));
     std::thread::scope(|scope| {
@@ -244,9 +244,9 @@ fn main() {
             }));
         }
         gate.wait();
-        #[cfg(feature = "probe-wide")]
+        #[cfg(feature = "__probe_wide")]
         rav1d_disjoint_mut::wide_probe::reset();
-        #[cfg(feature = "probe-tasktime")]
+        #[cfg(feature = "__probe_tasktime")]
         {
             rav1d_safe::src::probe_tasktime::reset();
             rav1d_safe::src::probe_tasktime::start_monitor();
@@ -266,9 +266,9 @@ fn main() {
         if let Some(p) = &mut perf {
             p.command("disable");
         }
-        #[cfg(feature = "probe-wide")]
+        #[cfg(feature = "__probe_wide")]
         print!("{}", rav1d_disjoint_mut::wide_probe::report());
-        #[cfg(feature = "probe-tasktime")]
+        #[cfg(feature = "__probe_tasktime")]
         rav1d_safe::src::probe_tasktime::report((frames * instances * passes * reps) as u64);
         gate.wait();
         for h in handles {
@@ -281,6 +281,6 @@ fn main() {
         frames * (1 + instances * (2 + passes * reps)),
         frames * instances * passes * reps
     );
-    #[cfg(feature = "probe-usage")]
+    #[cfg(feature = "__probe_usage")]
     print!("{}", rav1d_disjoint_mut::usage_probe::report());
 }

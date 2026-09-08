@@ -32,13 +32,13 @@ if a.build:
     shutil.copy2(source / 'Cargo.lock.snapshot', driver / 'Cargo.lock')
     manifest = (source / 'Cargo.toml').read_text().replace(
         '/home/lilith/work/zen/rav1d-safe', str(repo)).replace(
-        'probe-tasktime = []', 'probe-tasktime = ["rav1d-safe/probe-tasktime"]')
+        '__probe_tasktime = []', '__probe_tasktime = ["rav1d-safe/__probe_tasktime"]')
     (driver / 'Cargo.toml').write_text(manifest)
     env = os.environ.copy()
     env.pop('CARGO_ENCODED_RUSTFLAGS', None)
     env['RUSTFLAGS'] = '-C llvm-args=-align-all-functions=4'
     command = ['cargo', 'build', '--locked', '--release', '--manifest-path',
-               str(driver / 'Cargo.toml'), '--features', 'probe-usage,probe-tasktime']
+               str(driver / 'Cargo.toml'), '--features', '__probe_usage,__probe_tasktime']
     with (out / 'build.log').open('w') as log:
         subprocess.run(command, env=env, check=True, stdout=log, stderr=subprocess.STDOUT)
     binary.parent.mkdir(exist_ok=True)

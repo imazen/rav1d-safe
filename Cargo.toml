@@ -27,6 +27,10 @@ include = [
     "/README.md",
     "/docs/RUST_CODEC_WORKFLOW.md",
     "/docs/RELEASE_0_6_0.md",
+    "/docs/DIAGNOSTIC_FEATURES.md",
+    "/release/0.6.0/feature-renames.json",
+    "/release/0.6.0/feature-validation.json",
+    "/release/0.6.0/FEATURE_EVIDENCE.json",
     "/release/0.6.0/preparation.json",
     "/release/0.6.0/EVIDENCE.json",
     "/CHANGELOG.md",
@@ -84,16 +88,17 @@ default = ["bitdepth_8", "bitdepth_16"]
 # instances (PicBuf, ArcSlice) via dangerously_unchecked().
 unchecked = []
 
-# THROWAWAY measurement probes (recon/tracker-profile branch). Never merge.
-probe-count = ["rav1d-disjoint-mut/__probe_count"]
-probe-wide = ["rav1d-disjoint-mut/__probe_wide"]
-probe-usage = ["rav1d-disjoint-mut/__probe_usage"]
-probe-sites = ["rav1d-disjoint-mut/__probe_sites"]
-# THROWAWAY guard-extent / footprint / concurrency map. Implies `probe-sites`
+# Internal measurement features: opt-in, prefixed, and outside the supported API.
+# See docs/DIAGNOSTIC_FEATURES.md for purpose, provenance and environment gates.
+__probe_count = ["rav1d-disjoint-mut/__probe_count"]
+__probe_wide = ["rav1d-disjoint-mut/__probe_wide"]
+__probe_usage = ["rav1d-disjoint-mut/__probe_usage"]
+__probe_sites = ["rav1d-disjoint-mut/__probe_sites"]
+# THROWAWAY guard-extent / footprint / concurrency map. Implies `__probe_sites`
 # so BOTH instruments run in one binary and reconcile registration for
 # registration. Absent from `default` and from every published feature.
 # See crates/rav1d-disjoint-mut/src/bounds_probe.rs.
-__probe_bounds = ["probe-sites", "rav1d-disjoint-mut/__probe_bounds"]
+__probe_bounds = ["__probe_sites", "rav1d-disjoint-mut/__probe_bounds"]
 # Measurement-only: arms `RAV1D_LF_HULL=1`, which makes the loop filter take one
 # strided-hull read guard instead of `h` per-row ones under tile threading.
 # Absent from `default` and from every published feature. See
@@ -107,37 +112,15 @@ __probe_lf_hull = []
 # decode errors. A silent pass would mean the instrument is lying.
 # Absent from `default` and from every published feature.
 __probe_rect_hull = []
-# MEASUREMENT ARM for the strided-RECTANGLE record: `LfBlock::fill` takes ONE
-# exact `h x W` registration instead of `h` per-row ones, under tile threading.
-# The tracker's rectangle support is unconditional (and inert unless called), so
-# the arm WITHOUT this feature prices the machinery on its own — which is the
-# isolation `benchmarks/lf_vbatch_iso_2026-08-10_v1.tsv` had to be built after
-# the fact. Absent from `default`; deleted (and the path made unconditional) if
-# it wins. See src/loopfilter.rs `LfBlock::fill`.
-# RETAINED AS A NO-OP. The rectangle is now the DEFAULT path (2026-08-11), so
-# this feature selects nothing; it stays declared only so #505's and #506's
-# committed drivers (`scripts/perf/rect_gates.sh`, `rectship_{gates,teeth}.sh`)
-# still build. Delete it once those are retired.
-__lf_rect = []
-# `__lf_rect` restricted to ONE-SHARD rectangles — the only ones strictly cheaper
-# than the per-row guards they replace.
-__lf_rect1 = ["__lf_rect", "rav1d-disjoint-mut/__rect_1shard"]
+# Same-binary owned-band A/B override; ordinary builds never consult the env.
+__probe_owned_recon = []
+# Restrict exact rectangles to one shard for diagnostic comparison.
+__lf_rect1 = ["rav1d-disjoint-mut/__rect_1shard"]
 # MARGINAL-PRICE ARM for the CDEF registration population (measurement only):
 # arms `RAV1D_CDEF_DOUBLE=1`, which takes every CDEF per-row registration TWICE
 # in ONE binary — the LF_DOUBLE shape, applied to the five sites
 # docs/RECT_RECORDS.md §7b named. See `picture::cdef_double_reads`.
 __probe_cdef_double = []
-# MEASUREMENT ARM for the strided-RECTANGLE record at the `for_rows` /
-# `for_rows_mut` seam: ONE exact `h x w` registration (immutable for the read
-# helper, MUTABLE for the write one) instead of `h` per-row ones, under tile
-# threading. On every cell this campaign times, the population at that seam is
-# the CDEF sites `docs/RECT_RECORDS.md` §7b named — priced at +3.9% to +7.4% of
-# WALL by `__probe_cdef_double` — so this is the collapse that pricing was for.
-# Absent from `default`. See `include/dav1d/picture.rs::for_rows{,_mut}` and
-# `docs/LAYOUT_CDEF.md`.
-# RETAINED AS A NO-OP, same reason as `__lf_rect`: the `for_rows` /
-# `for_rows_mut` rectangle is the DEFAULT path as of 2026-08-11.
-__rows_rect = []
 # LAYOUT-NOISE CONTROL (measurement only): never-executed `__text` emitted from
 # src/loopfilter.rs, so every hot symbol keeps a byte-identical instruction
 # stream and only its ADDRESS moves. This is the control the rectangle round did
@@ -153,17 +136,17 @@ __pad_far = []
 __pad2 = ["__pad_text"]
 __pad3 = ["__pad2"]
 __pad4 = ["__pad3"]
-probe-tinynop = ["rav1d-disjoint-mut/__probe_tinynop"]
-probe-addnop = ["rav1d-disjoint-mut/__probe_addnop"]
-probe-noscan = ["rav1d-disjoint-mut/__probe_noscan"]
-probe-lockonly = ["rav1d-disjoint-mut/__probe_lockonly"]
+__probe_tinynop = ["rav1d-disjoint-mut/__probe_tinynop"]
+__probe_addnop = ["rav1d-disjoint-mut/__probe_addnop"]
+__probe_noscan = ["rav1d-disjoint-mut/__probe_noscan"]
+__probe_lockonly = ["rav1d-disjoint-mut/__probe_lockonly"]
 # Tracking off, bounds checks untouched (isolates the tracker from `unchecked`).
-probe-untracked = ["rav1d-disjoint-mut/__probe_untracked"]
-probe-shardsim = ["probe-count", "rav1d-disjoint-mut/__probe_shardsim"]
+__probe_untracked = ["rav1d-disjoint-mut/__probe_untracked"]
+__probe_shardsim = ["__probe_count", "rav1d-disjoint-mut/__probe_shardsim"]
 # Per-worker, per-task-stage timing + a sampled concurrency histogram (P1).
-probe-tasktime = []
-# probe-tasktime composed with the tracker removed: the ceiling's task profile.
-probe-tasktime-untracked = ["probe-tasktime", "probe-untracked"]
+__probe_tasktime = []
+# __probe_tasktime composed with the tracker removed: the ceiling's task profile.
+__probe_tasktime_untracked = ["__probe_tasktime", "__probe_untracked"]
 # (The `probe-nodeblockgate` family that ablated the `check_tile` deblock
 # barrier is gone with the barrier itself — 054e2ed. Its measurements are in
 # benchmarks/p1_scaling_2026-08-07.meta and p1_barrier_2026-08-07.meta.)
@@ -171,33 +154,33 @@ probe-tasktime-untracked = ["probe-tasktime", "probe-untracked"]
 # Sharded-tracker A/B knobs. Compile-time only; the defaults are the measured
 # winners (benchmarks/shard_tracker_2026-08-07.meta).
 # A/B baseline: the pre-sharding single-lock tracker, no probe hooks.
-tracker-legacy = ["rav1d-disjoint-mut/__tracker_legacy"]
-shards-1 = ["rav1d-disjoint-mut/__shards_1"]
-shards-4 = ["rav1d-disjoint-mut/__shards_4"]
-shards-8 = ["rav1d-disjoint-mut/__shards_8"]
-shards-16 = ["rav1d-disjoint-mut/__shards_16"]
-probe-lock-backoff = ["rav1d-disjoint-mut/__probe_lock_backoff"]
+__tracker_legacy = ["rav1d-disjoint-mut/__tracker_legacy"]
+__shards_1 = ["rav1d-disjoint-mut/__shards_1"]
+__shards_4 = ["rav1d-disjoint-mut/__shards_4"]
+__shards_8 = ["rav1d-disjoint-mut/__shards_8"]
+__shards_16 = ["rav1d-disjoint-mut/__shards_16"]
+__probe_lock_backoff = ["rav1d-disjoint-mut/__probe_lock_backoff"]
 # The other three rungs of the shard-lock WAITING-policy ladder. See the doc
 # comment on `TinyLock` and docs/C256_CONTENTION.md.
-probe-lock-yield = ["rav1d-disjoint-mut/__probe_lock_yield"]
-probe-lock-relax = ["rav1d-disjoint-mut/__probe_lock_relax"]
-probe-lock-park = ["rav1d-disjoint-mut/__probe_lock_park"]
-shards-32 = ["rav1d-disjoint-mut/__shards_32"]
-shards-64 = ["rav1d-disjoint-mut/__shards_64"]
-shards-128 = ["rav1d-disjoint-mut/__shards_128"]
-shards-256 = ["rav1d-disjoint-mut/__shards_256"]
+__probe_lock_yield = ["rav1d-disjoint-mut/__probe_lock_yield"]
+__probe_lock_relax = ["rav1d-disjoint-mut/__probe_lock_relax"]
+__probe_lock_park = ["rav1d-disjoint-mut/__probe_lock_park"]
+__shards_32 = ["rav1d-disjoint-mut/__shards_32"]
+__shards_64 = ["rav1d-disjoint-mut/__shards_64"]
+__shards_128 = ["rav1d-disjoint-mut/__shards_128"]
+__shards_256 = ["rav1d-disjoint-mut/__shards_256"]
 # A/B: BlockMut holds its per-row MUTABLE guards across the kernel instead of
 # taking immutable ones to read and mutable ones to write back (2h -> h
 # registrations). MEASURED NULL — see the doc comment on `block_mut_held`.
-held-row-guards = []
-shard-ident = ["rav1d-disjoint-mut/__shard_ident"]
-blockshift-8 = ["rav1d-disjoint-mut/__blockshift_8"]
-blockshift-10 = ["rav1d-disjoint-mut/__blockshift_10"]
-blockshift-13 = ["rav1d-disjoint-mut/__blockshift_13"]
-blockshift-14 = ["rav1d-disjoint-mut/__blockshift_14"]
-blockshift-15 = ["rav1d-disjoint-mut/__blockshift_15"]
-blockshift-16 = ["rav1d-disjoint-mut/__blockshift_16"]
-blockshift-adaptive = ["rav1d-disjoint-mut/__blockshift_adaptive"]
+__held_row_guards = []
+__shard_ident = ["rav1d-disjoint-mut/__shard_ident"]
+__blockshift_8 = ["rav1d-disjoint-mut/__blockshift_8"]
+__blockshift_10 = ["rav1d-disjoint-mut/__blockshift_10"]
+__blockshift_13 = ["rav1d-disjoint-mut/__blockshift_13"]
+__blockshift_14 = ["rav1d-disjoint-mut/__blockshift_14"]
+__blockshift_15 = ["rav1d-disjoint-mut/__blockshift_15"]
+__blockshift_16 = ["rav1d-disjoint-mut/__blockshift_16"]
+__blockshift_adaptive = ["rav1d-disjoint-mut/__blockshift_adaptive"]
 # Adaptive-shift GRANULARITY ladder (blocks per shard, as a rational). Re-swept
 # scored on TAIL concurrency as well as whole-frame wall — the objective the
 # original fit used was wall alone, and docs/TILED_SCALING.md §4 put 32-42% of
@@ -207,27 +190,27 @@ blockshift-adaptive = ["rav1d-disjoint-mut/__blockshift_adaptive"]
 # its row stride so a block spans >= ROWS_PER_BLOCK_MIN picture rows
 # (docs/SHARD_SIZE_SWEEP.md, docs/BPS_ROWS_DEFAULT.md). Selecting a rung turns
 # that off and pins the constant, so the ladder stays a clean re-fit instrument.
-# `bps-blocks` is the centre rung = the rule that shipped before 2026-08-11, and
+# `__bps_blocks` is the centre rung = the rule that shipped before 2026-08-11, and
 # is the base arm for any A/B against the default.
-bps-quarter = ["rav1d-disjoint-mut/__bps_quarter"]
-bps-half = ["rav1d-disjoint-mut/__bps_half"]
-bps-1 = ["rav1d-disjoint-mut/__bps_1"]
-bps-4 = ["rav1d-disjoint-mut/__bps_4"]
-bps-8 = ["rav1d-disjoint-mut/__bps_8"]
-bps-blocks = ["rav1d-disjoint-mut/__bps_blocks"]
+__bps_quarter = ["rav1d-disjoint-mut/__bps_quarter"]
+__bps_half = ["rav1d-disjoint-mut/__bps_half"]
+__bps_1 = ["rav1d-disjoint-mut/__bps_1"]
+__bps_4 = ["rav1d-disjoint-mut/__bps_4"]
+__bps_8 = ["rav1d-disjoint-mut/__bps_8"]
+__bps_blocks = ["rav1d-disjoint-mut/__bps_blocks"]
 # The ladder for the SHIPPED constant (picture ROWS per block; default 4). The
 # bps-* rungs re-fit the block-COUNT rule this replaced and cannot answer
 # "is 4 right?" — these can. See `ROWS_PER_BLOCK_MIN` in src/tracker_shard.rs.
-rpb-2 = ["rav1d-disjoint-mut/__rpb_2"]
-rpb-8 = ["rav1d-disjoint-mut/__rpb_8"]
-rpb-16 = ["rav1d-disjoint-mut/__rpb_16"]
+__rpb_2 = ["rav1d-disjoint-mut/__rpb_2"]
+__rpb_8 = ["rav1d-disjoint-mut/__rpb_8"]
+__rpb_16 = ["rav1d-disjoint-mut/__rpb_16"]
 # THROWAWAY per-plane shift pin (RAV1D_PIN_SHIFT="<stride>:<shift>,..."), the
 # only instrument that separates a luma shift from a chroma one.
-probe-shiftpin = ["rav1d-disjoint-mut/__probe_shiftpin"]
+__probe_shiftpin = ["rav1d-disjoint-mut/__probe_shiftpin"]
 # MAX_SHARDS_PER_BORROW 4 -> 5 (BorrowId pairs narrowed to log2(N_SHARDS)+3 bits).
-msb-5 = ["rav1d-disjoint-mut/__msb_5"]
+__msb_5 = ["rav1d-disjoint-mut/__msb_5"]
 
-# Test-only (double-underscore = private, never enable in production): arms a
+# Internal test feature (double underscore is a convention): arms a
 # one-shot worker-thread panic so tests can prove a worker death surfaces as a
 # decode error instead of wedging every completion wait (zenavif#30). See
 # `thread_task::TEST_INDUCE_WORKER_PANIC` and tests/worker_panic_recovery.rs.

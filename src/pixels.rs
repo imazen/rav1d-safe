@@ -37,13 +37,13 @@ pub trait Pixels {
     ///
     /// Bounds checked, but not [`DisjointMut`]-checked.
     #[cfg_attr(
-        any(debug_assertions, feature = "probe-sites", feature = "probe-usage"),
+        any(debug_assertions, feature = "__probe_sites", feature = "__probe_usage"),
         track_caller
     )]
     fn as_mut_ptr_at<BD: BitDepth>(&self, pixel_offset: usize) -> *mut BD::Pixel {
         #[inline(never)]
         #[cfg_attr(
-            any(debug_assertions, feature = "probe-sites", feature = "probe-usage"),
+            any(debug_assertions, feature = "__probe_sites", feature = "__probe_usage"),
             track_caller
         )]
         fn out_of_bounds(pixel_offset: usize, pixel_len: usize) -> ! {
@@ -64,7 +64,7 @@ pub trait Pixels {
     ///
     /// Bounds checked, but not [`DisjointMut`]-checked.
     #[cfg_attr(
-        any(debug_assertions, feature = "probe-sites", feature = "probe-usage"),
+        any(debug_assertions, feature = "__probe_sites", feature = "__probe_usage"),
         track_caller
     )]
     fn as_ptr_at<BD: BitDepth>(&self, pixel_offset: usize) -> *const BD::Pixel {

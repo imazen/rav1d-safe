@@ -3,7 +3,7 @@
 #
 # Phase W — the SHIPPED default against dav1d on the cells the campaign has been
 #   mis-quoting, at t=1 AND t=8, with the pre-2026-08-11 block-count rule
-#   (`bps-blocks`) interleaved as the BASE and `bps-half` as the best global
+#   (`__bps_blocks`) interleaved as the BASE and `__bps_half` as the best global
 #   constant. The point of the round is that "ours/dav1d" must be the DEFAULT
 #   build's number, so plain, base and dav1d are in one interleave.
 #
@@ -61,7 +61,7 @@ BIN="$BIN" AVIF="$VEC" IVF="$IVF" ARMS="$WALL_ARMS" CELLS="$CELLS1" \
 
 # ---- Phase P ---------------------------------------------------------------
 # 512x576 8-bit 4:2:0: luma stride 512, chroma stride 256. The block-count rule
-# lands on (10, 8); bps1 = (11, 9), bps-half = (12, 10), the derived rule =
+# lands on (10, 8); bps1 = (11, 9), __bps_half = (12, 10), the derived rule =
 # (11, 10). (12, 9) is the corner NO arm on offer can reach, and the six
 # single-plane cells are what make the factorial additive-testable.
 mkdir -p "$BIN"

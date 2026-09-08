@@ -11,9 +11,9 @@ md5 = "=0.8.0"
 [features]
 unchecked = ["rav1d-safe/unchecked"]
 asm = ["rav1d-safe/asm"]
-probe-usage = []
-probe-wide = []
-probe-tasktime = []
+__probe_usage = []
+__probe_wide = []
+__probe_tasktime = []
 
 [profile.release]
 codegen-units = 1

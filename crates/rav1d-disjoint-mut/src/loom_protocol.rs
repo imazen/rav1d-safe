@@ -1,6 +1,8 @@
 //! Models the production algorithm, with both metadata and payload accesses
 //! checked by Loom. Run via `scripts/review.sh loom`; never in a normal build.
 
+#![cfg(all(test, disjoint_mut_loom))]
+
 use super::*;
 use loom::cell::UnsafeCell;
 use loom::sync::Arc;

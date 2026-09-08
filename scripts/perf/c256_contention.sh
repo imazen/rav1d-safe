@@ -10,7 +10,7 @@
 # build reads ~104. So this census runs UN-NICED and under `measlock`, exactly
 # like a timed arm, even though it only reports counters.
 #
-# Counters (all `--features probe-wide`, all per frame):
+# Counters (all `--features __probe_wide`, all per frame):
 #   contended  the single-block fast path's `try_lock` LOST
 #   lockslow   the retry inside `lock()` ALSO lost, so the thread spun
 #   spins      total spin-loop iterations, i.e. the entire cost `lock_slow` can

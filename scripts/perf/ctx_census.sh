@@ -7,7 +7,7 @@
 #   <out>.tot.tsv   arm  vec  threads  total_per_frame  distinct_sites
 #   <out>.site.tsv  arm  vec  threads  per_frame  mut  immut  mean_bytes  site
 #
-# Per-site rows are only meaningful on an arm built with the `probe-sites`
+# Per-site rows are only meaningful on an arm built with the `__probe_sites`
 # `track_caller` on `CaseSetter::set_disjoint`; without it every `CaseSet` call
 # site collapses onto `ctx.rs:99:27`.
 #

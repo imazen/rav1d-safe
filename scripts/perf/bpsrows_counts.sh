@@ -7,7 +7,7 @@
 #     `shifts` column) — the liveness proof that the rule is doing anything, per
 #     cell, read off the tracker rather than predicted.
 #  2. **Did the coarser block trade wide-by-shard-count for wide-by-SLOT-
-#     EXHAUSTION?** (`probe-wide`, `w_full`) — the standing trap for anything
+#     EXHAUSTION?** (`__probe_wide`, `w_full`) — the standing trap for anything
 #     that funnels more simultaneous borrows onto one shard. It is the reason
 #     `SLOTS` is not touched, and it has to be re-checked whenever blocks get
 #     coarser, on the cells that coarsen MOST.

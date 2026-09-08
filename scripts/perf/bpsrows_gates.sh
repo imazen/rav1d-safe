@@ -9,7 +9,7 @@
 # with no `--skip-group`, at t=1 AND t=8, set-diffed BY NAME with the ACTUAL md5
 # as the value (a change that repairs 5 and breaks 5 is invisible in a count).
 #
-# `bps-blocks` gets its own corpus leg because it is the new base arm: if the
+# `__bps_blocks` gets its own corpus leg because it is the new base arm: if the
 # arm that is supposed to reproduce the old rule cannot decode the corpus, no
 # A/B measured against it means anything.
 #
@@ -27,7 +27,7 @@ run "unit tests (release)"
 nice -n 19 cargo test --release --lib > "$OUT/units_release.log" 2>&1; echo "units_release rc=$?" >&2
 run "unit tests (debug)"
 nice -n 19 cargo test --lib > "$OUT/units_debug.log" 2>&1; echo "units_debug rc=$?" >&2
-run "tracker crate: default + BOTH ladders + the base arm + msb-5 + shiftpin"
+run "tracker crate: default + BOTH ladders + the base arm + __msb_5 + shiftpin"
 for f in "" __bps_blocks __bps_quarter __bps_half __bps_1 __bps_4 __bps_8 \
          __rpb_2 __rpb_8 __rpb_16 __msb_5 __msb_5,__bps_blocks __probe_shiftpin; do
   if [ -z "$f" ]; then
@@ -56,7 +56,7 @@ corpus() { # <arm> <features> <threads>
 }
 corpus default - 1
 corpus default - 8
-corpus bpsblocks bps-blocks 8
+corpus bpsblocks __bps_blocks 8
 
 python3 scripts/perf/md5_setdiff.py "$OUT/corpus_default_t1.tsv" "$OUT/corpus_default_t8.tsv" \
   > "$OUT/setdiff_default_t1_vs_t8.txt" 2>&1
@@ -102,8 +102,8 @@ run "aarch64 clippy"
 nice -n 19 cargo clippy --release --all-targets -- -D warnings > "$OUT/clippy_arm.log" 2>&1
 echo "clippy arm rc=$?" >&2
 run "aarch64 clippy, base arm + shiftpin probe"
-nice -n 19 cargo clippy --release --features bps-blocks,probe-shiftpin --all-targets \
+nice -n 19 cargo clippy --release --features __bps_blocks,__probe_shiftpin --all-targets \
   -- -D warnings > "$OUT/clippy_arm_arms.log" 2>&1
-echo "clippy arm bps-blocks,probe-shiftpin rc=$?" >&2
+echo "clippy arm __bps_blocks,__probe_shiftpin rc=$?" >&2
 
 echo "[$(date +%H:%M:%S)] gates written to $OUT" >&2

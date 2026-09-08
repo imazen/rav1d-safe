@@ -50,8 +50,8 @@ corpus() { # <arm> <features> <threads>
 }
 corpus default - 1
 corpus default - 8
-corpus bpshalf bps-half 8
-corpus msb5 msb-5 8
+corpus bpshalf __bps_half 8
+corpus msb5 __msb_5 8
 
 # t1-vs-t8 self-diff on the default arm (a thread-count-dependent difference
 # shows here even when both agree with the baseline).

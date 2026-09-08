@@ -788,7 +788,7 @@ pub struct Frame {
 
 impl Frame {
     /// Diagnostic output header census, absent from normal builds.
-    #[cfg(feature = "probe-tasktime")]
+    #[cfg(feature = "__probe_tasktime")]
     pub fn probe_geometry(&self) -> (u8, u8, u8, u8) {
         let h = &self.inner.frame_hdr.as_ref().expect("frame header").rav1d;
         (

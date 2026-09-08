@@ -3,7 +3,7 @@
 #
 # Phase L1 — the shift ladder, INCLUDING shifts FINER than the block-count rule
 #   can reach. The shipped rows rule ends in `base.max(rows_shift.min(cap))`, so
-#   on a 256-wide plane (8 rows/block already) it cannot refine; `probe-shiftpin`
+#   on a 256-wide plane (8 rows/block already) it cannot refine; `__probe_shiftpin`
 #   is the only instrument that can, and the only one that separates the planes.
 #   `pinL11C9` pins the shifts the rule ALREADY computes, so it is an identity
 #   control: its spread against `plain` is this grid's noise floor.

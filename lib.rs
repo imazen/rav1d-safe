@@ -219,7 +219,7 @@ pub mod src {
     pub(crate) mod owned_recon;
     pub(crate) mod pic_or_buf;
     /// THROWAWAY P1 measurement probe. Never merge.
-    #[cfg(feature = "probe-tasktime")]
+    #[cfg(feature = "__probe_tasktime")]
     pub mod probe_tasktime;
     mod qm;
     pub(crate) mod relaxed_atomic;

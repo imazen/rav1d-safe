@@ -9,6 +9,11 @@ Release candidate notes and remaining publication gates are in
 published; the historical staging date below is not a release date.
 
 ### Release preparation
+- Prefix 45 experimental feature names with `__`, remove three obsolete no-op
+  switches, and update executable consumers. Supported public mode names and
+  disjoint-mut's published `instrument` feature are unchanged.
+- Gate `RAV1D_OWNED_RECON` behind `__probe_owned_recon`; ordinary builds no
+  longer read it. Add a source/feature policy gate for all runtime env overrides.
 - Package the x86 NASM and ARM assembly inputs, including `x86inc.asm`, so
   `asm` and `partial_asm` builds work from the distributed source. A new CI
   gate builds Cargo's selected source files in all five decoder modes.
@@ -19,7 +24,7 @@ published; the historical staging date below is not a release date.
 - Document the native Rust API and tested zenrav1e/zenavif workflows.
 - Retain the measured entropy, transform and loop-filter improvements recorded
   in PR #528. The archmage main migration also has a confirmed 2.46–4.86%
-  unchecked slowdown in three eight-worker still cells; this remains unresolved.
+  unchecked slowdown in three eight-worker still cells; accepted for this release.
 
 
 

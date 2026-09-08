@@ -3,7 +3,7 @@
 #
 # The polarity is the inverse of the previous two rounds: the thing under test
 # is the DEFAULT build, and the BASE it must be differenced against is
-# `bps-blocks` — the block-count rule that shipped before 2026-08-11. A sweep
+# `__bps_blocks` — the block-count rule that shipped before 2026-08-11. A sweep
 # that quotes a `--features` arm as if it were the shipped decoder is exactly
 # the reporting error this round exists to fix.
 #
@@ -19,15 +19,15 @@ cd "$(dirname "$0")/../.."
 # arm=cargo-features ("-" = default features = the SHIPPED decoder)
 TIMED=(
   "plain=-"                      # HEAD: the derived rows-per-block rule
-  "bpsblocks=bps-blocks"         # BASE: the pre-2026-08-11 block-count rule
-  "bpshalf=bps-half"             # the best global constant the ladder offers
-  "untracked=probe-untracked"    # tracker-removed ceiling (bit-identical)
+  "bpsblocks=__bps_blocks"         # BASE: the pre-2026-08-11 block-count rule
+  "bpshalf=__bps_half"             # the best global constant the ladder offers
+  "untracked=__probe_untracked"    # tracker-removed ceiling (bit-identical)
 )
 COUNT=(
   "plain__probebounds=__probe_bounds"
-  "bpsblocks__probebounds=__probe_bounds,bps-blocks"
-  "plain__probewide=probe-wide"
-  "bpsblocks__probewide=probe-wide,bps-blocks"
+  "bpsblocks__probebounds=__probe_bounds,__bps_blocks"
+  "plain__probewide=__probe_wide"
+  "bpsblocks__probewide=__probe_wide,__bps_blocks"
 )
 
 build_one() { # <example> <outname> <features>

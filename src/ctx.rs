@@ -93,7 +93,7 @@ impl<const UP_TO: usize, const WITH_DEFAULT: bool> CaseSetter<UP_TO, WITH_DEFAUL
     /// Caller must ensure that no elements of the written range are concurrently
     /// borrowed (immutably or mutably) at all during the call to `set_disjoint`.
     ///
-    /// The `probe-sites` `track_caller` is a MEASUREMENT-ONLY attribute. Without
+    /// The `__probe_sites` `track_caller` is a MEASUREMENT-ONLY attribute. Without
     /// it every one of the ~40 `set_disjoint` call sites in `decode.rs` /
     /// `recon.rs` reports as the single location `ctx.rs:99:27`, which is why
     /// the campaign's census could say "43.9% of all registrations" and not say
@@ -101,7 +101,7 @@ impl<const UP_TO: usize, const WITH_DEFAULT: bool> CaseSetter<UP_TO, WITH_DEFAUL
     /// closure body's own line. It is absent from the default build (and from
     /// every published feature), so the shipped code pays nothing for it.
     #[inline]
-    #[cfg_attr(feature = "probe-sites", track_caller)]
+    #[cfg_attr(feature = "__probe_sites", track_caller)]
     pub fn set_disjoint<T, V>(&self, buf: &DisjointMut<T>, val: V)
     where
         T: AsMutPtr<Target = V>,

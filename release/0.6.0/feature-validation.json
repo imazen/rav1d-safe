@@ -1,0 +1,207 @@
+{
+  "source_parent": "ddfdd3ecd7e4f745f547f865994accf8af4755eb",
+  "checks": [
+    {
+      "name": "policy",
+      "command": [
+        "python3",
+        "tools/check-feature-policy.py"
+      ],
+      "env": {},
+      "exit": 0,
+      "seconds": 2.35,
+      "log_sha256": "f2355547ea694d50c3e9d4d108ad55cd903a93c99d995a2b2e5faed3468ca70b"
+    },
+    {
+      "name": "policy-adversarial",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--manifest-path",
+        "tools/feature-policy/Cargo.toml"
+      ],
+      "env": {},
+      "exit": 0,
+      "seconds": 0.21,
+      "log_sha256": "ef2c048a9c3d79b71cf5271ab5a093c9bc1982cef4e46663bf7eade494ac995a"
+    },
+    {
+      "name": "owned-override-ignored",
+      "command": [
+        "cargo",
+        "test",
+        "--lib",
+        "ordinary_build_keeps_owned_recon_enabled"
+      ],
+      "env": {
+        "RAV1D_OWNED_RECON": "0"
+      },
+      "exit": 0,
+      "seconds": 8.01,
+      "log_sha256": "fd98c53e6995e539e22e8ccefe0ab565df41b45fa9723c6c14dc36a5df46343b"
+    },
+    {
+      "name": "probes",
+      "command": [
+        "cargo",
+        "clippy",
+        "--lib",
+        "--features",
+        "__probe_sites,__probe_usage,__probe_wide,__probe_tasktime,__probe_owned_recon,__probe_lf_hull,__probe_rect_hull,__probe_cdef_double,__probe_shiftpin",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "env": {},
+      "exit": 101,
+      "seconds": 5.63,
+      "log_sha256": "c898828ba0e38a0d59122f6462ca0f68f5a5d5896fcffcbc937a6709a08a95da"
+    },
+    {
+      "name": "probes",
+      "command": [
+        "cargo",
+        "clippy",
+        "--lib",
+        "--features",
+        "__probe_sites,__probe_usage,__probe_wide,__probe_tasktime,__probe_owned_recon,__probe_lf_hull,__probe_rect_hull,__probe_cdef_double,__probe_shiftpin",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "env": {},
+      "exit": 0,
+      "seconds": 6.03,
+      "log_sha256": "bd147b05149938406f8eb366d3b401d7acb1718fcef80a87b273c33e42428a99"
+    },
+    {
+      "name": "safe-feature-boundary",
+      "command": [
+        "bash",
+        "scripts/review-feature-gate.sh"
+      ],
+      "env": {},
+      "exit": 0,
+      "seconds": 0.7,
+      "log_sha256": "f906a45a8d1a4c5fbb3043194637d8625a36e6dfa04920155a8f0b7d64f8170b"
+    },
+    {
+      "name": "decoder-regressions",
+      "command": [
+        "cargo",
+        "nextest",
+        "run",
+        "--test",
+        "decode_md5_committed",
+        "--test",
+        "safe_simd_crashes",
+        "--test",
+        "fuzz_regression",
+        "--test-threads",
+        "1"
+      ],
+      "env": {},
+      "exit": 0,
+      "seconds": 10.32,
+      "log_sha256": "549fb3fdbdf4d6aafbd1353db390e353152ab2fb485903e75fb3670893e57725"
+    },
+    {
+      "name": "disjoint-semver",
+      "command": [
+        "cargo",
+        "semver-checks",
+        "-p",
+        "rav1d-disjoint-mut",
+        "--baseline-version",
+        "0.3.1",
+        "--release-type",
+        "patch",
+        "--default-features"
+      ],
+      "env": {},
+      "exit": 0,
+      "seconds": 0.83,
+      "log_sha256": "11c35e54d0ed4f18d9becd0c49914dc3ca6029ad78658dbd7c28810d9c830c17"
+    },
+    {
+      "name": "private-override",
+      "command": [
+        "cargo",
+        "test",
+        "--lib",
+        "--features",
+        "__probe_owned_recon",
+        "diagnostic_build_can_disable_owned_recon",
+        "--",
+        "--ignored"
+      ],
+      "env": {
+        "RAV1D_OWNED_RECON": "0"
+      },
+      "exit": 0,
+      "seconds": 7.98,
+      "log_sha256": "339cdda4b2f6b13ca55df4037cb1821c3f3712ddf10f606b39a82d7f3e792850"
+    },
+    {
+      "name": "current-consumer",
+      "command": [
+        "cargo",
+        "check",
+        "--manifest-path",
+        "benchmarks/tracker-sharding-2026-09-07/drivers/current/Cargo.toml",
+        "--features",
+        "__probe_usage,__probe_wide"
+      ],
+      "env": {},
+      "exit": 101,
+      "seconds": 0.02,
+      "log_sha256": "06a5a2aac89ff4a6f7d2707ea47b3583e46db38dee840a3e9d5301192e62530a"
+    },
+    {
+      "name": "current-consumer",
+      "command": [
+        "cargo",
+        "check",
+        "--manifest-path",
+        "/home/lilith/tmp/rav1d-feature-policy-2026-09-08/consumer/Cargo.toml",
+        "--features",
+        "__probe_usage,__probe_wide"
+      ],
+      "env": {},
+      "exit": 0,
+      "seconds": 9.05,
+      "log_sha256": "e7233c06834bff72ef1baf11f0360c9dfd27f12bb4315cdd5573c1dcc3dad92f"
+    },
+    {
+      "name": "loom",
+      "command": [
+        "python3",
+        "scripts/review-const-032.py",
+        "loom",
+        "--output",
+        "/home/lilith/tmp/rav1d-feature-policy-2026-09-08/loom"
+      ],
+      "env": {},
+      "exit": 0,
+      "seconds": 1.18,
+      "log_sha256": "e937014c6bed0ae439e62a27ee44d949e67179c43f8f9c69e4165732126cd0b5"
+    },
+    {
+      "name": "package-modes",
+      "command": [
+        "python3",
+        "tools/check-package-source.py",
+        "--work-dir",
+        "/home/lilith/tmp/rav1d-feature-policy-2026-09-08/package"
+      ],
+      "env": {},
+      "exit": 0,
+      "seconds": 50.79,
+      "log_sha256": "6aac59d84ff58f289eb1684c05fde5c71e9b536e8fb731f3fbe2ecef8f688382"
+    }
+  ],
+  "policy_final": "Source policy and its adversarial tests passed after final tool changes.",
+  "negative_control": "Scanner rejects previous ungated owned_recon implementation.",
+  "scope": "Local package-source rehearsal; full new-head CI remains pending."
+}

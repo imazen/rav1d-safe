@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tomllib
 
 p = argparse.ArgumentParser()
 p.add_argument('--repo', type=Path, required=True)
@@ -34,6 +35,14 @@ manifest = (source / 'Cargo.toml').read_text()
 old = '/home/lilith/work/zen/rav1d-safe'
 for suffix in ['', '/crates/rav1d-disjoint-mut']:
     manifest = manifest.replace(json.dumps(old + suffix), json.dumps(str(repo) + suffix))
+# Current consumer feature names stay private; only the dependency forwarding
+# spelling adapts when comparing with an older frozen decoder revision.
+renames = json.loads((Path(__file__).resolve().parents[2] / 'release/0.6.0/feature-renames.json').read_text())
+decoder_features = tomllib.loads((repo / 'Cargo.toml').read_text())['features']
+for old_feature, new_feature in renames.items():
+    if new_feature not in decoder_features and old_feature in decoder_features:
+        manifest = manifest.replace('rav1d-safe/' + new_feature + '"',
+                                    'rav1d-safe/' + old_feature + '"')
 if a.archmage_repo:
     patch = a.archmage_repo.resolve()
     manifest += '\n[patch.crates-io]\n'

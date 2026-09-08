@@ -99,7 +99,7 @@ restore src/loopfilter.rs > "$OUT/sha_lf_after3.txt"
 
 echo "== 4. CDEF doubling arm files exactly what it claims ==" >&2
 nice -n 19 cargo build --release --example probe_tracker \
-  --features "probe-sites,__probe_cdef_double" --target-dir "$OUT/tgt2" \
+  --features "__probe_sites,__probe_cdef_double" --target-dir "$OUT/tgt2" \
   > "$OUT/build_ps.log" 2>&1
 count() { RAV1D_CDEF_DOUBLE=$1 nice -n 19 "$OUT/tgt2/release/examples/probe_tracker" \
   "$VEC" 8 3 2>&1 | awk -F'total_per_frame=' '/^SITES/{split($2,a," ");print a[1];exit}'; }
@@ -112,7 +112,7 @@ assert s.count(old) == 1
 open(p,'w').write(s.replace(old, "", 1))
 PY
 nice -n 19 cargo build --release --example probe_tracker \
-  --features "probe-sites,__probe_cdef_double" --target-dir "$OUT/tgt2" \
+  --features "__probe_sites,__probe_cdef_double" --target-dir "$OUT/tgt2" \
   > "$OUT/build_ps2.log" 2>&1
 C1M=$(count 1)
 note cdef_mut_drop_one_site "on=$C1M delta_vs_full=$((C1M-C1)) (expect the cdef_find_dir site's population)"

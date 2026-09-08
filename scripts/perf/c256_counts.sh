@@ -4,7 +4,7 @@
 # Everything the two levers predict is countable before any clock is involved,
 # and one of the predictions is a KILL SWITCH for lever 1:
 #
-#   lockslow / spins       (probe-wide, added this round) how often a thread had
+#   lockslow / spins       (__probe_wide, added this round) how often a thread had
 #                          to WAIT for a shard lock, and how deep the wait was.
 #                          This is the quantity `c256x2048` is limited by and
 #                          the one the multi/wide counters cannot see.
