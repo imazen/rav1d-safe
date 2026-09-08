@@ -199,13 +199,13 @@ temporary local registry; this resolves the local rehearsal dependency gap
 without publishing it. A standalone registry publish still requires 0.3.2 to
 be published first. Nothing was uploaded.
 
-The disjoint-mut archive contains 22 files: 162,633 compressed bytes and
-571,303 unpacked file bytes. The decoder contains 268 files: 2,190,640 compressed
-bytes and 14,985,506 unpacked file bytes. Assembly accounts for 8,329,428 unpacked
-bytes and safe SIMD Rust for 3,734,957. These are source archives, not linked
-binary sizes or dependency downloads. [Sizes, hashes and largest files](../release/0.6.0/package-sizes.json)
-identify these tested artifacts; subsequent documentation edits change archive
-identity and require final packaging again at the release revision.
+That rehearsal archive is not what shipped: the disjoint-mut archive contained
+22 files at 162,633 compressed bytes, and the decoder 268 files at 2,190,640
+compressed bytes and 14,985,506 unpacked. The documentation edits below changed
+archive identity, so packaging ran again at the release revision. These are
+source archives, not linked binary sizes or dependency downloads.
+[Sizes, hashes and largest files](../release/0.6.0/package-sizes.json) record the
+**published** artifacts, not this rehearsal.
 
 ## Final gate correction
 
@@ -220,8 +220,8 @@ job after the feature rename were vacuous and are not validation evidence.
 
 Published source revision: `7a1fffd4b2f020a64bfeec4708750d7c2c9dee70`, which is
 `1d27c299` plus the guard-extent gate restoration (#529). Packaging at
-`1bcd6ce6` above predates that commit, so the archive identity below supersedes
-`release/0.6.0/package-sizes.json`.
+`1bcd6ce6` above predates that commit; `release/0.6.0/package-sizes.json` was
+regenerated from the published archives and now records this revision.
 
 `cargo package --workspace --features
 rav1d-disjoint-mut/aligned,rav1d-disjoint-mut/pic-buf,rav1d-disjoint-mut/zerocopy`
@@ -231,6 +231,11 @@ packaged and verified both crates at that revision:
 |---|---|---|---|
 | `rav1d-disjoint-mut-0.3.2` | 22 | 162,629 | `e5d170ff0b912935f0d796c3b28bdacf46311840161e91f120f485cc92f1f977` |
 | `rav1d-safe-0.6.0` | 268 | 2,191,227 | `551b803ca7c71642c849af7078df4c46295e3fddfc52d3c06642a316dac44c0f` |
+
+Each SHA256 below equals the checksum crates.io records for that version, and
+`7a1fffd4` reproduces both archives' source byte-for-byte. Re-check either claim
+with `python3 tools/verify-published-provenance.py --check-tags`, which also
+verifies that every published version has a release tag at its publishing commit.
 
 The `rav1d-safe` archive carries 48 `.asm` files including `src/ext/x86/x86inc.asm`
 and `src/arm/asm-offsets.h`. The published `0.5.7` archive carries zero, which is

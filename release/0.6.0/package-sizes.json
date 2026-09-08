@@ -1,18 +1,18 @@
 {
-  "source_commit": "1bcd6ce6cda5",
+  "source_commit": "7a1fffd4b2f020a64bfeec4708750d7c2c9dee70",
   "command": "cargo package --workspace --features rav1d-disjoint-mut/aligned,rav1d-disjoint-mut/pic-buf,rav1d-disjoint-mut/zerocopy",
   "exit": 0,
-  "verification": "Both generated crates built successfully. Cargo staged the unpublished workspace dependency in a temporary local registry. Nothing was uploaded.",
+  "verification": "Sizes and hashes read from the archives published to crates.io. Each sha256 equals the checksum crates.io records for that version, and the source of each archive is reproduced byte-for-byte by source_commit (verify with tools/verify-published-provenance.py).",
   "packages": [
     {
       "crate": "rav1d-disjoint-mut-0.3.2",
-      "compressed_bytes": 162633,
+      "compressed_bytes": 162629,
       "unpacked_file_bytes": 571303,
       "files": 22,
-      "sha256": "edf799c9074f8d08d4a59c2ba649994f172172442a602fd3d7efc3de7b0a0ea1",
+      "sha256": "e5d170ff0b912935f0d796c3b28bdacf46311840161e91f120f485cc92f1f977",
       "unpacked_groups": {
-        "other": 41695,
         "documentation": 41188,
+        "other": 41695,
         "other Rust": 488420
       },
       "largest_files": [
@@ -52,15 +52,15 @@
     },
     {
       "crate": "rav1d-safe-0.6.0",
-      "compressed_bytes": 2190640,
-      "unpacked_file_bytes": 14985506,
+      "compressed_bytes": 2191227,
+      "unpacked_file_bytes": 14987125,
       "files": 268,
-      "sha256": "2d86aa0517092a1958267d18030fbbb0e569b49ff47457d948eba3d082998c76",
+      "sha256": "551b803ca7c71642c849af7078df4c46295e3fddfc52d3c06642a316dac44c0f",
       "unpacked_groups": {
-        "other": 122827,
-        "documentation": 141765,
-        "other Rust": 2656529,
         "assembly": 8329428,
+        "documentation": 143384,
+        "other": 122827,
+        "other Rust": 2656529,
         "safe SIMD Rust": 3734957
       },
       "largest_files": [
