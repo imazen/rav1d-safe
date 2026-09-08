@@ -20,10 +20,11 @@ ordinary owned-reconstruction policy is fixed to its prior environment-unset beh
   published 0.3.1 admits guard-move UB in a safe-client Miri reproducer.
   See the [abstraction protocol](RELEASE_SOUNDNESS_PROTOCOL.md) and
   [API/semver evidence](../audit/disjoint-032-current/README.md).
-- **archmage and archmage-macros 0.9.29** are required by the current pinned
-  main revision `7a67c74c569148e5c3470bc95538649dec60d8b4`. Their latest registry
-  releases at preparation time are 0.9.28. `Token::from_context()` requires
-  the new version. Do not replace it with token forging to unblock publication.
+- **archmage and archmage-macros 0.9.29** now resolve from crates.io.
+  Both normal and test dependencies use the registry release, including
+  `Token::from_context()` and the unified `archmage::intrinsics` memory API.
+  The direct `safe_unaligned_simd` dependency remains for its size-bound trait,
+  which archmage does not re-export.
 
 The [changelog](../CHANGELOG.md) records decoder correctness fixes, including
 film-grain reservations and worker panic cleanup, ARM debug-overflow fixes,
@@ -44,7 +45,8 @@ Those 0.5.7 examples are not validation of the 0.6.0 package.
   builds and verifies 0.3.2 from source head `e233adcb`. Exact archive identity
   and command results are retained in [the preparation evidence](../release/0.6.0/preparation.json).
 - `cargo publish -p rav1d-safe --dry-run` reaches registry resolution and
-  **fails** because `archmage ^0.9.29` is absent. It uploaded nothing.
+  previously failed because `archmage ^0.9.29` was absent. This historical
+  blocker is resolved by the registry migration; it uploaded nothing.
 - A rehearsal using only Cargo-selected source files reproduced missing NASM
   inputs. The package whitelist now includes `src/**/*.asm` and `src/**/*.S`,
   including the shared x86 include. The new source-package gate builds default,
@@ -102,11 +104,11 @@ No credentials are needed, and conflicting local files are refused.
 2. Obtain successful full disjoint-mut platform/Miri/Loom CI on the candidate
    head, and successful decoder CI including the new package and MSRV jobs.
    The earlier interrupted local broad Miri run is not a passing result.
-3. Publish the reviewed archmage-macros/archmage dependency release in dependency
-   order, and rav1d-disjoint-mut 0.3.2 after its own gates.
-4. Replace both Git archmage declarations with registry requirements, refresh
-   the lockfile, and rerun tests/conformance and the affected performance cells
-   against the actual registry artifacts. Verify source equivalence to the pin.
+3. Publish rav1d-disjoint-mut 0.3.2 after its own gates. Archmage and
+   archmage-macros 0.9.29 are already published.
+4. Both archmage declarations now use crates.io and the local lockfile is
+   refreshed. Full conformance and performance measurements on the registry
+   candidate remain release validation; old measurements identify the Git pin.
 5. Run `cargo publish --dry-run -p rav1d-safe` with registry dependencies and
    verify the resulting `.crate` in supported modes and Rust 1.89. Retain its
    SHA256, normalized manifest, included-file list and exact source revision.
@@ -135,3 +137,19 @@ does not substitute for those runtime checks. [Commands and scope](../release/0.
 The [raw log bundle](../release/0.6.0/ARM_PACKAGE_EVIDENCE.json) is public and
 hash-verified; restore it with `python3 tools/fetch-benchmark-artifacts.py
 --manifest release/0.6.0/ARM_PACKAGE_EVIDENCE.json`.
+
+## Registry archmage follow-up
+
+Both dependency declarations and Cargo.lock now resolve crates.io 0.9.29.
+Shared memory macros and selected existing kernels use `archmage::intrinsics`
+on x86, ARM and WASM. Untouched ARM modules keep the equivalent direct
+`safe_unaligned_simd` imports to stay within the PR size budget. The wrapper
+checker supports registry manifests. Checked/unchecked/ASM checks, Rust 1.89,
+ARM/WASM cross-checks, 237 wrapper contracts (including 216 weaker-context
+rejections), the feature policy, and 22 selected runtime regressions pass.
+See [commands and outcomes](../release/0.6.0/archmage-registry.json).
+
+The new publish dry run gets past archmage and fails on the still-unpublished
+`rav1d-disjoint-mut ^0.3.2`. No upload occurred. Memory wrappers re-export the
+same implementations, but the published proc macros differ from the prior Git
+pin; performance has not been remeasured for this candidate.

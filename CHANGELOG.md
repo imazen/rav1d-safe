@@ -9,6 +9,8 @@ Release candidate notes and remaining publication gates are in
 published; the historical staging date below is not a release date.
 
 ### Release preparation
+- Use crates.io archmage 0.9.29 for normal and test builds, and its unified
+  `archmage::intrinsics` namespace for safe reference-based SIMD memory access.
 - Restore the ARM assembly offset header required by film grain and reference
   motion vectors, include headers in the crate archive, and check all 21 numeric
   offsets against the target Rust layouts at compile time. ARM package builds

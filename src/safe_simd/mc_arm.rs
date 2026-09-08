@@ -12,7 +12,7 @@ use core::arch::aarch64::*;
 use archmage::{Arm64, SimdToken, arcane};
 
 #[cfg(target_arch = "aarch64")]
-use safe_unaligned_simd::aarch64 as safe_simd;
+use archmage::intrinsics::aarch64 as safe_simd;
 
 use crate::include::common::bitdepth::BitDepth;
 #[cfg_attr(

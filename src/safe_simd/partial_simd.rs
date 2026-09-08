@@ -19,23 +19,23 @@ mod x86_64_aliases {
 
     /// Load 64 bits into the low half of an __m128i, zeroing the high half.
     ///
-    /// Delegates to `safe_unaligned_simd::x86_64::_mm_loadu_si64`.
+    /// Delegates to `archmage::intrinsics::x86_64::_mm_loadu_si64`.
     ///
     /// Requires SSE2 context (all callers are `#[arcane]` with AVX2).
     #[inline]
     #[target_feature(enable = "sse2")]
     pub fn mm_loadl_epi64<T: Is64BitsUnaligned>(src: &T) -> __m128i {
-        safe_unaligned_simd::x86_64::_mm_loadu_si64(src)
+        archmage::intrinsics::x86_64::_mm_loadu_si64(src)
     }
 
     /// Store the low 64 bits of an __m128i to memory.
     ///
-    /// Delegates to `safe_unaligned_simd::x86_64::_mm_storeu_si64`.
+    /// Delegates to `archmage::intrinsics::x86_64::_mm_storeu_si64`.
     ///
     /// Requires SSE2 context (all callers are `#[arcane]` with AVX2).
     #[inline]
     #[target_feature(enable = "sse2")]
     pub fn mm_storel_epi64<T: Is64BitsUnaligned>(dst: &mut T, val: __m128i) {
-        safe_unaligned_simd::x86_64::_mm_storeu_si64(dst, val)
+        archmage::intrinsics::x86_64::_mm_storeu_si64(dst, val)
     }
 }

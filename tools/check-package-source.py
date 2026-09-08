@@ -2,7 +2,7 @@
 """Build Cargo's selected package sources before dependencies reach crates.io.
 
 This checks file inclusion, not registry publication. The isolated manifest
-retains the pinned archmage Git dependency and uses the local disjoint-mut
+retains the root archmage dependency and uses the local disjoint-mut
 source. Run cargo publish --dry-run separately after dependencies are published.
 """
 import argparse

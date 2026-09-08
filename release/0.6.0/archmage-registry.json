@@ -1,0 +1,103 @@
+{
+  "date": "2026-09-08",
+  "prior_source": "7a67c74c569148e5c3470bc95538649dec60d8b4",
+  "registry_version": "0.9.29",
+  "checks": [
+    {
+      "command": [
+        "cargo",
+        "+1.89.0",
+        "check",
+        "--lib",
+        "--locked"
+      ],
+      "exit": 0,
+      "seconds": 6.28
+    },
+    {
+      "command": [
+        "cargo",
+        "check",
+        "--lib",
+        "--features",
+        "unchecked"
+      ],
+      "exit": 0,
+      "seconds": 5.53
+    },
+    {
+      "command": [
+        "cargo",
+        "check",
+        "--lib",
+        "--features",
+        "asm"
+      ],
+      "exit": 0,
+      "seconds": 15.42
+    },
+    {
+      "command": [
+        "cargo",
+        "check",
+        "--lib",
+        "--target",
+        "aarch64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "seconds": 4.78
+    },
+    {
+      "command": [
+        "cargo",
+        "check",
+        "--lib",
+        "--target",
+        "wasm32-unknown-unknown"
+      ],
+      "exit": 0,
+      "seconds": 4.77
+    },
+    {
+      "command": [
+        "python3",
+        "tools/check-wrapper-contexts.py",
+        "--work-dir",
+        "/home/lilith/tmp/rav1d-archmage-registry-2026-09-08/wrappers-x86",
+        "--target",
+        "x86_64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "seconds": 2.11
+    },
+    {
+      "command": [
+        "python3",
+        "tools/check-wrapper-contexts.py",
+        "--work-dir",
+        "/home/lilith/tmp/rav1d-archmage-registry-2026-09-08/wrappers-arm",
+        "--target",
+        "aarch64-unknown-linux-gnu"
+      ],
+      "exit": 0,
+      "seconds": 2.0
+    },
+    {
+      "command": [
+        "python3",
+        "tools/check-feature-policy.py"
+      ],
+      "exit": 0,
+      "seconds": 2.24
+    }
+  ],
+  "runtime_regressions": {
+    "command": "cargo nextest run --test decode_md5_committed --test safe_simd_crashes --test fuzz_regression --test-threads 1",
+    "passed": 22
+  },
+  "publish_dry_run": {
+    "exit": 101,
+    "blocker": "rav1d-disjoint-mut ^0.3.2 is not published"
+  },
+  "performance": "Not remeasured. Namespace migration reexports the same memory implementations; published proc-macro sources differ from the Git pin."
+}

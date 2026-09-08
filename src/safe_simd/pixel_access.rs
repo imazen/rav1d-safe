@@ -28,7 +28,7 @@
 //! ```
 //!
 //! When `unchecked` is **off** (default):
-//! - Uses `safe_unaligned_simd` for memory access (safe, bounds-checked)
+//! - Uses `archmage::intrinsics` for memory access (safe, bounds-checked)
 //! - Compatible with `#![forbid(unsafe_code)]` in calling modules
 //!
 //! When `unchecked` is **on**:
@@ -421,7 +421,7 @@ pub unsafe fn strided_slice_from_ptr<'a, T>(
 // SIMD Load/Store Macros
 // =============================================================================
 //
-// These macros abstract over safe_unaligned_simd (bounds-checked, safe) and raw
+// These macros abstract over archmage::intrinsics (bounds-checked, safe) and raw
 // core::arch intrinsics (unchecked, pointer-based) depending on the `unchecked`
 // feature flag.
 //
@@ -450,7 +450,7 @@ macro_rules! loadu_256 {
     ($src:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::x86_64::_mm256_loadu_si256($src)
+            archmage::intrinsics::x86_64::_mm256_loadu_si256($src)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -463,7 +463,7 @@ macro_rules! loadu_256 {
     ($slice:expr, $T:ty) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::x86_64::_mm256_loadu_si256::<$T>(($slice).try_into().unwrap())
+            archmage::intrinsics::x86_64::_mm256_loadu_si256::<$T>(($slice).try_into().unwrap())
         }
         #[cfg(feature = "unchecked")]
         {
@@ -496,7 +496,7 @@ macro_rules! storeu_256 {
     ($dst:expr, $val:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::x86_64::_mm256_storeu_si256($dst, $val)
+            archmage::intrinsics::x86_64::_mm256_storeu_si256($dst, $val)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -509,7 +509,7 @@ macro_rules! storeu_256 {
     ($slice:expr, $T:ty, $val:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::x86_64::_mm256_storeu_si256::<$T>(
+            archmage::intrinsics::x86_64::_mm256_storeu_si256::<$T>(
                 ($slice).try_into().unwrap(),
                 $val,
             )
@@ -545,7 +545,7 @@ macro_rules! loadu_512 {
     ($src:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::x86_64::_mm512_loadu_si512($src)
+            archmage::intrinsics::x86_64::_mm512_loadu_si512($src)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -558,7 +558,7 @@ macro_rules! loadu_512 {
     ($slice:expr, $T:ty) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::x86_64::_mm512_loadu_si512::<$T>(($slice).try_into().unwrap())
+            archmage::intrinsics::x86_64::_mm512_loadu_si512::<$T>(($slice).try_into().unwrap())
         }
         #[cfg(feature = "unchecked")]
         {
@@ -591,7 +591,7 @@ macro_rules! storeu_512 {
     ($dst:expr, $val:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::x86_64::_mm512_storeu_si512($dst, $val)
+            archmage::intrinsics::x86_64::_mm512_storeu_si512($dst, $val)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -604,7 +604,7 @@ macro_rules! storeu_512 {
     ($slice:expr, $T:ty, $val:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::x86_64::_mm512_storeu_si512::<$T>(
+            archmage::intrinsics::x86_64::_mm512_storeu_si512::<$T>(
                 ($slice).try_into().unwrap(),
                 $val,
             )
@@ -639,7 +639,7 @@ macro_rules! loadu_128 {
     ($src:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::x86_64::_mm_loadu_si128($src)
+            archmage::intrinsics::x86_64::_mm_loadu_si128($src)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -652,7 +652,7 @@ macro_rules! loadu_128 {
     ($slice:expr, $T:ty) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::x86_64::_mm_loadu_si128::<$T>(($slice).try_into().unwrap())
+            archmage::intrinsics::x86_64::_mm_loadu_si128::<$T>(($slice).try_into().unwrap())
         }
         #[cfg(feature = "unchecked")]
         {
@@ -684,7 +684,7 @@ macro_rules! loadu_64 {
     ($src:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::x86_64::_mm_loadu_si64($src)
+            archmage::intrinsics::x86_64::_mm_loadu_si64($src)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -715,7 +715,7 @@ macro_rules! storeu_128 {
     ($dst:expr, $val:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::x86_64::_mm_storeu_si128($dst, $val)
+            archmage::intrinsics::x86_64::_mm_storeu_si128($dst, $val)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -728,7 +728,7 @@ macro_rules! storeu_128 {
     ($slice:expr, $T:ty, $val:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::x86_64::_mm_storeu_si128::<$T>(($slice).try_into().unwrap(), $val)
+            archmage::intrinsics::x86_64::_mm_storeu_si128::<$T>(($slice).try_into().unwrap(), $val)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -830,7 +830,7 @@ pub(crate) use storei64;
 /// let v: uint8x16_t = neon_ld1q_u8!(&arr);  // arr: [u8; 16]
 /// ```
 #[cfg(target_arch = "aarch64")]
-// No in-tree consumer today: the aarch64 SIMD modules call `safe_unaligned_simd`
+// No in-tree consumer today: the aarch64 SIMD modules call `archmage::intrinsics`
 // directly. Kept as the NEON half of this module's documented load/store macro
 // family (the x86 `loadu_*`/`storeu_*` half is used by src/safe_simd/*.rs), so the
 // two arches keep a symmetric API. Narrow allow rather than deletion.
@@ -839,7 +839,7 @@ macro_rules! neon_ld1q_u8 {
     ($src:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::aarch64::vld1q_u8($src)
+            archmage::intrinsics::aarch64::vld1q_u8($src)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -855,7 +855,7 @@ macro_rules! neon_ld1q_u8 {
 pub(crate) use neon_ld1q_u8;
 
 #[cfg(target_arch = "aarch64")]
-// No in-tree consumer today: the aarch64 SIMD modules call `safe_unaligned_simd`
+// No in-tree consumer today: the aarch64 SIMD modules call `archmage::intrinsics`
 // directly. Kept as the NEON half of this module's documented load/store macro
 // family (the x86 `loadu_*`/`storeu_*` half is used by src/safe_simd/*.rs), so the
 // two arches keep a symmetric API. Narrow allow rather than deletion.
@@ -864,7 +864,7 @@ macro_rules! neon_ld1q_u16 {
     ($src:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::aarch64::vld1q_u16($src)
+            archmage::intrinsics::aarch64::vld1q_u16($src)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -880,7 +880,7 @@ macro_rules! neon_ld1q_u16 {
 pub(crate) use neon_ld1q_u16;
 
 #[cfg(target_arch = "aarch64")]
-// No in-tree consumer today: the aarch64 SIMD modules call `safe_unaligned_simd`
+// No in-tree consumer today: the aarch64 SIMD modules call `archmage::intrinsics`
 // directly. Kept as the NEON half of this module's documented load/store macro
 // family (the x86 `loadu_*`/`storeu_*` half is used by src/safe_simd/*.rs), so the
 // two arches keep a symmetric API. Narrow allow rather than deletion.
@@ -889,7 +889,7 @@ macro_rules! neon_ld1q_s16 {
     ($src:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::aarch64::vld1q_s16($src)
+            archmage::intrinsics::aarch64::vld1q_s16($src)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -905,7 +905,7 @@ macro_rules! neon_ld1q_s16 {
 pub(crate) use neon_ld1q_s16;
 
 #[cfg(target_arch = "aarch64")]
-// No in-tree consumer today: the aarch64 SIMD modules call `safe_unaligned_simd`
+// No in-tree consumer today: the aarch64 SIMD modules call `archmage::intrinsics`
 // directly. Kept as the NEON half of this module's documented load/store macro
 // family (the x86 `loadu_*`/`storeu_*` half is used by src/safe_simd/*.rs), so the
 // two arches keep a symmetric API. Narrow allow rather than deletion.
@@ -914,7 +914,7 @@ macro_rules! neon_st1q_u8 {
     ($dst:expr, $val:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::aarch64::vst1q_u8($dst, $val)
+            archmage::intrinsics::aarch64::vst1q_u8($dst, $val)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -930,7 +930,7 @@ macro_rules! neon_st1q_u8 {
 pub(crate) use neon_st1q_u8;
 
 #[cfg(target_arch = "aarch64")]
-// No in-tree consumer today: the aarch64 SIMD modules call `safe_unaligned_simd`
+// No in-tree consumer today: the aarch64 SIMD modules call `archmage::intrinsics`
 // directly. Kept as the NEON half of this module's documented load/store macro
 // family (the x86 `loadu_*`/`storeu_*` half is used by src/safe_simd/*.rs), so the
 // two arches keep a symmetric API. Narrow allow rather than deletion.
@@ -939,7 +939,7 @@ macro_rules! neon_st1q_u16 {
     ($dst:expr, $val:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::aarch64::vst1q_u16($dst, $val)
+            archmage::intrinsics::aarch64::vst1q_u16($dst, $val)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -970,7 +970,7 @@ macro_rules! wasm_load_128 {
     ($src:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::wasm32::v128_load($src)
+            archmage::intrinsics::wasm32::v128_load($src)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -983,7 +983,7 @@ macro_rules! wasm_load_128 {
     ($slice:expr, $T:ty) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::wasm32::v128_load::<$T>(($slice).try_into().unwrap())
+            archmage::intrinsics::wasm32::v128_load::<$T>(($slice).try_into().unwrap())
         }
         #[cfg(feature = "unchecked")]
         {
@@ -1010,7 +1010,7 @@ macro_rules! wasm_store_128 {
     ($dst:expr, $val:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::wasm32::v128_store($dst, $val)
+            archmage::intrinsics::wasm32::v128_store($dst, $val)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -1023,7 +1023,7 @@ macro_rules! wasm_store_128 {
     ($slice:expr, $T:ty, $val:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::wasm32::v128_store::<$T>(($slice).try_into().unwrap(), $val)
+            archmage::intrinsics::wasm32::v128_store::<$T>(($slice).try_into().unwrap(), $val)
         }
         #[cfg(feature = "unchecked")]
         {
@@ -1115,7 +1115,7 @@ macro_rules! wasm_storei64 {
 pub(crate) use wasm_storei64;
 
 #[cfg(target_arch = "aarch64")]
-// No in-tree consumer today: the aarch64 SIMD modules call `safe_unaligned_simd`
+// No in-tree consumer today: the aarch64 SIMD modules call `archmage::intrinsics`
 // directly. Kept as the NEON half of this module's documented load/store macro
 // family (the x86 `loadu_*`/`storeu_*` half is used by src/safe_simd/*.rs), so the
 // two arches keep a symmetric API. Narrow allow rather than deletion.
@@ -1124,7 +1124,7 @@ macro_rules! neon_st1q_s16 {
     ($dst:expr, $val:expr) => {{
         #[cfg(not(feature = "unchecked"))]
         {
-            safe_unaligned_simd::aarch64::vst1q_s16($dst, $val)
+            archmage::intrinsics::aarch64::vst1q_s16($dst, $val)
         }
         #[cfg(feature = "unchecked")]
         {
