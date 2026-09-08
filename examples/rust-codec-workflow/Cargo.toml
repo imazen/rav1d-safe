@@ -1,0 +1,14 @@
+[package]
+name = "rav1d-safe-rust-codec-workflow"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# An independent consumer: no rav1d-safe test-only feature unification.
+[workspace]
+
+[dependencies]
+rav1d-safe = { version = "=0.5.7", default-features = false, features = ["bitdepth_8", "bitdepth_16"] }
+zenrav1e = { version = "=0.1.4", default-features = false }
+zenavif = { version = "=0.1.6", default-features = false, features = ["encode"] }
+rgb = "0.8"

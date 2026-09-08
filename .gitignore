@@ -49,3 +49,6 @@ benchmarks/still-expanded-2026-09-07/**/*.gz
 benchmarks/still-loopfilter-2026-09-07/**/*.gz
 benchmarks/still-transforms-2026-09-07/**/*.gz
 benchmarks/wrapper-contexts-2026-09-07/**/*.gz
+
+!examples/rust-codec-workflow/Cargo.lock
+benchmarks/noasm-2026-09-08/**/*.gz
