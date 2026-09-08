@@ -103,7 +103,7 @@ use loom::sync::atomic::{AtomicU8, AtomicU32, AtomicUsize};
 /// nothing single-threaded on 8-bit content — 600.7 ms against the legacy
 /// tracker's 602.3 — while running 5.1x faster at t=8. 64 is 1-5% better again
 /// at t=4/t=8 for ~3% at t=1 and ~7 MB of RSS, and is available as
-/// `shards-64`. 256 is not offered: at 32 KiB per instance it overflowed a
+/// `__shards_64`. 256 is not offered: at 32 KiB per instance it overflowed a
 /// worker stack while constructing a `DisjointMut` back when the array was
 /// inline, and even boxed it was already past the point of diminishing returns.
 ///
@@ -243,7 +243,7 @@ pub(super) const N_SHARDS: usize = 128;
 ///
 /// So: chosen by measurement, not by the tile-geometry argument, which the
 /// measurement does not support. Shift 8 and 10 remain available as
-/// `blockshift-8` / `blockshift-10` if a different tiling ever inverts this.
+/// `__blockshift_8` / `__blockshift_10` if a different tiling ever inverts this.
 ///
 /// **Re-opened 2026-08-08, and the ladder does NOT stop at 12**
 /// (`benchmarks/tracker_blockshift_2026-08-08.meta`). The 8/10/12 screening
@@ -275,10 +275,10 @@ pub(super) const N_SHARDS: usize = 128;
 /// stride is twice as wide, which is the observation
 /// [`block_shift_for`] turns into a rule.
 ///
-/// The fixed values stay available as `blockshift-13/14/15/16`, but a CONSTANT
+/// The fixed values stay available as `__blockshift_13/14/15/16`, but a CONSTANT
 /// is the wrong shape: the shift that makes a 4K plane's rows share a block
 /// turns a 64 KiB buffer into one block and one lock. Prefer
-/// `blockshift-adaptive`.
+/// `__blockshift_adaptive`.
 #[cfg(feature = "__blockshift_8")]
 const BLOCK_SHIFT: u32 = 8;
 #[cfg(all(feature = "__blockshift_10", not(feature = "__blockshift_8")))]
@@ -1252,7 +1252,7 @@ impl Shard {
     #[inline(always)]
     fn live_mask(&self, allocated: u8) -> u8 {
         // `allocated <= 1` is the measured steady state and it is straight-line:
-        // one load, no `rbit`/`clz`, no loop. `probe-count` reports occ_max == 1
+        // one load, no `rbit`/`clz`, no loop. `__probe_count` reports occ_max == 1
         // on every hot plane at t=1 and mean occupancy 0.02, and the allocator
         // always takes the lowest free slot — so after the first borrow on a
         // shard, `allocated` is 1 and stays 1. This matters because the whole
@@ -1705,7 +1705,7 @@ const ROWS_PER_BLOCK_MIN: usize = 4;
 /// Coarsening is NOT free: it trades "one borrow touching several shard lines"
 /// for "several borrows landing on one shard", and the second cost grows as the
 /// block count falls towards the worker count. 32 is the coarsest block count
-/// the sweep measured to still be a win — `bps-quarter` cuts the 1024x192 and
+/// the sweep measured to still be a win — `__bps_quarter` cuts the 1024x192 and
 /// 1024x384 planes into 34 and 51 blocks and reads 0.78x and 0.74x wall — so
 /// this stops a shorter picture than the sweep contains from going past the last
 /// point with evidence. It is a MEASURED bound, not a safety one; every value
@@ -2253,7 +2253,7 @@ impl BorrowTracker {
 
     /// THROWAWAY (`__probe_addnop`): keep the CALL, delete the WORK.
     ///
-    /// The question this answers: `probe-untracked` (no tracker at all) is
+    /// The question this answers: `__probe_untracked` (no tracker at all) is
     /// 77 ms/frame faster than the tracker at 8bpc t=1, but removing 26
     /// instructions and two of the three locked RMWs from `add` moved that cell
     /// 0.3%. Those two facts are only compatible if most of the 77 ms is not
@@ -2310,7 +2310,7 @@ impl BorrowTracker {
         // acquire needs. Skipping them shortens the chain by a dependent L1
         // load plus a multiply before anything else can start.
         //
-        // That matters more than it looks: `probe-addnop` (keep the call,
+        // That matters more than it looks: `__probe_addnop` (keep the call,
         // delete the body) measured 290.7 ms/frame against 365.0 for the real
         // tracker and 287.2 with no tracker at all, at 8bpc t=1 — so the call
         // barrier is 4% of the tracker's cost and the other 96% is this

@@ -4,7 +4,7 @@
 # Every profile in the campaign so far is single-tile or t=1. This one asks the
 # tiled question: on a forced-multi-tile vector, what appears at t=8 that is
 # absent at t=1? Three quantities per cell, from ONE instrumented binary
-# (`--features probe-tasktime`, src/probe_tasktime.rs):
+# (`--features __probe_tasktime`, src/probe_tasktime.rs):
 #
 #   * per-STAGE busy ms/frame  -- tile_recon vs the five filter stages. The
 #     t8/t1 ratio of each stage says WHICH work inflates under threading.
@@ -14,7 +14,7 @@
 #     filter worker is. That separates "idle pool" from "serial filter tail".
 #
 # The `ttu` arm is the same binary with the borrow tracker compiled out
-# (`probe-tasktime-untracked`), so the tracker's share of any t=8 CPU inflation
+# (`__probe_tasktime_untracked`), so the tracker's share of any t=8 CPU inflation
 # is a subtraction rather than an argument.
 #
 # NO `nice` (Darwin maps it to background QoS -> E-cores). Run under `measlock`.

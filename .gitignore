@@ -54,3 +54,7 @@ benchmarks/wrapper-contexts-2026-09-07/**/*.gz
 benchmarks/noasm-2026-09-08/**/*.gz
 
 benchmarks/release-prep-2026-09-08/**/*.gz
+
+!tools/feature-policy/Cargo.lock
+
+benchmarks/feature-policy-2026-09-08/**/*.gz

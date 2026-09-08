@@ -2,7 +2,7 @@
 //! atomic operations the tracker's fast path is built from, on this host.
 //!
 //! The decode-level A/B says the tracker costs 83.5 ms/frame at t=1 8bpc
-//! (373.5 tracked vs 290.0 `probe-untracked`). This runner answers the
+//! (373.5 tracked vs 290.0 `__probe_untracked`). This runner answers the
 //! question that decides WHICH lever is worth building: of one acquire+release
 //! pair's cost, how much is the three locked RMWs (swap / fetch_or /
 //! fetch_and) and how much is everything else?

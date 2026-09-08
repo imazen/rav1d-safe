@@ -7,7 +7,7 @@ The two-point fit `total = a + b*frames` is applied per (round, arm, cell), so
 (both arms saw the same box state) and reduced by median, with min/max printed —
 a median without a band is not a result on a loaded box.
 
-Registration counts come from `examples/probe_tracker --features probe-sites`
+Registration counts come from `examples/probe_tracker --features __probe_sites`
 (counts only; that build's wall clock is perturbed and is never used here).
 
 Usage: content_report.py <sweep.tsv> <sites.txt>...

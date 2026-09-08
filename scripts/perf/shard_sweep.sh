@@ -7,9 +7,9 @@
 # Usage: scripts/perf/shard_sweep.sh <bindir> <vecdir> <out.tsv> [rounds]
 #
 # <bindir> holds one build of `examples/bench_ab_decode` per arm:
-#   legacy   cargo build --release --example bench_ab_decode --features tracker-legacy
+#   legacy   cargo build --release --example bench_ab_decode --features __tracker_legacy
 #   shard32  cargo build --release --example bench_ab_decode
-#   shard64  cargo build --release --example bench_ab_decode --features shards-64
+#   shard64  cargo build --release --example bench_ab_decode --features __shards_64
 #
 # NO `nice` ON TIMED RUNS. On Darwin a positive nice value maps the process to
 # background QoS (efficiency cores) and distorts wall clock by more than an

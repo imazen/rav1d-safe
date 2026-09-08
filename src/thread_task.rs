@@ -582,7 +582,7 @@ fn check_tile(
     let ts = &f.ts[tile_idx];
     let p1 = ts.progress[tp as usize].load(Ordering::SeqCst);
     if p1 < t.sby {
-        #[cfg(feature = "probe-tasktime")]
+        #[cfg(feature = "__probe_tasktime")]
         crate::src::probe_tasktime::defer(0);
         return 1;
     }
@@ -591,7 +591,7 @@ fn check_tile(
     if error == 0 && frame_mt != 0 && !tp {
         let p2 = ts.progress[1].load(Ordering::SeqCst);
         if p2 <= t.sby {
-            #[cfg(feature = "probe-tasktime")]
+            #[cfg(feature = "__probe_tasktime")]
             crate::src::probe_tasktime::defer(1);
             return 1;
         }
@@ -674,7 +674,7 @@ fn check_tile(
                 let p3 = f.refp[n as usize].progress.as_ref().unwrap()[!tp as usize]
                     .load(Ordering::SeqCst);
                 if p3 < lowest {
-                    #[cfg(feature = "probe-tasktime")]
+                    #[cfg(feature = "__probe_tasktime")]
                     crate::src::probe_tasktime::defer(3);
                     return 1;
                 }
@@ -686,7 +686,7 @@ fn check_tile(
             t.deps_skip.update(|it| it + 1);
         }
     }
-    #[cfg(feature = "probe-tasktime")]
+    #[cfg(feature = "__probe_tasktime")]
     crate::src::probe_tasktime::defer(4);
     return 0;
 }
@@ -923,10 +923,10 @@ pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
         tc.task_thread.cond.notify_one();
         // we want to be woken up next time progress is signaled
         ttd.cond_signaled.store(0, Ordering::SeqCst);
-        #[cfg(feature = "probe-tasktime")]
+        #[cfg(feature = "__probe_tasktime")]
         let __p = crate::src::probe_tasktime::park_begin();
         ttd.cond.wait(task_thread_lock);
-        #[cfg(feature = "probe-tasktime")]
+        #[cfg(feature = "__probe_tasktime")]
         crate::src::probe_tasktime::park_end(__p);
         tc.task_thread.flushed.set(false);
         reset_task_cur(c, ttd, u32::MAX);
@@ -1271,14 +1271,14 @@ pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
                             1 as c_int + (t.type_0 == TaskType::TileReconstruction) as c_int
                         };
                         if error_0 == 0 {
-                            #[cfg(feature = "probe-tasktime")]
+                            #[cfg(feature = "__probe_tasktime")]
                             let __p =
                                 crate::src::probe_tasktime::stage_begin_of(if p_1 { 0 } else { 1 });
                             error_0 = match rav1d_decode_tile_sbrow(c, &mut tc, &f) {
                                 Ok(()) => 0,
                                 Err(()) => 1,
                             };
-                            #[cfg(feature = "probe-tasktime")]
+                            #[cfg(feature = "__probe_tasktime")]
                             crate::src::probe_tasktime::stage_end(__p, if p_1 { 0 } else { 1 });
                         }
                         let progress = if error_0 != 0 { TILE_ERROR } else { 1 + sby };
@@ -1365,10 +1365,10 @@ pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
                         {
                             let f = fc.data.try_read().unwrap();
                             if fc.task_thread.error.load(Ordering::SeqCst) == 0 {
-                                #[cfg(feature = "probe-tasktime")]
+                                #[cfg(feature = "__probe_tasktime")]
                                 let __p = crate::src::probe_tasktime::stage_begin_of(2);
                                 (f.bd_fn().filter_sbrow_deblock_cols)(c, &f, &mut tc, sby);
-                                #[cfg(feature = "probe-tasktime")]
+                                #[cfg(feature = "__probe_tasktime")]
                                 crate::src::probe_tasktime::stage_end(__p, 2);
                             }
                         }
@@ -1389,10 +1389,10 @@ pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
                     TaskType::DeblockRows => {
                         let f = fc.data.try_read().unwrap();
                         if fc.task_thread.error.load(Ordering::SeqCst) == 0 {
-                            #[cfg(feature = "probe-tasktime")]
+                            #[cfg(feature = "__probe_tasktime")]
                             let __p = crate::src::probe_tasktime::stage_begin_of(3);
                             (f.bd_fn().filter_sbrow_deblock_rows)(c, &f, &mut tc, sby);
-                            #[cfg(feature = "probe-tasktime")]
+                            #[cfg(feature = "__probe_tasktime")]
                             crate::src::probe_tasktime::stage_end(__p, 3);
                         }
                         // signal deblock progress
@@ -1441,10 +1441,10 @@ pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
                         let seq_hdr = &***f.seq_hdr.as_ref().unwrap();
                         if seq_hdr.cdef != 0 {
                             if fc.task_thread.error.load(Ordering::SeqCst) == 0 {
-                                #[cfg(feature = "probe-tasktime")]
+                                #[cfg(feature = "__probe_tasktime")]
                                 let __p = crate::src::probe_tasktime::stage_begin_of(4);
                                 (f.bd_fn().filter_sbrow_cdef)(c, &f, &mut tc, sby);
-                                #[cfg(feature = "probe-tasktime")]
+                                #[cfg(feature = "__probe_tasktime")]
                                 crate::src::probe_tasktime::stage_end(__p, 4);
                             }
                             drop(f);
@@ -1461,10 +1461,10 @@ pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
                         let frame_hdr = &***f.frame_hdr.as_ref().unwrap();
                         if frame_hdr.size.width[0] != frame_hdr.size.width[1] {
                             if fc.task_thread.error.load(Ordering::SeqCst) == 0 {
-                                #[cfg(feature = "probe-tasktime")]
+                                #[cfg(feature = "__probe_tasktime")]
                                 let __p = crate::src::probe_tasktime::stage_begin_of(5);
                                 (f.bd_fn().filter_sbrow_resize)(c, &f, &mut tc, sby);
-                                #[cfg(feature = "probe-tasktime")]
+                                #[cfg(feature = "__probe_tasktime")]
                                 crate::src::probe_tasktime::stage_end(__p, 5);
                             }
                         }
@@ -1476,10 +1476,10 @@ pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
                         if fc.task_thread.error.load(Ordering::SeqCst) == 0
                             && !f.lf.restore_planes.is_empty()
                         {
-                            #[cfg(feature = "probe-tasktime")]
+                            #[cfg(feature = "__probe_tasktime")]
                             let __p = crate::src::probe_tasktime::stage_begin_of(6);
                             (f.bd_fn().filter_sbrow_lr)(c, &f, &mut tc, sby);
-                            #[cfg(feature = "probe-tasktime")]
+                            #[cfg(feature = "__probe_tasktime")]
                             crate::src::probe_tasktime::stage_end(__p, 6);
                         }
                         task_type = TaskType::ReconstructionProgress;

@@ -4,7 +4,7 @@
 # Two questions, two instruments, neither of which can be answered by a wall
 # clock and both of which the AGENT_BRIEF says to answer FIRST:
 #
-#  1. `--features probe-wide` -- does the SHIPPED decoder promote to the wide
+#  1. `--features __probe_wide` -- does the SHIPPED decoder promote to the wide
 #     path at all, and does a coarser block change that? The wide path holds
 #     EVERY active shard, so any rate there is disproportionate. Three doors
 #     (w_shards / w_blocks / w_full) which move in OPPOSITE directions as the
@@ -34,7 +34,7 @@ cd "$(dirname "$0")/../.."
 IFS=' ' read -r -a CELLS <<< "${CELLS:-L1024x576_420_8b__t8:8:20 L3840x2160_420_8b__t8:8:4 L1024x576_420_8b__t8:1:20}"
 
 # rung=cargo-feature ("-" = shipped default)
-IFS=' ' read -r -a RUNGS <<< "${RUNGS:-plain=- bpsq=bps-quarter bpshalf=bps-half bps1=bps-1 bps4=bps-4 bps8=bps-8}"
+IFS=' ' read -r -a RUNGS <<< "${RUNGS:-plain=- bpsq=__bps_quarter bpshalf=__bps_half bps1=__bps_1 bps4=__bps_4 bps8=__bps_8}"
 IFS=' ' read -r -a PROBES <<< "${PROBES:-probe-wide __probe_bounds}"
 
 for spec in "${RUNGS[@]}"; do

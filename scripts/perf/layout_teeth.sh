@@ -14,7 +14,7 @@
 #      `add_rect::<false>` must make the tracker's rect-vs-rect overlap test
 #      FAIL (it asserts a panic that only a mutable record can raise).
 #   4. the rectangle must actually FIRE at both seams under tile threading in
-#      the DEFAULT build: `probe-wide`'s `n_rect` must be nonzero with 0
+#      the DEFAULT build: `__probe_wide`'s `n_rect` must be nonzero with 0
 #      declined. A binary whose rectangle never fires measures nothing, and the
 #      `__lf_rect1` arm (accept ONLY single-shard rectangles) must decode to the
 #      same md5 while declining the multi-shard ones — a refusal is never an
@@ -117,9 +117,9 @@ wide() { # wide <features>
   nice -n 19 "$OUT/tgtw/release/examples/probe_tracker" "$VEC" 8 10 2>&1 \
     | grep -E '^WIDE|^RECT|n_rect' | head -20
 }
-wide "probe-wide" > "$OUT/wide_default.txt"
+wide "__probe_wide" > "$OUT/wide_default.txt"
 note wide_default "$(tr '\n' ' ' < "$OUT/wide_default.txt")"
-wide "probe-wide,__lf_rect1" > "$OUT/wide_1shard.txt"
+wide "__probe_wide,__lf_rect1" > "$OUT/wide_1shard.txt"
 note wide_1shard "$(tr '\n' ' ' < "$OUT/wide_1shard.txt")"
 
 echo "== 6. forbid(unsafe_code) proven ACTIVE ==" >&2

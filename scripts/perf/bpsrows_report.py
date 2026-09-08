@@ -123,7 +123,7 @@ def main_table(c, base, head, key):
     unit = "wall" if key == "wall" else "CPU"
     print("=" * 132)
     print(f"{unit} ms/frame, two-point fit, median of n rounds. "
-          f"head = DEFAULT build (derived rows rule), base = --features bps-blocks")
+          f"head = DEFAULT build (derived rows rule), base = --features __bps_blocks")
     print("=" * 132)
     hdr = (f"{'cell':<16}{'t':>2} {'n':>2} {'base':>9} {'head':>9} "
            f"{'head/base':>10} {'dj':>3} {'base/dav1d':>11} {'HEAD/dav1d':>11} "
@@ -202,9 +202,9 @@ def factorial(c, key):
             print(f"{'arm':<12}{'ms/f':>9}{'[min..max]':>20}{'/base':>9}{'dj':>4}"
                   f"{'paired':>9}{'[min..max]':>18}{'<1':>6}   note")
             notes = {
-                "pinL10C8": "block-count rule (bps-blocks)",
-                "pinL11C9": "bps-1",
-                "pinL12C10": "bps-half",
+                "pinL10C8": "block-count rule (__bps_blocks)",
+                "pinL11C9": "__bps_1",
+                "pinL12C10": "__bps_half",
                 "pinL11C10": "THE DERIVED RULE (default)",
                 "pinL12C9": "the corner no arm can reach",
                 "plain": "unpinned DEFAULT build (cross-check vs pinL11C10)",

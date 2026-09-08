@@ -102,13 +102,13 @@ fn loopfilter_sb_direct<BD: BitDepth>(
     // Negative strides are skipped: the row index would need the plane's
     // bottom-up base, and no filter path constructs one.
     //
-    // Compiled under `debug_assertions` OR `--features probe-sites`, the same
+    // Compiled under `debug_assertions` OR `--features __probe_sites`, the same
     // arrangement `note_pic_extent` uses and for the same reason: every decode
     // test in this repo is release-only, so a `debug_assertions`-only check runs
-    // in no CI job at all. Under `probe-sites` the `guard-extent-gate` job
+    // in no CI job at all. Under `__probe_sites` the `guard-extent-gate` job
     // evaluates both of these over the committed vectors and the dav1d corpus,
     // at release speed. The default release build has neither branch.
-    #[cfg(any(debug_assertions, feature = "probe-sites"))]
+    #[cfg(any(debug_assertions, feature = "__probe_sites"))]
     if is_v && (mask[0] | mask[1] | mask[2]) != 0 {
         use crate::include::dav1d::headers::Rav1dPixelLayout;
         let pxstride = dst.pixel_stride::<BD>();
@@ -141,7 +141,7 @@ fn loopfilter_sb_direct<BD: BitDepth>(
     // Trailing side only: the leading side is already covered by each
     // dispatcher's `dst.offset < reach_before` fallback, which uses the plane's
     // worst case and so is a superset of `reach`.
-    #[cfg(any(debug_assertions, feature = "probe-sites"))]
+    #[cfg(any(debug_assertions, feature = "__probe_sites"))]
     if !is_v && (mask[0] | mask[1] | mask[2]) != 0 {
         let pxstride = dst.pixel_stride::<BD>();
         if pxstride > 0 {
@@ -484,7 +484,7 @@ impl<BD: BitDepth> LfScratch<BD> {
 ///
 /// `LfBlock::fill` is the largest single borrow-registration site left in the
 /// decoder: measured on this branch, `v4k_8tile` 8bpc, `--features
-/// probe-sites`, registrations per frame —
+/// __probe_sites`, registrations per frame —
 ///
 /// | | t=1 | t=8 |
 /// |---|---|---|
@@ -1157,7 +1157,7 @@ impl<'a, 'b, BD: BitDepth> LfBlock<'a, 'b, BD> {
     ///
     /// This is the single largest borrow-registration site in the decoder:
     /// 3,835,042 of 15,646,727 registrations per frame (24.5%) on `v4k_8tile`
-    /// 8bpc at t=1, measured with `--features probe-sites`. Collapsing `h` rows
+    /// 8bpc at t=1, measured with `--features __probe_sites`. Collapsing `h` rows
     /// to one leaves ~0.47M.
     #[inline(always)]
     fn fill_hull<const W: usize>(

@@ -4,9 +4,9 @@
 #
 # SUPERSEDED for the shipped rule by `bpsrows_gates.sh` (2026-08-11), which is
 # the same shape with the polarity flipped: the derived rows-per-block rule is
-# now the DEFAULT and `bps-blocks` is the arm. This script is kept because it is
+# now the DEFAULT and `__bps_blocks` is the arm. This script is kept because it is
 # the driver the #501 size-sweep record was produced with; its `bps-rows` legs
-# are renamed to `bps-blocks` so it still builds, and it now measures the OLD
+# are renamed to `__bps_blocks` so it still builds, and it now measures the OLD
 # rule as the arm rather than the new one.
 #
 # Usage: shardsize_gates.sh <outdir>
@@ -53,8 +53,8 @@ corpus() { # <arm> <features> <threads>
 }
 corpus default - 1
 corpus default - 8
-corpus bpsblocks bps-blocks 8
-corpus bpsblocks bps-blocks 1
+corpus bpsblocks __bps_blocks 8
+corpus bpsblocks __bps_blocks 1
 
 python3 scripts/perf/md5_setdiff.py "$OUT/corpus_default_t1.tsv" "$OUT/corpus_default_t8.tsv" \
   > "$OUT/setdiff_default_t1_vs_t8.txt" 2>&1
@@ -71,7 +71,7 @@ echo "dbgassert rc=$? lines=$(wc -l < "$OUT/dbgassert_8bitdata_t8.tsv")" >&2
 # Same leg on the ARM, because the two rules disagree about where the block
 # boundaries fall and each is worth its own armed leg.
 RUSTFLAGS="-C debug-assertions=on" nice -n 19 cargo build --release --example md5_inventory \
-  --features bps-blocks > "$OUT/build_dbgassert_rows.log" 2>&1
+  --features __bps_blocks > "$OUT/build_dbgassert_rows.log" 2>&1
 cp target/release/examples/md5_inventory "$OUT/mi_dbgassert_rows"
 nice -n 19 "$OUT/mi_dbgassert_rows" --threads 8 --group 8-bit/data \
   > "$OUT/dbgassert_rows_8bitdata_t8.tsv" 2> "$OUT/dbgassert_rows_8bitdata_t8.err"
@@ -81,7 +81,7 @@ echo "dbgassert rows rc=$? lines=$(wc -l < "$OUT/dbgassert_rows_8bitdata_t8.tsv"
 run "mt_stress + overlap/cleanup + multi_decoder_pressure"
 nice -n 19 cargo test --release --test mt_stress > "$OUT/mt_stress.log" 2>&1
 echo "mt_stress rc=$?" >&2
-nice -n 19 cargo test --release --features bps-blocks --test mt_stress > "$OUT/mt_stress_rows.log" 2>&1
+nice -n 19 cargo test --release --features __bps_blocks --test mt_stress > "$OUT/mt_stress_rows.log" 2>&1
 echo "mt_stress rows rc=$?" >&2
 nice -n 19 cargo test --release --test tile_threading_overlap --test reproduce_overlap \
   --test thread_cleanup_test > "$OUT/overlap_tests.log" 2>&1
@@ -110,8 +110,8 @@ run "aarch64 clippy"
 nice -n 19 cargo clippy --release --all-targets -- -D warnings > "$OUT/clippy_arm.log" 2>&1
 echo "clippy arm rc=$?" >&2
 run "aarch64 clippy, the arm"
-nice -n 19 cargo clippy --release --features bps-blocks --all-targets \
+nice -n 19 cargo clippy --release --features __bps_blocks --all-targets \
   -- -D warnings > "$OUT/clippy_arm_rows.log" 2>&1
-echo "clippy arm bps-blocks rc=$?" >&2
+echo "clippy arm __bps_blocks rc=$?" >&2
 
 echo "[$(date +%H:%M:%S)] gates written to $OUT" >&2

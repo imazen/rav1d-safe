@@ -4,7 +4,7 @@
 # Two families, because the size question has a counting half and a timing half:
 #
 #   bench_ab_decode  — the timed arms (plain / the rungs / the tracker-free ceiling)
-#   probe_tracker    — the timer-free counters (`probe-wide` wide promotions,
+#   probe_tracker    — the timer-free counters (`__probe_wide` wide promotions,
 #                      `__probe_bounds` row_shards / pct_row_wide), which is what
 #                      actually tests the HEIGHT model in docs/SHARD_GRANULARITY.md §2
 #                      and does not need a measurement lock.
@@ -21,18 +21,18 @@ cd "$(dirname "$0")/../.."
 # arm=cargo-features ("-" = default features)
 TIMED=(
   "plain=-"
-  "bps1=bps-1"
-  "bpshalf=bps-half"
-  "bpsq=bps-quarter"
-  "bps4=bps-4"
-  "untracked=probe-untracked"
+  "bps1=__bps_1"
+  "bpshalf=__bps_half"
+  "bpsq=__bps_quarter"
+  "bps4=__bps_4"
+  "untracked=__probe_untracked"
 )
 COUNT=(
-  "plain__probewide=probe-wide"
-  "bpshalf__probewide=probe-wide,bps-half"
-  "bps1__probewide=probe-wide,bps-1"
+  "plain__probewide=__probe_wide"
+  "bpshalf__probewide=__probe_wide,__bps_half"
+  "bps1__probewide=__probe_wide,__bps_1"
   "plain__probebounds=__probe_bounds"
-  "bpshalf__probebounds=__probe_bounds,bps-half"
+  "bpshalf__probebounds=__probe_bounds,__bps_half"
 )
 
 build_one() { # <example> <outname> <features>

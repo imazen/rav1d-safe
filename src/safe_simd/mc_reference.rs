@@ -20,7 +20,7 @@ type SourceGuard<'a, BD> =
 /// Bounds are in pixels; the returned base still names the unpadded origin.
 #[inline]
 #[cfg_attr(
-    any(debug_assertions, feature = "probe-sites", feature = "probe-usage"),
+    any(debug_assertions, feature = "__probe_sites", feature = "__probe_usage"),
     track_caller
 )]
 pub(super) fn read_guard<BD: BitDepth>(
@@ -71,7 +71,7 @@ pub(super) fn read_guard<BD: BitDepth>(
 
 #[inline]
 #[cfg_attr(
-    any(debug_assertions, feature = "probe-sites", feature = "probe-usage"),
+    any(debug_assertions, feature = "__probe_sites", feature = "__probe_usage"),
     track_caller
 )]
 pub(super) fn filter_guard<BD: BitDepth>(

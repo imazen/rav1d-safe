@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The TIMED half of the granularity sweep, in two measlock holds.
 #
-# Phase T -- TAIL: `probe-tasktime` per rung, so each rung is scored on tail
+# Phase T -- TAIL: `__probe_tasktime` per rung, so each rung is scored on tail
 #   concurrency (the objective the original fit did NOT use) as well as on wall.
 #   Low arm is t=2, NOT t=1: at `--threads 1` every stage counter reads 0.000
 #   because `rav1d_task_run` is never entered, so a t8/t1 per-stage ratio does not

@@ -129,7 +129,7 @@ fn main() {
     println!("CHECKSUM\t{label}\t{file}\t{threads}\t{md5}");
     println!("GEOM\t{label}\t{file}\t{threads}\t{w}x{h}\t{bpc}bpc");
 
-    #[cfg(feature = "probe-tasktime")]
+    #[cfg(feature = "__probe_tasktime")]
     {
         rav1d_safe::src::probe_tasktime::reset();
         rav1d_safe::src::probe_tasktime::start_monitor();
@@ -148,7 +148,7 @@ fn main() {
             ms / iters as f64
         );
     }
-    #[cfg(feature = "probe-tasktime")]
+    #[cfg(feature = "__probe_tasktime")]
     rav1d_safe::src::probe_tasktime::report((reps * iters) as u64);
     let _ = dec.flush();
 }

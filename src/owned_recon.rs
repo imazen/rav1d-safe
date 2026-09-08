@@ -811,10 +811,33 @@ use crate::src::internal::Rav1dTaskContext;
 
 /// Runtime switch, so both arms of an A/B are the SAME BINARY and an inter-arm
 /// delta cannot be a codegen artefact (#455's `probe-*` convention).
+#[cfg(feature = "__probe_owned_recon")]
 fn enabled() -> bool {
     use std::sync::OnceLock;
     static ON: OnceLock<bool> = OnceLock::new();
     *ON.get_or_init(|| !matches!(std::env::var("RAV1D_OWNED_RECON").as_deref(), Ok("0")))
+}
+
+// Preserve the existing ordinary policy, without any environment lookup or
+// OnceLock. The override is exclusively a diagnostic feature.
+#[cfg(not(feature = "__probe_owned_recon"))]
+#[inline(always)]
+fn enabled() -> bool {
+    true
+}
+
+#[cfg(all(test, not(feature = "__probe_owned_recon")))]
+#[test]
+fn ordinary_build_keeps_owned_recon_enabled() {
+    // Also run with RAV1D_OWNED_RECON=0 from the feature-policy gate.
+    assert!(enabled());
+}
+
+#[cfg(all(test, feature = "__probe_owned_recon"))]
+#[test]
+#[ignore = "requires RAV1D_OWNED_RECON=0 in a fresh process"]
+fn diagnostic_build_can_disable_owned_recon() {
+    assert!(!enabled());
 }
 
 /// Decide, once per frame, whether reconstruction may run on owned bands.

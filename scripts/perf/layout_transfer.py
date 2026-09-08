@@ -28,7 +28,7 @@ sys.path.insert(0, __file__.rsplit("/", 1)[0])
 from layout_spread import load, paired  # noqa: E402
 
 # rows per call at each site, from `probe_tracker --features __probe_bounds`
-# (`counts/pb_<cell>_t8.txt`, RECT rows). Population deltas from `probe-sites`
+# (`counts/pb_<cell>_t8.txt`, RECT rows). Population deltas from `__probe_sites`
 # with each doubling env var on/off (`counts/populations.tsv`).
 ROWS = {
     "c1024x192:t8": {"lf": 9.01, "cdef": 8.00},

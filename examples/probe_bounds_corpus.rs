@@ -205,7 +205,7 @@ fn main() {
     }
     vectors.truncate(limit);
 
-    #[cfg(feature = "probe-sites")]
+    #[cfg(feature = "__probe_sites")]
     rav1d_disjoint_mut::site_probe::reset();
     #[cfg(feature = "__probe_bounds")]
     rav1d_disjoint_mut::bounds_probe::reset();
@@ -241,7 +241,7 @@ fn main() {
         vectors.len()
     );
 
-    #[cfg(feature = "probe-sites")]
+    #[cfg(feature = "__probe_sites")]
     print!("{}", rav1d_disjoint_mut::site_probe::report(1));
     #[cfg(feature = "__probe_bounds")]
     print!("{}", rav1d_disjoint_mut::bounds_probe::report(1));

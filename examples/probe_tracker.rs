@@ -1,6 +1,6 @@
 //! THROWAWAY driver for the DisjointMut contention probe.
 //!
-//! Build with `--features probe-count`; decodes one AVIF `iters` times at a
+//! Build with `--features __probe_count`; decodes one AVIF `iters` times at a
 //! given thread count and dumps the per-tracker-instance / per-thread counters.
 //! Counters are reset after a warmup decode so the report covers timed work.
 //!
@@ -47,13 +47,13 @@ fn main() {
     drop(warm);
     let _ = dec.flush();
 
-    #[cfg(feature = "probe-count")]
+    #[cfg(feature = "__probe_count")]
     rav1d_disjoint_mut::probe::reset();
-    #[cfg(feature = "probe-wide")]
+    #[cfg(feature = "__probe_wide")]
     rav1d_disjoint_mut::wide_probe::reset();
-    #[cfg(feature = "probe-shardsim")]
+    #[cfg(feature = "__probe_shardsim")]
     rav1d_disjoint_mut::probe::shard_reset();
-    #[cfg(feature = "probe-sites")]
+    #[cfg(feature = "__probe_sites")]
     rav1d_disjoint_mut::site_probe::reset();
     #[cfg(feature = "__probe_bounds")]
     rav1d_disjoint_mut::bounds_probe::reset();
@@ -101,17 +101,17 @@ fn main() {
         }
     }
 
-    #[cfg(feature = "probe-wide")]
+    #[cfg(feature = "__probe_wide")]
     print!("{}", rav1d_disjoint_mut::wide_probe::report());
-    #[cfg(feature = "probe-count")]
+    #[cfg(feature = "__probe_count")]
     {
         print!("{}", rav1d_disjoint_mut::probe::report(iters));
     }
-    #[cfg(feature = "probe-shardsim")]
+    #[cfg(feature = "__probe_shardsim")]
     {
         print!("{}", rav1d_disjoint_mut::probe::shard_report());
     }
-    #[cfg(feature = "probe-sites")]
+    #[cfg(feature = "__probe_sites")]
     {
         print!("{}", rav1d_disjoint_mut::site_probe::report(iters));
     }
@@ -120,8 +120,8 @@ fn main() {
         print!("{}", rav1d_disjoint_mut::bounds_probe::report(iters));
         print!("{}", rav1d_disjoint_mut::bounds_probe::report_rect());
     }
-    #[cfg(not(any(feature = "probe-count", feature = "probe-wide")))]
-    eprintln!("(built without --features probe-count / probe-wide; no counters)");
+    #[cfg(not(any(feature = "__probe_count", feature = "__probe_wide")))]
+    eprintln!("(built without --features __probe_count / __probe_wide; no counters)");
 
     let _ = dec.flush();
 }
