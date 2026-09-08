@@ -1,5 +1,4 @@
 //! Safe SIMD implementations of motion compensation functions
-#![allow(deprecated)] // FFI wrappers need to forge tokens
 #![allow(dead_code)]
 #![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
 #![cfg_attr(feature = "unchecked", deny(unsafe_code))]
@@ -9,7 +8,7 @@
 //! Uses archmage tokens for safe SIMD invocation:
 //! - Desktop64 (X64V3Token) for AVX2+FMA on x86-64
 //! - The runtime CPU check happens at init time in the dispatch table setup
-//! - extern "C" wrappers use forge_token_dangerously() since features are pre-verified
+//! - extern "C" wrappers declare V3 with #[rite(v3)] and use from_context()
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
@@ -201,8 +200,8 @@ fn avg_8bpc_avx2_safe(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn avg_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn avg_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp1: &[i16; COMPINTER_LEN],
@@ -212,18 +211,13 @@ pub unsafe extern "C" fn avg_8bpc_avx2(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
-    avg_8bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
-        dst,
-        dst_stride as usize,
-        tmp1,
-        tmp2,
-        w,
-        h,
-    )
+    avg_8bpc_avx2_safe(token, dst, dst_stride as usize, tmp1, tmp2, w, h)
 }
 
 /// AVG operation for 8-bit pixels using AVX-512
@@ -323,7 +317,7 @@ fn avg_8bpc_avx512_safe(
 ///
 /// # Safety
 ///
-/// Same as avg_8bpc_avx2, plus bitdepth_max must be correct for the content.
+/// Same as avg_8bpc_v3, plus bitdepth_max must be correct for the content.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn avg_16bpc_avx2_safe(
@@ -405,8 +399,8 @@ fn avg_16bpc_avx2_safe(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn avg_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn avg_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp1: &[i16; COMPINTER_LEN],
@@ -416,11 +410,14 @@ pub unsafe extern "C" fn avg_16bpc_avx2(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     avg_16bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
+        token,
         dst,
         dst_stride as usize,
         tmp1,
@@ -553,7 +550,7 @@ fn avg_16bpc_avx512_safe(
 ///
 /// # Safety
 ///
-/// Same as avg_8bpc_avx2.
+/// Same as avg_8bpc_v3.
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 #[target_feature(enable = "sse4.1")]
 pub unsafe extern "C" fn avg_8bpc_sse4(
@@ -623,7 +620,7 @@ const PW_2048: i16 = 2048;
 ///
 /// # Safety
 ///
-/// Same requirements as avg_8bpc_avx2, plus weight must be in [0, 16].
+/// Same requirements as avg_8bpc_v3, plus weight must be in [0, 16].
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn w_avg_8bpc_avx2_safe(
@@ -702,8 +699,8 @@ fn w_avg_8bpc_avx2_safe(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn w_avg_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn w_avg_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp1: &[i16; COMPINTER_LEN],
@@ -714,19 +711,13 @@ pub unsafe extern "C" fn w_avg_8bpc_avx2(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
-    w_avg_8bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
-        dst,
-        dst_stride as usize,
-        tmp1,
-        tmp2,
-        w,
-        h,
-        weight,
-    )
+    w_avg_8bpc_avx2_safe(token, dst, dst_stride as usize, tmp1, tmp2, w, h, weight)
 }
 
 /// Weighted average for 8-bit pixels using AVX-512
@@ -912,8 +903,8 @@ fn w_avg_16bpc_avx2_safe(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn w_avg_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn w_avg_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp1: &[i16; COMPINTER_LEN],
@@ -924,11 +915,14 @@ pub unsafe extern "C" fn w_avg_16bpc_avx2(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     w_avg_16bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
+        token,
         dst,
         dst_stride as usize,
         tmp1,
@@ -1021,7 +1015,7 @@ fn w_avg_16bpc_avx512_safe(
 ///
 /// # Safety
 ///
-/// Same as w_avg_8bpc_avx2.
+/// Same as w_avg_8bpc_v3.
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
 pub unsafe extern "C" fn w_avg_scalar(
     dst_ptr: *mut DynPixel,
@@ -1155,8 +1149,8 @@ fn mask_8bpc_avx2_safe(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn mask_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn mask_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp1: &[i16; COMPINTER_LEN],
@@ -1167,20 +1161,14 @@ pub unsafe extern "C" fn mask_8bpc_avx2(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     let mask = unsafe { std::slice::from_raw_parts(mask_ptr, (w * h) as usize) };
-    mask_8bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
-        dst,
-        dst_stride as usize,
-        tmp1,
-        tmp2,
-        w,
-        h,
-        mask,
-    )
+    mask_8bpc_avx2_safe(token, dst, dst_stride as usize, tmp1, tmp2, w, h, mask)
 }
 
 /// Mask blend for 8-bit pixels using AVX-512
@@ -1528,8 +1516,8 @@ fn mask_16bpc_avx2_safe(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn mask_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn mask_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp1: &[i16; COMPINTER_LEN],
@@ -1540,12 +1528,15 @@ pub unsafe extern "C" fn mask_16bpc_avx2(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     let mask = unsafe { std::slice::from_raw_parts(mask_ptr, (w * h) as usize) };
     mask_16bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
+        token,
         dst,
         dst_stride as usize,
         tmp1,
@@ -1676,8 +1667,8 @@ fn blend_8bpc_avx2_safe(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn blend_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn blend_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp: *const [DynPixel; SCRATCH_INTER_INTRA_BUF_LEN],
@@ -1686,20 +1677,15 @@ pub unsafe extern "C" fn blend_8bpc_avx2(
     mask_ptr: *const u8,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     let tmp_slice = unsafe { std::slice::from_raw_parts(tmp as *const u8, (w * h) as usize) };
     let mask = unsafe { std::slice::from_raw_parts(mask_ptr, (w * h) as usize) };
-    blend_8bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
-        dst,
-        dst_stride as usize,
-        tmp_slice,
-        w,
-        h,
-        mask,
-    )
+    blend_8bpc_avx2_safe(token, dst, dst_stride as usize, tmp_slice, w, h, mask)
 }
 
 /// Blend pixels for 16-bit
@@ -1777,8 +1763,8 @@ fn blend_16bpc_avx2_safe(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn blend_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn blend_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp: *const [DynPixel; SCRATCH_INTER_INTRA_BUF_LEN],
@@ -1787,20 +1773,15 @@ pub unsafe extern "C" fn blend_16bpc_avx2(
     mask_ptr: *const u8,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     let tmp_slice = unsafe { std::slice::from_raw_parts(tmp as *const u8, (w * h) as usize * 2) };
     let mask = unsafe { std::slice::from_raw_parts(mask_ptr, (w * h) as usize) };
-    blend_16bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
-        dst,
-        dst_stride as usize,
-        tmp_slice,
-        w,
-        h,
-        mask,
-    )
+    blend_16bpc_avx2_safe(token, dst, dst_stride as usize, tmp_slice, w, h, mask)
 }
 
 // =============================================================================
@@ -1883,8 +1864,8 @@ fn blend_v_8bpc_avx2_safe(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn blend_v_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn blend_v_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
@@ -1892,18 +1873,14 @@ pub unsafe extern "C" fn blend_v_8bpc_avx2(
     h: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     let tmp_slice = unsafe { std::slice::from_raw_parts(tmp as *const u8, (w * h) as usize) };
-    blend_v_8bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
-        dst,
-        dst_stride as usize,
-        tmp_slice,
-        w,
-        h,
-    )
+    blend_v_8bpc_avx2_safe(token, dst, dst_stride as usize, tmp_slice, w, h)
 }
 
 /// Horizontal blend (overlapped block motion compensation)
@@ -1975,8 +1952,8 @@ fn blend_h_8bpc_avx2_safe(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn blend_h_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn blend_h_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
@@ -1984,18 +1961,14 @@ pub unsafe extern "C" fn blend_h_8bpc_avx2(
     h: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     let tmp_slice = unsafe { std::slice::from_raw_parts(tmp as *const u8, (w * h) as usize) };
-    blend_h_8bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
-        dst,
-        dst_stride as usize,
-        tmp_slice,
-        w,
-        h,
-    )
+    blend_h_8bpc_avx2_safe(token, dst, dst_stride as usize, tmp_slice, w, h)
 }
 
 /// 16-bit blend_v
@@ -2073,8 +2046,8 @@ fn blend_v_16bpc_avx2_safe(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn blend_v_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn blend_v_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
@@ -2082,18 +2055,14 @@ pub unsafe extern "C" fn blend_v_16bpc_avx2(
     h: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     let tmp_slice = unsafe { std::slice::from_raw_parts(tmp as *const u8, (w * h) as usize * 2) };
-    blend_v_16bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
-        dst,
-        dst_stride as usize,
-        tmp_slice,
-        w,
-        h,
-    )
+    blend_v_16bpc_avx2_safe(token, dst, dst_stride as usize, tmp_slice, w, h)
 }
 
 /// 16-bit blend_h
@@ -2166,8 +2135,8 @@ fn blend_h_16bpc_avx2_safe(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn blend_h_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn blend_h_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
@@ -2175,18 +2144,14 @@ pub unsafe extern "C" fn blend_h_16bpc_avx2(
     h: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     let tmp_slice = unsafe { std::slice::from_raw_parts(tmp as *const u8, (w * h) as usize * 2) };
-    blend_h_16bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
-        dst,
-        dst_stride as usize,
-        tmp_slice,
-        w,
-        h,
-    )
+    blend_h_16bpc_avx2_safe(token, dst, dst_stride as usize, tmp_slice, w, h)
 }
 
 // =============================================================================
@@ -2406,16 +2371,10 @@ fn h_filter_8tap_8bpc_avx512_inner(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn h_filter_8tap_8bpc_avx2(
-    dst: *mut i16,
-    src: *const u8,
-    w: usize,
-    filter: &[i8; 8],
-    sh: u8,
-) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+#[archmage::rite(v3)]
+unsafe fn h_filter_8tap_8bpc_v3(dst: *mut i16, src: *const u8, w: usize, filter: &[i8; 8], sh: u8) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { h_filter_8tap_8bpc_avx2_inner(token, dst, src, w, filter, sh) }
 }
 
@@ -2521,9 +2480,8 @@ fn v_filter_8tap_8bpc_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn v_filter_8tap_8bpc_avx2(
+#[archmage::rite(v3)]
+unsafe fn v_filter_8tap_8bpc_v3(
     dst: *mut u8,
     mid: &[[i16; MID_STRIDE]],
     w: usize,
@@ -2531,7 +2489,8 @@ unsafe fn v_filter_8tap_8bpc_avx2(
     sh: u8,
     max: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { v_filter_8tap_8bpc_avx2_inner(token, dst, mid, w, filter, sh, max) }
 }
 
@@ -2831,15 +2790,15 @@ fn h_filter_8tap_8bpc_put_avx512_inner(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn h_filter_8tap_8bpc_put_avx2(
+#[archmage::rite(v3)]
+unsafe fn h_filter_8tap_8bpc_put_v3(
     dst: *mut u8,
     src: *const u8, // already offset by -3
     w: usize,
     filter: &[i8; 8],
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe {
         h_filter_8tap_8bpc_put_avx2_inner(
             token, dst, src, // already offset by -3
@@ -3042,16 +3001,16 @@ fn v_filter_8tap_8bpc_direct_avx512_inner(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn v_filter_8tap_8bpc_direct_avx2(
+#[archmage::rite(v3)]
+unsafe fn v_filter_8tap_8bpc_direct_v3(
     dst: *mut u8,
     src: *const u8, // already positioned at (y-3, 0)
     src_stride: isize,
     w: usize,
     filter: &[i8; 8],
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe {
         v_filter_8tap_8bpc_direct_avx2_inner(
             token, dst, src, // already positioned at (y-3, 0)
@@ -3264,8 +3223,8 @@ fn put_8tap_8bpc_avx512_impl_inner(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn put_8tap_8bpc_avx2_impl(
+#[archmage::rite(v3)]
+unsafe fn put_8tap_8bpc_impl_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -3277,7 +3236,8 @@ unsafe fn put_8tap_8bpc_avx2_impl(
     h_filter_type: Rav1dFilterMode,
     v_filter_type: Rav1dFilterMode,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe {
         put_8tap_8bpc_avx2_impl_inner(
             token,
@@ -3317,7 +3277,7 @@ pub unsafe extern "C" fn put_8tap_8bpc_avx2<const FILTER: usize>(
 
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-        put_8tap_8bpc_avx2_impl(
+        put_8tap_8bpc_impl_v3(
             dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my, h_filter, v_filter,
         );
     }
@@ -3361,8 +3321,8 @@ unsafe fn put_8tap_regular_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_regular_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_regular_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -3375,7 +3335,9 @@ pub unsafe extern "C" fn put_8tap_regular_8bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_regular_8bpc_avx2_inner(
             token,
@@ -3429,8 +3391,8 @@ unsafe fn put_8tap_regular_smooth_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_regular_smooth_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_regular_smooth_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -3443,7 +3405,9 @@ pub unsafe extern "C" fn put_8tap_regular_smooth_8bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_regular_smooth_8bpc_avx2_inner(
             token,
@@ -3497,8 +3461,8 @@ unsafe fn put_8tap_regular_sharp_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_regular_sharp_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_regular_sharp_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -3511,7 +3475,9 @@ pub unsafe extern "C" fn put_8tap_regular_sharp_8bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_regular_sharp_8bpc_avx2_inner(
             token,
@@ -3565,8 +3531,8 @@ unsafe fn put_8tap_smooth_regular_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_smooth_regular_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_smooth_regular_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -3579,7 +3545,9 @@ pub unsafe extern "C" fn put_8tap_smooth_regular_8bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_smooth_regular_8bpc_avx2_inner(
             token,
@@ -3633,8 +3601,8 @@ unsafe fn put_8tap_smooth_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_smooth_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_smooth_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -3647,7 +3615,9 @@ pub unsafe extern "C" fn put_8tap_smooth_8bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_smooth_8bpc_avx2_inner(
             token,
@@ -3701,8 +3671,8 @@ unsafe fn put_8tap_smooth_sharp_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_smooth_sharp_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_smooth_sharp_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -3715,7 +3685,9 @@ pub unsafe extern "C" fn put_8tap_smooth_sharp_8bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_smooth_sharp_8bpc_avx2_inner(
             token,
@@ -3769,8 +3741,8 @@ unsafe fn put_8tap_sharp_regular_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_sharp_regular_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_sharp_regular_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -3783,7 +3755,9 @@ pub unsafe extern "C" fn put_8tap_sharp_regular_8bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_sharp_regular_8bpc_avx2_inner(
             token,
@@ -3837,8 +3811,8 @@ unsafe fn put_8tap_sharp_smooth_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_sharp_smooth_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_sharp_smooth_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -3851,7 +3825,9 @@ pub unsafe extern "C" fn put_8tap_sharp_smooth_8bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_sharp_smooth_8bpc_avx2_inner(
             token,
@@ -3905,8 +3881,8 @@ unsafe fn put_8tap_sharp_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_sharp_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_sharp_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -3919,7 +3895,9 @@ pub unsafe extern "C" fn put_8tap_sharp_8bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_sharp_8bpc_avx2_inner(
             token,
@@ -4151,8 +4129,8 @@ fn prep_8tap_8bpc_avx512_impl_inner(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn prep_8tap_8bpc_avx2_impl(
+#[archmage::rite(v3)]
+unsafe fn prep_8tap_8bpc_impl_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -4163,7 +4141,8 @@ unsafe fn prep_8tap_8bpc_avx2_impl(
     h_filter_type: Rav1dFilterMode,
     v_filter_type: Rav1dFilterMode,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe {
         prep_8tap_8bpc_avx2_impl_inner(
             token,
@@ -4355,16 +4334,16 @@ fn v_filter_8tap_to_i16_avx512_inner(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn v_filter_8tap_to_i16_avx2(
+#[archmage::rite(v3)]
+unsafe fn v_filter_8tap_to_i16_v3(
     mid: &[[i16; MID_STRIDE]],
     dst: *mut i16,
     w: usize,
     filter: &[i8; 8],
     sh: u8,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { v_filter_8tap_to_i16_avx2_inner(token, mid, dst, w, filter, sh) }
 }
 
@@ -4387,7 +4366,7 @@ pub unsafe extern "C" fn prep_8tap_8bpc_avx2<const FILTER: usize>(
 
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-        prep_8tap_8bpc_avx2_impl(tmp, src_ptr, src_stride, w, h, mx, my, h_filter, v_filter);
+        prep_8tap_8bpc_impl_v3(tmp, src_ptr, src_stride, w, h, mx, my, h_filter, v_filter);
     }
 }
 
@@ -4424,8 +4403,8 @@ unsafe fn prep_8tap_regular_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_regular_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_regular_8bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -4436,7 +4415,9 @@ pub unsafe extern "C" fn prep_8tap_regular_8bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_regular_8bpc_avx2_inner(
             token,
@@ -4484,8 +4465,8 @@ unsafe fn prep_8tap_regular_smooth_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_regular_smooth_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_regular_smooth_8bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -4496,7 +4477,9 @@ pub unsafe extern "C" fn prep_8tap_regular_smooth_8bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_regular_smooth_8bpc_avx2_inner(
             token,
@@ -4544,8 +4527,8 @@ unsafe fn prep_8tap_regular_sharp_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_regular_sharp_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_regular_sharp_8bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -4556,7 +4539,9 @@ pub unsafe extern "C" fn prep_8tap_regular_sharp_8bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_regular_sharp_8bpc_avx2_inner(
             token,
@@ -4604,8 +4589,8 @@ unsafe fn prep_8tap_smooth_regular_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_smooth_regular_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_smooth_regular_8bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -4616,7 +4601,9 @@ pub unsafe extern "C" fn prep_8tap_smooth_regular_8bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_smooth_regular_8bpc_avx2_inner(
             token,
@@ -4664,8 +4651,8 @@ unsafe fn prep_8tap_smooth_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_smooth_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_smooth_8bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -4676,7 +4663,9 @@ pub unsafe extern "C" fn prep_8tap_smooth_8bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_smooth_8bpc_avx2_inner(
             token,
@@ -4724,8 +4713,8 @@ unsafe fn prep_8tap_smooth_sharp_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_smooth_sharp_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_smooth_sharp_8bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -4736,7 +4725,9 @@ pub unsafe extern "C" fn prep_8tap_smooth_sharp_8bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_smooth_sharp_8bpc_avx2_inner(
             token,
@@ -4784,8 +4775,8 @@ unsafe fn prep_8tap_sharp_regular_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_sharp_regular_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_sharp_regular_8bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -4796,7 +4787,9 @@ pub unsafe extern "C" fn prep_8tap_sharp_regular_8bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_sharp_regular_8bpc_avx2_inner(
             token,
@@ -4844,8 +4837,8 @@ unsafe fn prep_8tap_sharp_smooth_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_sharp_smooth_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_sharp_smooth_8bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -4856,7 +4849,9 @@ pub unsafe extern "C" fn prep_8tap_sharp_smooth_8bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_sharp_smooth_8bpc_avx2_inner(
             token,
@@ -4904,8 +4899,8 @@ unsafe fn prep_8tap_sharp_8bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_sharp_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_sharp_8bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -4916,7 +4911,9 @@ pub unsafe extern "C" fn prep_8tap_sharp_8bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_sharp_8bpc_avx2_inner(
             token,
@@ -5051,16 +5048,16 @@ fn h_filter_8tap_16bpc_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn h_filter_8tap_16bpc_avx2(
+#[archmage::rite(v3)]
+unsafe fn h_filter_8tap_16bpc_v3(
     dst: *mut i32,
     src: *const u16,
     w: usize,
     filter: &[i8; 8],
     sh: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { h_filter_8tap_16bpc_avx2_inner(token, dst, src, w, filter, sh) }
 }
 
@@ -5171,9 +5168,8 @@ fn v_filter_8tap_16bpc_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn v_filter_8tap_16bpc_avx2(
+#[archmage::rite(v3)]
+unsafe fn v_filter_8tap_16bpc_v3(
     dst: *mut u16,
     mid: &[[i32; MID_STRIDE]],
     w: usize,
@@ -5182,7 +5178,8 @@ unsafe fn v_filter_8tap_16bpc_avx2(
     sh: i32,
     max: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { v_filter_8tap_16bpc_avx2_inner(token, dst, mid, w, y, filter, sh, max) }
 }
 
@@ -5282,9 +5279,8 @@ fn v_filter_8tap_16bpc_prep_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn v_filter_8tap_16bpc_prep_avx2(
+#[archmage::rite(v3)]
+unsafe fn v_filter_8tap_16bpc_prep_v3(
     dst: *mut i16,
     mid: &[[i32; MID_STRIDE]],
     w: usize,
@@ -5293,7 +5289,8 @@ unsafe fn v_filter_8tap_16bpc_prep_avx2(
     sh: i32,
     prep_bias: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { v_filter_8tap_16bpc_prep_avx2_inner(token, dst, mid, w, y, filter, sh, prep_bias) }
 }
 
@@ -5405,16 +5402,16 @@ fn h_filter_8tap_16bpc_put_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn h_filter_8tap_16bpc_put_avx2(
+#[archmage::rite(v3)]
+unsafe fn h_filter_8tap_16bpc_put_v3(
     dst: *mut u16,
     src: *const u16,
     w: usize,
     filter: &[i8; 8],
     max: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { h_filter_8tap_16bpc_put_avx2_inner(token, dst, src, w, filter, max) }
 }
 
@@ -5536,9 +5533,8 @@ fn v_filter_8tap_16bpc_direct_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn v_filter_8tap_16bpc_direct_avx2(
+#[archmage::rite(v3)]
+unsafe fn v_filter_8tap_16bpc_direct_v3(
     dst: *mut u16,
     src: *const u16,
     src_stride: isize,
@@ -5546,7 +5542,8 @@ unsafe fn v_filter_8tap_16bpc_direct_avx2(
     filter: &[i8; 8],
     max: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { v_filter_8tap_16bpc_direct_avx2_inner(token, dst, src, src_stride, w, filter, max) }
 }
 
@@ -5653,9 +5650,8 @@ fn h_filter_8tap_16bpc_prep_direct_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn h_filter_8tap_16bpc_prep_direct_avx2(
+#[archmage::rite(v3)]
+unsafe fn h_filter_8tap_16bpc_prep_direct_v3(
     dst: *mut i16,
     src: *const u16,
     w: usize,
@@ -5663,7 +5659,8 @@ unsafe fn h_filter_8tap_16bpc_prep_direct_avx2(
     sh: i32,
     prep_bias: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { h_filter_8tap_16bpc_prep_direct_avx2_inner(token, dst, src, w, filter, sh, prep_bias) }
 }
 
@@ -5785,9 +5782,8 @@ fn v_filter_8tap_16bpc_prep_direct_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn v_filter_8tap_16bpc_prep_direct_avx2(
+#[archmage::rite(v3)]
+unsafe fn v_filter_8tap_16bpc_prep_direct_v3(
     dst: *mut i16,
     src: *const u16,
     src_stride: isize,
@@ -5796,7 +5792,8 @@ unsafe fn v_filter_8tap_16bpc_prep_direct_avx2(
     sh: i32,
     prep_bias: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe {
         v_filter_8tap_16bpc_prep_direct_avx2_inner(
             token, dst, src, src_stride, w, filter, sh, prep_bias,
@@ -6779,8 +6776,8 @@ fn put_8tap_16bpc_avx2_impl_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn put_8tap_16bpc_avx2_impl(
+#[archmage::rite(v3)]
+unsafe fn put_8tap_16bpc_impl_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -6793,7 +6790,8 @@ unsafe fn put_8tap_16bpc_avx2_impl(
     h_filter_type: Rav1dFilterMode,
     v_filter_type: Rav1dFilterMode,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe {
         put_8tap_16bpc_avx2_impl_inner(
             token,
@@ -6938,8 +6936,8 @@ fn prep_8tap_16bpc_avx2_impl_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn prep_8tap_16bpc_avx2_impl(
+#[archmage::rite(v3)]
+unsafe fn prep_8tap_16bpc_impl_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -6951,7 +6949,8 @@ unsafe fn prep_8tap_16bpc_avx2_impl(
     h_filter_type: Rav1dFilterMode,
     v_filter_type: Rav1dFilterMode,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe {
         prep_8tap_16bpc_avx2_impl_inner(
             token,
@@ -6991,7 +6990,7 @@ pub unsafe extern "C" fn put_8tap_16bpc_avx2<const FILTER: usize>(
 
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-        put_8tap_16bpc_avx2_impl(
+        put_8tap_16bpc_impl_v3(
             dst_ptr,
             dst_stride,
             src_ptr,
@@ -7026,7 +7025,7 @@ pub unsafe extern "C" fn prep_8tap_16bpc_avx2<const FILTER: usize>(
 
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-        prep_8tap_16bpc_avx2_impl(
+        prep_8tap_16bpc_impl_v3(
             tmp,
             src_ptr,
             src_stride,
@@ -7077,8 +7076,8 @@ unsafe fn put_8tap_regular_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_regular_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_regular_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -7091,7 +7090,9 @@ pub unsafe extern "C" fn put_8tap_regular_16bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_regular_16bpc_avx2_inner(
             token,
@@ -7144,8 +7145,8 @@ unsafe fn put_8tap_regular_smooth_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_regular_smooth_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_regular_smooth_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -7158,7 +7159,9 @@ pub unsafe extern "C" fn put_8tap_regular_smooth_16bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_regular_smooth_16bpc_avx2_inner(
             token,
@@ -7211,8 +7214,8 @@ unsafe fn put_8tap_regular_sharp_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_regular_sharp_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_regular_sharp_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -7225,7 +7228,9 @@ pub unsafe extern "C" fn put_8tap_regular_sharp_16bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_regular_sharp_16bpc_avx2_inner(
             token,
@@ -7278,8 +7283,8 @@ unsafe fn put_8tap_smooth_regular_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_smooth_regular_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_smooth_regular_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -7292,7 +7297,9 @@ pub unsafe extern "C" fn put_8tap_smooth_regular_16bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_smooth_regular_16bpc_avx2_inner(
             token,
@@ -7345,8 +7352,8 @@ unsafe fn put_8tap_smooth_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_smooth_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_smooth_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -7359,7 +7366,9 @@ pub unsafe extern "C" fn put_8tap_smooth_16bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_smooth_16bpc_avx2_inner(
             token,
@@ -7412,8 +7421,8 @@ unsafe fn put_8tap_smooth_sharp_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_smooth_sharp_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_smooth_sharp_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -7426,7 +7435,9 @@ pub unsafe extern "C" fn put_8tap_smooth_sharp_16bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_smooth_sharp_16bpc_avx2_inner(
             token,
@@ -7479,8 +7490,8 @@ unsafe fn put_8tap_sharp_regular_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_sharp_regular_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_sharp_regular_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -7493,7 +7504,9 @@ pub unsafe extern "C" fn put_8tap_sharp_regular_16bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_sharp_regular_16bpc_avx2_inner(
             token,
@@ -7546,8 +7559,8 @@ unsafe fn put_8tap_sharp_smooth_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_sharp_smooth_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_sharp_smooth_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -7560,7 +7573,9 @@ pub unsafe extern "C" fn put_8tap_sharp_smooth_16bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_sharp_smooth_16bpc_avx2_inner(
             token,
@@ -7613,8 +7628,8 @@ unsafe fn put_8tap_sharp_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_8tap_sharp_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_8tap_sharp_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -7627,7 +7642,9 @@ pub unsafe extern "C" fn put_8tap_sharp_16bpc_avx2(
     dst: *const FFISafe<PicOffset>,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_8tap_sharp_16bpc_avx2_inner(
             token,
@@ -7678,8 +7695,8 @@ unsafe fn prep_8tap_regular_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_regular_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_regular_16bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -7690,7 +7707,9 @@ pub unsafe extern "C" fn prep_8tap_regular_16bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_regular_16bpc_avx2_inner(
             token,
@@ -7737,8 +7756,8 @@ unsafe fn prep_8tap_regular_smooth_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_regular_smooth_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_regular_smooth_16bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -7749,7 +7768,9 @@ pub unsafe extern "C" fn prep_8tap_regular_smooth_16bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_regular_smooth_16bpc_avx2_inner(
             token,
@@ -7796,8 +7817,8 @@ unsafe fn prep_8tap_regular_sharp_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_regular_sharp_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_regular_sharp_16bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -7808,7 +7829,9 @@ pub unsafe extern "C" fn prep_8tap_regular_sharp_16bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_regular_sharp_16bpc_avx2_inner(
             token,
@@ -7855,8 +7878,8 @@ unsafe fn prep_8tap_smooth_regular_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_smooth_regular_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_smooth_regular_16bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -7867,7 +7890,9 @@ pub unsafe extern "C" fn prep_8tap_smooth_regular_16bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_smooth_regular_16bpc_avx2_inner(
             token,
@@ -7914,8 +7939,8 @@ unsafe fn prep_8tap_smooth_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_smooth_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_smooth_16bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -7926,7 +7951,9 @@ pub unsafe extern "C" fn prep_8tap_smooth_16bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_smooth_16bpc_avx2_inner(
             token,
@@ -7973,8 +8000,8 @@ unsafe fn prep_8tap_smooth_sharp_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_smooth_sharp_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_smooth_sharp_16bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -7985,7 +8012,9 @@ pub unsafe extern "C" fn prep_8tap_smooth_sharp_16bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_smooth_sharp_16bpc_avx2_inner(
             token,
@@ -8032,8 +8061,8 @@ unsafe fn prep_8tap_sharp_regular_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_sharp_regular_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_sharp_regular_16bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -8044,7 +8073,9 @@ pub unsafe extern "C" fn prep_8tap_sharp_regular_16bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_sharp_regular_16bpc_avx2_inner(
             token,
@@ -8091,8 +8122,8 @@ unsafe fn prep_8tap_sharp_smooth_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_sharp_smooth_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_sharp_smooth_16bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -8103,7 +8134,9 @@ pub unsafe extern "C" fn prep_8tap_sharp_smooth_16bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_sharp_smooth_16bpc_avx2_inner(
             token,
@@ -8150,8 +8183,8 @@ unsafe fn prep_8tap_sharp_16bpc_avx2_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_8tap_sharp_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_8tap_sharp_16bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -8162,7 +8195,9 @@ pub unsafe extern "C" fn prep_8tap_sharp_16bpc_avx2(
     bitdepth_max: i32,
     src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         prep_8tap_sharp_16bpc_avx2_inner(
             token,
@@ -8277,10 +8312,10 @@ fn h_filter_bilin_8bpc_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn h_filter_bilin_8bpc_avx2(dst: *mut i16, src: *const u8, w: usize, mx: usize, sh: u8) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+#[archmage::rite(v3)]
+unsafe fn h_filter_bilin_8bpc_v3(dst: *mut i16, src: *const u8, w: usize, mx: usize, sh: u8) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { h_filter_bilin_8bpc_avx2_inner(token, dst, src, w, mx, sh) }
 }
 
@@ -8362,9 +8397,8 @@ fn v_filter_bilin_8bpc_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn v_filter_bilin_8bpc_avx2(
+#[archmage::rite(v3)]
+unsafe fn v_filter_bilin_8bpc_v3(
     dst: *mut u8,
     mid: &[&[i16]],
     w: usize,
@@ -8372,7 +8406,8 @@ unsafe fn v_filter_bilin_8bpc_avx2(
     sh: u8,
     bd_max: i16,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { v_filter_bilin_8bpc_avx2_inner(token, dst, mid, w, my, sh, bd_max) }
 }
 /// Horizontal bilinear filter for 8bpc put (H-only)
@@ -8432,10 +8467,10 @@ fn h_bilin_8bpc_put_avx2_inner(_token: Desktop64, dst: &mut [u8], src: &[u8], w:
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn h_bilin_8bpc_put_avx2(dst: *mut u8, src: *const u8, w: usize, mx: usize) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+#[archmage::rite(v3)]
+unsafe fn h_bilin_8bpc_put_v3(dst: *mut u8, src: *const u8, w: usize, mx: usize) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { h_bilin_8bpc_put_avx2_inner(token, dst, src, w, mx) }
 }
 
@@ -8498,16 +8533,16 @@ fn v_bilin_8bpc_direct_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn v_bilin_8bpc_direct_avx2(
+#[archmage::rite(v3)]
+unsafe fn v_bilin_8bpc_direct_v3(
     dst: *mut u8,
     src0: *const u8,
     src1: *const u8,
     w: usize,
     my: usize,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { v_bilin_8bpc_direct_avx2_inner(token, dst, src0, src1, w, my) }
 }
 
@@ -9132,8 +9167,8 @@ fn put_bilin_8bpc_avx2_impl_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn put_bilin_8bpc_avx2_impl(
+#[archmage::rite(v3)]
+unsafe fn put_bilin_8bpc_impl_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -9143,7 +9178,8 @@ unsafe fn put_bilin_8bpc_avx2_impl(
     mx: i32,
     my: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe {
         put_bilin_8bpc_avx2_impl_inner(
             token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my,
@@ -9167,13 +9203,13 @@ unsafe fn put_bilin_8bpc_avx2_inner(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-        put_bilin_8bpc_avx2_impl(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my);
+        put_bilin_8bpc_impl_v3(dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my);
     }
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_bilin_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_bilin_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -9186,7 +9222,9 @@ pub unsafe extern "C" fn put_bilin_8bpc_avx2(
     _dst: *const FFISafe<PicOffset>,
     _src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_bilin_8bpc_avx2_inner(
             token, dst_ptr, dst_stride, src_ptr, src_stride, w, h, mx, my,
@@ -9314,8 +9352,8 @@ fn prep_bilin_8bpc_avx2_impl_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn prep_bilin_8bpc_avx2_impl(
+#[archmage::rite(v3)]
+unsafe fn prep_bilin_8bpc_impl_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -9324,7 +9362,8 @@ unsafe fn prep_bilin_8bpc_avx2_impl(
     mx: i32,
     my: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { prep_bilin_8bpc_avx2_impl_inner(token, tmp, src_ptr, src_stride, w, h, mx, my) }
 }
 
@@ -9343,13 +9382,13 @@ unsafe fn prep_bilin_8bpc_avx2_inner(
 ) {
     // SAFETY: Caller guarantees AVX2 is available and pointers are valid
     unsafe {
-        prep_bilin_8bpc_avx2_impl(tmp, src_ptr, src_stride, w, h, mx, my);
+        prep_bilin_8bpc_impl_v3(tmp, src_ptr, src_stride, w, h, mx, my);
     }
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_bilin_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_bilin_8bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -9360,7 +9399,9 @@ pub unsafe extern "C" fn prep_bilin_8bpc_avx2(
     _bitdepth_max: i32,
     _src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe { prep_bilin_8bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my) }
 }
 
@@ -9518,8 +9559,8 @@ fn w_mask_420_8bpc_avx2_safe(
 
 /// w_mask for 4:4:4 (no subsampling)
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn w_mask_444_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn w_mask_444_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp1: &[i16; COMPINTER_LEN],
@@ -9531,11 +9572,14 @@ pub unsafe extern "C" fn w_mask_444_8bpc_avx2(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     w_mask_444_8bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
+        token,
         dst,
         dst_stride as usize,
         tmp1,
@@ -9549,8 +9593,8 @@ pub unsafe extern "C" fn w_mask_444_8bpc_avx2(
 
 /// w_mask for 4:2:2 (horizontal subsampling only)
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn w_mask_422_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn w_mask_422_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp1: &[i16; COMPINTER_LEN],
@@ -9562,11 +9606,14 @@ pub unsafe extern "C" fn w_mask_422_8bpc_avx2(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     w_mask_422_8bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
+        token,
         dst,
         dst_stride as usize,
         tmp1,
@@ -9580,8 +9627,8 @@ pub unsafe extern "C" fn w_mask_422_8bpc_avx2(
 
 /// w_mask for 4:2:0 (horizontal and vertical subsampling)
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn w_mask_420_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn w_mask_420_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp1: &[i16; COMPINTER_LEN],
@@ -9593,11 +9640,14 @@ pub unsafe extern "C" fn w_mask_420_8bpc_avx2(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     w_mask_420_8bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
+        token,
         dst,
         dst_stride as usize,
         tmp1,
@@ -9777,8 +9827,8 @@ fn w_mask_420_16bpc_avx2_safe(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn w_mask_444_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn w_mask_444_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp1: &[i16; COMPINTER_LEN],
@@ -9790,11 +9840,14 @@ pub unsafe extern "C" fn w_mask_444_16bpc_avx2(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     w_mask_444_16bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
+        token,
         dst,
         dst_stride as usize,
         tmp1,
@@ -9808,8 +9861,8 @@ pub unsafe extern "C" fn w_mask_444_16bpc_avx2(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn w_mask_422_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn w_mask_422_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp1: &[i16; COMPINTER_LEN],
@@ -9821,11 +9874,14 @@ pub unsafe extern "C" fn w_mask_422_16bpc_avx2(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     w_mask_422_16bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
+        token,
         dst,
         dst_stride as usize,
         tmp1,
@@ -9839,8 +9895,8 @@ pub unsafe extern "C" fn w_mask_422_16bpc_avx2(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn w_mask_420_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn w_mask_420_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     tmp1: &[i16; COMPINTER_LEN],
@@ -9852,11 +9908,14 @@ pub unsafe extern "C" fn w_mask_420_16bpc_avx2(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let dst = unsafe {
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h as usize * dst_stride as usize)
     };
     w_mask_420_16bpc_avx2_safe(
-        Desktop64::forge_token_dangerously(),
+        token,
         dst,
         dst_stride as usize,
         tmp1,
@@ -9919,10 +9978,10 @@ fn h_bilin_16bpc_avx2_inner(_token: Desktop64, dst: &mut [i32], src: &[u16], w: 
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn h_bilin_16bpc_avx2(dst: *mut i32, src: *const u16, w: usize, mx: i32) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+#[archmage::rite(v3)]
+unsafe fn h_bilin_16bpc_v3(dst: *mut i32, src: *const u16, w: usize, mx: i32) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { h_bilin_16bpc_avx2_inner(token, dst, src, w, mx) }
 }
 
@@ -9988,9 +10047,8 @@ fn v_bilin_16bpc_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn v_bilin_16bpc_avx2(
+#[archmage::rite(v3)]
+unsafe fn v_bilin_16bpc_v3(
     dst: *mut u16,
     mid: &[[i32; MID_STRIDE]],
     w: usize,
@@ -9999,7 +10057,8 @@ unsafe fn v_bilin_16bpc_avx2(
     sh: i32,
     max: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { v_bilin_16bpc_avx2_inner(token, dst, mid, w, y, my, sh, max) }
 }
 
@@ -10061,9 +10120,8 @@ fn v_bilin_16bpc_prep_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn v_bilin_16bpc_prep_avx2(
+#[archmage::rite(v3)]
+unsafe fn v_bilin_16bpc_prep_v3(
     dst: *mut i16,
     mid: &[[i32; MID_STRIDE]],
     w: usize,
@@ -10072,7 +10130,8 @@ unsafe fn v_bilin_16bpc_prep_avx2(
     sh: i32,
     prep_bias: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { v_bilin_16bpc_prep_avx2_inner(token, dst, mid, w, y, my, sh, prep_bias) }
 }
 
@@ -10140,10 +10199,10 @@ fn h_bilin_16bpc_put_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn h_bilin_16bpc_put_avx2(dst: *mut u16, src: *const u16, w: usize, mx: i32, bd_max: i32) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+#[archmage::rite(v3)]
+unsafe fn h_bilin_16bpc_put_v3(dst: *mut u16, src: *const u16, w: usize, mx: i32, bd_max: i32) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { h_bilin_16bpc_put_avx2_inner(token, dst, src, w, mx, bd_max) }
 }
 
@@ -10213,9 +10272,8 @@ fn v_bilin_16bpc_direct_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn v_bilin_16bpc_direct_avx2(
+#[archmage::rite(v3)]
+unsafe fn v_bilin_16bpc_direct_v3(
     dst: *mut u16,
     src: *const u16,
     src_stride: isize,
@@ -10223,7 +10281,8 @@ unsafe fn v_bilin_16bpc_direct_avx2(
     my: i32,
     bd_max: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { v_bilin_16bpc_direct_avx2_inner(token, dst, src, src_stride, w, my, bd_max) }
 }
 
@@ -10290,16 +10349,16 @@ fn h_bilin_16bpc_prep_direct_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn h_bilin_16bpc_prep_direct_avx2(
+#[archmage::rite(v3)]
+unsafe fn h_bilin_16bpc_prep_direct_v3(
     dst: *mut i16,
     src: *const u16,
     w: usize,
     mx: i32,
     prep_bias: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { h_bilin_16bpc_prep_direct_avx2_inner(token, dst, src, w, mx, prep_bias) }
 }
 
@@ -10368,9 +10427,8 @@ fn v_bilin_16bpc_prep_direct_avx2_inner(
 }
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-#[inline]
-unsafe fn v_bilin_16bpc_prep_direct_avx2(
+#[archmage::rite(v3)]
+unsafe fn v_bilin_16bpc_prep_direct_v3(
     dst: *mut i16,
     src: *const u16,
     src_stride: isize,
@@ -10378,7 +10436,8 @@ unsafe fn v_bilin_16bpc_prep_direct_avx2(
     my: i32,
     prep_bias: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { v_bilin_16bpc_prep_direct_avx2_inner(token, dst, src, src_stride, w, my, prep_bias) }
 }
 
@@ -10467,8 +10526,8 @@ unsafe fn put_bilin_16bpc_avx2_inner(
 /// Non-FFI wrapper for bilinear put 16bpc (no FFISafe params)
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn put_bilin_16bpc_avx2_impl(
+#[archmage::rite(v3)]
+unsafe fn put_bilin_16bpc_impl_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -10479,7 +10538,8 @@ unsafe fn put_bilin_16bpc_avx2_impl(
     my: i32,
     bitdepth_max: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe {
         put_bilin_16bpc_avx2_inner(
             token,
@@ -10497,8 +10557,8 @@ unsafe fn put_bilin_16bpc_avx2_impl(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn put_bilin_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn put_bilin_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     src_ptr: *const DynPixel,
@@ -10511,7 +10571,9 @@ pub unsafe extern "C" fn put_bilin_16bpc_avx2(
     _dst: *const FFISafe<PicOffset>,
     _src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe {
         put_bilin_16bpc_avx2_inner(
             token,
@@ -10615,8 +10677,8 @@ unsafe fn prep_bilin_16bpc_avx2_inner(
 /// Non-FFI wrapper for bilinear prep 16bpc (no FFISafe params)
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn prep_bilin_16bpc_avx2_impl(
+#[archmage::rite(v3)]
+unsafe fn prep_bilin_16bpc_impl_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -10625,13 +10687,14 @@ unsafe fn prep_bilin_16bpc_avx2_impl(
     mx: i32,
     my: i32,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
     unsafe { prep_bilin_16bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my) }
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn prep_bilin_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn prep_bilin_16bpc_v3(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
     src_stride: isize,
@@ -10642,7 +10705,9 @@ pub unsafe extern "C" fn prep_bilin_16bpc_avx2(
     _bitdepth_max: i32,
     _src: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     unsafe { prep_bilin_16bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my) }
 }
 
@@ -12201,6 +12266,7 @@ pub(crate) fn mc_put_dispatch_inner<BD: BitDepth>(
             }
         }
         BPC::BPC16 => {
+            #[allow(deprecated, reason = "Legacy zerocopy slice adapters")]
             let dst_u16: &mut [u16] =
                 zerocopy::Ref::<_, [u16]>::new_slice(&mut dst_bytes[dst_offset..])
                     .expect("u16 alignment")
@@ -12211,6 +12277,7 @@ pub(crate) fn mc_put_dispatch_inner<BD: BitDepth>(
                 Filter2d::Bilinear => {
                     // Bilinear only accesses current + next row, no negative offsets
                     let src_bytes = &src_guard.as_bytes()[src_base * pixel_size..];
+                    #[allow(deprecated, reason = "Legacy zerocopy slice adapters")]
                     let src_u16_bilin: &[u16] = zerocopy::Ref::<_, [u16]>::new_slice(src_bytes)
                         .expect("u16 alignment")
                         .into_slice();
@@ -12245,6 +12312,7 @@ pub(crate) fn mc_put_dispatch_inner<BD: BitDepth>(
                 _ => {
                     // 8-tap needs preceding taps; pass the bounded window and its origin
                     let src_all_bytes = src_guard.as_bytes();
+                    #[allow(deprecated, reason = "Legacy zerocopy slice adapters")]
                     let src_u16: &[u16] = zerocopy::Ref::<_, [u16]>::new_slice(src_all_bytes)
                         .expect("u16 alignment")
                         .into_slice();
@@ -12314,6 +12382,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
                 Filter2d::Bilinear => {
                     // Bilinear only accesses current + next row, no negative offsets
                     let src_bytes = &src_guard.as_bytes()[src_base * pixel_size..];
+                    #[allow(deprecated, reason = "Legacy zerocopy slice adapters")]
                     let src_u16_bilin: &[u16] = zerocopy::Ref::<_, [u16]>::new_slice(src_bytes)
                         .expect("u16 alignment")
                         .into_slice();
@@ -12346,6 +12415,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
                 _ => {
                     // 8-tap needs preceding taps; pass the bounded window and its origin
                     let src_all_bytes = src_guard.as_bytes();
+                    #[allow(deprecated, reason = "Legacy zerocopy slice adapters")]
                     let src_u16: &[u16] = zerocopy::Ref::<_, [u16]>::new_slice(src_all_bytes)
                         .expect("u16 alignment")
                         .into_slice();

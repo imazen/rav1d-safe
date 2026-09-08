@@ -1,5 +1,4 @@
 //! Safe SIMD implementations for ITX (Inverse Transforms)
-#![allow(deprecated)] // FFI wrappers need to forge tokens
 #![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
 #![cfg_attr(feature = "unchecked", deny(unsafe_code))]
 //!

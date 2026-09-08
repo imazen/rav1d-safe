@@ -19,6 +19,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  wrapper-contexts:
+    name: Wrapper feature contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+      - run: python3 tools/check-wrapper-contexts.py --work-dir "$RUNNER_TEMP/wrapper-contexts" --target x86_64-unknown-linux-gnu
+      - run: python3 tools/check-wrapper-contexts.py --work-dir "$RUNNER_TEMP/wrapper-contexts" --target aarch64-unknown-linux-gnu
+
   ffi-allocator-miri:
     name: FFI allocator ownership (Miri, ${{ matrix.model }})
     runs-on: ubuntu-latest

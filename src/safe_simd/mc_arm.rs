@@ -1,5 +1,4 @@
 //! Safe SIMD implementations of motion compensation functions for ARM NEON
-#![allow(deprecated)] // FFI wrappers forge tokens (asm feature only)
 #![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
 #![cfg_attr(feature = "unchecked", deny(unsafe_code))]
 //!
@@ -126,6 +125,7 @@ fn avg_8bpc_inner(
 /// AVG operation for 8-bit pixels - extern "C" wrapper for dispatch
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn avg_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -136,15 +136,16 @@ pub unsafe extern "C" fn avg_8bpc_neon(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let w = w as usize;
     let h = h as usize;
 
     // SAFETY: This function is only called through dispatch when NEON is available
     // dst_ptr points to valid memory with proper alignment and size
-    let (token, dst) = unsafe {
-        let token = unsafe { Arm64::forge_token_dangerously() };
-        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
-        (token, dst)
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs())
     };
 
     avg_8bpc_inner(
@@ -244,6 +245,7 @@ fn intermediate_bits_16bpc(bitdepth_max: i32) -> i32 {
 /// AVG operation for 16-bit pixels - extern "C" wrapper
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn avg_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -254,17 +256,16 @@ pub unsafe extern "C" fn avg_16bpc_neon(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
 
     // SAFETY: This function is only called through dispatch when NEON is available
     // dst_ptr points to valid memory with proper alignment and size
-    let (token, dst) = unsafe {
-        let token = unsafe { Arm64::forge_token_dangerously() };
-        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
-        (token, dst)
-    };
+    let dst = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16) };
 
     avg_16bpc_inner(
         token,
@@ -371,6 +372,7 @@ fn w_avg_8bpc_inner(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn w_avg_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -382,14 +384,15 @@ pub unsafe extern "C" fn w_avg_8bpc_neon(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let w = w as usize;
     let h = h as usize;
 
     // SAFETY: This function is only called through dispatch when NEON is available
-    let (token, dst) = unsafe {
-        let token = unsafe { Arm64::forge_token_dangerously() };
-        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
-        (token, dst)
+    let dst = unsafe {
+        std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs())
     };
 
     w_avg_8bpc_inner(
@@ -476,6 +479,7 @@ fn w_avg_16bpc_inner(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn w_avg_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -487,16 +491,15 @@ pub unsafe extern "C" fn w_avg_16bpc_neon(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
 
     // SAFETY: This function is only called through dispatch when NEON is available
-    let (token, dst) = unsafe {
-        let token = unsafe { Arm64::forge_token_dangerously() };
-        let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
-        (token, dst)
-    };
+    let dst = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16) };
 
     w_avg_16bpc_inner(
         token,
@@ -604,6 +607,7 @@ fn mask_8bpc_inner(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn mask_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -615,15 +619,17 @@ pub unsafe extern "C" fn mask_8bpc_neon(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let w = w as usize;
     let h = h as usize;
 
     // SAFETY: This function is only called through dispatch when NEON is available
-    let (token, dst, mask) = unsafe {
-        let token = unsafe { Arm64::forge_token_dangerously() };
+    let (dst, mask) = unsafe {
         let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
         let mask = std::slice::from_raw_parts(mask_ptr, w * h);
-        (token, dst, mask)
+        (dst, mask)
     };
 
     mask_8bpc_inner(
@@ -724,6 +730,7 @@ fn mask_16bpc_inner(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn mask_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -735,16 +742,18 @@ pub unsafe extern "C" fn mask_16bpc_neon(
     bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
 
     // SAFETY: This function is only called through dispatch when NEON is available
-    let (token, dst, mask) = unsafe {
-        let token = unsafe { Arm64::forge_token_dangerously() };
+    let (dst, mask) = unsafe {
         let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
         let mask = std::slice::from_raw_parts(mask_ptr, w * h);
-        (token, dst, mask)
+        (dst, mask)
     };
 
     mask_16bpc_inner(
@@ -1769,6 +1778,7 @@ fn cmp_min_i32(a: i32, b: i32) -> i32 {
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn w_mask_444_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1781,6 +1791,9 @@ pub unsafe extern "C" fn w_mask_444_8bpc_neon(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let w = w as usize;
     let h = h as usize;
 
@@ -1789,7 +1802,6 @@ pub unsafe extern "C" fn w_mask_444_8bpc_neon(
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs())
     };
 
-    let token = unsafe { Arm64::forge_token_dangerously() };
     w_mask_8bpc_inner(
         token,
         dst,
@@ -1807,6 +1819,7 @@ pub unsafe extern "C" fn w_mask_444_8bpc_neon(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn w_mask_422_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1819,6 +1832,9 @@ pub unsafe extern "C" fn w_mask_422_8bpc_neon(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let w = w as usize;
     let h = h as usize;
 
@@ -1827,7 +1843,6 @@ pub unsafe extern "C" fn w_mask_422_8bpc_neon(
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs())
     };
 
-    let token = unsafe { Arm64::forge_token_dangerously() };
     w_mask_8bpc_inner(
         token,
         dst,
@@ -1845,6 +1860,7 @@ pub unsafe extern "C" fn w_mask_422_8bpc_neon(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn w_mask_420_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -1857,6 +1873,9 @@ pub unsafe extern "C" fn w_mask_420_8bpc_neon(
     _bitdepth_max: i32,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let w = w as usize;
     let h = h as usize;
 
@@ -1865,7 +1884,6 @@ pub unsafe extern "C" fn w_mask_420_8bpc_neon(
         std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs())
     };
 
-    let token = unsafe { Arm64::forge_token_dangerously() };
     w_mask_8bpc_inner(
         token,
         dst,
@@ -2092,6 +2110,7 @@ fn put_bilin_8bpc_inner(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn put_bilin_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2105,19 +2124,21 @@ pub unsafe extern "C" fn put_bilin_8bpc_neon(
     _dst: *const FFISafe<PicOffset>,
     _src: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let w = w as usize;
     let h = h as usize;
 
     // SAFETY: This function is only called through dispatch when NEON is available
     // Pointers are valid and properly aligned
-    let (token, src, dst) = unsafe {
-        let token = unsafe { Arm64::forge_token_dangerously() };
+    let (src, dst) = unsafe {
         let src = std::slice::from_raw_parts(
             src_ptr as *const u8,
             (h + 1) * src_stride.unsigned_abs() + w + 1,
         );
         let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u8, h * dst_stride.unsigned_abs());
-        (token, src, dst)
+        (src, dst)
     };
 
     put_bilin_8bpc_inner(
@@ -2349,6 +2370,7 @@ fn prep_bilin_8bpc_inner(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn prep_bilin_8bpc_neon(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
@@ -2360,19 +2382,21 @@ pub unsafe extern "C" fn prep_bilin_8bpc_neon(
     _bitdepth_max: i32,
     _src: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let w = w as usize;
     let h = h as usize;
 
     // SAFETY: This function is only called through dispatch when NEON is available
     // Pointers are valid and properly aligned
-    let (token, src, tmp_slice) = unsafe {
-        let token = unsafe { Arm64::forge_token_dangerously() };
+    let (src, tmp_slice) = unsafe {
         let src = std::slice::from_raw_parts(
             src_ptr as *const u8,
             (h + 1) * src_stride.unsigned_abs() + w + 1,
         );
         let tmp_slice = std::slice::from_raw_parts_mut(tmp, h * w);
-        (token, src, tmp_slice)
+        (src, tmp_slice)
     };
 
     prep_bilin_8bpc_inner(token, tmp_slice, src, src_stride as usize, w, h, mx, my);
@@ -2486,6 +2510,7 @@ fn put_bilin_16bpc_inner(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn put_bilin_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -2499,6 +2524,9 @@ pub unsafe extern "C" fn put_bilin_16bpc_neon(
     _dst: *const FFISafe<PicOffset>,
     _src: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let w = w as usize;
     let h = h as usize;
     let dst_stride_u16 = (dst_stride / 2) as usize;
@@ -2506,12 +2534,11 @@ pub unsafe extern "C" fn put_bilin_16bpc_neon(
 
     // SAFETY: This function is only called through dispatch when NEON is available
     // Pointers are valid and properly aligned
-    let (token, dst, src) = unsafe {
-        let token = unsafe { Arm64::forge_token_dangerously() };
+    let (dst, src) = unsafe {
         let dst = std::slice::from_raw_parts_mut(dst_ptr as *mut u16, h * dst_stride_u16);
         let src =
             std::slice::from_raw_parts(src_ptr as *const u16, (h + 1) * src_stride_u16 + w + 1);
-        (token, dst, src)
+        (dst, src)
     };
 
     put_bilin_16bpc_inner(
@@ -2661,6 +2688,7 @@ fn prep_bilin_16bpc_inner(
 
 #[cfg(feature = "asm")]
 #[cfg(target_arch = "aarch64")]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn prep_bilin_16bpc_neon(
     tmp: *mut i16,
     src_ptr: *const DynPixel,
@@ -2672,18 +2700,20 @@ pub unsafe extern "C" fn prep_bilin_16bpc_neon(
     _bitdepth_max: i32,
     _src: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let w = w as usize;
     let h = h as usize;
     let src_stride_u16 = (src_stride / 2) as usize;
 
     // SAFETY: This function is only called through dispatch when NEON is available
     // Pointers are valid and properly aligned
-    let (token, src, tmp_slice) = unsafe {
-        let token = unsafe { Arm64::forge_token_dangerously() };
+    let (src, tmp_slice) = unsafe {
         let src =
             std::slice::from_raw_parts(src_ptr as *const u16, (h + 1) * src_stride_u16 + w + 1);
         let tmp_slice = std::slice::from_raw_parts_mut(tmp, h * w);
-        (token, src, tmp_slice)
+        (src, tmp_slice)
     };
 
     prep_bilin_16bpc_inner(token, tmp_slice, src, src_stride_u16, w, h, mx, my);
@@ -3646,6 +3676,7 @@ macro_rules! define_put_8tap_8bpc {
     ($name:ident, $filter:expr) => {
         #[cfg(feature = "asm")]
         #[cfg(target_arch = "aarch64")]
+        #[archmage::rite(neon)]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -3659,7 +3690,9 @@ macro_rules! define_put_8tap_8bpc {
             _dst: *const FFISafe<PicOffset>,
             _src: *const FFISafe<PicOffset>,
         ) {
-            let token = unsafe { Arm64::forge_token_dangerously() };
+            #[deny(unsafe_op_in_unsafe_fn)]
+            let token = archmage::NeonToken::from_context();
+
             let w = w as usize;
             let h = h as usize;
             let mx = mx as usize;
@@ -3897,6 +3930,7 @@ macro_rules! define_prep_8tap_8bpc {
     ($name:ident, $filter:expr) => {
         #[cfg(feature = "asm")]
         #[cfg(target_arch = "aarch64")]
+        #[archmage::rite(neon)]
         pub unsafe extern "C" fn $name(
             tmp: *mut i16,
             src_ptr: *const DynPixel,
@@ -3908,7 +3942,9 @@ macro_rules! define_prep_8tap_8bpc {
             _bitdepth_max: i32,
             _src: *const FFISafe<PicOffset>,
         ) {
-            let token = unsafe { Arm64::forge_token_dangerously() };
+            #[deny(unsafe_op_in_unsafe_fn)]
+            let token = archmage::NeonToken::from_context();
+
             let w = w as usize;
             let h = h as usize;
             let mx = mx as usize;
@@ -4390,6 +4426,7 @@ macro_rules! define_put_8tap_16bpc {
     ($name:ident, $filter:expr) => {
         #[cfg(feature = "asm")]
         #[cfg(target_arch = "aarch64")]
+        #[archmage::rite(neon)]
         pub unsafe extern "C" fn $name(
             dst_ptr: *mut DynPixel,
             dst_stride: isize,
@@ -4403,7 +4440,9 @@ macro_rules! define_put_8tap_16bpc {
             _dst: *const FFISafe<PicOffset>,
             _src: *const FFISafe<PicOffset>,
         ) {
-            let token = unsafe { Arm64::forge_token_dangerously() };
+            #[deny(unsafe_op_in_unsafe_fn)]
+            let token = archmage::NeonToken::from_context();
+
             let w = w as usize;
             let h = h as usize;
             let mx = mx as usize;
@@ -4653,6 +4692,7 @@ macro_rules! define_prep_8tap_16bpc {
     ($name:ident, $filter:expr) => {
         #[cfg(feature = "asm")]
         #[cfg(target_arch = "aarch64")]
+        #[archmage::rite(neon)]
         pub unsafe extern "C" fn $name(
             tmp: *mut i16,
             src_ptr: *const DynPixel,
@@ -4664,7 +4704,9 @@ macro_rules! define_prep_8tap_16bpc {
             _bitdepth_max: i32,
             _src: *const FFISafe<PicOffset>,
         ) {
-            let token = unsafe { Arm64::forge_token_dangerously() };
+            #[deny(unsafe_op_in_unsafe_fn)]
+            let token = archmage::NeonToken::from_context();
+
             let w = w as usize;
             let h = h as usize;
             let mx = mx as usize;
