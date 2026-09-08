@@ -1,8 +1,9 @@
-# rav1d-safe 0.6.0 release candidate
+# rav1d-safe 0.6.0 release record
 
-Prepared 2026-09-08 UTC on PR #528. **Not published or release-ready yet.**
-This record separates preparation checks from publication gates. The current
-candidate retains checked safe SIMD, runtime borrow/bounds checks, and the
+Release date: 2026-09-08 UTC; prepared on PR #528.
+The preparation history below retains earlier blockers and exact tested
+revisions; publication status is recorded by the release tags and crates.io.
+The release retains checked safe SIMD, runtime borrow/bounds checks, and the
 crate-wide `forbid(unsafe_code)` default. The diagnostic environment policy now requires explicit private features;
 ordinary owned-reconstruction policy is fixed to its prior environment-unset behavior.
 
@@ -202,3 +203,12 @@ bytes and safe SIMD Rust for 3,734,957. These are source archives, not linked
 binary sizes or dependency downloads. [Sizes, hashes and largest files](../release/0.6.0/package-sizes.json)
 identify these tested artifacts; subsequent documentation edits change archive
 identity and require final packaging again at the release revision.
+
+## Final gate correction
+
+The local release run found the guard-extent test still gated by the old
+`probe-sites` name. The CI job had therefore reported success with zero tests.
+Its cfg now uses `__probe_sites`; CI first checks for the exact test name to
+prevent recurrence. The restored test passes with `RAV1D_EXTENT_GATE_CORPUS=1`
+over the committed vectors and dav1d corpus. Earlier green results for this
+job after the feature rename were vacuous and are not validation evidence.

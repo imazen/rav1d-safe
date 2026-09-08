@@ -516,7 +516,9 @@ jobs:
           # Caller-side skip control, per the no-graceful-skips rule: the test
           # body never decides to skip the corpus leg, this line does.
           RAV1D_EXTENT_GATE_CORPUS: "1"
-        run: cargo test --release --features __probe_sites --test guard_extent_budget -- --nocapture
+        run: |
+          cargo test --release --features __probe_sites --test guard_extent_budget -- --list | grep -Fx 'picture_reservations_stay_inside_the_measured_ceiling: test'
+          cargo test --release --features __probe_sites --test guard_extent_budget -- --nocapture
         timeout-minutes: 30
 
   # ==========================================================================

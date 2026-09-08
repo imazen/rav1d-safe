@@ -2,13 +2,14 @@
 
 All notable changes to the `rav1d-safe` crate are documented in this file. Format follows [Keep a Changelog](https://keepachangelog.com/). `rav1d-safe` is a fork of [rav1d](https://github.com/memorysafety/rav1d), which is itself a Rust port of [dav1d](https://code.videolan.org/videolan/dav1d); this fork adds archmage-based SIMD dispatch and removes the C FFI path. Entries below cover only changes made in this fork — upstream rav1d and dav1d release notes remain the canonical record for the shared decoder core. This file was backfilled from git history on 2026-04-15; the `[0.5.4]` date reflects the commit date of tag `v0.5.4` rather than the crates.io publish date.
 
-## [0.6.0] - Unreleased
+## [0.6.0] - 2026-09-08
 
-Release candidate notes and remaining publication gates are in
-[the 0.6.0 release record](docs/RELEASE_0_6_0.md). This version has not been
-published; the historical staging date below is not a release date.
+Migration notes and validation history are in
+[the 0.6.0 release record](docs/RELEASE_0_6_0.md).
 
 ### Release preparation
+- Keep the guard-extent corpus test enabled after the `__probe_sites` rename;
+  CI verifies the intended test is present before executing the gate.
 - Refresh workspace dependency requirements and lockfile, including cc 1.4.5,
   zenbench 0.1.9, tango-bench 0.8.0, zenavif-parse 0.6.2 and Criterion 0.8.2.
   Decoder development tools need Rust 1.93; library minimums remain unchanged.
