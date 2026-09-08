@@ -18,12 +18,17 @@ keywords = ["av1", "video", "decoder", "simd", "codec"]
 categories = ["multimedia::video", "multimedia::encoding"]
 include = [
     "/src/**/*.rs",
+    "/src/**/*.asm",
+    "/src/**/*.S",
     "/include/**/*.rs",
     "/lib.rs",
     "/build.rs",
     "/examples/**",
     "/README.md",
     "/docs/RUST_CODEC_WORKFLOW.md",
+    "/docs/RELEASE_0_6_0.md",
+    "/release/0.6.0/preparation.json",
+    "/release/0.6.0/EVIDENCE.json",
     "/CHANGELOG.md",
     "/LICENSE*",
 ]

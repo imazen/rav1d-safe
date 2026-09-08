@@ -11,7 +11,7 @@ for feature in __probe_untracked __probe_noscan __probe_lockonly __probe_tinynop
     exit 1
   fi
   # A network failure or unrelated compiler error is not a successful gate.
-  if ! rg -q 'unsound measurement probes are disabled' "$log"; then
+  if ! grep -Fq 'unsound measurement probes are disabled' "$log"; then
     cat "$log" >&2
     exit 1
   fi

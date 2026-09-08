@@ -19,6 +19,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  package-source:
+    name: Packaged source feature builds (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    timeout-minutes: 20
+    env:
+      CARGO_BUILD_JOBS: 4
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - if: runner.arch == 'X64'
+        run: sudo apt-get update && sudo apt-get install -y nasm
+      # Source inclusion rehearsal. Registry publish --dry-run is a separate
+      # release gate once the pinned dependencies are available on crates.io.
+      - run: python3 tools/check-package-source.py --work-dir "$RUNNER_TEMP/package-source"
+
+  decoder-msrv:
+    name: Decoder MSRV (1.89)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.89.0"
+      - run: cargo check -p rav1d-safe --lib
+
   wrapper-contexts:
     name: Wrapper feature contracts
     runs-on: ubuntu-latest

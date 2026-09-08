@@ -2,7 +2,26 @@
 
 All notable changes to the `rav1d-safe` crate are documented in this file. Format follows [Keep a Changelog](https://keepachangelog.com/). `rav1d-safe` is a fork of [rav1d](https://github.com/memorysafety/rav1d), which is itself a Rust port of [dav1d](https://code.videolan.org/videolan/dav1d); this fork adds archmage-based SIMD dispatch and removes the C FFI path. Entries below cover only changes made in this fork — upstream rav1d and dav1d release notes remain the canonical record for the shared decoder core. This file was backfilled from git history on 2026-04-15; the `[0.5.4]` date reflects the commit date of tag `v0.5.4` rather than the crates.io publish date.
 
-## [Unreleased]
+## [0.6.0] - Unreleased
+
+Release candidate notes and remaining publication gates are in
+[the 0.6.0 release record](docs/RELEASE_0_6_0.md). This version has not been
+published; the historical staging date below is not a release date.
+
+### Release preparation
+- Package the x86 NASM and ARM assembly inputs, including `x86inc.asm`, so
+  `asm` and `partial_asm` builds work from the distributed source. A new CI
+  gate builds Cargo's selected source files in all five decoder modes.
+- Test the declared Rust 1.89 minimum in CI; the checked library passes locally.
+- Make the disjoint-mut negative feature gate work without ripgrep installed.
+  It still requires every enforcement-disabling feature to fail with the
+  specific safety diagnostic; an unrelated compile failure does not pass.
+- Document the native Rust API and tested zenrav1e/zenavif workflows.
+- Retain the measured entropy, transform and loop-filter improvements recorded
+  in PR #528. The archmage main migration also has a confirmed 2.46–4.86%
+  unchecked slowdown in three eight-worker still cells; this remains unresolved.
+
+
 
 ### Changed
 - Let medium-sized shared scratch buffers use the existing sharded borrow
@@ -786,7 +805,7 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 - `DisjointMut::tracker` is boxed, so the wrapper is pointer-sized: this drops
   `Rav1dTaskContext` well under its 48 KiB stack-weight gate.
 
-## [0.6.0] - 2026-07-04
+### Migration from 0.5.7 (originally staged 2026-07-04)
 
 Staged release: the batched 0.x-breaking changes below ship together with the
 issue-#14 aarch64 loop-restoration closure. `cargo semver-checks
