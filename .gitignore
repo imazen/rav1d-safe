@@ -42,3 +42,10 @@ __pycache__/
 # Pinned independent 0.3.2 release controls.
 !audit/disjoint-032/controls/Cargo.lock
 !audit/disjoint-032/downstream/Cargo.lock
+
+# R2 benchmark evidence; restore with tools/fetch-benchmark-artifacts.py.
+benchmarks/still-entropy-2026-09-07/**/*.gz
+benchmarks/still-expanded-2026-09-07/**/*.gz
+benchmarks/still-loopfilter-2026-09-07/**/*.gz
+benchmarks/still-transforms-2026-09-07/**/*.gz
+benchmarks/wrapper-contexts-2026-09-07/**/*.gz

@@ -1,5 +1,9 @@
 # Expanded still corpus preparation — 2026-09-07
 
+Raw `.gz` evidence is in [verified R2 storage](../EXTERNAL_ARTIFACTS.md).
+Run `python3 tools/fetch-benchmark-artifacts.py` from the repository root to
+restore the original paths referenced below. Reports and manifests remain here.
+
 The initial admission audit below is now followed by a [24-source checkpoint](SOURCE_FREEZE.md):
 **12 development and 12 holdout source memberships/splits are pinned**. The
 encoder assignments, bitstreams, and full workload matrix are not frozen yet.

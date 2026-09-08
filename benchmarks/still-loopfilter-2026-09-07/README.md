@@ -1,5 +1,9 @@
 # Still loopfilter mask investigation — 2026-09-07
 
+Raw `.gz` evidence is in [verified R2 storage](../EXTERNAL_ARTIFACTS.md).
+Run `python3 tools/fetch-benchmark-artifacts.py` from the repository root to
+restore the original paths referenced below. Reports and manifests remain here.
+
 Follow-up to checked mixed 8×8 SIMD, commit `984d41dde603cc274f9751ca9e5d098a83ee099c`,
 in draft [PR #528](https://github.com/imazen/rav1d-safe/pull/528). The latest
 [transform profiles](../still-transforms-2026-09-07/MIXED8.md) estimate
