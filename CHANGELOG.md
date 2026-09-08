@@ -2,6 +2,17 @@
 
 All notable changes to the `rav1d-safe` crate are documented in this file. Format follows [Keep a Changelog](https://keepachangelog.com/). `rav1d-safe` is a fork of [rav1d](https://github.com/memorysafety/rav1d), which is itself a Rust port of [dav1d](https://code.videolan.org/videolan/dav1d); this fork adds archmage-based SIMD dispatch and removes the C FFI path. Entries below cover only changes made in this fork — upstream rav1d and dav1d release notes remain the canonical record for the shared decoder core. This file was backfilled from git history on 2026-04-15; the `[0.5.4]` date reflects the commit date of tag `v0.5.4` rather than the crates.io publish date.
 
+## [Unreleased]
+
+### Added
+- Release provenance record mapping all 19 published `rav1d-safe` and
+  `rav1d-disjoint-mut` versions to their source commits, with
+  `tools/verify-published-provenance.py` to regenerate and check it
+  ([docs/RELEASE_PROVENANCE.md](docs/RELEASE_PROVENANCE.md), c836e7d).
+- Retroactive release tags for six versions published before the tagging habit:
+  `v0.1.0`, `v0.3.0`, `rav1d-disjoint-mut-v0.1.0`, `-v0.1.1`, `-v0.2.1` and
+  `-v0.3.0`, each verified to reproduce its published archive (c836e7d).
+
 ## [0.6.0] - 2026-09-08
 
 Migration notes and validation history are in
