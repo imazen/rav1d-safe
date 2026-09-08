@@ -1,8 +1,9 @@
-# rav1d-safe 0.6.0 release candidate
+# rav1d-safe 0.6.0 release record
 
-Prepared 2026-09-08 UTC on PR #528. **Not published or release-ready yet.**
-This record separates preparation checks from publication gates. The current
-candidate retains checked safe SIMD, runtime borrow/bounds checks, and the
+Release date: 2026-09-08 UTC; prepared on PR #528.
+The preparation history below retains earlier blockers and exact tested
+revisions; publication status is recorded by the release tags and crates.io.
+The release retains checked safe SIMD, runtime borrow/bounds checks, and the
 crate-wide `forbid(unsafe_code)` default. The diagnostic environment policy now requires explicit private features;
 ordinary owned-reconstruction policy is fixed to its prior environment-unset behavior.
 
