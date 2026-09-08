@@ -1,6 +1,5 @@
 #![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
 #![cfg_attr(feature = "unchecked", deny(unsafe_code))]
-#![allow(deprecated)] // FFI wrappers need to forge tokens
 //! Safe SIMD implementation of pal_idx_finish using AVX2.
 //!
 //! Packs pairs of palette indices (4-bit each) into single bytes:
@@ -174,8 +173,8 @@ pub fn pal_idx_finish_dispatch(
 
 /// AVX2 implementation of pal_idx_finish - FFI wrapper (asm dispatch only).
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn pal_idx_finish_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn pal_idx_finish_v3(
     dst: *mut u8,
     src: *const u8,
     bw: c_int,
@@ -183,6 +182,9 @@ pub unsafe extern "C" fn pal_idx_finish_avx2(
     w: c_int,
     h: c_int,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let bw = bw as usize;
     let bh = bh as usize;
     let w = w as usize;
@@ -193,8 +195,7 @@ pub unsafe extern "C" fn pal_idx_finish_avx2(
     let dst_slice = unsafe { std::slice::from_raw_parts_mut(dst, dst_bw * bh) };
     let src_slice = unsafe { std::slice::from_raw_parts(src, bw * bh) };
 
-    // SAFETY: We're in an AVX2 function, so the token is valid
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    // The wrapper declares the full V3 feature set.
 
     pal_idx_finish_inner(token, dst_slice, src_slice, bw, bh, w, h);
 }

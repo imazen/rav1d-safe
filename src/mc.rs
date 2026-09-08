@@ -2824,8 +2824,8 @@ impl Rav1dMCDSPContext {
                 use crate::include::common::bitdepth::BPC;
                 use crate::src::safe_simd::mc as safe_mc;
                 self.avg = match BD::BPC {
-                    BPC::BPC8 => avg::decl_fn_safe!(safe_mc::avg_8bpc_avx2),
-                    BPC::BPC16 => avg::decl_fn_safe!(safe_mc::avg_16bpc_avx2),
+                    BPC::BPC8 => avg::decl_fn_safe!(safe_mc::avg_8bpc_v3),
+                    BPC::BPC16 => avg::decl_fn_safe!(safe_mc::avg_16bpc_v3),
                 };
             }
             #[cfg(feature = "asm")]
@@ -2839,8 +2839,8 @@ impl Rav1dMCDSPContext {
                 use crate::include::common::bitdepth::BPC;
                 use crate::src::safe_simd::mc as safe_mc;
                 self.w_avg = match BD::BPC {
-                    BPC::BPC8 => w_avg::decl_fn_safe!(safe_mc::w_avg_8bpc_avx2),
-                    BPC::BPC16 => w_avg::decl_fn_safe!(safe_mc::w_avg_16bpc_avx2),
+                    BPC::BPC8 => w_avg::decl_fn_safe!(safe_mc::w_avg_8bpc_v3),
+                    BPC::BPC16 => w_avg::decl_fn_safe!(safe_mc::w_avg_16bpc_v3),
                 };
             }
             #[cfg(feature = "asm")]
@@ -2854,8 +2854,8 @@ impl Rav1dMCDSPContext {
                 use crate::include::common::bitdepth::BPC;
                 use crate::src::safe_simd::mc as safe_mc;
                 self.mask = match BD::BPC {
-                    BPC::BPC8 => mask::decl_fn_safe!(safe_mc::mask_8bpc_avx2),
-                    BPC::BPC16 => mask::decl_fn_safe!(safe_mc::mask_16bpc_avx2),
+                    BPC::BPC8 => mask::decl_fn_safe!(safe_mc::mask_8bpc_v3),
+                    BPC::BPC16 => mask::decl_fn_safe!(safe_mc::mask_16bpc_v3),
                 };
             }
             #[cfg(feature = "asm")]
@@ -2870,14 +2870,14 @@ impl Rav1dMCDSPContext {
                 use crate::src::safe_simd::mc as safe_mc;
                 self.w_mask = match BD::BPC {
                     BPC::BPC8 => enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
-                        I420 => w_mask::decl_fn_safe!(safe_mc::w_mask_420_8bpc_avx2),
-                        I422 => w_mask::decl_fn_safe!(safe_mc::w_mask_422_8bpc_avx2),
-                        I444 => w_mask::decl_fn_safe!(safe_mc::w_mask_444_8bpc_avx2),
+                        I420 => w_mask::decl_fn_safe!(safe_mc::w_mask_420_8bpc_v3),
+                        I422 => w_mask::decl_fn_safe!(safe_mc::w_mask_422_8bpc_v3),
+                        I444 => w_mask::decl_fn_safe!(safe_mc::w_mask_444_8bpc_v3),
                     }),
                     BPC::BPC16 => enum_map!(Rav1dPixelLayoutSubSampled => w_mask::Fn; match key {
-                        I420 => w_mask::decl_fn_safe!(safe_mc::w_mask_420_16bpc_avx2),
-                        I422 => w_mask::decl_fn_safe!(safe_mc::w_mask_422_16bpc_avx2),
-                        I444 => w_mask::decl_fn_safe!(safe_mc::w_mask_444_16bpc_avx2),
+                        I420 => w_mask::decl_fn_safe!(safe_mc::w_mask_420_16bpc_v3),
+                        I422 => w_mask::decl_fn_safe!(safe_mc::w_mask_422_16bpc_v3),
+                        I444 => w_mask::decl_fn_safe!(safe_mc::w_mask_444_16bpc_v3),
                     }),
                 };
             }
@@ -2896,16 +2896,16 @@ impl Rav1dMCDSPContext {
                 use crate::include::common::bitdepth::BPC;
                 use crate::src::safe_simd::mc as safe_mc;
                 self.blend = match BD::BPC {
-                    BPC::BPC8 => blend::decl_fn_safe!(safe_mc::blend_8bpc_avx2),
-                    BPC::BPC16 => blend::decl_fn_safe!(safe_mc::blend_16bpc_avx2),
+                    BPC::BPC8 => blend::decl_fn_safe!(safe_mc::blend_8bpc_v3),
+                    BPC::BPC16 => blend::decl_fn_safe!(safe_mc::blend_16bpc_v3),
                 };
                 self.blend_v = match BD::BPC {
-                    BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc::blend_v_8bpc_avx2),
-                    BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc::blend_v_16bpc_avx2),
+                    BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc::blend_v_8bpc_v3),
+                    BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc::blend_v_16bpc_v3),
                 };
                 self.blend_h = match BD::BPC {
-                    BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc::blend_h_8bpc_avx2),
-                    BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc::blend_h_16bpc_avx2),
+                    BPC::BPC8 => blend_dir::decl_fn_safe!(safe_mc::blend_h_8bpc_v3),
+                    BPC::BPC16 => blend_dir::decl_fn_safe!(safe_mc::blend_h_16bpc_v3),
                 };
             }
             #[cfg(feature = "asm")]
@@ -2923,54 +2923,54 @@ impl Rav1dMCDSPContext {
                 match BD::BPC {
                     BPC::BPC8 => {
                         self.mc = enum_map!(Filter2d => mc::Fn; match key {
-                            Regular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_8bpc_avx2),
-                            RegularSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_smooth_8bpc_avx2),
-                            RegularSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_sharp_8bpc_avx2),
-                            SmoothRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_regular_8bpc_avx2),
-                            Smooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_8bpc_avx2),
-                            SmoothSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_sharp_8bpc_avx2),
-                            SharpRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_regular_8bpc_avx2),
-                            SharpSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_smooth_8bpc_avx2),
-                            Sharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_8bpc_avx2),
-                            Bilinear => mc::decl_fn_safe!(safe_mc::put_bilin_8bpc_avx2),
+                            Regular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_8bpc_v3),
+                            RegularSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_smooth_8bpc_v3),
+                            RegularSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_sharp_8bpc_v3),
+                            SmoothRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_regular_8bpc_v3),
+                            Smooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_8bpc_v3),
+                            SmoothSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_sharp_8bpc_v3),
+                            SharpRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_regular_8bpc_v3),
+                            SharpSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_smooth_8bpc_v3),
+                            Sharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_8bpc_v3),
+                            Bilinear => mc::decl_fn_safe!(safe_mc::put_bilin_8bpc_v3),
                         });
                         self.mct = enum_map!(Filter2d => mct::Fn; match key {
-                            Regular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_8bpc_avx2),
-                            RegularSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_smooth_8bpc_avx2),
-                            RegularSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_sharp_8bpc_avx2),
-                            SmoothRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_regular_8bpc_avx2),
-                            Smooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_8bpc_avx2),
-                            SmoothSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_sharp_8bpc_avx2),
-                            SharpRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_regular_8bpc_avx2),
-                            SharpSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_smooth_8bpc_avx2),
-                            Sharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_8bpc_avx2),
-                            Bilinear => mct::decl_fn_safe!(safe_mc::prep_bilin_8bpc_avx2),
+                            Regular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_8bpc_v3),
+                            RegularSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_smooth_8bpc_v3),
+                            RegularSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_sharp_8bpc_v3),
+                            SmoothRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_regular_8bpc_v3),
+                            Smooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_8bpc_v3),
+                            SmoothSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_sharp_8bpc_v3),
+                            SharpRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_regular_8bpc_v3),
+                            SharpSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_smooth_8bpc_v3),
+                            Sharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_8bpc_v3),
+                            Bilinear => mct::decl_fn_safe!(safe_mc::prep_bilin_8bpc_v3),
                         });
                     }
                     BPC::BPC16 => {
                         self.mc = enum_map!(Filter2d => mc::Fn; match key {
-                            Regular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_16bpc_avx2),
-                            RegularSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_smooth_16bpc_avx2),
-                            RegularSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_sharp_16bpc_avx2),
-                            SmoothRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_regular_16bpc_avx2),
-                            Smooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_16bpc_avx2),
-                            SmoothSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_sharp_16bpc_avx2),
-                            SharpRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_regular_16bpc_avx2),
-                            SharpSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_smooth_16bpc_avx2),
-                            Sharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_16bpc_avx2),
-                            Bilinear => mc::decl_fn_safe!(safe_mc::put_bilin_16bpc_avx2),
+                            Regular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_16bpc_v3),
+                            RegularSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_smooth_16bpc_v3),
+                            RegularSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_regular_sharp_16bpc_v3),
+                            SmoothRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_regular_16bpc_v3),
+                            Smooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_16bpc_v3),
+                            SmoothSharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_smooth_sharp_16bpc_v3),
+                            SharpRegular8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_regular_16bpc_v3),
+                            SharpSmooth8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_smooth_16bpc_v3),
+                            Sharp8Tap => mc::decl_fn_safe!(safe_mc::put_8tap_sharp_16bpc_v3),
+                            Bilinear => mc::decl_fn_safe!(safe_mc::put_bilin_16bpc_v3),
                         });
                         self.mct = enum_map!(Filter2d => mct::Fn; match key {
-                            Regular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_16bpc_avx2),
-                            RegularSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_smooth_16bpc_avx2),
-                            RegularSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_sharp_16bpc_avx2),
-                            SmoothRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_regular_16bpc_avx2),
-                            Smooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_16bpc_avx2),
-                            SmoothSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_sharp_16bpc_avx2),
-                            SharpRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_regular_16bpc_avx2),
-                            SharpSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_smooth_16bpc_avx2),
-                            Sharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_16bpc_avx2),
-                            Bilinear => mct::decl_fn_safe!(safe_mc::prep_bilin_16bpc_avx2),
+                            Regular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_16bpc_v3),
+                            RegularSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_smooth_16bpc_v3),
+                            RegularSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_regular_sharp_16bpc_v3),
+                            SmoothRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_regular_16bpc_v3),
+                            Smooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_16bpc_v3),
+                            SmoothSharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_smooth_sharp_16bpc_v3),
+                            SharpRegular8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_regular_16bpc_v3),
+                            SharpSmooth8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_smooth_16bpc_v3),
+                            Sharp8Tap => mct::decl_fn_safe!(safe_mc::prep_8tap_sharp_16bpc_v3),
+                            Bilinear => mct::decl_fn_safe!(safe_mc::prep_bilin_16bpc_v3),
                         });
                     }
                 }

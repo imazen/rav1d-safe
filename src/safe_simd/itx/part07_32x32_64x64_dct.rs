@@ -576,9 +576,9 @@ fn inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
 
 /// FFI wrapper for 32x32 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[archmage::rite(v3)]
 #[cfg(feature = "asm")]
-pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_avx2(
+pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     coeff: *mut DynCoef,
@@ -587,7 +587,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let _token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let _token = archmage::X64V3Token::from_context();
+
     let stride = dst_stride as usize;
 
     let dst_slice = unsafe {
@@ -609,9 +611,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_avx2(
 
 /// FFI wrapper for 32x32 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[archmage::rite(v3)]
 #[cfg(feature = "asm")]
-pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_avx2(
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     coeff: *mut DynCoef,
@@ -620,7 +622,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let _token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let _token = archmage::X64V3Token::from_context();
+
     let stride = dst_stride as usize;
 
     let dst_slice = unsafe {
@@ -781,9 +785,9 @@ fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
 
 /// FFI wrapper for 32x32 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[archmage::rite(v3)]
 #[cfg(feature = "asm")]
-pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_avx2(
+pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     coeff: *mut DynCoef,
@@ -792,7 +796,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let _token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let _token = archmage::X64V3Token::from_context();
+
     let stride = dst_stride as usize;
 
     let dst_slice = unsafe {
@@ -1595,9 +1601,9 @@ fn inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
 
 /// FFI wrapper for 64x64 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[archmage::rite(v3)]
 #[cfg(feature = "asm")]
-pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_avx2(
+pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     coeff: *mut DynCoef,
@@ -1606,7 +1612,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let _token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let _token = archmage::X64V3Token::from_context();
+
     let stride = dst_stride as usize;
 
     let dst_slice = unsafe {
@@ -1764,9 +1772,9 @@ fn inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
 
 /// FFI wrapper for 64x64 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[archmage::rite(v3)]
 #[cfg(feature = "asm")]
-pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_16bpc_avx2(
+pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     coeff: *mut DynCoef,
@@ -1775,7 +1783,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x64_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let _token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let _token = archmage::X64V3Token::from_context();
+
     let stride = dst_stride as usize;
 
     let dst_slice = unsafe {

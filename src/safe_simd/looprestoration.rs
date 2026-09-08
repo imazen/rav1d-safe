@@ -1,5 +1,4 @@
 //! Safe SIMD implementations for Loop Restoration
-#![allow(deprecated)] // FFI wrappers need to forge tokens
 #![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
 #![cfg_attr(feature = "unchecked", deny(unsafe_code))]
 //!
@@ -1016,8 +1015,8 @@ fn reconstruct_lpf_offset(lpf: &DisjointMut<AlignedVec64<u8>>, ptr: *const u8) -
 
 /// FFI wrapper for Wiener filter 7-tap 8bpc
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn wiener_filter7_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn wiener_filter7_8bpc_v3(
     _p_ptr: *mut DynPixel,
     _stride: ptrdiff_t,
     left: *const LeftPixelRow<DynPixel>,
@@ -1030,6 +1029,9 @@ pub unsafe extern "C" fn wiener_filter7_8bpc_avx2(
     p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     // SAFETY: p and lpf were passed as FFISafe::new(_) in loop_restoration_filter::Fn::call
     let p = unsafe { *FFISafe::get(p) };
     let left = left.cast::<LeftPixelRow<u8>>();
@@ -1042,14 +1044,14 @@ pub unsafe extern "C" fn wiener_filter7_8bpc_avx2(
     let left = unsafe { slice::from_raw_parts(left, h) };
 
     // SAFETY: AVX2 available (checked by dispatch)
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+
     wiener_filter7_8bpc_avx2_inner(token, p, left, lpf, lpf_off, w, h, params, edges);
 }
 
 /// FFI wrapper for Wiener filter 5-tap 8bpc
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn wiener_filter5_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn wiener_filter5_8bpc_v3(
     _p_ptr: *mut DynPixel,
     _stride: ptrdiff_t,
     left: *const LeftPixelRow<DynPixel>,
@@ -1062,6 +1064,9 @@ pub unsafe extern "C" fn wiener_filter5_8bpc_avx2(
     p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     // SAFETY: p and lpf were passed as FFISafe::new(_) in loop_restoration_filter::Fn::call
     let p = unsafe { *FFISafe::get(p) };
     let left = left.cast::<LeftPixelRow<u8>>();
@@ -1074,7 +1079,7 @@ pub unsafe extern "C" fn wiener_filter5_8bpc_avx2(
     let left = unsafe { slice::from_raw_parts(left, h) };
 
     // SAFETY: AVX2 available (checked by dispatch)
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+
     wiener_filter5_8bpc_avx2_inner(token, p, left, lpf, lpf_off, w, h, params, edges);
 }
 
@@ -1086,8 +1091,8 @@ fn reconstruct_lpf_offset_16bpc(lpf: &DisjointMut<AlignedVec64<u8>>, ptr: *const
 
 /// FFI wrapper for Wiener filter 7-tap 16bpc
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn wiener_filter7_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn wiener_filter7_16bpc_v3(
     _p_ptr: *mut DynPixel,
     _stride: ptrdiff_t,
     left: *const LeftPixelRow<DynPixel>,
@@ -1100,6 +1105,9 @@ pub unsafe extern "C" fn wiener_filter7_16bpc_avx2(
     p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let p = unsafe { *FFISafe::get(p) };
     let left = left.cast::<LeftPixelRow<u16>>();
     let lpf = unsafe { FFISafe::get(lpf) };
@@ -1109,7 +1117,6 @@ pub unsafe extern "C" fn wiener_filter7_16bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    let token = unsafe { Desktop64::forge_token_dangerously() };
     wiener_filter7_16bpc_avx2_inner(
         token,
         p,
@@ -1126,8 +1133,8 @@ pub unsafe extern "C" fn wiener_filter7_16bpc_avx2(
 
 /// FFI wrapper for Wiener filter 5-tap 16bpc
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn wiener_filter5_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn wiener_filter5_16bpc_v3(
     _p_ptr: *mut DynPixel,
     _stride: ptrdiff_t,
     left: *const LeftPixelRow<DynPixel>,
@@ -1140,6 +1147,9 @@ pub unsafe extern "C" fn wiener_filter5_16bpc_avx2(
     p: *const FFISafe<PicOffset>,
     lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let p = unsafe { *FFISafe::get(p) };
     let left = left.cast::<LeftPixelRow<u16>>();
     let lpf = unsafe { FFISafe::get(lpf) };
@@ -1149,7 +1159,6 @@ pub unsafe extern "C" fn wiener_filter5_16bpc_avx2(
     let h = h as usize;
     let left = unsafe { slice::from_raw_parts(left, h) };
 
-    let token = unsafe { Desktop64::forge_token_dangerously() };
     wiener_filter5_16bpc_avx2_inner(
         token,
         p,

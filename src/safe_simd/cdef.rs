@@ -2525,20 +2525,22 @@ pub unsafe extern "C" fn cdef_filter_4x4_16bpc_avx2(
 
 /// FFI wrapper for cdef_find_dir 16bpc
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn cdef_find_dir_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn cdef_find_dir_16bpc_v3(
     _dst_ptr: *const DynPixel,
     _dst_stride: ptrdiff_t,
     variance: &mut c_uint,
     bitdepth_max: c_int,
     dst: *const FFISafe<PicOffset>,
 ) -> c_int {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     use crate::include::common::bitdepth::BitDepth16;
 
     let dst = unsafe { *FFISafe::get(dst) };
     let bd = BitDepth16::new(bitdepth_max as u16);
 
-    let token = unsafe { Desktop64::forge_token_dangerously() };
     cdef_find_dir_simd_16bpc(token, dst, variance, bd.bitdepth() as u8)
 }
 

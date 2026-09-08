@@ -432,9 +432,9 @@ fn dct4_2rows_avx2(
 
 /// FFI wrapper for 4x4 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[archmage::rite(v3)]
 #[cfg(feature = "asm")]
-pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_avx2(
+pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     coeff: *mut DynCoef,
@@ -443,7 +443,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let _token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let _token = archmage::X64V3Token::from_context();
+
     let stride = dst_stride as usize;
 
     let dst_slice = unsafe {
@@ -630,9 +632,9 @@ fn inv_txfm_add_dct_dct_4x4_16bpc_avx2_inner(
 
 /// FFI wrapper for 4x4 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[archmage::rite(v3)]
 #[cfg(feature = "asm")]
-pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_avx2(
+pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     coeff: *mut DynCoef,
@@ -641,7 +643,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_4x4_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let _token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let _token = archmage::X64V3Token::from_context();
+
     let stride = dst_stride as usize;
 
     let dst_slice = unsafe {
@@ -810,9 +814,9 @@ fn inv_txfm_add_wht_wht_4x4_8bpc_avx2_inner(
 
 /// FFI wrapper for 4x4 WHT 8bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[archmage::rite(v3)]
 #[cfg(feature = "asm")]
-pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_8bpc_avx2(
+pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     coeff: *mut DynCoef,
@@ -821,7 +825,9 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let _token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let _token = archmage::X64V3Token::from_context();
+
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size = 3 * abs_stride + 4;
     let dst_slice = if dst_stride >= 0 {
@@ -958,9 +964,9 @@ fn inv_txfm_add_wht_wht_4x4_16bpc_avx2_inner(
 
 /// FFI wrapper for 4x4 WHT 16bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[archmage::rite(v3)]
 #[cfg(feature = "asm")]
-pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_avx2(
+pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     coeff: *mut DynCoef,
@@ -969,7 +975,9 @@ pub unsafe extern "C" fn inv_txfm_add_wht_wht_4x4_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let _token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let _token = archmage::X64V3Token::from_context();
+
     let abs_stride = dst_stride.unsigned_abs();
     let buf_size_u16 = (3 * abs_stride + 8) / 2; // 3 rows + 4 pixels
     let dst_slice = if dst_stride >= 0 {
@@ -1058,9 +1066,9 @@ pub fn inv_identity_add_4x4_8bpc_avx2(
 
 /// FFI wrapper for 4x4 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[archmage::rite(v3)]
 #[cfg(feature = "asm")]
-pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_avx2(
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     coeff: *mut DynCoef,
@@ -1069,7 +1077,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_4x4_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let _token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let _token = archmage::X64V3Token::from_context();
+
     let stride = dst_stride as usize;
 
     let dst_slice = unsafe {
@@ -1160,9 +1170,9 @@ pub fn inv_identity_add_8x8_8bpc_avx2(
 
 /// FFI wrapper for 8x8 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[archmage::rite(v3)]
 #[cfg(feature = "asm")]
-pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_8bpc_avx2(
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     coeff: *mut DynCoef,
@@ -1171,7 +1181,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_8x8_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let _token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let _token = archmage::X64V3Token::from_context();
+
     let stride = dst_stride as usize;
 
     let dst_slice = unsafe {
@@ -1525,9 +1537,9 @@ fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
 
 /// FFI wrapper for 8x8 DCT_DCT 8bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[archmage::rite(v3)]
 #[cfg(feature = "asm")]
-pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_avx2(
+pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     coeff: *mut DynCoef,
@@ -1536,7 +1548,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let _token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let _token = archmage::X64V3Token::from_context();
+
     let stride = dst_stride as usize;
 
     let dst_slice = unsafe {
@@ -1662,9 +1676,9 @@ fn inv_txfm_add_dct_dct_8x8_16bpc_avx2_inner(
 
 /// FFI wrapper for 8x8 DCT_DCT 16bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[archmage::rite(v3)]
 #[cfg(feature = "asm")]
-pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_16bpc_avx2(
+pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_16bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     coeff: *mut DynCoef,
@@ -1673,7 +1687,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_8x8_16bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let _token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let _token = archmage::X64V3Token::from_context();
+
     let stride = dst_stride as usize;
 
     let dst_slice = unsafe {
@@ -1797,9 +1813,9 @@ pub fn inv_identity_add_16x16_8bpc_avx2(
 
 /// FFI wrapper for 16x16 IDTX 8bpc
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
+#[archmage::rite(v3)]
 #[cfg(feature = "asm")]
-pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_8bpc_avx2(
+pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_8bpc_v3(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
     coeff: *mut DynCoef,
@@ -1808,7 +1824,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_16x16_8bpc_avx2(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let _token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let _token = archmage::X64V3Token::from_context();
+
     let stride = dst_stride as usize;
 
     let dst_slice = unsafe {

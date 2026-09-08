@@ -4716,6 +4716,7 @@ fn inv_txfm_add_dct_dct_32x16_16bpc_inner(
 // ============================================================================
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4725,6 +4726,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_neon(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 1024) };
     let abs_stride = dst_stride.unsigned_abs();
     let rows = 31usize;
@@ -4743,7 +4747,6 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_neon(
         )
     };
     {
-        let token = unsafe { archmage::Arm64::forge_token_dangerously() };
         super::itx_arm_neon_32::inv_txfm_add_dct_dct_32x32_8bpc_neon_inner(
             token,
             dst_slice,
@@ -4757,6 +4760,7 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_8bpc_neon(
 }
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -4766,6 +4770,9 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_neon(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let stride_u16 = dst_stride / 2;
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 1024) };
     let abs_stride = (stride_u16 as isize).unsigned_abs();
@@ -4785,7 +4792,6 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_32x32_16bpc_neon(
         )
     };
     {
-        let token = unsafe { archmage::Arm64::forge_token_dangerously() };
         super::itx_arm_neon_32::inv_txfm_add_dct_dct_32x32_16bpc_neon_inner(
             token,
             dst_slice,
@@ -6686,6 +6692,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x16_16bpc_neon(
 }
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -6695,6 +6702,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_neon(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i16, 1024) };
     let abs_stride = dst_stride.unsigned_abs();
     let rows = 31usize;
@@ -6713,7 +6723,6 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_neon(
         )
     };
     {
-        let token = unsafe { archmage::Arm64::forge_token_dangerously() };
         super::itx_arm_neon_32::inv_txfm_add_identity_identity_32x32_8bpc_neon_inner(
             token,
             dst_slice,
@@ -6727,6 +6736,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_8bpc_neon(
 }
 
 #[cfg(all(feature = "asm", target_arch = "aarch64"))]
+#[archmage::rite(neon)]
 pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_neon(
     dst_ptr: *mut DynPixel,
     dst_stride: isize,
@@ -6736,6 +6746,9 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_neon(
     _coeff_len: u16,
     _dst: *const FFISafe<PicOffset>,
 ) {
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::NeonToken::from_context();
+
     let stride_u16 = dst_stride / 2;
     let coeff_slice = unsafe { std::slice::from_raw_parts_mut(coeff as *mut i32, 1024) };
     let abs_stride = (stride_u16 as isize).unsigned_abs();
@@ -6755,7 +6768,6 @@ pub unsafe extern "C" fn inv_txfm_add_identity_identity_32x32_16bpc_neon(
         )
     };
     {
-        let token = unsafe { archmage::Arm64::forge_token_dangerously() };
         super::itx_arm_neon_32::inv_txfm_add_identity_identity_32x32_16bpc_neon_inner(
             token,
             dst_slice,

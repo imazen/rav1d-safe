@@ -1,5 +1,4 @@
 //! Safe SIMD implementations of intra prediction functions
-#![allow(deprecated)] // FFI wrappers need to forge tokens
 #![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
 #![cfg_attr(feature = "unchecked", deny(unsafe_code))]
 //!
@@ -79,8 +78,8 @@ fn ipred_dc_128_8bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_128_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_dc_128_8bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     _topleft: *const DynPixel,
@@ -93,7 +92,9 @@ pub unsafe extern "C" fn ipred_dc_128_8bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     ipred_dc_128_8bpc_inner(
@@ -300,8 +301,8 @@ fn ipred_v_8bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_v_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_v_8bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -314,7 +315,9 @@ pub unsafe extern "C" fn ipred_v_8bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) =
@@ -380,8 +383,8 @@ fn ipred_h_8bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_h_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_h_8bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -394,7 +397,9 @@ pub unsafe extern "C" fn ipred_h_8bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) =
@@ -679,8 +684,8 @@ fn ipred_dc_8bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_dc_8bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -693,7 +698,9 @@ pub unsafe extern "C" fn ipred_dc_8bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) =
@@ -762,8 +769,8 @@ fn ipred_dc_top_8bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_top_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_dc_top_8bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -776,7 +783,9 @@ pub unsafe extern "C" fn ipred_dc_top_8bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) =
@@ -845,8 +854,8 @@ fn ipred_dc_left_8bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_left_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_dc_left_8bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -859,7 +868,9 @@ pub unsafe extern "C" fn ipred_dc_left_8bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) =
@@ -1281,8 +1292,8 @@ fn ipred_paeth_8bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_paeth_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_paeth_8bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -1295,7 +1306,9 @@ pub unsafe extern "C" fn ipred_paeth_8bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) =
@@ -1419,8 +1432,8 @@ fn ipred_smooth_8bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_smooth_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_smooth_8bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -1433,7 +1446,9 @@ pub unsafe extern "C" fn ipred_smooth_8bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) =
@@ -1530,8 +1545,8 @@ fn ipred_smooth_v_8bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_smooth_v_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_smooth_v_8bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -1544,7 +1559,9 @@ pub unsafe extern "C" fn ipred_smooth_v_8bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) =
@@ -1639,8 +1656,8 @@ fn ipred_smooth_h_8bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_smooth_h_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_smooth_h_8bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -1653,7 +1670,9 @@ pub unsafe extern "C" fn ipred_smooth_h_8bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) =
@@ -1777,8 +1796,8 @@ fn ipred_filter_8bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_filter_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_filter_8bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -1791,7 +1810,9 @@ pub unsafe extern "C" fn ipred_filter_8bpc_avx2(
     topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) =
@@ -1964,8 +1985,8 @@ fn ipred_z1_8bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_z1_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_z1_8bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -1978,7 +1999,9 @@ pub unsafe extern "C" fn ipred_z1_8bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) =
@@ -2688,8 +2711,8 @@ fn ipred_z2_8bpc_v4x_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_z2_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_z2_8bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -2702,7 +2725,9 @@ pub unsafe extern "C" fn ipred_z2_8bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) =
@@ -3017,8 +3042,8 @@ fn ipred_z3_8bpc_v4x_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_z3_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_z3_8bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -3031,7 +3056,9 @@ pub unsafe extern "C" fn ipred_z3_8bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) =
@@ -3134,8 +3161,8 @@ fn ipred_dc_128_16bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_128_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_dc_128_16bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     _topleft: *const DynPixel,
@@ -3148,7 +3175,9 @@ pub unsafe extern "C" fn ipred_dc_128_16bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     ipred_dc_128_16bpc_inner(
@@ -3213,8 +3242,8 @@ fn ipred_v_16bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_v_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_v_16bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -3227,7 +3256,9 @@ pub unsafe extern "C" fn ipred_v_16bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) = compute_topleft_slice(
@@ -3303,8 +3334,8 @@ fn ipred_h_16bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_h_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_h_16bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -3317,7 +3348,9 @@ pub unsafe extern "C" fn ipred_h_16bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) = compute_topleft_slice(
@@ -3735,8 +3768,8 @@ fn ipred_dc_16bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_dc_16bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -3749,7 +3782,9 @@ pub unsafe extern "C" fn ipred_dc_16bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) = compute_topleft_slice(
@@ -3823,8 +3858,8 @@ fn ipred_dc_top_16bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_top_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_dc_top_16bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -3837,7 +3872,9 @@ pub unsafe extern "C" fn ipred_dc_top_16bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) = compute_topleft_slice(
@@ -3911,8 +3948,8 @@ fn ipred_dc_left_16bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_dc_left_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_dc_left_16bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -3925,7 +3962,9 @@ pub unsafe extern "C" fn ipred_dc_left_16bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) = compute_topleft_slice(
@@ -4302,8 +4341,8 @@ fn ipred_paeth_16bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_paeth_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_paeth_16bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -4316,7 +4355,9 @@ pub unsafe extern "C" fn ipred_paeth_16bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) = compute_topleft_slice(
@@ -4390,8 +4431,8 @@ fn ipred_smooth_16bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_smooth_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_smooth_16bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -4404,7 +4445,9 @@ pub unsafe extern "C" fn ipred_smooth_16bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) = compute_topleft_slice(
@@ -4461,8 +4504,8 @@ fn ipred_smooth_v_16bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_smooth_v_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_smooth_v_16bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -4475,7 +4518,9 @@ pub unsafe extern "C" fn ipred_smooth_v_16bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) = compute_topleft_slice(
@@ -4534,8 +4579,8 @@ fn ipred_smooth_h_16bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_smooth_h_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_smooth_h_16bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -4548,7 +4593,9 @@ pub unsafe extern "C" fn ipred_smooth_h_16bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) = compute_topleft_slice(
@@ -4752,8 +4799,8 @@ fn ipred_z1_16bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_z1_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_z1_16bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -4766,7 +4813,9 @@ pub unsafe extern "C" fn ipred_z1_16bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) = compute_topleft_slice(
@@ -5061,8 +5110,8 @@ fn ipred_z2_16bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_z2_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_z2_16bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -5075,7 +5124,9 @@ pub unsafe extern "C" fn ipred_z2_16bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) = compute_topleft_slice(
@@ -5259,8 +5310,8 @@ fn ipred_z3_16bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_z3_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_z3_16bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -5273,7 +5324,9 @@ pub unsafe extern "C" fn ipred_z3_16bpc_avx2(
     _topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) = compute_topleft_slice(
@@ -5415,8 +5468,8 @@ fn ipred_filter_16bpc_inner(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn ipred_filter_16bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn ipred_filter_16bpc_v3(
     dst_ptr: *mut DynPixel,
     stride: ptrdiff_t,
     topleft: *const DynPixel,
@@ -5429,7 +5482,9 @@ pub unsafe extern "C" fn ipred_filter_16bpc_avx2(
     topleft_off: usize,
     _dst: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let buf_len = compute_ipred_buf_len(stride as isize, width as usize * 2, height as usize);
     let dst_sl = unsafe { std::slice::from_raw_parts_mut(dst_ptr as *mut u8, buf_len) };
     let (tl_sl, tl_off) = compute_topleft_slice(

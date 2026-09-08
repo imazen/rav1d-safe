@@ -1,5 +1,4 @@
 //! Safe SIMD implementations of film grain synthesis functions
-#![allow(deprecated)] // FFI wrappers need to forge tokens
 #![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
 #![cfg_attr(feature = "unchecked", deny(unsafe_code))]
 //!
@@ -680,8 +679,8 @@ fn fgy_row_simd_8bpc(
 
 /// Apply luma grain - 8bpc AVX2 (FFI entry point for asm mode)
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-#[target_feature(enable = "avx2")]
-pub unsafe extern "C" fn fgy_32x32xn_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn fgy_32x32xn_8bpc_v3(
     dst_row_ptr: *mut DynPixel,
     src_row_ptr: *const DynPixel,
     stride: ptrdiff_t,
@@ -695,7 +694,8 @@ pub unsafe extern "C" fn fgy_32x32xn_8bpc_avx2(
     _dst_row: *const FFISafe<PicOffset>,
     _src_row: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
 
     let dst = dst_row_ptr as *mut u8;
     let src = src_row_ptr as *const u8;
@@ -1364,7 +1364,8 @@ unsafe fn compute_uv_scaling_val(
 // fguv FFI wrappers for each subsampling mode (8bpc)
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-pub unsafe extern "C" fn fguv_32x32xn_i420_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn fguv_32x32xn_i420_8bpc_v3(
     dst_row_ptr: *mut DynPixel,
     src_row_ptr: *const DynPixel,
     stride: ptrdiff_t,
@@ -1383,7 +1384,9 @@ pub unsafe extern "C" fn fguv_32x32xn_i420_8bpc_avx2(
     _src_row: *const FFISafe<PicOffset>,
     _luma_row: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let data: Rav1dFilmGrainData = unsafe { data.clone().into() };
     fguv_inner_8bpc(
         token,
@@ -1406,7 +1409,8 @@ pub unsafe extern "C" fn fguv_32x32xn_i420_8bpc_avx2(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-pub unsafe extern "C" fn fguv_32x32xn_i422_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn fguv_32x32xn_i422_8bpc_v3(
     dst_row_ptr: *mut DynPixel,
     src_row_ptr: *const DynPixel,
     stride: ptrdiff_t,
@@ -1425,7 +1429,9 @@ pub unsafe extern "C" fn fguv_32x32xn_i422_8bpc_avx2(
     _src_row: *const FFISafe<PicOffset>,
     _luma_row: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let data: Rav1dFilmGrainData = unsafe { data.clone().into() };
     fguv_inner_8bpc(
         token,
@@ -1448,7 +1454,8 @@ pub unsafe extern "C" fn fguv_32x32xn_i422_8bpc_avx2(
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
-pub unsafe extern "C" fn fguv_32x32xn_i444_8bpc_avx2(
+#[archmage::rite(v3)]
+pub unsafe extern "C" fn fguv_32x32xn_i444_8bpc_v3(
     dst_row_ptr: *mut DynPixel,
     src_row_ptr: *const DynPixel,
     stride: ptrdiff_t,
@@ -1467,7 +1474,9 @@ pub unsafe extern "C" fn fguv_32x32xn_i444_8bpc_avx2(
     _src_row: *const FFISafe<PicOffset>,
     _luma_row: *const FFISafe<PicOffset>,
 ) {
-    let token = unsafe { Desktop64::forge_token_dangerously() };
+    #[deny(unsafe_op_in_unsafe_fn)]
+    let token = archmage::X64V3Token::from_context();
+
     let data: Rav1dFilmGrainData = unsafe { data.clone().into() };
     fguv_inner_8bpc(
         token,
@@ -1673,6 +1682,7 @@ fn fguv_inner_16bpc(
 macro_rules! fguv_16bpc_wrapper {
     ($name:ident, $is_sx:expr, $is_sy:expr) => {
         #[cfg(all(feature = "asm", target_arch = "x86_64"))]
+        #[archmage::rite(v3)]
         pub unsafe extern "C" fn $name(
             dst_row_ptr: *mut DynPixel,
             src_row_ptr: *const DynPixel,
@@ -1692,7 +1702,9 @@ macro_rules! fguv_16bpc_wrapper {
             _src_row: *const FFISafe<PicOffset>,
             _luma_row: *const FFISafe<PicOffset>,
         ) {
-            let token = unsafe { Desktop64::forge_token_dangerously() };
+            #[deny(unsafe_op_in_unsafe_fn)]
+            let token = archmage::X64V3Token::from_context();
+
             let data: Rav1dFilmGrainData = unsafe { data.clone().into() };
             fguv_inner_16bpc(
                 token,
@@ -1717,9 +1729,9 @@ macro_rules! fguv_16bpc_wrapper {
     };
 }
 
-fguv_16bpc_wrapper!(fguv_32x32xn_i420_16bpc_avx2, true, true);
-fguv_16bpc_wrapper!(fguv_32x32xn_i422_16bpc_avx2, true, false);
-fguv_16bpc_wrapper!(fguv_32x32xn_i444_16bpc_avx2, false, false);
+fguv_16bpc_wrapper!(fguv_32x32xn_i420_16bpc_v3, true, true);
+fguv_16bpc_wrapper!(fguv_32x32xn_i422_16bpc_v3, true, false);
+fguv_16bpc_wrapper!(fguv_32x32xn_i444_16bpc_v3, false, false);
 
 // ============================================================================
 // Safe inner implementations (slice-based, no raw pointer access)
