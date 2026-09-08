@@ -185,3 +185,20 @@ gated by `__bench`. See [dependency versions and checks](../release/0.6.0/depend
 
 The preceding ARM ASM gate fix also passed native ARM CI job `asm-arm64` in
 run 34195096629; that run predates this dependency refresh.
+
+## Verified workspace packages
+
+At source `1bcd6ce6`, `cargo package --workspace --features
+rav1d-disjoint-mut/aligned,rav1d-disjoint-mut/pic-buf,rav1d-disjoint-mut/zerocopy`
+creates and verifies both actual archives. Cargo stages disjoint-mut in a
+temporary local registry; this resolves the local rehearsal dependency gap
+without publishing it. A standalone registry publish still requires 0.3.2 to
+be published first. Nothing was uploaded.
+
+The disjoint-mut archive contains 22 files: 162,633 compressed bytes and
+571,303 unpacked file bytes. The decoder contains 268 files: 2,190,640 compressed
+bytes and 14,985,506 unpacked file bytes. Assembly accounts for 8,329,428 unpacked
+bytes and safe SIMD Rust for 3,734,957. These are source archives, not linked
+binary sizes or dependency downloads. [Sizes, hashes and largest files](../release/0.6.0/package-sizes.json)
+identify these tested artifacts; subsequent documentation edits change archive
+identity and require final packaging again at the release revision.

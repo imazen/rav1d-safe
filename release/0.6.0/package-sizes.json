@@ -1,0 +1,102 @@
+{
+  "source_commit": "1bcd6ce6cda5",
+  "command": "cargo package --workspace --features rav1d-disjoint-mut/aligned,rav1d-disjoint-mut/pic-buf,rav1d-disjoint-mut/zerocopy",
+  "exit": 0,
+  "verification": "Both generated crates built successfully. Cargo staged the unpublished workspace dependency in a temporary local registry. Nothing was uploaded.",
+  "packages": [
+    {
+      "crate": "rav1d-disjoint-mut-0.3.2",
+      "compressed_bytes": 162633,
+      "unpacked_file_bytes": 571303,
+      "files": 22,
+      "sha256": "edf799c9074f8d08d4a59c2ba649994f172172442a602fd3d7efc3de7b0a0ea1",
+      "unpacked_groups": {
+        "other": 41695,
+        "documentation": 41188,
+        "other Rust": 488420
+      },
+      "largest_files": [
+        {
+          "path": "src/tracker_shard.rs",
+          "bytes": 200070
+        },
+        {
+          "path": "src/lib.rs",
+          "bytes": 102965
+        },
+        {
+          "path": "src/bounds_probe.rs",
+          "bytes": 82838
+        },
+        {
+          "path": "src/tracker_legacy.rs",
+          "bytes": 22823
+        },
+        {
+          "path": "AUDIT.md",
+          "bytes": 22352
+        },
+        {
+          "path": "Cargo.lock",
+          "bytes": 19326
+        },
+        {
+          "path": "src/probe.rs",
+          "bytes": 17770
+        },
+        {
+          "path": "src/align.rs",
+          "bytes": 13788
+        }
+      ]
+    },
+    {
+      "crate": "rav1d-safe-0.6.0",
+      "compressed_bytes": 2190640,
+      "unpacked_file_bytes": 14985506,
+      "files": 268,
+      "sha256": "2d86aa0517092a1958267d18030fbbb0e569b49ff47457d948eba3d082998c76",
+      "unpacked_groups": {
+        "other": 122827,
+        "documentation": 141765,
+        "other Rust": 2656529,
+        "assembly": 8329428,
+        "safe SIMD Rust": 3734957
+      },
+      "largest_files": [
+        {
+          "path": "src/safe_simd/mc.rs",
+          "bytes": 408273
+        },
+        {
+          "path": "src/x86/mc_sse.asm",
+          "bytes": 333824
+        },
+        {
+          "path": "src/x86/mc16_sse.asm",
+          "bytes": 327466
+        },
+        {
+          "path": "src/x86/itx16_avx2.asm",
+          "bytes": 318764
+        },
+        {
+          "path": "src/x86/itx_avx512.asm",
+          "bytes": 304805
+        },
+        {
+          "path": "src/safe_simd/itx_arm.rs",
+          "bytes": 296995
+        },
+        {
+          "path": "src/x86/itx16_sse.asm",
+          "bytes": 285869
+        },
+        {
+          "path": "src/x86/itx_sse.asm",
+          "bytes": 264136
+        }
+      ]
+    }
+  ]
+}
