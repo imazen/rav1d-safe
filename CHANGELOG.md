@@ -9,6 +9,10 @@ Release candidate notes and remaining publication gates are in
 published; the historical staging date below is not a release date.
 
 ### Release preparation
+- Refresh workspace dependency requirements and lockfile, including cc 1.4.5,
+  zenbench 0.1.9, tango-bench 0.8.0, zenavif-parse 0.6.2 and Criterion 0.8.2.
+  Decoder development tools need Rust 1.93; library minimums remain unchanged.
+  Disjoint-mut benchmark tooling is optional behind `__bench`.
 - Use crates.io archmage 0.9.29 for normal and test builds, and its unified
   `archmage::intrinsics` namespace for safe reference-based SIMD memory access.
 - Restore the ARM assembly offset header required by film grain and reference

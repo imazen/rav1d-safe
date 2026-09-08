@@ -4,8 +4,9 @@
 //! by the lock acquisition in BorrowTracker. Useful for comparing spinlock
 //! vs Mutex implementations.
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use rav1d_disjoint_mut::DisjointMut;
+use std::hint::black_box;
 
 /// Single-threaded borrow/release: measures uncontended lock overhead.
 fn bench_uncontended_mut_borrow(c: &mut Criterion) {
