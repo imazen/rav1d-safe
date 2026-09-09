@@ -93,6 +93,35 @@ The downstream fixture was subsequently rustfmt-formatted without semantic
 changes. `review.py` and `mutation.py` reproduce the independent checks; the
 maintenance branch's `scripts/review-disjoint-032.py` runs its release gates.
 
+## Loom model source
+
+[`loom_032.rs`](loom_032.rs) is the model that produced [loom-loom.log](loom-loom.log)
+and [loom.json](loom.json): `cargo test -p rav1d-disjoint-mut --lib loom_032` under
+`RUSTFLAGS=--cfg disjoint_mut_loom`, 3 models passing. Only the logs were archived
+here originally, so the source is added for completeness.
+
+It models **the published 0.3 tracker**, not the shipped one. That distinction is the
+reason to keep it: 0.3.1 is the revision whose guard-move failure under both Miri
+models is recorded in [the release protocol](../../docs/RELEASE_SOUNDNESS_PROTOCOL.md),
+and this is the only Loom model of the protocol that produced it.
+`crates/rav1d-disjoint-mut/src/loom_protocol.rs` supersedes it for current work —
+range-based bounds, wide/narrow and multi-shard cases — and is what CI runs.
+
+The file does not compile against `main`. It is a submodule of the backport
+candidate's inline `checked` module and reaches its `BorrowTracker`/`BorrowId`
+through `use super::*`; that tracker was replaced by the sharded implementation.
+To run it, use the preserved candidate branch, where it sits at
+`crates/rav1d-disjoint-mut/src/checked/loom_032.rs`:
+
+    git fetch origin audit/disjoint-mut-032-backport
+    git checkout FETCH_HEAD
+    RUSTFLAGS='--cfg disjoint_mut_loom' \
+      cargo test -p rav1d-disjoint-mut --lib loom_032 -- --test-threads=1
+
+Branch `audit/disjoint-mut-032-backport`, commit `fe45fd6c`, is the full candidate
+described above; it was pushed to origin so this archive's subject survives the
+local branch cleanup.
+
 ## Package and release state
 
 Archive: `~/tmp/rav1d-review-0.3.2/package-checkout/target/package/rav1d-disjoint-mut-0.3.2.crate`.
