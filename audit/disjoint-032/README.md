@@ -93,6 +93,16 @@ The downstream fixture was subsequently rustfmt-formatted without semantic
 changes. `review.py` and `mutation.py` reproduce the independent checks; the
 maintenance branch's `scripts/review-disjoint-032.py` runs its release gates.
 
+## Backward compatibility of the published 0.3.2
+
+[BACKCOMPAT-0.3.2.md](BACKCOMPAT-0.3.2.md) records whether published rav1d-safe
+0.5.5/0.5.6/0.5.7 still work once 0.3.2 reaches them by automatic `^0.3.x`
+resolution: API items used, an auto-trait matrix compiled against both published
+versions (20/20 identical, covering the `&mut V` to `NonNull` guard change), and
+decode identity over the 25 committed crash vectors at 1, 4 and 8 threads. It also
+records the pre-existing tile-threading race those decoders carry, which `49df1fc`
+fixed after all three shipped.
+
 ## Loom model source
 
 [`loom_032.rs`](loom_032.rs) is the model that produced [loom-loom.log](loom-loom.log)
