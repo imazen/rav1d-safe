@@ -183,8 +183,12 @@ fn inv_txfm_add_dct_dct_4x4_8bpc(
     // Column transform: DCT4 across all 4 columns
     let (f0, f1, f2, f3) = dct4_4rows(tc0, tc1, tc2, tc3, col_clip_min, col_clip_max);
 
-    // Transpose back to row-major for output
-    let (out0, out1, out2, out3) = transpose_4x4(f0, f1, f2, f3);
+    // fJ already holds ROW J of the final matrix: the column pass consumes
+    // lanes grouped as columns, so its J-th outputs across lanes form row J.
+    // Do NOT transpose again here: a second transpose would write columns as
+    // rows (pixelated top-band corruption on real content; only symmetric /
+    // DC-only blocks were unaffected).
+    let (out0, out1, out2, out3) = (f0, f1, f2, f3);
 
     // Scale: (val + 8) >> 4
     let rnd = i32x4_splat(8);
@@ -360,8 +364,9 @@ fn inv_txfm_add_dct_dct_4x4_16bpc(
     // Column transform
     let (f0, f1, f2, f3) = dct4_4rows(tc0, tc1, tc2, tc3, col_clip_min, col_clip_max);
 
-    // Transpose back
-    let (out0, out1, out2, out3) = transpose_4x4(f0, f1, f2, f3);
+    // fJ already holds ROW J of the final matrix (see the 8bpc kernel note).
+    // A second transpose here would write columns as rows.
+    let (out0, out1, out2, out3) = (f0, f1, f2, f3);
 
     // Scale: (val + 8) >> 4
     let rnd = i32x4_splat(8);
