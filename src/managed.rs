@@ -1393,29 +1393,33 @@ pub struct ContentLightLevel {
     pub max_frame_average_light_level: u16,
 }
 
-/// HDR mastering display color volume (SMPTE 2086)
+/// HDR mastering display color volume carried by AV1.
+///
+/// Fields retain the AV1 metadata OBU's unsigned fixed-point representation.
+/// Its units differ from the integer representation used by some other codecs
+/// and containers. Use the accessors to obtain physical values.
 #[derive(Clone, Copy, Debug)]
 pub struct MasteringDisplay {
-    /// RGB primaries in 0.00002 increments \[R\], \[G\], \[B\]
+    /// RGB primaries in unsigned 0.16 fixed point \[R\], \[G\], \[B\].
     /// Each is [x, y] chromaticity coordinate
     pub primaries: [[u16; 2]; 3],
-    /// White point [x, y] in 0.00002 increments
+    /// White point [x, y] in unsigned 0.16 fixed point.
     pub white_point: [u16; 2],
-    /// Maximum luminance in 0.0001 cd/m² increments
+    /// Maximum luminance in unsigned 24.8 fixed point, in cd/m².
     pub max_luminance: u32,
-    /// Minimum luminance in 0.0001 cd/m² increments
+    /// Minimum luminance in unsigned 18.14 fixed point, in cd/m².
     pub min_luminance: u32,
 }
 
 impl MasteringDisplay {
     /// Get max luminance in nits (cd/m²)
     pub fn max_luminance_nits(&self) -> f64 {
-        self.max_luminance as f64 / 10000.0
+        self.max_luminance as f64 / 256.0
     }
 
     /// Get min luminance in nits (cd/m²)
     pub fn min_luminance_nits(&self) -> f64 {
-        self.min_luminance as f64 / 10000.0
+        self.min_luminance as f64 / 16384.0
     }
 
     /// Get primary chromaticity as normalized floats [0.0, 1.0]
@@ -1424,16 +1428,16 @@ impl MasteringDisplay {
     pub fn primary_chromaticity(&self, index: usize) -> [f64; 2] {
         assert!(index < 3, "primary index must be 0-2");
         [
-            self.primaries[index][0] as f64 / 50000.0,
-            self.primaries[index][1] as f64 / 50000.0,
+            self.primaries[index][0] as f64 / 65536.0,
+            self.primaries[index][1] as f64 / 65536.0,
         ]
     }
 
     /// Get white point as normalized floats [0.0, 1.0]
     pub fn white_point_chromaticity(&self) -> [f64; 2] {
         [
-            self.white_point[0] as f64 / 50000.0,
-            self.white_point[1] as f64 / 50000.0,
+            self.white_point[0] as f64 / 65536.0,
+            self.white_point[1] as f64 / 65536.0,
         ]
     }
 }
