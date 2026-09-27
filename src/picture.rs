@@ -395,5 +395,6 @@ pub(crate) fn rav1d_picture_alloc_copy(
         src.itut_t35.clone(),
         src.m.clone(),
     );
+    dst.show_existing_frame = src.show_existing_frame;
     Ok(())
 }

@@ -89,3 +89,19 @@ both checked mode and with `unchecked` to exercise actual frame threading:
 cargo nextest run --release --no-default-features --features bitdepth_8,bitdepth_16 --test managed_packets
 cargo nextest run --release --no-default-features --features bitdepth_8,bitdepth_16,unchecked --test managed_packets
 ```
+
+## Presentation provenance
+
+`Frame::is_show_existing` describes this presentation, independently of the
+older coded header retained with a reference picture. `is_keyframe` is true
+only for a newly coded, visible key frame. A hidden key frame or a replay of an
+older key frame is not a new visible keyframe. These flags survive output
+queueing, frame threading, cloning, and the picture copy used for grain.
+
+This is not a complete random-access promise. A demuxer still needs packet
+boundaries, the applicable sequence header and container initialization data.
+`input_offset` identifies the presentation packet, not the original coded
+reference. The C picture ABI is unchanged and does not expose these Rust flags.
+
+The native reordered fixture in `tests/media_vectors/` records its clean encoder
+revision, source formula and hashes in an adjacent JSON manifest.

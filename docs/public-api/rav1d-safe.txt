@@ -6,7 +6,7 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: rav1d-safe.txt 1290 lines (supported surface) | rav1d-safe.features.txt 115 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,c-ffi,dav1d-compat,libc,partial_asm,unchecked) | rav1d-safe.internal.txt 71 lines (72 hidden + 0 excluded-feature)
+# files: rav1d-safe.txt 1294 lines (supported surface) | rav1d-safe.features.txt 115 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,c-ffi,dav1d-compat,libc,partial_asm,unchecked) | rav1d-safe.internal.txt 71 lines (72 hidden + 0 excluded-feature)
 
 ## summary
 #
@@ -14,7 +14,7 @@
 #   pub types (struct/enum/trait/alias)       141
 #   pub consts/statics                        200
 #   free functions                             18
-#   inherent methods                          131
+#   inherent methods                          135
 #   struct fields                             476
 #   enum variants                             227
 #   re-exports                                  3
@@ -26,9 +26,9 @@
 # per-module pub lines:
 #   (root)                          171
 #   include                         763
-#   src                             274
+#   src                             278
 
-## items (1175 lines)
+## items (1179 lines)
 
 pub mod rav1d_safe
 pub mod include
@@ -948,6 +948,8 @@ pub fn src::managed::Frame::content_light(&self) -> core::option::Option<src::ma
 pub fn src::managed::Frame::duration(&self) -> i64
 pub fn src::managed::Frame::height(&self) -> u32
 pub fn src::managed::Frame::input_offset(&self) -> i64
+pub fn src::managed::Frame::is_keyframe(&self) -> bool
+pub fn src::managed::Frame::is_show_existing(&self) -> bool
 pub fn src::managed::Frame::mastering_display(&self) -> core::option::Option<src::managed::MasteringDisplay>
 pub fn src::managed::Frame::pixel_layout(&self) -> src::managed::PixelLayout
 pub fn src::managed::Frame::planes(&self) -> src::managed::Planes<'_>
@@ -1133,6 +1135,8 @@ pub fn src::managed::Frame::content_light(&self) -> core::option::Option<src::ma
 pub fn src::managed::Frame::duration(&self) -> i64
 pub fn src::managed::Frame::height(&self) -> u32
 pub fn src::managed::Frame::input_offset(&self) -> i64
+pub fn src::managed::Frame::is_keyframe(&self) -> bool
+pub fn src::managed::Frame::is_show_existing(&self) -> bool
 pub fn src::managed::Frame::mastering_display(&self) -> core::option::Option<src::managed::MasteringDisplay>
 pub fn src::managed::Frame::pixel_layout(&self) -> src::managed::PixelLayout
 pub fn src::managed::Frame::planes(&self) -> src::managed::Planes<'_>

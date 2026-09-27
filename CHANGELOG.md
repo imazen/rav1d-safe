@@ -12,6 +12,9 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   decoded-frame accessors.
 
 ### Added
+- Managed frame presentation provenance: `is_show_existing` distinguishes
+  replayed reference pictures, and `is_keyframe` identifies newly coded visible
+  key frames without mistaking an older reference header for a new seek point.
 - Owned `Packet` submission with explicit accepted/backpressure results, input
   timestamp/duration/offset propagation, and incremental `end_input`/`receive`
   draining with terminal EOS. `reset` explicitly discards pending state while
