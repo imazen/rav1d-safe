@@ -909,23 +909,39 @@ macro_rules! impl_4x8_transform {
             let col_clip_max = i16::MAX as i32;
             let mut tmp = [0i32; 32];
 
-            let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
+            // Row transform: 4-pt, 8 rows at once (rect2 input, no output shift).
+            $row_fn(
+                _token,
+                coeff.as_slice(),
+                8,
+                0,
+                true,
+                0,
+                0,
+                &mut tmp[..],
+                row_clip_min,
+                row_clip_max,
+                col_clip_min,
+                col_clip_max,
+            );
 
-            // Row transform (4 elements each, 8 rows)
-            for y in 0..8 {
-                let mut scratch = [0i32; 4];
-                for x in 0..4 {
-                    scratch[x] = rect2_scale(coeff[y + x * 8] as i32);
+            // Column transform: 8-pt across the 4 columns (lanes 4..7 stay 0).
+            {
+                let min_v = _mm256_set1_epi32(col_clip_min);
+                let max_v = _mm256_set1_epi32(col_clip_max);
+                let mut v = [_mm256_setzero_si256(); 8];
+                for i in 0..8 {
+                    let arr: &[i32; 4] = (&tmp[i * 4..i * 4 + 4]).try_into().unwrap();
+                    v[i] = _mm256_set_m128i(_mm_setzero_si128(), loadu_128!(arr));
                 }
-                $row_fn(&mut scratch[..4], 1, row_clip_min, row_clip_max);
-                for x in 0..4 {
-                    tmp[y * 4 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
+                $col_fn(_token, &mut v, min_v, max_v);
+                for i in 0..8 {
+                    storeu_128!(
+                        &mut tmp[i * 4..i * 4 + 4],
+                        [i32; 4],
+                        _mm256_castsi256_si128(v[i])
+                    );
                 }
-            }
-
-            // Column transform (8 elements each, 4 columns)
-            for x in 0..4 {
-                $col_fn(&mut tmp[x..], 4, col_clip_min, col_clip_max);
             }
 
             // Add to destination
@@ -981,23 +997,34 @@ macro_rules! impl_8x4_transform {
             let col_clip_max = i16::MAX as i32;
             let mut tmp = [0i32; 32];
 
-            let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
+            // Row transform: 8-pt, 4 rows at once (rect2 input, no output shift).
+            $row_fn(
+                _token,
+                coeff.as_slice(),
+                4,
+                0,
+                true,
+                0,
+                0,
+                &mut tmp[..],
+                row_clip_min,
+                row_clip_max,
+                col_clip_min,
+                col_clip_max,
+            );
 
-            // Row transform (8 elements each, 4 rows)
-            for y in 0..4 {
-                let mut scratch = [0i32; 8];
-                for x in 0..8 {
-                    scratch[x] = rect2_scale(coeff[y + x * 4] as i32);
+            // Column transform: 4-pt across all 8 columns at once.
+            {
+                let min_v = _mm256_set1_epi32(col_clip_min);
+                let max_v = _mm256_set1_epi32(col_clip_max);
+                let mut v = [_mm256_setzero_si256(); 4];
+                for i in 0..4 {
+                    v[i] = loadu_256!(&tmp[i * 8..i * 8 + 8], [i32; 8]);
                 }
-                $row_fn(&mut scratch[..8], 1, row_clip_min, row_clip_max);
-                for x in 0..8 {
-                    tmp[y * 8 + x] = iclip(scratch[x], col_clip_min, col_clip_max);
+                $col_fn(_token, &mut v, min_v, max_v);
+                for i in 0..4 {
+                    storeu_256!(&mut tmp[i * 8..i * 8 + 8], [i32; 8], v[i]);
                 }
-            }
-
-            // Column transform (4 elements each, 8 columns)
-            for x in 0..8 {
-                $col_fn(&mut tmp[x..], 8, col_clip_min, col_clip_max);
             }
 
             // Add to destination
@@ -1017,72 +1044,48 @@ macro_rules! impl_8x4_transform {
 }
 
 // Generate 4x8 ADST variants
-impl_4x8_transform!(inv_txfm_add_adst_dct_4x8_8bpc_avx2_inner, adst4_1d, dct8_1d);
-impl_4x8_transform!(inv_txfm_add_dct_adst_4x8_8bpc_avx2_inner, dct4_1d, adst8_1d);
+impl_4x8_transform!(inv_txfm_add_adst_dct_4x8_8bpc_avx2_inner, simd_row_adst4_8bpc_8rows,dct8_1d_cols8);
+impl_4x8_transform!(inv_txfm_add_dct_adst_4x8_8bpc_avx2_inner, simd_row_dct4_8bpc_8rows,adst8_1d_cols8);
 impl_4x8_transform!(
     inv_txfm_add_adst_adst_4x8_8bpc_avx2_inner,
-    adst4_1d,
-    adst8_1d
-);
+    simd_row_adst4_8bpc_8rows,adst8_1d_cols8);
 impl_4x8_transform!(
     inv_txfm_add_flipadst_dct_4x8_8bpc_avx2_inner,
-    flipadst4_1d,
-    dct8_1d
-);
+    simd_row_flipadst4_8bpc_8rows,dct8_1d_cols8);
 impl_4x8_transform!(
     inv_txfm_add_dct_flipadst_4x8_8bpc_avx2_inner,
-    dct4_1d,
-    flipadst8_1d
-);
+    simd_row_dct4_8bpc_8rows,flipadst8_1d_cols8);
 impl_4x8_transform!(
     inv_txfm_add_flipadst_flipadst_4x8_8bpc_avx2_inner,
-    flipadst4_1d,
-    flipadst8_1d
-);
+    simd_row_flipadst4_8bpc_8rows,flipadst8_1d_cols8);
 impl_4x8_transform!(
     inv_txfm_add_adst_flipadst_4x8_8bpc_avx2_inner,
-    adst4_1d,
-    flipadst8_1d
-);
+    simd_row_adst4_8bpc_8rows,flipadst8_1d_cols8);
 impl_4x8_transform!(
     inv_txfm_add_flipadst_adst_4x8_8bpc_avx2_inner,
-    flipadst4_1d,
-    adst8_1d
-);
+    simd_row_flipadst4_8bpc_8rows,adst8_1d_cols8);
 
 // Generate 8x4 ADST variants
-impl_8x4_transform!(inv_txfm_add_adst_dct_8x4_8bpc_avx2_inner, adst8_1d, dct4_1d);
-impl_8x4_transform!(inv_txfm_add_dct_adst_8x4_8bpc_avx2_inner, dct8_1d, adst4_1d);
+impl_8x4_transform!(inv_txfm_add_adst_dct_8x4_8bpc_avx2_inner, simd_row_adst8_8bpc_4rows,dct4_1d_cols8);
+impl_8x4_transform!(inv_txfm_add_dct_adst_8x4_8bpc_avx2_inner, simd_row_dct8_8bpc_4rows,adst4_1d_cols8);
 impl_8x4_transform!(
     inv_txfm_add_adst_adst_8x4_8bpc_avx2_inner,
-    adst8_1d,
-    adst4_1d
-);
+    simd_row_adst8_8bpc_4rows,adst4_1d_cols8);
 impl_8x4_transform!(
     inv_txfm_add_flipadst_dct_8x4_8bpc_avx2_inner,
-    flipadst8_1d,
-    dct4_1d
-);
+    simd_row_flipadst8_8bpc_4rows,dct4_1d_cols8);
 impl_8x4_transform!(
     inv_txfm_add_dct_flipadst_8x4_8bpc_avx2_inner,
-    dct8_1d,
-    flipadst4_1d
-);
+    simd_row_dct8_8bpc_4rows,flipadst4_1d_cols8);
 impl_8x4_transform!(
     inv_txfm_add_flipadst_flipadst_8x4_8bpc_avx2_inner,
-    flipadst8_1d,
-    flipadst4_1d
-);
+    simd_row_flipadst8_8bpc_4rows,flipadst4_1d_cols8);
 impl_8x4_transform!(
     inv_txfm_add_adst_flipadst_8x4_8bpc_avx2_inner,
-    adst8_1d,
-    flipadst4_1d
-);
+    simd_row_adst8_8bpc_4rows,flipadst4_1d_cols8);
 impl_8x4_transform!(
     inv_txfm_add_flipadst_adst_8x4_8bpc_avx2_inner,
-    flipadst8_1d,
-    adst4_1d
-);
+    simd_row_flipadst8_8bpc_4rows,adst4_1d_cols8);
 
 // FFI wrappers for 4x8 ADST variants
 macro_rules! impl_4x8_ffi_wrapper {
@@ -1223,14 +1226,10 @@ impl_8x4_ffi_wrapper!(
 // IDTX for 4x8 and 8x4
 impl_4x8_transform!(
     inv_txfm_add_identity_identity_4x8_8bpc_avx2_inner,
-    identity4_1d,
-    identity8_1d
-);
+    simd_row_identity4_8bpc_8rows,identity8_1d_cols8);
 impl_8x4_transform!(
     inv_txfm_add_identity_identity_8x4_8bpc_avx2_inner,
-    identity8_1d,
-    identity4_1d
-);
+    simd_row_identity8_8bpc_4rows,identity4_1d_cols8);
 impl_4x8_ffi_wrapper!(
     inv_txfm_add_identity_identity_4x8_8bpc_v3,
     inv_txfm_add_identity_identity_4x8_8bpc_avx2_inner
@@ -1243,14 +1242,10 @@ impl_8x4_ffi_wrapper!(
 // H_DCT and V_DCT for 4x8 (identity+dct mixes)
 impl_4x8_transform!(
     inv_txfm_add_identity_dct_4x8_8bpc_avx2_inner,
-    identity4_1d,
-    dct8_1d
-);
+    simd_row_identity4_8bpc_8rows,dct8_1d_cols8);
 impl_4x8_transform!(
     inv_txfm_add_dct_identity_4x8_8bpc_avx2_inner,
-    dct4_1d,
-    identity8_1d
-);
+    simd_row_dct4_8bpc_8rows,identity8_1d_cols8);
 impl_4x8_ffi_wrapper!(
     inv_txfm_add_identity_dct_4x8_8bpc_v3,
     inv_txfm_add_identity_dct_4x8_8bpc_avx2_inner
@@ -1263,14 +1258,10 @@ impl_4x8_ffi_wrapper!(
 // H_DCT and V_DCT for 8x4
 impl_8x4_transform!(
     inv_txfm_add_identity_dct_8x4_8bpc_avx2_inner,
-    identity8_1d,
-    dct4_1d
-);
+    simd_row_identity8_8bpc_4rows,dct4_1d_cols8);
 impl_8x4_transform!(
     inv_txfm_add_dct_identity_8x4_8bpc_avx2_inner,
-    dct8_1d,
-    identity4_1d
-);
+    simd_row_dct8_8bpc_4rows,identity4_1d_cols8);
 impl_8x4_ffi_wrapper!(
     inv_txfm_add_identity_dct_8x4_8bpc_v3,
     inv_txfm_add_identity_dct_8x4_8bpc_avx2_inner
@@ -1283,24 +1274,16 @@ impl_8x4_ffi_wrapper!(
 // H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 4x8
 impl_4x8_transform!(
     inv_txfm_add_identity_adst_4x8_8bpc_avx2_inner,
-    identity4_1d,
-    adst8_1d
-);
+    simd_row_identity4_8bpc_8rows,adst8_1d_cols8);
 impl_4x8_transform!(
     inv_txfm_add_adst_identity_4x8_8bpc_avx2_inner,
-    adst4_1d,
-    identity8_1d
-);
+    simd_row_adst4_8bpc_8rows,identity8_1d_cols8);
 impl_4x8_transform!(
     inv_txfm_add_identity_flipadst_4x8_8bpc_avx2_inner,
-    identity4_1d,
-    flipadst8_1d
-);
+    simd_row_identity4_8bpc_8rows,flipadst8_1d_cols8);
 impl_4x8_transform!(
     inv_txfm_add_flipadst_identity_4x8_8bpc_avx2_inner,
-    flipadst4_1d,
-    identity8_1d
-);
+    simd_row_flipadst4_8bpc_8rows,identity8_1d_cols8);
 impl_4x8_ffi_wrapper!(
     inv_txfm_add_identity_adst_4x8_8bpc_v3,
     inv_txfm_add_identity_adst_4x8_8bpc_avx2_inner
@@ -1321,24 +1304,16 @@ impl_4x8_ffi_wrapper!(
 // H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 8x4
 impl_8x4_transform!(
     inv_txfm_add_identity_adst_8x4_8bpc_avx2_inner,
-    identity8_1d,
-    adst4_1d
-);
+    simd_row_identity8_8bpc_4rows,adst4_1d_cols8);
 impl_8x4_transform!(
     inv_txfm_add_adst_identity_8x4_8bpc_avx2_inner,
-    adst8_1d,
-    identity4_1d
-);
+    simd_row_adst8_8bpc_4rows,identity4_1d_cols8);
 impl_8x4_transform!(
     inv_txfm_add_identity_flipadst_8x4_8bpc_avx2_inner,
-    identity8_1d,
-    flipadst4_1d
-);
+    simd_row_identity8_8bpc_4rows,flipadst4_1d_cols8);
 impl_8x4_transform!(
     inv_txfm_add_flipadst_identity_8x4_8bpc_avx2_inner,
-    flipadst8_1d,
-    identity4_1d
-);
+    simd_row_flipadst8_8bpc_4rows,identity4_1d_cols8);
 impl_8x4_ffi_wrapper!(
     inv_txfm_add_identity_adst_8x4_8bpc_v3,
     inv_txfm_add_identity_adst_8x4_8bpc_avx2_inner
@@ -1360,9 +1335,18 @@ impl_8x4_ffi_wrapper!(
 // 8x16 and 16x8 ADST/FLIPADST variants
 // ============================================================================
 
-/// Helper macro for 8x16 transforms with configurable row/col transforms
+/// Helper macro for 8x16 transforms with configurable row/col transforms.
+/// `$row_fn` is a `simd_row_*8_8bpc_8rows` helper (two calls: y_base 0 and 8);
+/// the `adst(fn, flip)` form passes `flipped` to the shared ADST helper.
+/// `$col_fn` is a `*_1d_cols8` 16-point transform over all 8 columns at once.
 macro_rules! impl_8x16_transform {
+    ($name:ident, adst($row_fn:ident, $flipped:literal), $col_fn:ident) => {
+        impl_8x16_transform!(@gen $name, { $row_fn } ($flipped,), $col_fn);
+    };
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
+        impl_8x16_transform!(@gen $name, { $row_fn } (), $col_fn);
+    };
+    (@gen $name:ident, { $row_fn:ident } ($($flipped:tt)*), $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
         fn $name(
@@ -1384,25 +1368,40 @@ macro_rules! impl_8x16_transform {
             let col_clip_max = i16::MAX as i32;
             let mut tmp = [0i32; 128];
 
-            let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
-
-            // Row transform (8 elements each, 16 rows)
-            let rnd = 1;
-            let shift = 1;
-            for y in 0..16 {
-                let mut scratch = [0i32; 8];
-                for x in 0..8 {
-                    scratch[x] = rect2_scale(coeff[y + x * 16] as i32);
-                }
-                $row_fn(&mut scratch[..8], 1, row_clip_min, row_clip_max);
-                for x in 0..8 {
-                    tmp[y * 8 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
+            // Row transform: 8-pt, 16 rows in two batches (rect2, rnd=1, shift=1).
+            {
+                let coeff_slice = coeff.as_slice();
+                for y_base in [0usize, 8] {
+                    $row_fn(
+                        _token,
+                        coeff_slice,
+                        16,
+                        y_base,
+                        true,
+                        $($flipped)*
+                        1,
+                        1,
+                        &mut tmp[..],
+                        row_clip_min,
+                        row_clip_max,
+                        col_clip_min,
+                        col_clip_max,
+                    );
                 }
             }
 
-            // Column transform (16 elements each, 8 columns)
-            for x in 0..8 {
-                $col_fn(&mut tmp[x..], 8, col_clip_min, col_clip_max);
+            // Column transform: 16-pt across all 8 columns at once.
+            {
+                let min_v = _mm256_set1_epi32(col_clip_min);
+                let max_v = _mm256_set1_epi32(col_clip_max);
+                let mut v = [_mm256_setzero_si256(); 16];
+                for i in 0..16 {
+                    v[i] = loadu_256!(&tmp[i * 8..i * 8 + 8], [i32; 8]);
+                }
+                $col_fn(_token, &mut v, min_v, max_v);
+                for i in 0..16 {
+                    storeu_256!(&mut tmp[i * 8..i * 8 + 8], [i32; 8], v[i]);
+                }
             }
 
             // Add to destination
@@ -1449,9 +1448,18 @@ macro_rules! impl_8x16_transform {
     };
 }
 
-/// Helper macro for 16x8 transforms with configurable row/col transforms
+/// Helper macro for 16x8 transforms with configurable row/col transforms.
+/// `$row_fn` is a `simd_row_*16_8bpc_8rows` helper (one call: y_base 0); the
+/// `adst(fn, flip)` form passes `flipped` to the shared ADST helper.
+/// `$col_fn` is a `*_1d_cols8` 8-point transform run on two 8-column chunks.
 macro_rules! impl_16x8_transform {
+    ($name:ident, adst($row_fn:ident, $flipped:literal), $col_fn:ident) => {
+        impl_16x8_transform!(@gen $name, { $row_fn } ($flipped,), $col_fn);
+    };
     ($name:ident, $row_fn:ident, $col_fn:ident) => {
+        impl_16x8_transform!(@gen $name, { $row_fn } (), $col_fn);
+    };
+    (@gen $name:ident, { $row_fn:ident } ($($flipped:tt)*), $col_fn:ident) => {
         #[cfg(target_arch = "x86_64")]
         #[arcane]
         fn $name(
@@ -1473,26 +1481,40 @@ macro_rules! impl_16x8_transform {
             let col_clip_max = i16::MAX as i32;
             let mut tmp = [0i32; 128];
 
-            let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
-
-            // Row transform (16 elements each, 8 rows)
-            let rnd = 1;
-            let shift = 1;
-            for y in 0..8 {
-                let mut scratch = [0i32; 16];
-                for x in 0..16 {
-                    scratch[x] = rect2_scale(coeff[y + x * 8] as i32);
-                }
-                $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
-                for x in 0..16 {
-                    tmp[y * 16 + x] =
-                        iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
-                }
+            // Row transform: 16-pt, 8 rows at once (rect2, rnd=1, shift=1).
+            {
+                let coeff_slice = coeff.as_slice();
+                $row_fn(
+                    _token,
+                    coeff_slice,
+                    8,
+                    0,
+                    true,
+                    $($flipped)*
+                    1,
+                    1,
+                    &mut tmp[..],
+                    row_clip_min,
+                    row_clip_max,
+                    col_clip_min,
+                    col_clip_max,
+                );
             }
 
-            // Column transform (8 elements each, 16 columns)
-            for x in 0..16 {
-                $col_fn(&mut tmp[x..], 16, col_clip_min, col_clip_max);
+            // Column transform: 8-pt, 16 columns in two 8-column chunks.
+            {
+                let min_v = _mm256_set1_epi32(col_clip_min);
+                let max_v = _mm256_set1_epi32(col_clip_max);
+                for cx in [0usize, 8] {
+                    let mut v = [_mm256_setzero_si256(); 8];
+                    for i in 0..8 {
+                        v[i] = loadu_256!(&tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8]);
+                    }
+                    $col_fn(_token, &mut v, min_v, max_v);
+                    for i in 0..8 {
+                        storeu_256!(&mut tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8], v[i]);
+                    }
+                }
             }
 
             // Add to destination
@@ -1554,86 +1576,54 @@ macro_rules! impl_16x8_transform {
 // Generate 8x16 ADST inner functions
 impl_8x16_transform!(
     inv_txfm_add_adst_dct_8x16_8bpc_avx2_inner,
-    adst8_1d,
-    dct16_1d
-);
+    adst(simd_row_adst8_8bpc_8rows, false),dct16_1d_cols8);
 impl_8x16_transform!(
     inv_txfm_add_dct_adst_8x16_8bpc_avx2_inner,
-    dct8_1d,
-    adst16_1d
-);
+    simd_row_dct8_8bpc_8rows,adst16_1d_cols8);
 impl_8x16_transform!(
     inv_txfm_add_adst_adst_8x16_8bpc_avx2_inner,
-    adst8_1d,
-    adst16_1d
-);
+    adst(simd_row_adst8_8bpc_8rows, false),adst16_1d_cols8);
 impl_8x16_transform!(
     inv_txfm_add_flipadst_dct_8x16_8bpc_avx2_inner,
-    flipadst8_1d,
-    dct16_1d
-);
+    adst(simd_row_adst8_8bpc_8rows, true),dct16_1d_cols8);
 impl_8x16_transform!(
     inv_txfm_add_dct_flipadst_8x16_8bpc_avx2_inner,
-    dct8_1d,
-    flipadst16_1d
-);
+    simd_row_dct8_8bpc_8rows,flipadst16_1d_cols8);
 impl_8x16_transform!(
     inv_txfm_add_flipadst_flipadst_8x16_8bpc_avx2_inner,
-    flipadst8_1d,
-    flipadst16_1d
-);
+    adst(simd_row_adst8_8bpc_8rows, true),flipadst16_1d_cols8);
 impl_8x16_transform!(
     inv_txfm_add_adst_flipadst_8x16_8bpc_avx2_inner,
-    adst8_1d,
-    flipadst16_1d
-);
+    adst(simd_row_adst8_8bpc_8rows, false),flipadst16_1d_cols8);
 impl_8x16_transform!(
     inv_txfm_add_flipadst_adst_8x16_8bpc_avx2_inner,
-    flipadst8_1d,
-    adst16_1d
-);
+    adst(simd_row_adst8_8bpc_8rows, true),adst16_1d_cols8);
 
 // Generate 16x8 ADST inner functions
 impl_16x8_transform!(
     inv_txfm_add_adst_dct_16x8_8bpc_avx2_inner,
-    adst16_1d,
-    dct8_1d
-);
+    adst(simd_row_adst16_8bpc_8rows, false),dct8_1d_cols8);
 impl_16x8_transform!(
     inv_txfm_add_dct_adst_16x8_8bpc_avx2_inner,
-    dct16_1d,
-    adst8_1d
-);
+    simd_row_dct16_8bpc_8rows,adst8_1d_cols8);
 impl_16x8_transform!(
     inv_txfm_add_adst_adst_16x8_8bpc_avx2_inner,
-    adst16_1d,
-    adst8_1d
-);
+    adst(simd_row_adst16_8bpc_8rows, false),adst8_1d_cols8);
 impl_16x8_transform!(
     inv_txfm_add_flipadst_dct_16x8_8bpc_avx2_inner,
-    flipadst16_1d,
-    dct8_1d
-);
+    adst(simd_row_adst16_8bpc_8rows, true),dct8_1d_cols8);
 impl_16x8_transform!(
     inv_txfm_add_dct_flipadst_16x8_8bpc_avx2_inner,
-    dct16_1d,
-    flipadst8_1d
-);
+    simd_row_dct16_8bpc_8rows,flipadst8_1d_cols8);
 impl_16x8_transform!(
     inv_txfm_add_flipadst_flipadst_16x8_8bpc_avx2_inner,
-    flipadst16_1d,
-    flipadst8_1d
-);
+    adst(simd_row_adst16_8bpc_8rows, true),flipadst8_1d_cols8);
 impl_16x8_transform!(
     inv_txfm_add_adst_flipadst_16x8_8bpc_avx2_inner,
-    adst16_1d,
-    flipadst8_1d
-);
+    adst(simd_row_adst16_8bpc_8rows, false),flipadst8_1d_cols8);
 impl_16x8_transform!(
     inv_txfm_add_flipadst_adst_16x8_8bpc_avx2_inner,
-    flipadst16_1d,
-    adst8_1d
-);
+    adst(simd_row_adst16_8bpc_8rows, true),adst8_1d_cols8);
 
 /// FFI wrapper macro for 8x16 transforms
 macro_rules! impl_8x16_ffi_wrapper {
@@ -1776,14 +1766,10 @@ impl_16x8_ffi_wrapper!(
 // IDTX for 8x16 and 16x8
 impl_8x16_transform!(
     inv_txfm_add_identity_identity_8x16_8bpc_avx2_inner,
-    identity8_1d,
-    identity16_1d
-);
+    simd_row_identity8_8bpc_8rows,identity16_1d_cols8);
 impl_16x8_transform!(
     inv_txfm_add_identity_identity_16x8_8bpc_avx2_inner,
-    identity16_1d,
-    identity8_1d
-);
+    simd_row_identity16_8bpc_8rows,identity8_1d_cols8);
 impl_8x16_ffi_wrapper!(
     inv_txfm_add_identity_identity_8x16_8bpc_v3,
     inv_txfm_add_identity_identity_8x16_8bpc_avx2_inner
@@ -1796,14 +1782,10 @@ impl_16x8_ffi_wrapper!(
 // H_DCT and V_DCT for 8x16
 impl_8x16_transform!(
     inv_txfm_add_identity_dct_8x16_8bpc_avx2_inner,
-    identity8_1d,
-    dct16_1d
-);
+    simd_row_identity8_8bpc_8rows,dct16_1d_cols8);
 impl_8x16_transform!(
     inv_txfm_add_dct_identity_8x16_8bpc_avx2_inner,
-    dct8_1d,
-    identity16_1d
-);
+    simd_row_dct8_8bpc_8rows,identity16_1d_cols8);
 impl_8x16_ffi_wrapper!(
     inv_txfm_add_identity_dct_8x16_8bpc_v3,
     inv_txfm_add_identity_dct_8x16_8bpc_avx2_inner
@@ -1816,14 +1798,10 @@ impl_8x16_ffi_wrapper!(
 // H_DCT and V_DCT for 16x8
 impl_16x8_transform!(
     inv_txfm_add_identity_dct_16x8_8bpc_avx2_inner,
-    identity16_1d,
-    dct8_1d
-);
+    simd_row_identity16_8bpc_8rows,dct8_1d_cols8);
 impl_16x8_transform!(
     inv_txfm_add_dct_identity_16x8_8bpc_avx2_inner,
-    dct16_1d,
-    identity8_1d
-);
+    simd_row_dct16_8bpc_8rows,identity8_1d_cols8);
 impl_16x8_ffi_wrapper!(
     inv_txfm_add_identity_dct_16x8_8bpc_v3,
     inv_txfm_add_identity_dct_16x8_8bpc_avx2_inner
@@ -1836,24 +1814,16 @@ impl_16x8_ffi_wrapper!(
 // H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 8x16
 impl_8x16_transform!(
     inv_txfm_add_identity_adst_8x16_8bpc_avx2_inner,
-    identity8_1d,
-    adst16_1d
-);
+    simd_row_identity8_8bpc_8rows,adst16_1d_cols8);
 impl_8x16_transform!(
     inv_txfm_add_adst_identity_8x16_8bpc_avx2_inner,
-    adst8_1d,
-    identity16_1d
-);
+    adst(simd_row_adst8_8bpc_8rows, false),identity16_1d_cols8);
 impl_8x16_transform!(
     inv_txfm_add_identity_flipadst_8x16_8bpc_avx2_inner,
-    identity8_1d,
-    flipadst16_1d
-);
+    simd_row_identity8_8bpc_8rows,flipadst16_1d_cols8);
 impl_8x16_transform!(
     inv_txfm_add_flipadst_identity_8x16_8bpc_avx2_inner,
-    flipadst8_1d,
-    identity16_1d
-);
+    adst(simd_row_adst8_8bpc_8rows, true),identity16_1d_cols8);
 impl_8x16_ffi_wrapper!(
     inv_txfm_add_identity_adst_8x16_8bpc_v3,
     inv_txfm_add_identity_adst_8x16_8bpc_avx2_inner
@@ -1874,24 +1844,16 @@ impl_8x16_ffi_wrapper!(
 // H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 16x8
 impl_16x8_transform!(
     inv_txfm_add_identity_adst_16x8_8bpc_avx2_inner,
-    identity16_1d,
-    adst8_1d
-);
+    simd_row_identity16_8bpc_8rows,adst8_1d_cols8);
 impl_16x8_transform!(
     inv_txfm_add_adst_identity_16x8_8bpc_avx2_inner,
-    adst16_1d,
-    identity8_1d
-);
+    adst(simd_row_adst16_8bpc_8rows, false),identity8_1d_cols8);
 impl_16x8_transform!(
     inv_txfm_add_identity_flipadst_16x8_8bpc_avx2_inner,
-    identity16_1d,
-    flipadst8_1d
-);
+    simd_row_identity16_8bpc_8rows,flipadst8_1d_cols8);
 impl_16x8_transform!(
     inv_txfm_add_flipadst_identity_16x8_8bpc_avx2_inner,
-    flipadst16_1d,
-    identity8_1d
-);
+    adst(simd_row_adst16_8bpc_8rows, true),identity8_1d_cols8);
 impl_16x8_ffi_wrapper!(
     inv_txfm_add_identity_adst_16x8_8bpc_v3,
     inv_txfm_add_identity_adst_16x8_8bpc_avx2_inner

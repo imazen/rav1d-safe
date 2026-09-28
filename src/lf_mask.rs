@@ -15,6 +15,7 @@ use crate::src::levels::TxfmSize;
 use crate::src::relaxed_atomic::RelaxedAtomic;
 use crate::src::tables::dav1d_txfm_dimensions;
 use aligned::Aligned;
+use std::cell::RefCell;
 use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering::Relaxed;
 #[allow(non_camel_case_types)]
@@ -152,8 +153,38 @@ fn decomp_tx(
     };
 }
 
+thread_local! {
+    /// `txa` scratch for [`mask_edges_inter`]. `decomp_tx` writes every
+    /// element before it can be read (terminal blocks tile the whole
+    /// `w4` x `h4` grid), so the array only needs to be initialized once
+    /// per thread instead of zeroed for every block.
+    static MASK_EDGES_TXA: RefCell<Align16<[[[[u8; 32]; 32]; 2]; 2]>> =
+        const { RefCell::new(Aligned([[[[0u8; 32]; 32]; 2]; 2])) };
+}
+
 #[inline]
 fn mask_edges_inter(
+    masks: &[[[[RelaxedAtomic<u16>; 2]; 3]; 32]; 2],
+    by4: usize,
+    bx4: usize,
+    w4: usize,
+    h4: usize,
+    skip: bool,
+    max_tx: TxfmSize,
+    tx_masks: &[u16; 2],
+    a: &mut [u8],
+    l: &mut [u8],
+) {
+    MASK_EDGES_TXA.with_borrow_mut(|txa| {
+        mask_edges_inter_inner(
+            &mut **txa, masks, by4, bx4, w4, h4, skip, max_tx, tx_masks, a, l,
+        )
+    });
+}
+
+#[inline]
+fn mask_edges_inter_inner(
+    txa: &mut [[[[u8; 32]; 32]; 2]; 2],
     masks: &[[[[RelaxedAtomic<u16>; 2]; 3]; 32]; 2],
     by4: usize,
     bx4: usize,
@@ -168,8 +199,6 @@ fn mask_edges_inter(
     let t_dim = &dav1d_txfm_dimensions[max_tx as usize];
 
     // See [`decomp_tx`]'s docs for the `txa` arg.
-
-    let mut txa: Align16<_> = Aligned([[[[0u8; 32]; 32]; 2]; 2]);
 
     for (y_off, _) in (0..h4).step_by(t_dim.h as usize).enumerate() {
         for (x_off, _) in (0..w4).step_by(t_dim.w as usize).enumerate() {

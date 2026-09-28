@@ -32,6 +32,187 @@ use crate::include::common::bitdepth::DynPixel;
 use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
 
+/// Fill a `width`×`height` predictor block with `val` — `match width` hoisted
+/// outside the row loop so every row write is a single fixed-size store.
+///
+/// Any byte-fill loop over a variable bound becomes a libc `memset` *call*
+/// under LLVM's loop-idiom pass (~50 instructions of call overhead for a
+/// 4-byte row). It can even merge an inlined `match` back into "width uniform
+/// stores" and form memset anyway — but it cannot merge across stride-
+/// separated rows, so per-row fixed stores stay stores. Predictor widths are
+/// powers of two ≤ 64. Called from `#[arcane]` v3 inners; `#[rite(v3)]`
+/// inlines it there.
+#[cfg(target_arch = "x86_64")]
+#[archmage::rite(v3)]
+fn fill_block_u8(
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    width: usize,
+    height: usize,
+    val: u8,
+) {
+    fill_block_u8_with(dst, dst_base, stride, width, height, |_| val)
+}
+
+/// Same, but each row's value comes from `f(y)` (e.g. H prediction reads the
+/// left column pixel).
+#[cfg(target_arch = "x86_64")]
+#[archmage::rite(v3)]
+fn fill_block_u8_with<F: Fn(usize) -> u8>(
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    width: usize,
+    height: usize,
+    f: F,
+) {
+    use archmage::intrinsics::x86_64::{_mm_storeu_si32, _mm_storeu_si64};
+    let row_off = |y: usize| (dst_base as isize + y as isize * stride) as usize;
+    match width {
+        4 => {
+            for y in 0..height {
+                let c: &mut [u8; 4] = (&mut dst[row_off(y)..][..4]).try_into().unwrap();
+                _mm_storeu_si32(c, _mm_set1_epi8(f(y) as i8));
+            }
+        }
+        8 => {
+            for y in 0..height {
+                let c: &mut [u8; 8] = (&mut dst[row_off(y)..][..8]).try_into().unwrap();
+                _mm_storeu_si64(c, _mm_set1_epi8(f(y) as i8));
+            }
+        }
+        16 => {
+            for y in 0..height {
+                storeu_128!(
+                    &mut dst[row_off(y)..][..16],
+                    [u8; 16],
+                    _mm_set1_epi8(f(y) as i8)
+                );
+            }
+        }
+        32 => {
+            for y in 0..height {
+                storeu_256!(
+                    &mut dst[row_off(y)..][..32],
+                    [u8; 32],
+                    _mm256_set1_epi8(f(y) as i8)
+                );
+            }
+        }
+        64 => {
+            for y in 0..height {
+                let v = _mm256_set1_epi8(f(y) as i8);
+                let off = row_off(y);
+                storeu_256!(&mut dst[off..off + 32], [u8; 32], v);
+                storeu_256!(&mut dst[off + 32..off + 64], [u8; 32], v);
+            }
+        }
+        _ => {
+            // Non-power-of-two safety net; unused by intra predictors.
+            for y in 0..height {
+                let v = _mm256_set1_epi8(f(y) as i8);
+                let v128 = _mm256_castsi256_si128(v);
+                let row = &mut dst[row_off(y)..][..width];
+                let mut x = 0usize;
+                while x + 32 <= width {
+                    storeu_256!((&mut row[x..x + 32]), [u8; 32], v);
+                    x += 32;
+                }
+                if x + 16 <= width {
+                    storeu_128!(&mut row[x..x + 16], [u8; 16], v128);
+                    x += 16;
+                }
+                if x + 8 <= width {
+                    let c: &mut [u8; 8] = (&mut row[x..x + 8]).try_into().unwrap();
+                    _mm_storeu_si64(c, v128);
+                    x += 8;
+                }
+                if x + 4 <= width {
+                    let c: &mut [u8; 4] = (&mut row[x..x + 4]).try_into().unwrap();
+                    _mm_storeu_si32(c, v128);
+                    x += 4;
+                }
+                if x + 2 <= width {
+                    row[x] = f(y);
+                    row[x + 1] = f(y);
+                    x += 2;
+                }
+                if x < width {
+                    row[x] = f(y);
+                }
+            }
+        }
+    }
+}
+
+/// AVX-512 variants: width-64 rows get a single 512-bit store, other widths
+/// delegate to the v3 helper.
+#[cfg(target_arch = "x86_64")]
+#[archmage::rite(v4)]
+fn fill_block_u8_v4(
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    width: usize,
+    height: usize,
+    val: u8,
+) {
+    fill_block_u8_with_v4(dst, dst_base, stride, width, height, |_| val)
+}
+
+#[cfg(target_arch = "x86_64")]
+#[archmage::rite(v4)]
+fn fill_block_u8_with_v4<F: Fn(usize) -> u8>(
+    dst: &mut [u8],
+    dst_base: usize,
+    stride: isize,
+    width: usize,
+    height: usize,
+    f: F,
+) {
+    if width == 64 {
+        let row_off = |y: usize| (dst_base as isize + y as isize * stride) as usize;
+        for y in 0..height {
+            storeu_512!(
+                &mut dst[row_off(y)..][..64],
+                [u8; 64],
+                _mm512_set1_epi8(f(y) as i8)
+            );
+        }
+    } else {
+        fill_block_u8_with(dst, dst_base, stride, width, height, f)
+    }
+}
+
+/// Same for 16bpc rows: `width - x < 8` u16 pixels starting at pixel `x`
+/// of the row beginning at byte offset `row_off` in `dst`.
+#[cfg(target_arch = "x86_64")]
+#[archmage::rite(v3)]
+fn fill_tail_u16(dst: &mut [u8], row_off: usize, mut x: usize, width: usize, val: u16) {
+    use archmage::intrinsics::x86_64::{_mm_storeu_si32, _mm_storeu_si64};
+    debug_assert!(width - x < 8 && row_off + width * 2 <= dst.len());
+    let v = _mm_set1_epi16(val as i16);
+    if x + 4 <= width {
+        let c: &mut [u8; 8] = (&mut dst[row_off + x * 2..row_off + x * 2 + 8])
+            .try_into()
+            .unwrap();
+        _mm_storeu_si64(c, v);
+        x += 4;
+    }
+    if x + 2 <= width {
+        let c: &mut [u8; 4] = (&mut dst[row_off + x * 2..row_off + x * 2 + 4])
+            .try_into()
+            .unwrap();
+        _mm_storeu_si32(c, v);
+        x += 2;
+    }
+    if x < width {
+        let off = row_off + x * 2;
+        dst[off..off + 2].copy_from_slice(&val.to_ne_bytes());
+    }
+}
+
 // ============================================================================
 // DC_128 Prediction (fill with mid-value)
 // ============================================================================
@@ -50,31 +231,7 @@ fn ipred_dc_128_8bpc_inner(
     height: usize,
 ) {
     let mut dst = dst.flex_mut();
-    let fill_val = _mm256_set1_epi8(128u8 as i8);
-
-    for y in 0..height {
-        let row_off = (dst_base as isize + y as isize * stride) as usize;
-        let row = &mut dst[row_off..][..width];
-
-        // Fill row with 128
-        let mut x = 0;
-        while x + 32 <= width {
-            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_val);
-            x += 32;
-        }
-        while x + 16 <= width {
-            storeu_128!(
-                &mut row[x..x + 16],
-                [u8; 16],
-                _mm256_castsi256_si128(fill_val)
-            );
-            x += 16;
-        }
-        while x < width {
-            row[x] = 128;
-            x += 1;
-        }
-    }
+    fill_block_u8(dst.as_mut_slice(), dst_base, stride, width, height, 128);
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -119,35 +276,7 @@ fn ipred_dc_128_8bpc_avx512_inner(
     height: usize,
 ) {
     let mut dst = dst.flex_mut();
-    let fill_val = _mm512_set1_epi8(128u8 as i8);
-    let fill_256 = _mm256_set1_epi8(128u8 as i8);
-
-    for y in 0..height {
-        let row_off = (dst_base as isize + y as isize * stride) as usize;
-        let row = &mut dst[row_off..][..width];
-
-        let mut x = 0;
-        while x + 64 <= width {
-            storeu_512!((&mut row[x..x + 64]), [u8; 64], fill_val);
-            x += 64;
-        }
-        while x + 32 <= width {
-            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_256);
-            x += 32;
-        }
-        while x + 16 <= width {
-            storeu_128!(
-                &mut row[x..x + 16],
-                [u8; 16],
-                _mm256_castsi256_si128(fill_256)
-            );
-            x += 16;
-        }
-        while x < width {
-            row[x] = 128;
-            x += 1;
-        }
-    }
+    fill_block_u8_v4(dst.as_mut_slice(), dst_base, stride, width, height, 128);
 }
 
 /// Vertical prediction using AVX-512 (64-byte loads/stores)
@@ -353,33 +482,9 @@ fn ipred_h_8bpc_inner(
 ) {
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
-    for y in 0..height {
-        let row_off = (dst_base as isize + y as isize * stride) as usize;
-        let row = &mut dst[row_off..][..width];
-        // Left pixels are at topleft - y - 1
-        let left_pixel = topleft[tl_off - y - 1];
-
-        // Broadcast pixel value
-        let fill_val = _mm256_set1_epi8(left_pixel as i8);
-
-        let mut x = 0;
-        while x + 32 <= width {
-            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_val);
-            x += 32;
-        }
-        while x + 16 <= width {
-            storeu_128!(
-                &mut row[x..x + 16],
-                [u8; 16],
-                _mm256_castsi256_si128(fill_val)
-            );
-            x += 16;
-        }
-        while x < width {
-            row[x] = left_pixel;
-            x += 1;
-        }
-    }
+    fill_block_u8_with(dst.as_mut_slice(), dst_base, stride, width, height, |y| {
+        topleft[tl_off - y - 1]
+    });
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -431,35 +536,9 @@ fn ipred_h_8bpc_avx512_inner(
 ) {
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
-    for y in 0..height {
-        let row_off = (dst_base as isize + y as isize * stride) as usize;
-        let row = &mut dst[row_off..][..width];
-        let left_pixel = topleft[tl_off - y - 1];
-        let fill_512 = _mm512_set1_epi8(left_pixel as i8);
-        let fill_256 = _mm256_set1_epi8(left_pixel as i8);
-
-        let mut x = 0;
-        while x + 64 <= width {
-            storeu_512!((&mut row[x..x + 64]), [u8; 64], fill_512);
-            x += 64;
-        }
-        while x + 32 <= width {
-            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_256);
-            x += 32;
-        }
-        while x + 16 <= width {
-            storeu_128!(
-                &mut row[x..x + 16],
-                [u8; 16],
-                _mm256_castsi256_si128(fill_256)
-            );
-            x += 16;
-        }
-        while x < width {
-            row[x] = left_pixel;
-            x += 1;
-        }
-    }
+    fill_block_u8_with_v4(dst.as_mut_slice(), dst_base, stride, width, height, |y| {
+        topleft[tl_off - y - 1]
+    });
 }
 
 // ============================================================================
@@ -491,34 +570,7 @@ fn ipred_dc_8bpc_avx512_inner(
     let total = width + height;
     let dc_val = ((sum + (total as u32 >> 1)) / total as u32) as u8;
 
-    let fill_512 = _mm512_set1_epi8(dc_val as i8);
-    let fill_256 = _mm256_set1_epi8(dc_val as i8);
-
-    for y in 0..height {
-        let row_off = (dst_base as isize + y as isize * stride) as usize;
-        let row = &mut dst[row_off..][..width];
-        let mut x = 0;
-        while x + 64 <= width {
-            storeu_512!((&mut row[x..x + 64]), [u8; 64], fill_512);
-            x += 64;
-        }
-        while x + 32 <= width {
-            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_256);
-            x += 32;
-        }
-        while x + 16 <= width {
-            storeu_128!(
-                &mut row[x..x + 16],
-                [u8; 16],
-                _mm256_castsi256_si128(fill_256)
-            );
-            x += 16;
-        }
-        while x < width {
-            row[x] = dc_val;
-            x += 1;
-        }
-    }
+    fill_block_u8_v4(dst.as_mut_slice(), dst_base, stride, width, height, dc_val);
 }
 
 /// DC_TOP prediction using AVX-512 (64-byte stores)
@@ -542,34 +594,7 @@ fn ipred_dc_top_8bpc_avx512_inner(
     }
     let dc_val = ((sum + (width as u32 >> 1)) / width as u32) as u8;
 
-    let fill_512 = _mm512_set1_epi8(dc_val as i8);
-    let fill_256 = _mm256_set1_epi8(dc_val as i8);
-
-    for y in 0..height {
-        let row_off = (dst_base as isize + y as isize * stride) as usize;
-        let row = &mut dst[row_off..][..width];
-        let mut x = 0;
-        while x + 64 <= width {
-            storeu_512!((&mut row[x..x + 64]), [u8; 64], fill_512);
-            x += 64;
-        }
-        while x + 32 <= width {
-            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_256);
-            x += 32;
-        }
-        while x + 16 <= width {
-            storeu_128!(
-                &mut row[x..x + 16],
-                [u8; 16],
-                _mm256_castsi256_si128(fill_256)
-            );
-            x += 16;
-        }
-        while x < width {
-            row[x] = dc_val;
-            x += 1;
-        }
-    }
+    fill_block_u8_v4(dst.as_mut_slice(), dst_base, stride, width, height, dc_val);
 }
 
 /// DC_LEFT prediction using AVX-512 (64-byte stores)
@@ -593,34 +618,7 @@ fn ipred_dc_left_8bpc_avx512_inner(
     }
     let dc_val = ((sum + (height as u32 >> 1)) / height as u32) as u8;
 
-    let fill_512 = _mm512_set1_epi8(dc_val as i8);
-    let fill_256 = _mm256_set1_epi8(dc_val as i8);
-
-    for y in 0..height {
-        let row_off = (dst_base as isize + y as isize * stride) as usize;
-        let row = &mut dst[row_off..][..width];
-        let mut x = 0;
-        while x + 64 <= width {
-            storeu_512!((&mut row[x..x + 64]), [u8; 64], fill_512);
-            x += 64;
-        }
-        while x + 32 <= width {
-            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_256);
-            x += 32;
-        }
-        while x + 16 <= width {
-            storeu_128!(
-                &mut row[x..x + 16],
-                [u8; 16],
-                _mm256_castsi256_si128(fill_256)
-            );
-            x += 16;
-        }
-        while x < width {
-            row[x] = dc_val;
-            x += 1;
-        }
-    }
+    fill_block_u8_v4(dst.as_mut_slice(), dst_base, stride, width, height, dc_val);
 }
 
 // ============================================================================
@@ -657,30 +655,7 @@ fn ipred_dc_8bpc_inner(
     let dc_val = ((sum + (total as u32 >> 1)) / total as u32) as u8;
 
     // Fill block
-    let fill_val = _mm256_set1_epi8(dc_val as i8);
-
-    for y in 0..height {
-        let row_off = (dst_base as isize + y as isize * stride) as usize;
-        let row = &mut dst[row_off..][..width];
-
-        let mut x = 0;
-        while x + 32 <= width {
-            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_val);
-            x += 32;
-        }
-        while x + 16 <= width {
-            storeu_128!(
-                &mut row[x..x + 16],
-                [u8; 16],
-                _mm256_castsi256_si128(fill_val)
-            );
-            x += 16;
-        }
-        while x < width {
-            row[x] = dc_val;
-            x += 1;
-        }
-    }
+    fill_block_u8(dst.as_mut_slice(), dst_base, stride, width, height, dc_val);
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -742,30 +717,7 @@ fn ipred_dc_top_8bpc_inner(
     let dc_val = ((sum + (width as u32 >> 1)) / width as u32) as u8;
 
     // Fill block
-    let fill_val = _mm256_set1_epi8(dc_val as i8);
-
-    for y in 0..height {
-        let row_off = (dst_base as isize + y as isize * stride) as usize;
-        let row = &mut dst[row_off..][..width];
-
-        let mut x = 0;
-        while x + 32 <= width {
-            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_val);
-            x += 32;
-        }
-        while x + 16 <= width {
-            storeu_128!(
-                &mut row[x..x + 16],
-                [u8; 16],
-                _mm256_castsi256_si128(fill_val)
-            );
-            x += 16;
-        }
-        while x < width {
-            row[x] = dc_val;
-            x += 1;
-        }
-    }
+    fill_block_u8(dst.as_mut_slice(), dst_base, stride, width, height, dc_val);
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -827,30 +779,7 @@ fn ipred_dc_left_8bpc_inner(
     let dc_val = ((sum + (height as u32 >> 1)) / height as u32) as u8;
 
     // Fill block
-    let fill_val = _mm256_set1_epi8(dc_val as i8);
-
-    for y in 0..height {
-        let row_off = (dst_base as isize + y as isize * stride) as usize;
-        let row = &mut dst[row_off..][..width];
-
-        let mut x = 0;
-        while x + 32 <= width {
-            storeu_256!((&mut row[x..x + 32]), [u8; 32], fill_val);
-            x += 32;
-        }
-        while x + 16 <= width {
-            storeu_128!(
-                &mut row[x..x + 16],
-                [u8; 16],
-                _mm256_castsi256_si128(fill_val)
-            );
-            x += 16;
-        }
-        while x < width {
-            row[x] = dc_val;
-            x += 1;
-        }
-    }
+    fill_block_u8(dst.as_mut_slice(), dst_base, stride, width, height, dc_val);
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -3152,11 +3081,7 @@ fn ipred_dc_128_16bpc_inner(
         }
 
         // Remaining pixels
-        while x < width {
-            let off = row_off + x * 2;
-            dst[off..off + 2].copy_from_slice(&mid_val.to_ne_bytes());
-            x += 1;
-        }
+        fill_tail_u16(dst.as_mut_slice(), row_off, x, width, mid_val);
     }
 }
 
@@ -3325,11 +3250,7 @@ fn ipred_h_16bpc_inner(
         }
 
         // Remaining pixels
-        while x < width {
-            let off = row_off + x * 2;
-            dst[off..off + 2].copy_from_slice(&left_val.to_ne_bytes());
-            x += 1;
-        }
+        fill_tail_u16(dst.as_mut_slice(), row_off, x, width, left_val);
     }
 }
 
@@ -3413,11 +3334,7 @@ fn ipred_dc_128_16bpc_avx512_inner(
             );
             x += 8;
         }
-        while x < width {
-            let off = row_off + x * 2;
-            dst[off..off + 2].copy_from_slice(&mid_val.to_ne_bytes());
-            x += 1;
-        }
+        fill_tail_u16(dst.as_mut_slice(), row_off, x, width, mid_val);
     }
 }
 
@@ -3521,11 +3438,7 @@ fn ipred_h_16bpc_avx512_inner(
             );
             x += 8;
         }
-        while x < width {
-            let off = row_off + x * 2;
-            dst[off..off + 2].copy_from_slice(&left_val.to_ne_bytes());
-            x += 1;
-        }
+        fill_tail_u16(dst.as_mut_slice(), row_off, x, width, left_val);
     }
 }
 
@@ -3585,11 +3498,7 @@ fn ipred_dc_16bpc_avx512_inner(
             );
             x += 8;
         }
-        while x < width {
-            let off = row_off + x * 2;
-            dst[off..off + 2].copy_from_slice(&avg.to_ne_bytes());
-            x += 1;
-        }
+        fill_tail_u16(dst.as_mut_slice(), row_off, x, width, avg);
     }
 }
 
@@ -3640,11 +3549,7 @@ fn ipred_dc_top_16bpc_avx512_inner(
             );
             x += 8;
         }
-        while x < width {
-            let off = row_off + x * 2;
-            dst[off..off + 2].copy_from_slice(&avg.to_ne_bytes());
-            x += 1;
-        }
+        fill_tail_u16(dst.as_mut_slice(), row_off, x, width, avg);
     }
 }
 
@@ -3695,11 +3600,7 @@ fn ipred_dc_left_16bpc_avx512_inner(
             );
             x += 8;
         }
-        while x < width {
-            let off = row_off + x * 2;
-            dst[off..off + 2].copy_from_slice(&avg.to_ne_bytes());
-            x += 1;
-        }
+        fill_tail_u16(dst.as_mut_slice(), row_off, x, width, avg);
     }
 }
 
@@ -3759,11 +3660,7 @@ fn ipred_dc_16bpc_inner(
             x += 8;
         }
 
-        while x < width {
-            let off = row_off + x * 2;
-            dst[off..off + 2].copy_from_slice(&avg.to_ne_bytes());
-            x += 1;
-        }
+        fill_tail_u16(dst.as_mut_slice(), row_off, x, width, avg);
     }
 }
 
@@ -3849,11 +3746,7 @@ fn ipred_dc_top_16bpc_inner(
             x += 8;
         }
 
-        while x < width {
-            let off = row_off + x * 2;
-            dst[off..off + 2].copy_from_slice(&avg.to_ne_bytes());
-            x += 1;
-        }
+        fill_tail_u16(dst.as_mut_slice(), row_off, x, width, avg);
     }
 }
 
@@ -3939,11 +3832,7 @@ fn ipred_dc_left_16bpc_inner(
             x += 8;
         }
 
-        while x < width {
-            let off = row_off + x * 2;
-            dst[off..off + 2].copy_from_slice(&avg.to_ne_bytes());
-            x += 1;
-        }
+        fill_tail_u16(dst.as_mut_slice(), row_off, x, width, avg);
     }
 }
 
