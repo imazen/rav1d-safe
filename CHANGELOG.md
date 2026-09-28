@@ -4,6 +4,13 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Fixed
+- Convert managed AV1 mastering-display metadata using its actual fixed-point
+  units: chromaticities / 65536, maximum luminance / 256, and minimum luminance
+  / 16384. A 1000-nit maximum previously returned 25.6 nits. Raw fields retain
+  their original bitstream values; a regression test covers parsing through
+  decoded-frame accessors.
+
 ### Added
 - Release provenance record mapping all 19 published `rav1d-safe` and
   `rav1d-disjoint-mut` versions to their source commits, with
