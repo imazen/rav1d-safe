@@ -103,6 +103,7 @@ use crate::src::wedge::dav1d_wedge_masks;
 use crate::src::with_offset::WithOffset;
 use archmage::incant;
 use assert_matches::debug_assert_matches;
+use likely_stable::{likely, unlikely};
 #[allow(non_camel_case_types)]
 type intptr_t = isize;
 use std::array;
@@ -600,7 +601,7 @@ fn decode_coefs<BD: BitDepth>(
     let t_dim = &dav1d_txfm_dimensions[tx as usize];
     let dbg = dbg_block_info && plane != 0 && false;
 
-    if dbg {
+    if unlikely(dbg) {
         println!("Start: r={}", ts_c.msac.rng);
     }
 
@@ -610,7 +611,7 @@ fn decode_coefs<BD: BitDepth>(
         &mut ts_c.msac,
         &mut ts_c.cdf.coef.skip[t_dim.ctx as usize][sctx.get() as usize],
     );
-    if dbg {
+    if unlikely(dbg) {
         println!(
             "Post-non-zero[{}][{}][{}]: r={}",
             t_dim.ctx, sctx, all_skip, ts_c.msac.rng,
@@ -660,7 +661,7 @@ fn decode_coefs<BD: BitDepth>(
                 );
                 dav1d_tx_types_per_set[idx as usize + 5]
             };
-            if dbg {
+            if unlikely(dbg) {
                 println!(
                     "Post-txtp-intra[{:?}->{}][{}][{}->{}]: r={}",
                     tx, t_dim.min, y_mode_nofilt, idx, txtp, ts_c.msac.rng,
@@ -692,7 +693,7 @@ fn decode_coefs<BD: BitDepth>(
                 );
                 dav1d_tx_types_per_set[idx as usize + 24]
             };
-            if dbg {
+            if unlikely(dbg) {
                 println!(
                     "Post-txtp-inter[{:?}->{}][{}->{}]: r={}",
                     tx, t_dim.min, idx, txtp, ts_c.msac.rng,
@@ -741,7 +742,7 @@ fn decode_coefs<BD: BitDepth>(
         // and we cover `0..=6`.  `rustc` should eliminate this.
         _ => unreachable!(),
     };
-    if dbg {
+    if unlikely(dbg) {
         println!(
             "Post-eob_bin_{}[{}][{}][{}]: r={}",
             16 << tx2dszctx,
@@ -755,7 +756,7 @@ fn decode_coefs<BD: BitDepth>(
         let eob_hi_bit_cdf =
             &mut ts_c.cdf.coef.eob_hi_bit[t_dim.ctx as usize][chroma][eob_bin as usize];
         let eob_hi_bit = rav1d_msac_decode_bool_adapt(&mut ts_c.msac, eob_hi_bit_cdf) as u16;
-        if dbg {
+        if unlikely(dbg) {
             println!(
                 "Post-eob_hi_bit[{}][{}][{}][{}]: r={}",
                 t_dim.ctx, chroma, eob_bin, eob_hi_bit, ts_c.msac.rng,
@@ -763,7 +764,7 @@ fn decode_coefs<BD: BitDepth>(
         }
         let eob = ((eob_hi_bit | 2) << (eob_bin - 2))
             | rav1d_msac_decode_bools(&mut ts_c.msac, eob_bin - 2) as u16;
-        if dbg {
+        if unlikely(dbg) {
             println!("Post-eob[{}]: r={}", eob, ts_c.msac.rng);
         }
         eob
@@ -819,7 +820,7 @@ fn decode_coefs<BD: BitDepth>(
         // dc-only
         let tok_br = rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut eob_cdf[0], 2) as c_uint;
         dc_tok = 1 + tok_br;
-        if dbg {
+        if unlikely(dbg) {
             println!(
                 "Post-dc_lo_tok[{}][{}][{}][{}]: r={}",
                 t_dim.ctx, chroma, 0, dc_tok, ts_c.msac.rng,
@@ -827,7 +828,7 @@ fn decode_coefs<BD: BitDepth>(
         }
         if tok_br == 2 {
             dc_tok = rav1d_msac_decode_hi_tok(&mut ts_c.msac, &mut hi_cdf[0]) as c_uint;
-            if dbg {
+            if unlikely(dbg) {
                 println!(
                     "Post-dc_hi_tok[{}][{}][0][{}]: r={}",
                     cmp::min(t_dim.ctx, 3),
@@ -877,7 +878,7 @@ fn decode_coefs<BD: BitDepth>(
         dc_sign_ctx = get_dc_sign_ctx(tx, a, l) as c_int;
         let dc_sign_cdf = &mut ts_c.cdf.coef.dc_sign[chroma][dc_sign_ctx as usize];
         dc_sign = rav1d_msac_decode_bool_adapt(&mut ts_c.msac, dc_sign_cdf) as c_int;
-        if dbg {
+        if unlikely(dbg) {
             println!(
                 "Post-dc_sign[{}][{}][{}]: r={}",
                 chroma, dc_sign_ctx, dc_sign, ts_c.msac.rng,
@@ -892,7 +893,7 @@ fn decode_coefs<BD: BitDepth>(
 
             if dc_tok == 15 {
                 dc_tok = (read_golomb(&mut ts_c.msac)).wrapping_add(15);
-                if dbg {
+                if unlikely(dbg) {
                     println!(
                         "Post-dc_residual[{}->{}]: r={}",
                         dc_tok.wrapping_sub(15),
@@ -917,7 +918,7 @@ fn decode_coefs<BD: BitDepth>(
             // non-qmatrix is the common case and allows for additional optimizations
             if dc_tok == 15 {
                 dc_tok = (read_golomb(&mut ts_c.msac)).wrapping_add(15);
-                if dbg {
+                if unlikely(dbg) {
                     println!(
                         "Post-dc_residual[{}->{}]: r={}",
                         dc_tok.wrapping_sub(15),
@@ -946,7 +947,7 @@ fn decode_coefs<BD: BitDepth>(
             let ac_dq: c_uint = dq_tbl[1].get() as c_uint;
             loop {
                 let sign = rav1d_msac_decode_bool_equi(&mut ts_c.msac);
-                if dbg {
+                if unlikely(dbg) {
                     println!("Post-sign[{}={}]: r={}", rc, sign, ts_c.msac.rng);
                 }
                 let rc_tok = cf.get(rc) as u32;
@@ -959,7 +960,7 @@ fn decode_coefs<BD: BitDepth>(
 
                 if rc_tok >= 15 << 11 {
                     tok = (read_golomb(&mut ts_c.msac)).wrapping_add(15);
-                    if dbg {
+                    if unlikely(dbg) {
                         println!(
                             "Post-residual[{}={}->{}]: r={}",
                             rc,
@@ -991,7 +992,7 @@ fn decode_coefs<BD: BitDepth>(
             let ac_dq: c_uint = dq_tbl[1].get() as c_uint;
             loop {
                 let sign = rav1d_msac_decode_bool_equi(&mut ts_c.msac) as c_int;
-                if dbg {
+                if unlikely(dbg) {
                     println!("Post-sign[{}={}]: r={}", rc, sign, ts_c.msac.rng);
                 }
                 let rc_tok = cf.get(rc) as u32;
@@ -1001,7 +1002,7 @@ fn decode_coefs<BD: BitDepth>(
                 // residual
                 if rc_tok >= 15 << 11 {
                     tok = (read_golomb(&mut ts_c.msac)).wrapping_add(15);
-                    if dbg {
+                    if unlikely(dbg) {
                         println!(
                             "Post-residual[{}={}->{}]: r={}",
                             rc,
@@ -1148,13 +1149,13 @@ fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
             rc = (x as u16) << shift2 | y as u16;
         }
     }
-    if dbg {
+    if unlikely(dbg) {
         println!(
             "Post-lo_tok[{}][{}][{}][{}={}={}]: r={}",
             t_dim.ctx, chroma, ctx, eob, rc, tok, ts_c.msac.rng,
         );
     }
-    if eob_tok == 2 {
+    if unlikely(eob_tok == 2) {
         ctx = if if tx_class == TxClass::TwoD {
             (x | y) > 1
         } else {
@@ -1166,7 +1167,7 @@ fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
         };
         tok = rav1d_msac_decode_hi_tok(&mut ts_c.msac, &mut hi_cdf[ctx as usize]);
         level_tok = tok + (3 << 6);
-        if dbg {
+        if unlikely(dbg) {
             println!(
                 "Post-hi_tok[{}][{}][{}][{}={}={}]: r={}",
                 cmp::min(t_dim.ctx, 3),
@@ -1224,13 +1225,13 @@ fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
             y |= x;
         }
         tok = rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut lo_cdf[ctx as usize], 3);
-        if dbg {
+        if unlikely(dbg) {
             println!(
                 "Post-lo_tok[{}][{}][{}][{}={}={}]: r={}",
                 t_dim.ctx, chroma, ctx, i, rc_i, tok, ts_c.msac.rng,
             );
         }
-        if tok == 3 {
+        if unlikely(tok == 3) {
             let mag = mag as u8 & 63;
             ctx = if y > (tx_class == TxClass::TwoD) as u8 {
                 14
@@ -1238,7 +1239,7 @@ fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
                 7
             } + if mag > 12 { 6 } else { (mag + 1) >> 1 };
             tok = rav1d_msac_decode_hi_tok(&mut ts_c.msac, &mut hi_cdf[ctx as usize]);
-            if dbg {
+            if unlikely(dbg) {
                 println!(
                     "Post-hi_tok[{}][{}][{}][{}={}={}]: r={}",
                     cmp::min(t_dim.ctx, 3),
@@ -1283,13 +1284,13 @@ fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
     };
     let mut dc_tok =
         rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut lo_cdf[ctx as usize], 3) as c_uint;
-    if dbg {
+    if unlikely(dbg) {
         println!(
             "Post-dc_lo_tok[{}][{}][{}][{}]: r={}",
             t_dim.ctx, chroma, ctx, dc_tok, ts_c.msac.rng,
         );
     }
-    if dc_tok == 3 {
+    if unlikely(dc_tok == 3) {
         if tx_class == TxClass::TwoD {
             mag = levels[0 * stride as usize + 1] as c_uint
                 + levels[1 * stride as usize + 0] as c_uint
@@ -1298,7 +1299,7 @@ fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
         let mag = mag as u8 & 63;
         ctx = if mag > 12 { 6 } else { (mag + 1) >> 1 };
         dc_tok = rav1d_msac_decode_hi_tok(&mut ts_c.msac, &mut hi_cdf[ctx as usize]) as c_uint;
-        if dbg {
+        if unlikely(dbg) {
             println!(
                 "Post-dc_hi_tok[{}][{}][0][{}]: r={}",
                 cmp::min(t_dim.ctx, 3),
@@ -1868,7 +1869,7 @@ fn mc<BD: BitDepth>(
     let mx = mvx & 15 >> (ss_hor == 0) as c_int;
     let my = mvy & 15 >> (ss_ver == 0) as c_int;
 
-    if refp.p.p.w == f.cur.p.w && refp.p.p.h == f.cur.p.h {
+    if likely(refp.p.p.w == f.cur.p.w && refp.p.p.h == f.cur.p.h) {
         let dx = bx * h_mul + (mvx >> 3 + ss_hor);
         let dy = by * v_mul + (mvy >> 3 + ss_ver);
         let w;
@@ -1882,11 +1883,12 @@ fn mc<BD: BitDepth>(
             h = f.bh * 4 >> ss_ver;
         }
         let mut emu_comp = None;
-        let r#ref = if dx < (mx != 0) as c_int * 3
-            || dy < (my != 0) as c_int * 3
-            || dx + bw4 * h_mul + (mx != 0) as c_int * 4 > w
-            || dy + bh4 * v_mul + (my != 0) as c_int * 4 > h
-        {
+        let r#ref = if unlikely(
+            dx < (mx != 0) as c_int * 3
+                || dy < (my != 0) as c_int * 3
+                || dx + bw4 * h_mul + (mx != 0) as c_int * 4 > w
+                || dy + bh4 * v_mul + (my != 0) as c_int * 4 > h,
+        ) {
             let stride = 192;
             emu_comp = Some(emu_edge_component::<BD>(
                 f,
@@ -1960,7 +1962,7 @@ fn mc<BD: BitDepth>(
         let w = refp.p.p.w + ss_hor >> ss_hor;
         let h = refp.p.p.h + ss_ver >> ss_ver;
         let mut emu_comp = None;
-        let r#ref = if left < 3 || top < 3 || right + 4 > w || bottom + 4 > h {
+        let r#ref = if unlikely(left < 3 || top < 3 || right + 4 > w || bottom + 4 > h) {
             let stride = 320;
             emu_comp = Some(emu_edge_component::<BD>(
                 f,
@@ -2201,7 +2203,7 @@ fn warp_affine<BD: BitDepth>(
                 (mvy as i32 & 0xffff) - wmp.gamma() as i32 * 4 - wmp.delta() as i32 * 4 & !0x3f;
 
             let mut emu_comp = None;
-            let r#ref = if dx < 3 || dx + 8 + 4 > width || dy < 3 || dy + 8 + 4 > height {
+            let r#ref = if unlikely(dx < 3 || dx + 8 + 4 > width || dy < 3 || dy + 8 + 4 > height) {
                 let stride = 32;
                 emu_comp = Some(emu_edge_component::<BD>(
                     f,
@@ -3235,9 +3237,11 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
         let filter_2d = inter.filter2d;
 
         if cmp::min(bw4, bh4) > 1
-            && (inter.inter_mode == GLOBALMV && f.gmv_warp_allowed[inter.r#ref[0] as usize] != 0
-                || inter.motion_mode == MotionMode::Warp
-                    && t.warpmv.r#type > Rav1dWarpedMotionType::Translation)
+            && unlikely(
+                inter.inter_mode == GLOBALMV && f.gmv_warp_allowed[inter.r#ref[0] as usize] != 0
+                    || inter.motion_mode == MotionMode::Warp
+                        && t.warpmv.r#type > Rav1dWarpedMotionType::Translation,
+            )
         {
             warp_affine::<BD>(
                 f,
@@ -3269,7 +3273,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                 inter.r#ref[0] as usize,
                 filter_2d,
             )?;
-            if inter.motion_mode == MotionMode::Obmc {
+            if unlikely(inter.motion_mode == MotionMode::Obmc) {
                 obmc::<BD>(f, t, y_dst, b_dim, 0, bx4, by4, w4, h4)?;
             }
         }
@@ -3509,10 +3513,12 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                 }
             } else {
                 if cmp::min(cbw4, cbh4) > 1
-                    && (inter.inter_mode == GLOBALMV
-                        && f.gmv_warp_allowed[inter.r#ref[0] as usize] != 0
-                        || inter.motion_mode == MotionMode::Warp
-                            && t.warpmv.r#type > Rav1dWarpedMotionType::Translation)
+                    && unlikely(
+                        inter.inter_mode == GLOBALMV
+                            && f.gmv_warp_allowed[inter.r#ref[0] as usize] != 0
+                            || inter.motion_mode == MotionMode::Warp
+                                && t.warpmv.r#type > Rav1dWarpedMotionType::Translation,
+                    )
                 {
                     for pl in 0..2 {
                         warp_affine::<BD>(
@@ -3552,7 +3558,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             filter_2d,
                         )?;
                         let uv_dst = cur_data[1 + pl].with_offset::<BD>() + uvdstoff;
-                        if inter.motion_mode == MotionMode::Obmc {
+                        if unlikely(inter.motion_mode == MotionMode::Obmc) {
                             obmc::<BD>(f, t, uv_dst, b_dim, 1 + pl, bx4, by4, w4, h4)?;
                         }
                     }

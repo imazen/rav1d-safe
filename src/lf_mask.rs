@@ -350,6 +350,7 @@ fn mask_edges_intra(
     );
 }
 
+#[inline]
 fn mask_edges_chroma(
     masks: &[[[[RelaxedAtomic<u16>; 2]; 2]; 32]; 2],
     cby4: usize,

@@ -67,6 +67,7 @@ zerocopy = { version = "0.8.56", features = ["derive", "alloc"] }
 archmage = { git = "https://github.com/imazen/archmage", rev = "aac6160", features = ["macros", "avx512"] }
 # Size-bound traits are not re-exported by archmage::intrinsics.
 safe_unaligned_simd = { version = "0.2.5", features = ["avx512"] }
+likely_stable = "0.1.3"
 
 [dev-dependencies]
 # Current AVIF test tooling requires Rust 1.93; library MSRV remains 1.89.

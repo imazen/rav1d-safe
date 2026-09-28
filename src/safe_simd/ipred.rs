@@ -2162,6 +2162,7 @@ fn get_filter_strength_simple(wh: i32, angle: i32, is_sm: bool) -> i32 {
 /// Unlike Z1 (top only) and Z3 (left only), Z2 blends between edges:
 /// - When base_x >= 0: interpolate from top edge
 /// - When base_x < 0: interpolate from left edge
+#[inline]
 fn filter_edge_8bpc(
     out: &mut [u8],
     sz: i32,
@@ -2195,6 +2196,7 @@ fn filter_edge_8bpc(
 }
 
 /// Upsample edge pixels for Z2 prediction (8bpc version of upsample_edge from ipred.rs).
+#[inline]
 fn upsample_edge_8bpc(out: &mut [u8], hsz: i32, inp: &[u8], in_off: usize, from: i32, to: i32) {
     let kernel: [i8; 4] = [-1, 9, 9, -1];
     for i in 0..hsz - 1 {

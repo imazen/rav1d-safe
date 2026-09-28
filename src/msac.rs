@@ -6,6 +6,7 @@ use crate::include::common::intops::ulog2;
 use crate::src::c_arc::CArc;
 use crate::src::cpu::CpuFlags;
 use cfg_if::cfg_if;
+use likely_stable::{likely, unlikely};
 use std::ffi::c_int;
 use std::ffi::c_uint;
 use std::mem;
@@ -525,7 +526,7 @@ fn ctx_norm(s: &mut MsacContext, dif: EcWin, rng: c_uint) {
     // panics on every EOB. Use `wrapping_sub` to match dav1d's C semantics.
     s.cnt = cnt.wrapping_sub(d);
     // unsigned compare avoids redundant refills at eob
-    if (cnt as u32) < (d as u32) {
+    if unlikely((cnt as u32) < (d as u32)) {
         ctx_refill(s);
     }
 }
@@ -610,7 +611,7 @@ fn rav1d_msac_decode_symbol_adapt_rust(s: &mut MsacContext, cdf: &mut [u16], n_s
         s.dif.wrapping_sub((v as EcWin) << (EC_WIN_SIZE - 16)),
         u - v,
     );
-    if s.allow_update_cdf() {
+    if likely(s.allow_update_cdf()) {
         let n_usize = n_symbols as usize;
         let count = cdf[n_usize];
         let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
@@ -658,7 +659,7 @@ unsafe extern "C" fn rav1d_msac_decode_symbol_adapt_c(
 )]
 fn rav1d_msac_decode_bool_adapt_rust(s: &mut MsacContext, cdf: &mut [u16; 2]) -> bool {
     let bit = rav1d_msac_decode_bool(s, cdf[0] as c_uint);
-    if s.allow_update_cdf() {
+    if likely(s.allow_update_cdf()) {
         let count = cdf[1];
         let rate = 4 + (count >> 4);
         update_cdf(cdf, 1, bit as usize, rate, count);
@@ -675,13 +676,13 @@ fn rav1d_msac_decode_bool_adapt_rust(s: &mut MsacContext, cdf: &mut [u16; 2]) ->
 fn rav1d_msac_decode_hi_tok_rust(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
     let mut tok_br = rav1d_msac_decode_symbol_adapt4(s, cdf, 3);
     let mut tok = 3 + tok_br;
-    if tok_br == 3 {
+    if unlikely(tok_br == 3) {
         tok_br = rav1d_msac_decode_symbol_adapt4(s, cdf, 3);
         tok = 6 + tok_br;
-        if tok_br == 3 {
+        if unlikely(tok_br == 3) {
             tok_br = rav1d_msac_decode_symbol_adapt4(s, cdf, 3);
             tok = 9 + tok_br;
-            if tok_br == 3 {
+            if unlikely(tok_br == 3) {
                 tok = 12 + rav1d_msac_decode_symbol_adapt4(s, cdf, 3);
             }
         }
@@ -743,7 +744,7 @@ fn rav1d_msac_decode_symbol_adapt4_branchless(
         u - v_val,
     );
 
-    if s.allow_update_cdf() {
+    if likely(s.allow_update_cdf()) {
         let n_usize = n_symbols as usize;
         let count = cdf[n_usize];
         let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
@@ -793,7 +794,7 @@ fn rav1d_msac_decode_symbol_adapt8_branchless(
         u - v_val,
     );
 
-    if s.allow_update_cdf() {
+    if likely(s.allow_update_cdf()) {
         let n_usize = n_symbols as usize;
         let count = cdf[n_usize];
         let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
