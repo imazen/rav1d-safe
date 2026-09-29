@@ -6,29 +6,29 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: rav1d-safe.txt 1237 lines (supported surface) | rav1d-safe.features.txt 141 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,blockshift-10,blockshift-13,blockshift-14,blockshift-15,blockshift-16,blockshift-8,blockshift-adaptive,bps-1,bps-4,bps-8,bps-blocks,bps-half,bps-quarter,c-ffi,dav1d-compat,held-row-guards,libc,msb-5,partial_asm,probe-addnop,probe-count,probe-lock-backoff,probe-lock-park,probe-lock-relax,probe-lock-yield,probe-lockonly,probe-noscan,probe-shardsim,probe-shiftpin,probe-sites,probe-tasktime,probe-tasktime-untracked,probe-tinynop,probe-untracked,probe-wide,rpb-16,rpb-2,rpb-8,shard-ident,shards-1,shards-128,shards-16,shards-256,shards-32,shards-4,shards-64,shards-8,tracker-legacy,unchecked) | rav1d-safe.internal.txt 67 lines (68 hidden + 0 excluded-feature)
+# files: rav1d-safe.txt 1290 lines (supported surface) | rav1d-safe.features.txt 115 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,c-ffi,dav1d-compat,libc,partial_asm,unchecked) | rav1d-safe.internal.txt 71 lines (72 hidden + 0 excluded-feature)
 
 ## summary
 #
 #   pub modules                                12
-#   pub types (struct/enum/trait/alias)       133
+#   pub types (struct/enum/trait/alias)       141
 #   pub consts/statics                        200
 #   free functions                             18
-#   inherent methods                          105
-#   struct fields                             466
-#   enum variants                             217
+#   inherent methods                          131
+#   struct fields                             476
+#   enum variants                             227
 #   re-exports                                  3
-#   trait roster entries (type × trait)       298
+#   trait roster entries (type × trait)       308
 #   conditional trait impls (verbatim)          7
-#   auto-trait-complete types                  76
-#   auto-trait exceptions                      13
+#   auto-trait-complete types                  79
+#   auto-trait exceptions                      14
 #
 # per-module pub lines:
-#   (root)                          157
+#   (root)                          171
 #   include                         763
-#   src                             234
+#   src                             274
 
-## items (1125 lines)
+## items (1175 lines)
 
 pub mod rav1d_safe
 pub mod include
@@ -901,6 +901,11 @@ pub src::managed::PixelLayout::I422
 pub src::managed::PixelLayout::I444
 pub src::managed::Planes::Depth16(src::managed::Planes16<'a>)
 pub src::managed::Planes::Depth8(src::managed::Planes8<'a>)
+pub src::managed::ReceiveStatus::EndOfStream
+pub src::managed::ReceiveStatus::Frame(src::managed::Frame)
+pub src::managed::ReceiveStatus::NeedInput
+pub src::managed::SendStatus::Accepted
+pub src::managed::SendStatus::ReceivePending
 pub src::managed::Strictness::Lenient
 pub src::managed::Strictness::Strict
 pub src::managed::TransferCharacteristics::BT1361 = 12
@@ -928,9 +933,13 @@ pub src::managed::ColorInfo::transfer_characteristics: src::managed::TransferCha
 pub src::managed::ContentLightLevel::max_content_light_level: u16
 pub src::managed::ContentLightLevel::max_frame_average_light_level: u16
 pub fn src::managed::Decoder::decode(&mut self, &[u8]) -> src::managed::Result<core::option::Option<src::managed::Frame>>
+pub fn src::managed::Decoder::end_input(&mut self)
 pub fn src::managed::Decoder::flush(&mut self) -> src::managed::Result<alloc::vec::Vec<src::managed::Frame>>
 pub fn src::managed::Decoder::get_frame(&mut self) -> src::managed::Result<core::option::Option<src::managed::Frame>>
 pub fn src::managed::Decoder::new() -> src::managed::Result<Self>
+pub fn src::managed::Decoder::receive(&mut self) -> src::managed::Result<src::managed::ReceiveStatus>
+pub fn src::managed::Decoder::reset(&mut self)
+pub fn src::managed::Decoder::send_packet(&mut self, &mut src::managed::Packet) -> src::managed::Result<src::managed::SendStatus>
 pub fn src::managed::Decoder::set_stop(&mut self, core::option::Option<alloc::sync::Arc<dyn enough::Stop>>)
 pub fn src::managed::Decoder::with_settings(src::managed::Settings) -> src::managed::Result<Self>
 pub fn src::managed::Frame::bit_depth(&self) -> u8
@@ -938,9 +947,12 @@ pub fn src::managed::Frame::color_info(&self) -> src::managed::ColorInfo
 pub fn src::managed::Frame::content_light(&self) -> core::option::Option<src::managed::ContentLightLevel>
 pub fn src::managed::Frame::duration(&self) -> i64
 pub fn src::managed::Frame::height(&self) -> u32
+pub fn src::managed::Frame::input_offset(&self) -> i64
 pub fn src::managed::Frame::mastering_display(&self) -> core::option::Option<src::managed::MasteringDisplay>
 pub fn src::managed::Frame::pixel_layout(&self) -> src::managed::PixelLayout
 pub fn src::managed::Frame::planes(&self) -> src::managed::Planes<'_>
+pub fn src::managed::Frame::raw_color_info(&self) -> src::managed::RawColorInfo
+pub fn src::managed::Frame::render_size(&self) -> (u32, u32)
 pub fn src::managed::Frame::timestamp(&self) -> i64
 pub fn src::managed::Frame::width(&self) -> u32
 pub const src::managed::InloopFilters::CDEF: Self
@@ -958,6 +970,12 @@ pub fn src::managed::MasteringDisplay::max_luminance_nits(&self) -> f64
 pub fn src::managed::MasteringDisplay::min_luminance_nits(&self) -> f64
 pub fn src::managed::MasteringDisplay::primary_chromaticity(&self, usize) -> [f64; 2]
 pub fn src::managed::MasteringDisplay::white_point_chromaticity(&self) -> [f64; 2]
+pub fn src::managed::Packet::is_empty(&self) -> bool
+pub fn src::managed::Packet::len(&self) -> usize
+pub fn src::managed::Packet::new(alloc::vec::Vec<u8>) -> src::managed::Result<Self>
+pub fn src::managed::Packet::with_duration(self, i64) -> Self
+pub fn src::managed::Packet::with_offset(self, i64) -> Self
+pub fn src::managed::Packet::with_timestamp(self, i64) -> Self
 pub fn src::managed::PlaneView16<'a>::as_slice(&self) -> &[u16]
 pub fn src::managed::PlaneView16<'a>::height(&self) -> usize
 pub fn src::managed::PlaneView16<'a>::pixel(&self, usize, usize) -> u16
@@ -978,6 +996,11 @@ pub fn src::managed::Planes16<'a>::y(&self) -> src::managed::PlaneView16<'a>
 pub fn src::managed::Planes8<'a>::u(&self) -> core::option::Option<src::managed::PlaneView8<'a>>
 pub fn src::managed::Planes8<'a>::v(&self) -> core::option::Option<src::managed::PlaneView8<'a>>
 pub fn src::managed::Planes8<'a>::y(&self) -> src::managed::PlaneView8<'a>
+pub src::managed::RawColorInfo::chroma_sample_position: u8
+pub src::managed::RawColorInfo::full_range: bool
+pub src::managed::RawColorInfo::matrix_coefficients: u8
+pub src::managed::RawColorInfo::primaries: u8
+pub src::managed::RawColorInfo::transfer_characteristics: u8
 pub src::managed::Settings::all_layers: bool
 pub src::managed::Settings::apply_grain: bool
 pub src::managed::Settings::cpu_level: src::managed::CpuLevel
@@ -1055,6 +1078,13 @@ pub PixelLayout::I444
 pub enum Planes<'a> [also: src::managed]
 pub Planes::Depth16(src::managed::Planes16<'a>)
 pub Planes::Depth8(src::managed::Planes8<'a>)
+#[non_exhaustive] pub enum ReceiveStatus [also: src::managed]
+pub ReceiveStatus::EndOfStream
+pub ReceiveStatus::Frame(src::managed::Frame)
+pub ReceiveStatus::NeedInput
+#[non_exhaustive] pub enum SendStatus [also: src::managed]
+pub SendStatus::Accepted
+pub SendStatus::ReceivePending
 #[non_exhaustive] pub enum Strictness [also: src::managed]
 pub Strictness::Lenient
 pub Strictness::Strict
@@ -1087,9 +1117,13 @@ pub ContentLightLevel::max_content_light_level: u16
 pub ContentLightLevel::max_frame_average_light_level: u16
 pub struct Decoder [also: src::managed]
 pub fn src::managed::Decoder::decode(&mut self, &[u8]) -> src::managed::Result<core::option::Option<src::managed::Frame>>
+pub fn src::managed::Decoder::end_input(&mut self)
 pub fn src::managed::Decoder::flush(&mut self) -> src::managed::Result<alloc::vec::Vec<src::managed::Frame>>
 pub fn src::managed::Decoder::get_frame(&mut self) -> src::managed::Result<core::option::Option<src::managed::Frame>>
 pub fn src::managed::Decoder::new() -> src::managed::Result<Self>
+pub fn src::managed::Decoder::receive(&mut self) -> src::managed::Result<src::managed::ReceiveStatus>
+pub fn src::managed::Decoder::reset(&mut self)
+pub fn src::managed::Decoder::send_packet(&mut self, &mut src::managed::Packet) -> src::managed::Result<src::managed::SendStatus>
 pub fn src::managed::Decoder::set_stop(&mut self, core::option::Option<alloc::sync::Arc<dyn enough::Stop>>)
 pub fn src::managed::Decoder::with_settings(src::managed::Settings) -> src::managed::Result<Self>
 pub struct Frame [also: src::managed]
@@ -1098,9 +1132,12 @@ pub fn src::managed::Frame::color_info(&self) -> src::managed::ColorInfo
 pub fn src::managed::Frame::content_light(&self) -> core::option::Option<src::managed::ContentLightLevel>
 pub fn src::managed::Frame::duration(&self) -> i64
 pub fn src::managed::Frame::height(&self) -> u32
+pub fn src::managed::Frame::input_offset(&self) -> i64
 pub fn src::managed::Frame::mastering_display(&self) -> core::option::Option<src::managed::MasteringDisplay>
 pub fn src::managed::Frame::pixel_layout(&self) -> src::managed::PixelLayout
 pub fn src::managed::Frame::planes(&self) -> src::managed::Planes<'_>
+pub fn src::managed::Frame::raw_color_info(&self) -> src::managed::RawColorInfo
+pub fn src::managed::Frame::render_size(&self) -> (u32, u32)
 pub fn src::managed::Frame::timestamp(&self) -> i64
 pub fn src::managed::Frame::width(&self) -> u32
 pub struct InloopFilters [also: src::managed]
@@ -1116,6 +1153,13 @@ pub fn src::managed::MasteringDisplay::max_luminance_nits(&self) -> f64
 pub fn src::managed::MasteringDisplay::min_luminance_nits(&self) -> f64
 pub fn src::managed::MasteringDisplay::primary_chromaticity(&self, usize) -> [f64; 2]
 pub fn src::managed::MasteringDisplay::white_point_chromaticity(&self) -> [f64; 2]
+pub struct Packet [also: src::managed]
+pub fn src::managed::Packet::is_empty(&self) -> bool
+pub fn src::managed::Packet::len(&self) -> usize
+pub fn src::managed::Packet::new(alloc::vec::Vec<u8>) -> src::managed::Result<Self>
+pub fn src::managed::Packet::with_duration(self, i64) -> Self
+pub fn src::managed::Packet::with_offset(self, i64) -> Self
+pub fn src::managed::Packet::with_timestamp(self, i64) -> Self
 pub struct PlaneView16<'a> [also: src::managed]
 pub fn src::managed::PlaneView16<'a>::as_slice(&self) -> &[u16]
 pub fn src::managed::PlaneView16<'a>::height(&self) -> usize
@@ -1140,6 +1184,12 @@ pub struct Planes8<'a> [also: src::managed]
 pub fn src::managed::Planes8<'a>::u(&self) -> core::option::Option<src::managed::PlaneView8<'a>>
 pub fn src::managed::Planes8<'a>::v(&self) -> core::option::Option<src::managed::PlaneView8<'a>>
 pub fn src::managed::Planes8<'a>::y(&self) -> src::managed::PlaneView8<'a>
+#[non_exhaustive] pub struct RawColorInfo [also: src::managed]
+pub RawColorInfo::chroma_sample_position: u8
+pub RawColorInfo::full_range: bool
+pub RawColorInfo::matrix_coefficients: u8
+pub RawColorInfo::primaries: u8
+pub RawColorInfo::transfer_characteristics: u8
 #[non_exhaustive] pub struct Settings [also: src::managed]
 pub Settings::all_layers: bool
 pub Settings::apply_grain: bool
@@ -1156,7 +1206,7 @@ pub Settings::threads: u32
 pub fn enabled_features() -> alloc::string::String [also: src::managed]
 pub type Result<T, E> = core::result::Result<T, E> [also: src::managed]
 
-## trait impls (91 types)
+## trait impls (93 types)
 
 include::dav1d::headers::DRav1d<R, D>: Deref
 include::dav1d::headers::Dav1dAdaptiveBoolean: From<include::dav1d::headers::Rav1dAdaptiveBoolean>
@@ -1245,6 +1295,8 @@ src::managed::InloopFilters: Clone, Copy, Debug, Eq, Hash, PartialEq
 src::managed::MasteringDisplay: Clone, Copy, Debug
 src::managed::MatrixCoefficients: Clone, Copy, Debug, Eq, From<include::dav1d::headers::Rav1dMatrixCoefficients>, PartialEq
 src::managed::PixelLayout: Clone, Copy, Debug, Eq, From<include::dav1d::headers::Rav1dPixelLayout>, PartialEq
+src::managed::RawColorInfo: Clone, Copy, Debug, Eq, PartialEq
+src::managed::SendStatus: Clone, Copy, Debug, Eq, PartialEq
 src::managed::Settings: Clone, Debug, Default
 src::managed::Strictness: Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd
 src::managed::TransferCharacteristics: Clone, Copy, Debug, Eq, From<include::dav1d::headers::Rav1dTransferCharacteristics>, PartialEq
@@ -1259,11 +1311,11 @@ impl zerocopy::TryFromBytes for include::dav1d::picture::AlignedPixelChunk where
 
 ## auto traits
 
-76 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
+79 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
 include::dav1d::headers::DRav1d<R, D>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 include::dav1d::headers::Rav1dFrameHeader: !Freeze
 include::dav1d::headers::Rav1dWarpedMotionParams: !Freeze
-include::dav1d::picture::BlockMut<'a, BD>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
+include::dav1d::picture::BlockMut<'a, BD>: !RefUnwindSafe !Send !Sync !UnwindSafe
 include::dav1d::picture::Rav1dPictureData: !Freeze !RefUnwindSafe !UnwindSafe
 include::dav1d::picture::Rav1dPictureDataComponent: !Freeze !RefUnwindSafe
 src::managed::Decoder: !RefUnwindSafe !UnwindSafe
@@ -1273,3 +1325,4 @@ src::managed::PlaneView8<'a>: !RefUnwindSafe !UnwindSafe
 src::managed::Planes16<'a>: !RefUnwindSafe !UnwindSafe
 src::managed::Planes8<'a>: !RefUnwindSafe !UnwindSafe
 src::managed::Planes<'a>: !RefUnwindSafe !UnwindSafe
+src::managed::ReceiveStatus: !RefUnwindSafe !UnwindSafe

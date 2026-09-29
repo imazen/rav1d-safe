@@ -12,6 +12,14 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   decoded-frame accessors.
 
 ### Added
+- Owned `Packet` submission with explicit accepted/backpressure results, input
+  timestamp/duration/offset propagation, and incremental `end_input`/`receive`
+  draining with terminal EOS. `reset` explicitly discards pending state while
+  previously returned pictures remain valid. The existing `flush` convenience
+  method uses this drain protocol and still drains then resets.
+- Raw color-code and AV1 chroma-position accessors, coded render dimensions,
+  and input packet offsets on managed frames. Unknown color codes are retained.
+  See [managed packet decoding](docs/MANAGED_PACKETS.md) for ownership and timing.
 - Release provenance record mapping all 19 published `rav1d-safe` and
   `rav1d-disjoint-mut` versions to their source commits, with
   `tools/verify-published-provenance.py` to regenerate and check it
