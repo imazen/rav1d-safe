@@ -4,6 +4,8 @@ on:
   schedule:
     # Run daily at 2 AM UTC
     - cron: '0 2 * * *'
+    # Full Argon conformance sweep: 1st of the month at 3 AM UTC
+    - cron: '0 3 1 * *'
   workflow_dispatch:
     inputs:
       corpus:
@@ -169,12 +171,15 @@ jobs:
           echo "Pass rate: $(( PASS * 100 / TOTAL ))%"
           [ $FAIL -lt 50 ] || exit 1  # Allow some failures
 
-  # Large test - Argon conformance suite (5.1 GB, ~2763 files) - weekly only
+  # Full Argon conformance suite (5.1 GB, ~2788 streams) — monthly + manual.
+  # Verifies decoder output bit-for-bit against the shipped reference MD5s:
+  # both the film-grain (md5_ref) and no-grain (md5_no_film_grain) sidecars.
   test-argon:
     name: Test Argon Conformance Suite
     runs-on: ubuntu-latest
-    if: (github.event.inputs.corpus == 'all' || github.event.inputs.corpus == 'argon-only') && github.event_name != 'schedule'
-    # Only run on manual trigger, not on schedule
+    if: |
+      (github.event.inputs.corpus == 'all' || github.event.inputs.corpus == 'argon-only')
+      || (github.event_name == 'schedule' && github.event.schedule == '0 3 1 * *')
     steps:
       - uses: actions/checkout@v6
 
@@ -185,7 +190,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build decoder
-        run: cargo build --release --example managed_decode --no-default-features --features "bitdepth_8,bitdepth_16"
+        run: cargo build --release --example decode_md5 --no-default-features --features "bitdepth_8,bitdepth_16"
 
       - name: Free up disk space
         run: |
@@ -204,29 +209,16 @@ jobs:
           key: argon-vectors-v1
           restore-keys: argon-vectors-
 
-      - name: Test Argon samples (500 files)
+      # Reference MD5s were generated with dav1d (conceal-and-continue)
+      # semantics, so verification runs --lenient. A handful of synthesized
+      # coverage streams are deliberately non-conforming (e.g. segment_id
+      # beyond LastActiveSegId, AV1 §6.10.8) and are correctly rejected by
+      # the default Strictness::Strict; the script reports those separately.
+      - name: Verify all Argon streams bit-exactly
         run: |
-          PASS=0
-          FAIL=0
-          TOTAL=0
-          
-          if [ -d test-vectors/argon/argon ]; then
-            for ivf in $(find test-vectors/argon/argon -name "*.ivf" -o -name "*.obu" | shuf | head -500); do
-              ((TOTAL++)) || true
-              if timeout 120 cargo run --release --example managed_decode --no-default-features \
-                  --features "bitdepth_8,bitdepth_16" -- "$ivf" > /dev/null 2>&1; then
-                ((PASS++)) || true
-                [ $(( TOTAL % 50 )) -eq 0 ] && echo "Progress: $PASS/$TOTAL passed"
-              else
-                ((FAIL++)) || true
-                echo "FAIL: $(basename $ivf)"
-              fi
-            done
-          fi
-          
-          echo "Final Results: $PASS/$TOTAL passed, $FAIL failed"
-          echo "Pass rate: $(( PASS * 100 / TOTAL ))%"
-          [ $FAIL -lt 100 ] || exit 1  # Allow more failures for conformance suite
+          bash scripts/argon_md5_check.sh \
+            test-vectors/argon/argon \
+            ./target/release/examples/decode_md5
 
       - name: Disk space after test
         run: df -h
