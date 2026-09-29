@@ -2055,6 +2055,10 @@ pub(crate) struct Rav1dPicture {
     pub stride: [ptrdiff_t; 2],
     pub p: Rav1dPictureParameters,
     pub m: Rav1dDataProps,
+    /// Provenance of this output, separate from the retained coded-frame header.
+    /// Showing a reference picture keeps that older header (including its type).
+    /// This Rust-only flag is set after allocation and copied through grain.
+    pub show_existing_frame: bool,
     pub content_light: Option<Arc<Rav1dContentLightLevel>>,
     pub mastering_display: Option<Arc<Rav1dMasteringDisplay>>,
     pub itut_t35: Arc<DRav1d<Box<[Rav1dITUTT35]>, Box<[Dav1dITUTT35]>>>,
@@ -2102,6 +2106,9 @@ impl From<Dav1dPicture> for Rav1dPicture {
             stride,
             p: p.into(),
             m: m.into(),
+            // The C picture ABI has no presentation-provenance field. Managed
+            // decoding establishes this after any allocator ABI roundtrip.
+            show_existing_frame: false,
             content_light: content_light_ref.map(|raw| {
                 // SAFETY: `raw` came from [`RawArc::from_arc`].
                 unsafe { raw.into_arc() }
@@ -2131,6 +2138,7 @@ impl From<Rav1dPicture> for Dav1dPicture {
             stride,
             p,
             m,
+            show_existing_frame: _,
             content_light,
             mastering_display,
             itut_t35,

@@ -979,6 +979,32 @@ impl Frame {
         self.inner.p.bpc
     }
 
+    /// Whether this presentation shows a previously decoded reference picture.
+    /// Its pixel allocation and coded-frame header belong to that older picture;
+    /// timestamp, duration and input offset belong to this presentation instead.
+    pub fn is_show_existing(&self) -> bool {
+        self.inner.show_existing_frame
+    }
+
+    /// Whether this output is a newly coded, visible AV1 key frame.
+    ///
+    /// A show-existing presentation of an older key frame returns false. Hidden
+    /// key frames returned by `output_invisible_frames` also return false. This
+    /// describes picture provenance, not a complete container seek guarantee:
+    /// random access still needs the applicable sequence header, packet boundary
+    /// and any container initialization data.
+    pub fn is_keyframe(&self) -> bool {
+        let header = &self
+            .inner
+            .frame_hdr
+            .as_ref()
+            .expect("missing frame_hdr")
+            .rav1d;
+        !self.is_show_existing()
+            && header.show_frame != 0
+            && header.frame_type == crate::include::dav1d::headers::Rav1dFrameType::Key
+    }
+
     /// Pixel layout (chroma subsampling)
     pub fn pixel_layout(&self) -> PixelLayout {
         self.inner.p.layout.into()
