@@ -10,6 +10,9 @@
 //!   * `.unwrap()`/`.expect()` on tokens outside FFI wrappers
 //!   * suffix-convention mismatches (`incant!` resolves `f` + `_v3`, so
 //!     `f_avx2_safe` is invisible to it)
+//!   * `scalar` vs `default` tier hygiene — `_scalar` fns take a `ScalarToken`
+//!     (const ZST, uniform-signature convention); tokenless fallbacks should
+//!     be `_default` since `incant!` strips Token args for that tier
 //!
 //! Usage: archmage-audit <roots...> [--json] [--lint] [--tree <fn>]
 
@@ -84,6 +87,8 @@ struct FnInfo {
     is_test_cfg: bool,
     generics: String,
     token_param: Option<String>, // declared token param type, if any (Desktop64, X64V3Token, …)
+    token_param_name: Option<String>, // binding ident of the token param (`token`, `t`, …)
+    token_param_used: bool,      // body references the token param ident
     takes_fnptr: bool,           // any `fn(…)` fn-pointer parameter (DSP-table style)
     summons: u32,                // Token::summon() / summon_*() call sites in body
     summon_targets: Vec<String>, // tiers each summon targets (best-effort)
@@ -227,6 +232,19 @@ struct BodyScan<'a> {
 }
 
 impl<'a> Visit<'a> for BodyScan<'a> {
+    fn visit_expr_path(&mut self, node: &'a syn::ExprPath) {
+        // does the body reference the token param by name? (passed down,
+        // or used for from_context-style proofs)
+        let used = self
+            .info
+            .token_param_name
+            .as_ref()
+            .is_some_and(|n| node.path.is_ident(n));
+        if used {
+            self.info.token_param_used = true;
+        }
+        syn::visit::visit_expr_path(self, node);
+    }
     fn visit_expr_for_loop(&mut self, node: &'a syn::ExprForLoop) {
         self.loop_depth += 1;
         syn::visit::visit_expr_for_loop(self, node);
@@ -374,6 +392,7 @@ impl FnVisitor {
             || sig.ident.to_string().starts_with("test_");
         // token param + fn-ptr detection across all params
         let mut token_param = None;
+        let mut token_param_name = None;
         let mut takes_fnptr = false;
         for arg in sig.inputs.iter() {
             if let syn::FnArg::Typed(pt) = arg {
@@ -381,6 +400,11 @@ impl FnVisitor {
                 if token_param.is_none() {
                     if let Some(_t) = token_tier(&ts) {
                         token_param = Some(ts.clone());
+                        token_param_name = match &*pt.pat {
+                            syn::Pat::Ident(p) => Some(p.ident.to_string()),
+                            syn::Pat::Wild(_) => None, // `_: ScalarToken` — never usable
+                            _ => None,
+                        };
                     }
                 }
                 // fn-ptr types: `fn (…)`, `unsafe fn`, `extern "C" fn`, or
@@ -436,6 +460,8 @@ impl FnVisitor {
             is_test_cfg,
             generics: sig.generics.to_token_stream().to_string(),
             token_param,
+            token_param_name,
+            token_param_used: false,
             takes_fnptr,
             summons: 0,
             summon_targets: Vec::new(),
@@ -479,6 +505,7 @@ fn tier_suffix(name: &str) -> &'static str {
         "_neon",
         "_wasm128",
         "_scalar",
+        "_default",
         "_inner",
     ] {
         if name.ends_with(suf) {
@@ -601,9 +628,11 @@ fn main() {
             "token-unwrap" => "gate: `let Some(t) = summon() else { fallback }` — an unwrap deletes the gate and panics under token-suppression tests",
             "incant-in-vanilla" => "tokenless incant! needs a feature context — put #[rite(tier)]/#[arcane] on the caller, or pass an explicit Token arg",
             "manual-tier-select" => "this is a hand-rolled dispatcher — replace with #[autoversion(v4,v3,scalar)] or an #[arcane] entry that incant!s inward",
-            "missing-tier-suffix" => "incant! resolves f_<tier>; name it f_v3/f_v4/f_neon/f_scalar to be incantable",
+            "missing-tier-suffix" => "incant! resolves f_<tier>; name it f_v3/f_v4/f_neon/f_scalar/f_default to be incantable",
             "boundary-in-loop" => "a feature boundary crossed per iteration — hoist the entry call above the loop or make the loop body a #[rite] fn",
-            "no-scalar-fallback" => "add `scalar` to the tier list — under token-suppression tests there is otherwise no fallback variant",
+            "no-scalar-fallback" => "add `scalar`/`default` to the tier list — under token-suppression tests there is otherwise no fallback variant",
+            "scalar-should-be-default" => "ScalarToken is a const ZST and the param is unused — drop it and rename f_default; incant! strips Token args for the `default` tier",
+            "scalar-no-token-param" => "incant!([scalar]) emits f_scalar(ScalarToken, …) — either take a ScalarToken param or rename f_default (tokenless convention)",
             "maybe-dead-variant" => "no resolved callers — dead variant, macro-only call site, or missing incant! edge",
             "cross-isa-twin" => "same fn family across arch files — if the body is portable, one #[rite(v3,neon,wasm128)] replaces N copies",
             _ => "",
@@ -737,7 +766,7 @@ fn main() {
         if matches!(f.ctx, Ctx::Tier(_)) && !f.is_entry && !f.is_extern_c {
             let suf = tier_suffix(&f.name);
             let incantable = [
-                "_v4", "_v3", "_v2", "_v1", "_neon", "_wasm128", "_scalar", "_inner",
+                "_v4", "_v3", "_v2", "_v1", "_neon", "_wasm128", "_scalar", "_default", "_inner",
             ];
             if !incantable.contains(&suf) && !f.allows.iter().any(|a| a == "missing-tier-suffix") {
                 violations.push(Violation {
@@ -795,6 +824,39 @@ fn main() {
                     "tiers [{}] lack a scalar/default fallback",
                     f.declared_tiers.join(",")
                 ),
+            });
+        }
+        // scalar-should-be-default / scalar-no-token-param:
+        // `scalar` tier callees take (ScalarToken, args) — the token is a
+        // const ZST kept only for signature uniformity. `default` tier callees
+        // are tokenless. A _scalar fn that never uses its ScalarToken param is
+        // dead weight (should be _default); a _scalar fn with no token param
+        // breaks incant!([scalar]) which passes ScalarToken as arg 0.
+        if f.name.ends_with("_scalar")
+            && !f.is_extern_c
+            && !f.allows.iter().any(|a| a == "scalar-should-be-default")
+        {
+            let scalar_param = f
+                .token_param
+                .as_deref()
+                .is_some_and(|t| token_tier(t) == Some("scalar"));
+            if scalar_param && !f.token_param_used {
+                violations.push(Violation {
+                    kind: "scalar-should-be-default",
+                    at: loc.clone(),
+                    detail: "ScalarToken param never used — drop it, rename _default".into(),
+                });
+            }
+        }
+        if f.name.ends_with("_scalar")
+            && f.token_param.is_none()
+            && !f.is_extern_c
+            && !f.allows.iter().any(|a| a == "scalar-no-token-param")
+        {
+            violations.push(Violation {
+                kind: "scalar-no-token-param",
+                at: loc.clone(),
+                detail: "no ScalarToken param — incant!([scalar]) would pass one; rename _default for tokenless".into(),
             });
         }
     }
@@ -933,6 +995,7 @@ fn main() {
                     "ctx": f.ctx.label(),
                     "entry": f.is_entry, "extern_c": f.is_extern_c, "test_cfg": f.is_test_cfg,
                     "generics": f.generics, "token_param": f.token_param,
+                    "token_param_used": f.token_param_used,
                     "takes_fnptr": f.takes_fnptr, "summons": f.summons,
                     "from_context": f.from_context, "incants": f.incants,
                     "local_macro_calls": f.local_macro_calls, "calls": f.calls,
