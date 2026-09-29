@@ -24,7 +24,7 @@ use std::ffi::c_int;
 use std::ffi::c_uint;
 
 #[cfg(target_arch = "x86_64")]
-use archmage::{Desktop64, arcane};
+use archmage::{Desktop64, arcane, rite};
 
 use crate::include::dav1d::headers::Rav1dFilmGrainData;
 use crate::src::filmgrain::{FG_BLOCK_SIZE, GRAIN_HEIGHT, GRAIN_WIDTH};
@@ -402,7 +402,7 @@ fn grain_offsets(randval: c_int, is_subx: bool, is_suby: bool) -> (usize, usize)
 /// Inner SIMD loop for fgy: process pixels using AVX2 with safe slice access.
 /// Uses scalar scaling lookups + SIMD multiply/round/add/clamp.
 #[cfg(target_arch = "x86_64")]
-#[arcane]
+#[rite]
 fn fgy_row_simd_8bpc_safe(
     _token: Desktop64,
     dst: &mut [u8],

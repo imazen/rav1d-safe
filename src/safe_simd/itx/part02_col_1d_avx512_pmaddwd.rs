@@ -639,7 +639,7 @@ fn dct32_1d_cols16(token: Server64, c: &mut [__m512i; 32], min_v: __m512i, max_v
 /// Processes 16 cols at a time. `total_w` must be a multiple of 16.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct32_cols_avx512(
+fn dct32_cols_v4(
     token: Server64,
     tmp: &mut [i32],
     total_w: usize,
@@ -674,7 +674,7 @@ fn dct32_cols_avx512(
 /// `n_chunks` = `total_w / 16`. Caller is responsible for ensuring this divides.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct16_cols_avx512(
+fn dct16_cols_v4(
     token: Server64,
     tmp: &mut [i32],
     total_w: usize,
@@ -2242,7 +2242,7 @@ fn adst16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max: i3
 fn dct16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max: i32) {
     // Try AVX-512 first: processes 16 cols at once instead of 8.
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        dct16_cols_avx512(t512, tmp, 16, 16, min, max);
+        dct16_cols_v4(t512, tmp, 16, 16, min, max);
         return;
     }
     let min_v = _mm256_set1_epi32(min);
@@ -3344,7 +3344,7 @@ fn dct32_1d_cols8_i16(token: Desktop64, c: &mut [__m256i; 32], min_v: __m256i, m
 fn dct32x32_cols_simd(token: Desktop64, tmp: &mut [i32; 1024], min: i32, max: i32) {
     // Try AVX-512 first: 16 cols per chunk (2 chunks total for 32x32).
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        dct32_cols_avx512(t512, tmp, 32, 32, min, max);
+        dct32_cols_v4(t512, tmp, 32, 32, min, max);
         return;
     }
     // Use i16-packed pmaddwd when values are in i16 range (8bpc column pass).

@@ -917,7 +917,7 @@ pub(crate) fn inv_txfm_add_dct_dct_64x64_16bpc_neon_inner(
         for x in 0..64 {
             input[x] = coeff.get(y + x * 64).copied().unwrap_or(0);
         }
-        let out = scalar_dct64_1d(&input);
+        let out = scalar_dct64_1d(&input); // audit:allow(tier-boundary) aarch64 baseline includes NEON; the scalar DCT helper has no feature loss
         for x in 0..64 {
             tmp[y * 64 + x] = out[x];
         }
@@ -986,7 +986,7 @@ pub(crate) fn inv_txfm_add_dct_dct_64x32_16bpc_neon_inner(
         for x in 0..64 {
             input[x] = coeff.get(y + x * 32).copied().unwrap_or(0);
         }
-        let out = scalar_dct64_1d(&input);
+        let out = scalar_dct64_1d(&input); // audit:allow(tier-boundary) aarch64 baseline includes NEON; the scalar DCT helper has no feature loss
         for x in 0..64 {
             tmp[y * 64 + x] = out[x];
         }
@@ -1054,7 +1054,7 @@ pub(crate) fn inv_txfm_add_dct_dct_32x64_16bpc_neon_inner(
         for x in 0..32 {
             input[x] = coeff.get(y + x * 64).copied().unwrap_or(0);
         }
-        let out = scalar_dct32_1d(&input);
+        let out = scalar_dct32_1d(&input); // audit:allow(tier-boundary) aarch64 baseline includes NEON; the scalar DCT helper has no feature loss
         for x in 0..32 {
             tmp[y * 32 + x] = out[x];
         }
@@ -1127,7 +1127,7 @@ pub(crate) fn inv_txfm_add_dct_dct_16x64_16bpc_neon_inner(
         for val in input.iter_mut() {
             *val = ((*val as i64 * scale + 16384) >> 15) as i32;
         }
-        let out = scalar_dct16_1d(&input);
+        let out = scalar_dct16_1d(&input); // audit:allow(tier-boundary) aarch64 baseline includes NEON; the scalar DCT helper has no feature loss
         for x in 0..16 {
             tmp[y * 16 + x] = (out[x] + 1) >> 1;
         }
@@ -1196,7 +1196,7 @@ pub(crate) fn inv_txfm_add_dct_dct_64x16_16bpc_neon_inner(
         for val in input.iter_mut() {
             *val = ((*val as i64 * scale + 16384) >> 15) as i32;
         }
-        let out = scalar_dct64_1d(&input);
+        let out = scalar_dct64_1d(&input); // audit:allow(tier-boundary) aarch64 baseline includes NEON; the scalar DCT helper has no feature loss
         for x in 0..64 {
             tmp[y * 64 + x] = (out[x] + 1) >> 1;
         }

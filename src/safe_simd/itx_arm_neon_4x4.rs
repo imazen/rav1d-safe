@@ -276,7 +276,7 @@ fn apply_tx4(
 /// 6. Add to destination with srshr>>4 + saturating u8 add
 /// 7. Clear coefficient buffer
 #[cfg(target_arch = "aarch64")]
-#[arcane]
+#[rite]
 pub(crate) fn inv_txfm_add_4x4_8bpc_neon(
     _token: Arm64,
     dst: &mut [u8],

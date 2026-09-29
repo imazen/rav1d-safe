@@ -9,7 +9,7 @@
 use core::arch::aarch64::*;
 
 #[cfg(target_arch = "aarch64")]
-use archmage::{Arm64, SimdToken, arcane};
+use archmage::{Arm64, SimdToken, arcane, rite};
 
 #[cfg(target_arch = "aarch64")]
 use archmage::intrinsics::aarch64 as safe_simd;
@@ -3012,7 +3012,7 @@ fn h_filter_8tap_8bpc_neon(
 
 /// Vertical 8-tap filter from intermediate buffer to output (u8)
 #[cfg(target_arch = "aarch64")]
-#[arcane]
+#[rite]
 #[allow(clippy::too_many_arguments)]
 fn v_filter_8tap_8bpc_neon(
     _token: Arm64,
@@ -3122,7 +3122,7 @@ fn v_filter_8tap_8bpc_neon(
 
 /// Horizontal 8-tap filter directly to output (H-only case)
 #[cfg(target_arch = "aarch64")]
-#[arcane]
+#[rite]
 fn h_filter_8tap_8bpc_put_neon(
     _token: Arm64,
     dst: &mut [u8],
@@ -3403,7 +3403,7 @@ fn vshrq_n_s32_dyn(v: int32x4_t, sh: u8) -> int32x4_t {
 
 /// Vertical 8-tap filter directly from source (V-only case)
 #[cfg(target_arch = "aarch64")]
-#[arcane]
+#[rite]
 #[allow(clippy::too_many_arguments)]
 fn v_filter_8tap_8bpc_direct_neon(
     _token: Arm64,
@@ -3752,7 +3752,7 @@ define_put_8tap_8bpc!(put_8tap_sharp_8bpc_neon, Filter2d::Sharp8Tap);
 
 /// Vertical 8-tap filter from intermediate buffer to i16 output
 #[cfg(target_arch = "aarch64")]
-#[arcane]
+#[rite]
 #[allow(clippy::too_many_arguments)]
 fn v_filter_8tap_to_i16_neon(
     _token: Arm64,
@@ -4007,7 +4007,7 @@ define_prep_8tap_8bpc!(prep_8tap_sharp_8bpc_neon, Filter2d::Sharp8Tap);
 
 /// Horizontal 8-tap filter to intermediate buffer (i32) for 16bpc
 #[cfg(target_arch = "aarch64")]
-#[arcane]
+#[rite]
 #[allow(clippy::too_many_arguments)]
 fn h_filter_8tap_16bpc_neon(
     _token: Arm64,
@@ -4086,7 +4086,7 @@ fn h_filter_8tap_16bpc_neon(
 
 /// Vertical 8-tap filter from i32 intermediate to u16 output for 16bpc
 #[cfg(target_arch = "aarch64")]
-#[arcane]
+#[rite]
 #[allow(clippy::too_many_arguments)]
 fn v_filter_8tap_16bpc_neon(
     _token: Arm64,
@@ -4163,7 +4163,7 @@ fn v_filter_8tap_16bpc_neon(
 
 /// Horizontal 8-tap filter directly to output for 16bpc (H-only case)
 #[cfg(target_arch = "aarch64")]
-#[arcane]
+#[rite]
 #[allow(clippy::too_many_arguments)]
 fn h_filter_8tap_16bpc_put_neon(
     _token: Arm64,
@@ -4246,7 +4246,7 @@ fn h_filter_8tap_16bpc_put_neon(
 
 /// Vertical 8-tap filter directly from source for 16bpc (V-only case)
 #[cfg(target_arch = "aarch64")]
-#[arcane]
+#[rite]
 #[allow(clippy::too_many_arguments)]
 fn v_filter_8tap_16bpc_direct_neon(
     _token: Arm64,
@@ -4507,7 +4507,7 @@ define_put_8tap_16bpc!(put_8tap_sharp_16bpc_neon, Filter2d::Sharp8Tap);
 
 /// Vertical 8-tap filter from i32 intermediate to i16 output for 16bpc prep
 #[cfg(target_arch = "aarch64")]
-#[arcane]
+#[rite]
 #[allow(clippy::too_many_arguments)]
 fn v_filter_8tap_16bpc_to_i16_neon(
     _token: Arm64,

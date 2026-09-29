@@ -370,7 +370,7 @@ fn update_cdf(cdf: &mut [u16], n: usize, val: usize, rate: u16, count: u16) {
                 rate,
                 count
             ),
-            [v1, scalar]
+            [v1, default]
         );
     }
     for i in 0..n {
@@ -386,15 +386,10 @@ fn update_cdf(cdf: &mut [u16], n: usize, val: usize, rate: u16, count: u16) {
 }
 
 /// Scalar fallback for `update_cdf3` — the same mask-select update over the
-/// three symbol lanes, with the count landing in lane 3.
+/// three symbol lanes, with the count landing in lane 3. `default` tier:
+/// tokenless — `incant!` strips the `Token` arg for default callees.
 #[cfg(all(not(asm_msac), target_arch = "x86_64"))]
-fn update_cdf3_scalar(
-    _token: archmage::ScalarToken,
-    cdf: &mut [u16; 4],
-    val: usize,
-    rate: u16,
-    count: u16,
-) {
+fn update_cdf3_default(cdf: &mut [u16; 4], val: usize, rate: u16, count: u16) {
     for i in 0..3 {
         let mask = ((i < val) as u16).wrapping_neg();
         let delta_up = (32768u16.wrapping_sub(cdf[i])) >> rate;
@@ -587,6 +582,10 @@ pub fn rav1d_msac_decode_subexp(s: &mut MsacContext, r#ref: c_uint, n: c_uint, m
 /// Return value is in the range `0..=n_symbols`.
 ///
 /// `n_symbols` is in the range `0..16`, so it is really a `u4`.
+// #[inline]: called from `adapt8_v1`/`adapt16_v1` feature contexts on the
+// small-CDF guard path — inlineable so it folds into the caller's context
+// instead of crossing a hard scalar boundary.
+#[inline]
 fn rav1d_msac_decode_symbol_adapt_rust(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
     let c = (s.dif >> (EC_WIN_SIZE - 16)) as c_uint;
     let r = s.rng >> 8;
@@ -858,7 +857,7 @@ impl MsacContext {
 mod simd {
     use super::*;
     use crate::src::safe_simd::pixel_access::{loadu_128, storeu_128};
-    use archmage::{ScalarToken, X64V1Token};
+    use archmage::X64V1Token;
     use core::arch::x86_64::*;
 
     /// Byte-identical layout to dav1d's `min_prob`+`pw_0xff00` rodata pair:
@@ -1033,23 +1032,13 @@ mod simd {
         val as u8
     }
 
-    /// `_scalar` fallbacks — `incant!` calls these with a `ScalarToken` when
-    /// the v1 token is unavailable (non-x86 targets, token-permutation tests).
-    pub(super) fn adapt8_scalar(
-        _token: ScalarToken,
-        s: &mut MsacContext,
-        cdf: &mut [u16],
-        n_symbols: u8,
-    ) -> u8 {
+    /// `_default` fallbacks — tokenless variants `incant!` calls when the v1
+    /// token is unavailable (non-x86 targets, token-permutation tests).
+    pub(super) fn adapt8_default(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
         rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols) as u8
     }
 
-    pub(super) fn adapt16_scalar(
-        _token: ScalarToken,
-        s: &mut MsacContext,
-        cdf: &mut [u16],
-        n_symbols: u8,
-    ) -> u8 {
+    pub(super) fn adapt16_default(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
         // Serial loop is faster than branchless for adapt16: typical AV1
         // distributions exit early (3-5 iterations), while branchless always
         // computes all n_symbols values.
@@ -1111,7 +1100,7 @@ pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_s
         } else if #[cfg(all(not(asm_msac), target_arch = "x86_64"))] {
             ret = c_uint::from(archmage::incant!(
                 simd::adapt8(Token, s, cdf, n_symbols),
-                [v1, scalar]
+                [v1, default]
             ));
         } else if #[cfg(not(asm_msac))] {
             ret = rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols);
@@ -1150,7 +1139,7 @@ pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_
         } else if #[cfg(all(not(asm_msac), target_arch = "x86_64"))] {
             ret = c_uint::from(archmage::incant!(
                 simd::adapt16(Token, s, cdf, n_symbols),
-                [v1, scalar]
+                [v1, default]
             ));
         } else if #[cfg(not(asm_msac))] {
             // Serial loop is faster than branchless for adapt16: typical AV1 distributions

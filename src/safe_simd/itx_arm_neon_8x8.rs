@@ -825,7 +825,7 @@ fn apply_tx8(
 /// For identity row transform, the shl<<1 and >>1 cancel, so we skip both
 /// (assembly line 880-883).
 #[cfg(target_arch = "aarch64")]
-#[arcane]
+#[rite]
 pub(crate) fn inv_txfm_add_8x8_8bpc_neon(
     _token: Arm64,
     dst: &mut [u8],

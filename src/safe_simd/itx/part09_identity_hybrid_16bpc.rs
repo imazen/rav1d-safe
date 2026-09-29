@@ -331,7 +331,7 @@ fn inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner(
     );
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_16bpc_avx512(
+        add_to_dst_16bpc_v4(
             t512,
             &mut *dst,
             dst_stride / 2,
@@ -1312,7 +1312,7 @@ fn inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_16bpc_avx512(t512, &mut *dst, stride_u16, &tmp, 32, 32, 16, bitdepth_max);
+        add_to_dst_16bpc_v4(t512, &mut *dst, stride_u16, &tmp, 32, 32, 16, bitdepth_max);
         coeff[..512].fill(0);
         return;
     }
@@ -1577,7 +1577,7 @@ fn inv_txfm_add_identity_identity_32x8_16bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_16bpc_avx512(t512, &mut *dst, stride_u16, &tmp, 32, 32, 8, bitdepth_max);
+        add_to_dst_16bpc_v4(t512, &mut *dst, stride_u16, &tmp, 32, 32, 8, bitdepth_max);
         coeff[..256].fill(0);
         return;
     }

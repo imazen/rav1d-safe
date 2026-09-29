@@ -1042,11 +1042,13 @@ fn decode_coefs<BD: BitDepth>(
     eob as i32
 }
 
-/// The dispatcher itself is bypassed — `incant!` inside `decode_coefs`'s
-/// variants calls the matching `decode_coefs_class_<tier>` directly.
-#[allow(dead_code)]
-#[archmage::autoversion(v3, scalar)]
+/// `#[magetypes(v3, scalar)]` — stamps `decode_coefs_class_v3`/`_scalar`
+/// directly; no dispatcher. `incant!` inside `decode_coefs`'s variants calls
+/// the matching tier variant with `from_context()` — the token is threaded,
+/// not re-summoned. `Token` is the placeholder replaced per variant.
+#[archmage::magetypes(v3, scalar)]
 fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
+    _token: Token,
     ts_c: &mut Rav1dTileStateContext,
     t_dim: &TxfmInfo,
     chroma: usize,

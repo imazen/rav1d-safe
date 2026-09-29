@@ -43,7 +43,7 @@ fn inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
 
     // Column transform: SIMD across 16 columns, 32 rows
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        dct32_cols_avx512(t512, &mut tmp, 16, 32, col_clip_min, col_clip_max);
+        dct32_cols_v4(t512, &mut tmp, 16, 32, col_clip_min, col_clip_max);
     } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
@@ -2295,7 +2295,7 @@ fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
 
     // Column transform: SIMD across 32 columns, 16 rows
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        dct16_cols_avx512(t512, &mut tmp, 32, 16, col_clip_min, col_clip_max);
+        dct16_cols_v4(t512, &mut tmp, 32, 16, col_clip_min, col_clip_max);
     } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
@@ -2315,7 +2315,7 @@ fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 16, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 32, 32, 16, bitdepth_max);
         coeff[..512].fill(0);
         return;
     }
@@ -2612,7 +2612,7 @@ fn inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 16, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 32, 32, 16, bitdepth_max);
         coeff[..512].fill(0);
         return;
     }
@@ -2724,7 +2724,7 @@ fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 64, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 32, 32, 64, bitdepth_max);
         coeff[..1024].fill(0);
         return;
     }
@@ -2867,7 +2867,7 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
 
     // Column transform: SIMD across 64 columns, 32 rows
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        dct32_cols_avx512(t512, &mut tmp, 64, 32, col_clip_min, col_clip_max);
+        dct32_cols_v4(t512, &mut tmp, 64, 32, col_clip_min, col_clip_max);
     } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
@@ -2887,7 +2887,7 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 64, 64, 32, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 64, 64, 32, bitdepth_max);
         coeff[..1024].fill(0);
         return;
     }
@@ -3889,7 +3889,7 @@ fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 8, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 32, 32, 8, bitdepth_max);
         coeff[..256].fill(0);
         return;
     }
@@ -4132,7 +4132,7 @@ fn inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 8, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 32, 32, 8, bitdepth_max);
         coeff[..256].fill(0);
         return;
     }
@@ -4372,7 +4372,7 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
 
     // Column transform: SIMD across 64 columns, 16 rows
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        dct16_cols_avx512(t512, &mut tmp, 64, 16, col_clip_min, col_clip_max);
+        dct16_cols_v4(t512, &mut tmp, 64, 16, col_clip_min, col_clip_max);
     } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
@@ -4392,7 +4392,7 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 64, 64, 16, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 64, 64, 16, bitdepth_max);
         coeff[..512].fill(0);
         return;
     }
