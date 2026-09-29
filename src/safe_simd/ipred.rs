@@ -1123,80 +1123,113 @@ fn ipred_paeth_8bpc_inner(
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
     let topleft_val = topleft[tl_off] as i32;
-    let topleft_vec = _mm256_set1_epi32(topleft_val);
+    let topleft_vec = _mm256_set1_epi16(topleft_val as i16);
 
     for y in 0..height {
         let row_off = (dst_base as isize + y as isize * stride) as usize;
         let left_val = topleft[tl_off - y - 1] as i32;
-        let left_vec = _mm256_set1_epi32(left_val);
+        let left_vec = _mm256_set1_epi16(left_val as i16);
 
-        // Process 8 pixels at a time with AVX2
+        // All intermediate values fit i16: base in [-255, 510], diffs <= 510.
+        // cmpgt_epi16 masks are FFFF per lane, so blendv_epi8 selects whole
+        // i16 lanes; results are u8-range and packus clamps safely.
         let mut x = 0;
-        while x + 8 <= width {
-            // Load 8 top pixels and zero-extend to 32-bit
-            let top_bytes = partial_simd::mm_loadl_epi64::<[u8; 8]>(
-                (&topleft[tl_off + 1 + x..tl_off + 1 + x + 8])
-                    .try_into()
-                    .unwrap(),
-            );
-            let top_lo = _mm256_cvtepu8_epi32(top_bytes);
-
-            // base = left + top - topleft
-            let base = _mm256_sub_epi32(_mm256_add_epi32(left_vec, top_lo), topleft_vec);
-
-            // ldiff = |left - base|
-            let ldiff = _mm256_abs_epi32(_mm256_sub_epi32(left_vec, base));
-            // tdiff = |top - base|
-            let tdiff = _mm256_abs_epi32(_mm256_sub_epi32(top_lo, base));
-            // tldiff = |topleft - base|
-            let tldiff = _mm256_abs_epi32(_mm256_sub_epi32(topleft_vec, base));
-
-            // Comparison: ldiff <= tdiff
+        while x + 16 <= width {
+            let top = _mm256_cvtepu8_epi16(loadu_128!(
+                <&[u8; 16]>::try_from(&topleft[tl_off + 1 + x..tl_off + 1 + x + 16]).unwrap()
+            ));
+            let base = _mm256_sub_epi16(_mm256_add_epi16(left_vec, top), topleft_vec);
+            let ldiff = _mm256_abs_epi16(_mm256_sub_epi16(left_vec, base));
+            let tdiff = _mm256_abs_epi16(_mm256_sub_epi16(top, base));
+            let tldiff = _mm256_abs_epi16(_mm256_sub_epi16(topleft_vec, base));
             let ld_le_td = _mm256_or_si256(
-                _mm256_cmpgt_epi32(tdiff, ldiff),
-                _mm256_cmpeq_epi32(ldiff, tdiff),
+                _mm256_cmpgt_epi16(tdiff, ldiff),
+                _mm256_cmpeq_epi16(ldiff, tdiff),
             );
-            // Comparison: ldiff <= tldiff
             let ld_le_tld = _mm256_or_si256(
-                _mm256_cmpgt_epi32(tldiff, ldiff),
-                _mm256_cmpeq_epi32(ldiff, tldiff),
+                _mm256_cmpgt_epi16(tldiff, ldiff),
+                _mm256_cmpeq_epi16(ldiff, tldiff),
             );
-            // Comparison: tdiff <= tldiff
             let td_le_tld = _mm256_or_si256(
-                _mm256_cmpgt_epi32(tldiff, tdiff),
-                _mm256_cmpeq_epi32(tdiff, tldiff),
+                _mm256_cmpgt_epi16(tldiff, tdiff),
+                _mm256_cmpeq_epi16(tdiff, tldiff),
             );
-
-            // if ldiff <= tdiff && ldiff <= tldiff: left
-            // else if tdiff <= tldiff: top
-            // else: topleft
             let use_left = _mm256_and_si256(ld_le_td, ld_le_tld);
             let use_top = _mm256_andnot_si256(use_left, td_le_tld);
-
-            // Select: start with topleft, blend top if use_top, blend left if use_left
             let result = _mm256_blendv_epi8(
-                _mm256_blendv_epi8(topleft_vec, top_lo, use_top),
+                _mm256_blendv_epi8(topleft_vec, top, use_top),
                 left_vec,
                 use_left,
             );
-
-            // Pack 32-bit to 8-bit
-            let packed = _mm256_shuffle_epi8(
+            // packus_epi16 interleaves the two 128-bit halves; undo with a
+            // qword permute — the 16 outputs land in the low xmm.
+            let packed = _mm256_permute4x64_epi64::<0b11011000>(_mm256_packus_epi16(
                 result,
-                _mm256_setr_epi8(
-                    0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 4, 8, 12, -1,
-                    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-                ),
+                result,
+            ));
+            storeu_128!(
+                &mut dst[row_off + x..row_off + x + 16],
+                [u8; 16],
+                _mm256_castsi256_si128(packed)
             );
-            let lo = _mm256_castsi256_si128(packed);
-            let hi = _mm256_extracti128_si256::<1>(packed);
-            let combined = _mm_unpacklo_epi32(lo, hi);
-            partial_simd::mm_storel_epi64::<[u8; 8]>(
-                (&mut dst[row_off + x..row_off + x + 8]).try_into().unwrap(),
-                combined,
+            x += 16;
+        }
+        while x + 8 <= width {
+            let top = _mm_cvtepu8_epi16(loadu_64!(
+                <&[u8; 8]>::try_from(&topleft[tl_off + 1 + x..tl_off + 1 + x + 8]).unwrap()
+            ));
+            let left8 = _mm256_castsi256_si128(left_vec);
+            let tl8 = _mm256_castsi256_si128(topleft_vec);
+            let base = _mm_sub_epi16(_mm_add_epi16(left8, top), tl8);
+            let ldiff = _mm_abs_epi16(_mm_sub_epi16(left8, base));
+            let tdiff = _mm_abs_epi16(_mm_sub_epi16(top, base));
+            let tldiff = _mm_abs_epi16(_mm_sub_epi16(tl8, base));
+            let ld_le_td = _mm_or_si128(
+                _mm_cmpgt_epi16(tdiff, ldiff),
+                _mm_cmpeq_epi16(ldiff, tdiff),
             );
-
+            let ld_le_tld = _mm_or_si128(
+                _mm_cmpgt_epi16(tldiff, ldiff),
+                _mm_cmpeq_epi16(ldiff, tldiff),
+            );
+            let td_le_tld = _mm_or_si128(
+                _mm_cmpgt_epi16(tldiff, tdiff),
+                _mm_cmpeq_epi16(tdiff, tldiff),
+            );
+            let use_left = _mm_and_si128(ld_le_td, ld_le_tld);
+            let use_top = _mm_andnot_si128(use_left, td_le_tld);
+            let result = _mm_blendv_epi8(_mm_blendv_epi8(tl8, top, use_top), left8, use_left);
+            let packed = _mm_packus_epi16(result, result);
+            storei64!(&mut dst[row_off + x..row_off + x + 8], packed);
             x += 8;
+        }
+        if x + 4 <= width {
+            let top = _mm_cvtepu8_epi16(loadi32!(&topleft[tl_off + 1 + x..tl_off + 1 + x + 4]));
+            let left8 = _mm256_castsi256_si128(left_vec);
+            let tl8 = _mm256_castsi256_si128(topleft_vec);
+            let base = _mm_sub_epi16(_mm_add_epi16(left8, top), tl8);
+            let ldiff = _mm_abs_epi16(_mm_sub_epi16(left8, base));
+            let tdiff = _mm_abs_epi16(_mm_sub_epi16(top, base));
+            let tldiff = _mm_abs_epi16(_mm_sub_epi16(tl8, base));
+            let ld_le_td = _mm_or_si128(
+                _mm_cmpgt_epi16(tdiff, ldiff),
+                _mm_cmpeq_epi16(ldiff, tdiff),
+            );
+            let ld_le_tld = _mm_or_si128(
+                _mm_cmpgt_epi16(tldiff, ldiff),
+                _mm_cmpeq_epi16(ldiff, tldiff),
+            );
+            let td_le_tld = _mm_or_si128(
+                _mm_cmpgt_epi16(tldiff, tdiff),
+                _mm_cmpeq_epi16(tdiff, tldiff),
+            );
+            let use_left = _mm_and_si128(ld_le_td, ld_le_tld);
+            let use_top = _mm_andnot_si128(use_left, td_le_tld);
+            let result = _mm_blendv_epi8(_mm_blendv_epi8(tl8, top, use_top), left8, use_left);
+            let packed = _mm_packus_epi16(result, result);
+            dst[row_off + x..row_off + x + 4]
+                .copy_from_slice(&(_mm_cvtsi128_si32(packed) as u32).to_ne_bytes());
+            x += 4;
         }
 
         // Scalar fallback for remaining pixels
