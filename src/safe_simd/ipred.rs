@@ -1931,6 +1931,52 @@ fn ipred_z1_8bpc_inner(
 
                 x += 8;
             }
+            while x + 4 <= width && base0 + x + 5 <= max_base_x {
+                let base = base0 + x;
+
+                let t0 = loadi32!(&top[base..base + 4]);
+                let t1 = loadi32!(&top[base + 1..base + 5]);
+                let lo = _mm_unpacklo_epi8(t0, t1);
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, _mm256_castsi256_si128(frac_pair)),
+                    _mm256_castsi256_si128(rounding),
+                ));
+                let packed = _mm_packus_epi16(r, r);
+                dst[row_off + x..row_off + x + 4]
+                    .copy_from_slice(&(_mm_cvtsi128_si32(packed) as u32).to_ne_bytes());
+
+                x += 4;
+            }
+        } else {
+            // Upsampled (base_inc == 2): each pixel's (t0,t1) pair is a
+            // contiguous u16 — a plain load builds all maddubs pairs at once.
+            let frac_pair128 = _mm256_castsi256_si128(frac_pair);
+            let rnd128 = _mm256_castsi256_si128(rounding);
+            while x + 8 <= width && base0 + 2 * x + 16 <= max_base_x + 1 {
+                let base = base0 + 2 * x;
+                let dat = loadu_128!((&top[base..base + 16]), [u8; 16]);
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(dat, frac_pair128),
+                    rnd128,
+                ));
+                storei64!(
+                    &mut dst[row_off + x..row_off + x + 8],
+                    _mm_packus_epi16(r, r)
+                );
+                x += 8;
+            }
+            while x + 4 <= width && base0 + 2 * x + 8 <= max_base_x + 1 {
+                let base = base0 + 2 * x;
+                let dat = loadu_64!(<&[u8; 8]>::try_from(&top[base..base + 8]).unwrap());
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(dat, frac_pair128),
+                    rnd128,
+                ));
+                let packed = _mm_packus_epi16(r, r);
+                dst[row_off + x..row_off + x + 4]
+                    .copy_from_slice(&(_mm_cvtsi128_si32(packed) as u32).to_ne_bytes());
+                x += 4;
+            }
         }
 
         // Scalar remainder (also handles upsampled stride-2 access)
@@ -1942,10 +1988,7 @@ fn ipred_z1_8bpc_inner(
                 let v = t0 * inv_frac as i32 + t1 * frac as i32;
                 dst[row_off + x] = ((v + 32) >> 6) as u8;
             } else {
-                let fill_val = top[max_base_x];
-                for xx in x..width {
-                    dst[row_off + xx] = fill_val;
-                }
+                dst[row_off + x..row_off + width].fill(top[max_base_x]);
                 break;
             }
             x += 1;
