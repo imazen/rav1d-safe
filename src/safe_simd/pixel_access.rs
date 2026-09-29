@@ -455,6 +455,10 @@ macro_rules! loadu_256 {
         #[cfg(feature = "unchecked")]
         {
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::x86_64::_mm256_loadu_si256(core::ptr::from_ref($src).cast())
             }
@@ -470,6 +474,10 @@ macro_rules! loadu_256 {
             let __s = $slice;
             debug_assert!(core::mem::size_of_val(__s) >= 32);
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::x86_64::_mm256_loadu_si256(__s.as_ptr() as *const _)
             }
@@ -501,6 +509,10 @@ macro_rules! storeu_256 {
         #[cfg(feature = "unchecked")]
         {
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::x86_64::_mm256_storeu_si256(core::ptr::from_mut($dst).cast(), $val)
             }
@@ -519,6 +531,10 @@ macro_rules! storeu_256 {
             let __s = $slice;
             debug_assert!(core::mem::size_of_val(__s) >= 32);
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::x86_64::_mm256_storeu_si256(__s.as_mut_ptr() as *mut _, $val)
             }
@@ -550,6 +566,10 @@ macro_rules! loadu_512 {
         #[cfg(feature = "unchecked")]
         {
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::x86_64::_mm512_loadu_si512(core::ptr::from_ref($src).cast())
             }
@@ -565,6 +585,10 @@ macro_rules! loadu_512 {
             let __s = $slice;
             debug_assert!(core::mem::size_of_val(__s) >= 64);
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::x86_64::_mm512_loadu_si512(__s.as_ptr() as *const _)
             }
@@ -596,6 +620,10 @@ macro_rules! storeu_512 {
         #[cfg(feature = "unchecked")]
         {
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::x86_64::_mm512_storeu_si512(core::ptr::from_mut($dst).cast(), $val)
             }
@@ -614,6 +642,10 @@ macro_rules! storeu_512 {
             let __s = $slice;
             debug_assert!(core::mem::size_of_val(__s) >= 64);
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::x86_64::_mm512_storeu_si512(__s.as_mut_ptr() as *mut _, $val)
             }
@@ -644,6 +676,10 @@ macro_rules! loadu_128 {
         #[cfg(feature = "unchecked")]
         {
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::x86_64::_mm_loadu_si128(core::ptr::from_ref($src).cast())
             }
@@ -659,6 +695,10 @@ macro_rules! loadu_128 {
             let __s = $slice;
             debug_assert!(core::mem::size_of_val(__s) >= 16);
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::x86_64::_mm_loadu_si128(__s.as_ptr() as *const _)
             }
@@ -689,6 +729,10 @@ macro_rules! loadu_64 {
         #[cfg(feature = "unchecked")]
         {
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::x86_64::_mm_loadu_si64(core::ptr::from_ref($src).cast())
             }
@@ -720,6 +764,10 @@ macro_rules! storeu_128 {
         #[cfg(feature = "unchecked")]
         {
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::x86_64::_mm_storeu_si128(core::ptr::from_mut($dst).cast(), $val)
             }
@@ -735,6 +783,10 @@ macro_rules! storeu_128 {
             let __s = $slice;
             debug_assert!(core::mem::size_of_val(__s) >= 16);
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::x86_64::_mm_storeu_si128(__s.as_mut_ptr() as *mut _, $val)
             }
@@ -849,6 +901,10 @@ macro_rules! neon_ld1q_u8 {
         #[cfg(feature = "unchecked")]
         {
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::aarch64::vld1q_u8(($src).as_ptr())
             }
@@ -874,6 +930,10 @@ macro_rules! neon_ld1q_u16 {
         #[cfg(feature = "unchecked")]
         {
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::aarch64::vld1q_u16(($src).as_ptr())
             }
@@ -899,6 +959,10 @@ macro_rules! neon_ld1q_s16 {
         #[cfg(feature = "unchecked")]
         {
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::aarch64::vld1q_s16(($src).as_ptr())
             }
@@ -924,6 +988,10 @@ macro_rules! neon_st1q_u8 {
         #[cfg(feature = "unchecked")]
         {
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::aarch64::vst1q_u8(($dst).as_mut_ptr(), $val)
             }
@@ -949,6 +1017,10 @@ macro_rules! neon_st1q_u16 {
         #[cfg(feature = "unchecked")]
         {
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::aarch64::vst1q_u16(($dst).as_mut_ptr(), $val)
             }
@@ -980,6 +1052,10 @@ macro_rules! wasm_load_128 {
         #[cfg(feature = "unchecked")]
         {
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::wasm32::v128_load(core::ptr::from_ref($src).cast())
             }
@@ -995,6 +1071,10 @@ macro_rules! wasm_load_128 {
             let __s = $slice;
             debug_assert!(core::mem::size_of_val(__s) >= 16);
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::wasm32::v128_load(__s.as_ptr() as *const _)
             }
@@ -1020,6 +1100,10 @@ macro_rules! wasm_store_128 {
         #[cfg(feature = "unchecked")]
         {
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::wasm32::v128_store(core::ptr::from_mut($dst).cast(), $val)
             }
@@ -1035,6 +1119,10 @@ macro_rules! wasm_store_128 {
             let __s = $slice;
             debug_assert!(core::mem::size_of_val(__s) >= 16);
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::wasm32::v128_store(__s.as_mut_ptr() as *mut _, $val)
             }
@@ -1129,6 +1217,10 @@ macro_rules! neon_st1q_s16 {
         #[cfg(feature = "unchecked")]
         {
             #[allow(unsafe_code)]
+            // SAFETY: the macro's contract guarantees the pointer is valid
+            // for the full vector width — either a fixed-size array reference
+            // whose type carries the extent, or a slice guarded by the
+            // `size_of_val` debug_assert immediately above.
             unsafe {
                 core::arch::aarch64::vst1q_s16(($dst).as_mut_ptr(), $val)
             }

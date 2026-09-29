@@ -469,24 +469,30 @@ mod mixed_parity_tests_16bpc {
             input[pos] = match pattern {
                 0 => 1,
                 1 => -1,
-                2 => i32::MAX >> 4,
-                3 => i32::MIN >> 4,
+                // Extreme-but-in-domain coefficients: the scalar reference
+                // (and the C it ports) is defined only for inputs whose
+                // intermediate products fit i32 — ~|coef| <= 1<<15 keeps the
+                // widest multi-term stages inside that bound, so coverage /
+                // debug builds (overflow-checks on) don't panic where SIMD
+                // would just wrap.
+                2 => i16::MAX as i32,
+                3 => i16::MIN as i32,
                 4 => {
                     if i % 2 == 0 {
-                        i32::MIN >> 4
+                        i16::MIN as i32
                     } else {
-                        i32::MAX >> 4
+                        i16::MAX as i32
                     }
                 }
-                5 => (next(&mut state) % (1 << 20)) as i32 - (1 << 19),
+                5 => (next(&mut state) % (1 << 16)) as i32 - (1 << 15),
                 6 => {
                     if i == eob {
-                        1 << 16
+                        1 << 15
                     } else {
                         0
                     }
                 }
-                7 => (next(&mut state) as i32) >> 8,
+                7 => (next(&mut state) as i32) >> 16,
                 _ => unreachable!(),
             };
             if i == eob && input[pos] == 0 {
