@@ -120,6 +120,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "archmage-audit"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "syn 2.0.119",
+ "walkdir",
+]
+
+[[package]]
 name = "archmage-macros"
 version = "0.9.29"
 source = "git+https://github.com/imazen/archmage?rev=aac6160#aac616049c201a007b91bdc3a0ca80a894626b7d"

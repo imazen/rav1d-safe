@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/rav1d-disjoint-mut"]
+members = [".", "crates/rav1d-disjoint-mut", "tools/archmage-audit"]
 # `apidoc/` is the CI-free public-API snapshot runner package (depends on
 # zenutils-apidoc); excluded so plain `cargo test` and CI never build it.
 exclude = ["fuzz", "apidoc"]
