@@ -42,7 +42,7 @@ required = ['src/ext/x86/x86inc.asm', 'src/x86/msac.asm', 'src/arm/asm.S',
 for name in required:
     assert (stage / name).is_file(), 'Missing package input: ' + name
 manifest = (stage / 'Cargo.toml').read_text()
-manifest = manifest.replace('members = [".", "crates/rav1d-disjoint-mut"]', 'members = ["."]')
+manifest = re.sub(r'members = \[[^\]]*\]', 'members = ["."]', manifest)
 manifest = manifest.replace('path = "crates/rav1d-disjoint-mut"',
                             'path = ' + json.dumps(str(root / 'crates/rav1d-disjoint-mut')))
 # Cargo's normalized package manifest omits excluded benchmark targets too.
