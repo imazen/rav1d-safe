@@ -1417,7 +1417,241 @@ mod tests {
                 }
             }
         }
-        assert_eq!(total, 0, "identity AVX-512 column pass diverged from scalar");
+        assert_eq!(
+            total, 0,
+            "identity AVX-512 column pass diverged from scalar"
+        );
+    }
+
+    /// `#[arcane]` probe: run `dct64_1d_cols8` on 8 columns packed as i32 lanes
+    /// (lane k of vector r = input[r * 8 + k]) and return row-major output.
+    #[cfg(target_arch = "x86_64")]
+    #[arcane]
+    fn test_dct64_cols8_pipeline(token: Desktop64, input: [i32; 512]) -> [i32; 512] {
+        let min_v = _mm256_set1_epi32(i16::MIN as i32);
+        let max_v = _mm256_set1_epi32(i16::MAX as i32);
+        let mut v = [_mm256_setzero_si256(); 64];
+        for r in 0..64 {
+            v[r] = loadu_256!(&input[r * 8..r * 8 + 8], [i32; 8]);
+        }
+        dct64_1d_cols8(token, &mut v, min_v, max_v);
+        let mut out = [0i32; 512];
+        for r in 0..64 {
+            storeu_256!(&mut out[r * 8..r * 8 + 8], [i32; 8], v[r]);
+        }
+        out
+    }
+
+    /// `#[arcane]` probe: `dct16_1d_tx64_cols8` on 8 columns packed as i32 lanes.
+    #[cfg(target_arch = "x86_64")]
+    #[arcane]
+    fn test_dct16_tx64_cols8_pipeline(token: Desktop64, input: [i32; 128]) -> [i32; 128] {
+        let min_v = _mm256_set1_epi32(i16::MIN as i32);
+        let max_v = _mm256_set1_epi32(i16::MAX as i32);
+        let mut v = [_mm256_setzero_si256(); 16];
+        for r in 0..16 {
+            v[r] = loadu_256!(&input[r * 8..r * 8 + 8], [i32; 8]);
+        }
+        dct16_1d_tx64_cols8(token, &mut v, min_v, max_v);
+        let mut out = [0i32; 128];
+        for r in 0..16 {
+            storeu_256!(&mut out[r * 8..r * 8 + 8], [i32; 8], v[r]);
+        }
+        out
+    }
+
+    /// `#[arcane]` probe: `dct32_1d_tx64_cols8` on 8 columns packed as i32 lanes.
+    #[cfg(target_arch = "x86_64")]
+    #[arcane]
+    fn test_dct32_tx64_cols8_pipeline(token: Desktop64, input: [i32; 256]) -> [i32; 256] {
+        let min_v = _mm256_set1_epi32(i16::MIN as i32);
+        let max_v = _mm256_set1_epi32(i16::MAX as i32);
+        let mut v = [_mm256_setzero_si256(); 32];
+        for r in 0..32 {
+            v[r] = loadu_256!(&input[r * 8..r * 8 + 8], [i32; 8]);
+        }
+        dct32_1d_tx64_cols8(token, &mut v, min_v, max_v);
+        let mut out = [0i32; 256];
+        for r in 0..32 {
+            storeu_256!(&mut out[r * 8..r * 8 + 8], [i32; 8], v[r]);
+        }
+        out
+    }
+
+    /// Stage-bisect test: `dct16_1d_tx64_cols8` vs scalar `dct16_1d_tx64`.
+    #[test]
+    fn test_dct16_tx64_cols8_matches_scalar() {
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("Skipping: AVX2 not available");
+            return;
+        };
+        let col_min = i16::MIN as i32;
+        let col_max = i16::MAX as i32;
+        let mut total = 0u32;
+        for seed in [0xdeadbeefu64, 0xc0ffee, 0xfeedface, 0xbaadf00d] {
+            let mut input = [0i32; 8 * 16];
+            for r in 0..16 {
+                for cx in 0..8 {
+                    let s = seed
+                        .wrapping_mul(6364136223846793005)
+                        .wrapping_add((r * 8 + cx) as u64)
+                        .wrapping_mul(1442695040888963407);
+                    input[r * 8 + cx] = (s >> 33) as i16 as i32;
+                }
+            }
+            let mut scalar = input;
+            for cx in 0..8 {
+                let mut col = [0i32; 16];
+                for r in 0..16 {
+                    col[r] = input[r * 8 + cx];
+                }
+                dct16_1d_tx64(&mut col, 1, col_min, col_max);
+                for r in 0..16 {
+                    scalar[r * 8 + cx] = col[r];
+                }
+            }
+            let simd = test_dct16_tx64_cols8_pipeline(token, input);
+            for i in 0..8 * 16 {
+                if simd[i] != scalar[i] && total < 8 {
+                    eprintln!(
+                        "dct16-cols8 seed={seed:#x} row={} col={} scalar={} simd={}",
+                        i / 8,
+                        i % 8,
+                        scalar[i],
+                        simd[i]
+                    );
+                }
+                if simd[i] != scalar[i] {
+                    total += 1;
+                }
+            }
+        }
+        assert_eq!(total, 0, "dct16_1d_tx64_cols8 diverged from scalar");
+    }
+
+    /// Stage-bisect test: `dct32_1d_tx64_cols8` vs scalar `dct32_1d_tx64`.
+    #[test]
+    fn test_dct32_tx64_cols8_matches_scalar() {
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("Skipping: AVX2 not available");
+            return;
+        };
+        let col_min = i16::MIN as i32;
+        let col_max = i16::MAX as i32;
+        let mut total = 0u32;
+        for seed in [0xdeadbeefu64, 0xc0ffee, 0xfeedface, 0xbaadf00d] {
+            let mut input = [0i32; 8 * 32];
+            for r in 0..32 {
+                for cx in 0..8 {
+                    let s = seed
+                        .wrapping_mul(6364136223846793005)
+                        .wrapping_add((r * 8 + cx) as u64)
+                        .wrapping_mul(1442695040888963407);
+                    input[r * 8 + cx] = (s >> 33) as i16 as i32;
+                }
+            }
+            let mut scalar = input;
+            for cx in 0..8 {
+                let mut col = [0i32; 32];
+                for r in 0..32 {
+                    col[r] = input[r * 8 + cx];
+                }
+                dct32_1d_tx64(&mut col, 1, col_min, col_max);
+                for r in 0..32 {
+                    scalar[r * 8 + cx] = col[r];
+                }
+            }
+            let simd = test_dct32_tx64_cols8_pipeline(token, input);
+            for i in 0..8 * 32 {
+                if simd[i] != scalar[i] && total < 8 {
+                    eprintln!(
+                        "dct32-cols8 seed={seed:#x} row={} col={} scalar={} simd={}",
+                        i / 8,
+                        i % 8,
+                        scalar[i],
+                        simd[i]
+                    );
+                }
+                if simd[i] != scalar[i] {
+                    total += 1;
+                }
+            }
+        }
+        assert_eq!(total, 0, "dct32_1d_tx64_cols8 diverged from scalar");
+    }
+
+    /// `dct64_1d_cols8` (AVX2 tx64 column transform) vs the scalar
+    /// `rav1d_inv_dct64_1d_c` oracle — 8 columns of i32 lanes, bit-exact.
+    /// Covers the full tx64 chain: dct64 -> dct32_tx64 -> dct16_tx64 -> dct8.
+    #[test]
+    fn test_dct64_cols8_matches_scalar() {
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("Skipping: AVX2 not available");
+            return;
+        };
+        let col_min = i16::MIN as i32;
+        let col_max = i16::MAX as i32;
+        let seeds: &[u64] = &[
+            0xdeadbeef,
+            0xc0ffee,
+            0xfeedface,
+            0xbaadf00d,
+            0x12345678,
+            0xa5a5a5a5,
+            0x5a5a5a5a,
+            0xffff_ffff_ffff_ffff,
+        ];
+        let mut total = 0u32;
+        for &seed in seeds {
+            // 8 columns x 64 rows, row-major i32 input derived from seeded i16.
+            // Also test a sparse variant mimicking real 64x64 input (upper
+            // 32 rows are always zero after high-frequency zeroing).
+            for sparse in [false, true] {
+                let mut input = [0i32; 8 * 64];
+                for r in 0..64 {
+                    if sparse && r >= 32 {
+                        break;
+                    }
+                    for cx in 0..8 {
+                        let s = seed
+                            .wrapping_mul(6364136223846793005)
+                            .wrapping_add((r * 8 + cx) as u64)
+                            .wrapping_mul(1442695040888963407);
+                        input[r * 8 + cx] = (s >> 33) as i16 as i32;
+                    }
+                }
+
+                // Scalar oracle: dct64 down each of the 8 columns.
+                let mut scalar = input;
+                for cx in 0..8 {
+                    let mut col = [0i32; 64];
+                    for r in 0..64 {
+                        col[r] = input[r * 8 + cx];
+                    }
+                    dct64_1d(&mut col, 1, col_min, col_max);
+                    for r in 0..64 {
+                        scalar[r * 8 + cx] = col[r];
+                    }
+                }
+
+                let simd = test_dct64_cols8_pipeline(token, input);
+
+                for i in 0..8 * 64 {
+                    if simd[i] != scalar[i] && total < 8 {
+                        eprintln!(
+                            "dct64-cols8 seed={seed:#x} sparse={sparse} row={} col={} scalar={} simd={}",
+                            i / 8,
+                            i % 8,
+                            scalar[i],
+                            simd[i]
+                        );
+                    }
+                    if simd[i] != scalar[i] {
+                        total += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(total, 0, "dct64_1d_cols8 diverged from scalar dct64");
     }
 }
-
