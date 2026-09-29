@@ -168,6 +168,10 @@ just build-asm      # ASM build
 just test           # Run tests (cargo-nextest + doctests)
 just profile        # Benchmark all 3 modes (asm, checked, unchecked)
 just profile-quick  # Same but 100 iterations
+
+# Dev iteration: `--profile release-thin` gives release codegen with thin LTO —
+# ~13s rebuilds vs ~25s under fat LTO, decode speed parity (measured 429ms vs
+# 427ms on test22.obu, within noise). Shipped artifacts stay on release's fat LTO.
 ```
 
 **Tests run under `cargo-nextest`** (process-per-test). Use `cargo nextest run

@@ -338,6 +338,15 @@ debug = "line-tables-only"
 inherits = "release"
 debug = "line-tables-only"
 
+# Dev-iteration profile: identical codegen to `release` but thin LTO, which
+# cuts the example/test link from ~17s (fat) to ~3s while decoding at
+# effectively the same speed. Use `--profile release-thin` for benchmark and
+# conformance binaries during development; shipped artifacts stay on
+# `release`'s fat LTO.
+[profile.release-thin]
+inherits = "release"
+lto = "thin"
+
 [profile.checked-release]
 inherits = "dev"
 opt-level = 2
