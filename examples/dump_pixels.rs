@@ -8,6 +8,8 @@ use std::env;
 use std::fs;
 use std::io::{self, Cursor, Write};
 
+#[path = "helpers/annexb_parser.rs"]
+mod annexb_parser;
 #[path = "helpers/ivf_parser.rs"]
 mod ivf_parser;
 
@@ -64,6 +66,10 @@ fn main() {
 
     let data = fs::read(&args[1]).expect("Failed to read input");
     let is_ivf = data.len() >= 4 && &data[0..4] == b"DKIF";
+    let is_annexb = !is_ivf && {
+        let f = data.first().copied().unwrap_or(0);
+        !(f >> 7 == 0 && matches!((f >> 3) & 0xF, 1..=8 | 15) && (f >> 1) & 1 == 1)
+    };
 
     let mut settings = Settings::default();
     settings.threads = 1;
@@ -85,6 +91,30 @@ fn main() {
                 Err(e) => eprintln!("Decode error: {}", e),
             }
         }
+    } else if is_annexb {
+        for unit in annexb_parser::parse_annexb(&data).expect("annexb parse failed") {
+            match decoder.decode(&unit.data) {
+                Ok(Some(frame)) => {
+                    dump_frame(&frame, &mut out).unwrap();
+                    frame_count += 1;
+                }
+                Ok(None) => {}
+                Err(e) => eprintln!("Decode error: {}", e),
+            }
+            loop {
+                match decoder.get_frame() {
+                    Ok(Some(frame)) => {
+                        dump_frame(&frame, &mut out).unwrap();
+                        frame_count += 1;
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        eprintln!("Decode error draining frames: {}", e);
+                        break;
+                    }
+                }
+            }
+        }
     } else {
         match decoder.decode(&data) {
             Ok(Some(frame)) => {
@@ -93,6 +123,19 @@ fn main() {
             }
             Ok(None) => {}
             Err(e) => eprintln!("Decode error: {}", e),
+        }
+        loop {
+            match decoder.get_frame() {
+                Ok(Some(frame)) => {
+                    dump_frame(&frame, &mut out).unwrap();
+                    frame_count += 1;
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    eprintln!("Decode error draining frames: {}", e);
+                    break;
+                }
+            }
         }
     }
 

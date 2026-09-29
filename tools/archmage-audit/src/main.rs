@@ -135,9 +135,7 @@ fn cfg_mentions(compact: &str, word: &str) -> bool {
             .split(|c: char| !(c.is_alphanumeric() || c == '_'))
             .filter(|t| !t.is_empty())
             .collect();
-        return toks
-            .windows(2)
-            .any(|w| w[0] == "feature" && w[1] == "asm");
+        return toks.windows(2).any(|w| w[0] == "feature" && w[1] == "asm");
     }
     inner
         .split(|c: char| !(c.is_alphanumeric() || c == '_'))
@@ -176,32 +174,32 @@ fn classify_attrs(attrs: &[syn::Attribute]) -> (Ctx, bool, bool, bool, Vec<Strin
         };
         for ident in idents {
             match ident.as_str() {
-            "arcane" => {
-                // #[arcane] / #[arcane(v3)] — entry point; context = declared tier or infer from token type later
-                is_entry = true;
-                ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("entry".into()));
-                declared.extend(tiers_listed(&compact));
-            }
-            "rite" => {
-                ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("token-param".into()));
-                declared.extend(tiers_listed(&compact));
-            }
-            "autoversion" => {
-                is_entry = true;
-                ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("autoversion".into()));
-                declared.extend(tiers_listed(&compact));
-            }
-            "magetypes" => {
-                // Stamps `f_<tier>` suffixed variants — no dispatcher, no
-                // vanilla-callable outer, so NOT an entry. The source fn is a
-                // template (Token placeholder), not a callable variant.
-                ctx = Ctx::Tier("magetypes".into());
-                declared.extend(tiers_listed(&compact));
-            }
-            "target_feature" => {
-                ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("target_feature".into()));
-            }
-            _ => {}
+                "arcane" => {
+                    // #[arcane] / #[arcane(v3)] — entry point; context = declared tier or infer from token type later
+                    is_entry = true;
+                    ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("entry".into()));
+                    declared.extend(tiers_listed(&compact));
+                }
+                "rite" => {
+                    ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("token-param".into()));
+                    declared.extend(tiers_listed(&compact));
+                }
+                "autoversion" => {
+                    is_entry = true;
+                    ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("autoversion".into()));
+                    declared.extend(tiers_listed(&compact));
+                }
+                "magetypes" => {
+                    // Stamps `f_<tier>` suffixed variants — no dispatcher, no
+                    // vanilla-callable outer, so NOT an entry. The source fn is a
+                    // template (Token placeholder), not a callable variant.
+                    ctx = Ctx::Tier("magetypes".into());
+                    declared.extend(tiers_listed(&compact));
+                }
+                "target_feature" => {
+                    ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("target_feature".into()));
+                }
+                _ => {}
             }
         }
     }
@@ -214,9 +212,7 @@ fn cfg_attr_inner_idents(a: &syn::Attribute) -> Vec<String> {
         return Vec::new();
     };
     let puncts = list
-        .parse_args_with(
-            syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
-        )
+        .parse_args_with(syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated)
         .unwrap_or_default();
     puncts
         .iter()
@@ -697,20 +693,48 @@ fn main() {
     /// Idiomatic-archmage remediation per lint kind.
     fn fix_hint(kind: &str) -> &'static str {
         match kind {
-            "tier-boundary" => "callee should be #[rite(<tier>)]/#[arcane] or inlineable; if the scalar call is intentional, annotate // audit:allow(tier-boundary)",
-            "arcane-could-be-rite" => "rename to <f>_<tier> suffix, switch to #[rite], callers switch to incant!(f(args)) — deletes the dead trampoline",
-            "suffix-not-incant-resolvable" => "rename _avx2_safe→_v3, _avx512_safe→_v4, _sse4→_v2 so incant! resolves by suffix",
-            "summon-covered-by-context" => "replace with <Tier>Token::from_context() — compile-time proof, zero runtime detection",
-            "token-unwrap" => "gate: `let Some(t) = summon() else { fallback }` — an unwrap deletes the gate and panics under token-suppression tests",
-            "incant-in-vanilla" => "tokenless incant! needs a feature context — put #[rite(tier)]/#[arcane] on the caller, or pass an explicit Token arg",
-            "manual-tier-select" => "this is a hand-rolled dispatcher — replace with #[autoversion(v4,v3,scalar)] or an #[arcane] entry that incant!s inward",
-            "missing-tier-suffix" => "incant! resolves f_<tier>; name it f_v3/f_v4/f_neon/f_scalar/f_default to be incantable",
-            "boundary-in-loop" => "a feature boundary crossed per iteration — hoist the entry call above the loop or make the loop body a #[rite] fn",
-            "no-scalar-fallback" => "add `scalar`/`default` to the tier list — under token-suppression tests there is otherwise no fallback variant",
-            "scalar-should-be-default" => "ScalarToken is a const ZST and the param is unused — drop it and rename f_default; incant! strips Token args for the `default` tier",
-            "scalar-no-token-param" => "incant!([scalar]) emits f_scalar(ScalarToken, …) — either take a ScalarToken param or rename f_default (tokenless convention)",
-            "maybe-dead-variant" => "no resolved callers — dead variant, macro-only call site, or missing incant! edge",
-            "cross-isa-twin" => "same fn family across arch files — if the body is portable, one #[rite(v3,neon,wasm128)] replaces N copies",
+            "tier-boundary" => {
+                "callee should be #[rite(<tier>)]/#[arcane] or inlineable; if the scalar call is intentional, annotate // audit:allow(tier-boundary)"
+            }
+            "arcane-could-be-rite" => {
+                "rename to <f>_<tier> suffix, switch to #[rite], callers switch to incant!(f(args)) — deletes the dead trampoline"
+            }
+            "suffix-not-incant-resolvable" => {
+                "rename _avx2_safe→_v3, _avx512_safe→_v4, _sse4→_v2 so incant! resolves by suffix"
+            }
+            "summon-covered-by-context" => {
+                "replace with <Tier>Token::from_context() — compile-time proof, zero runtime detection"
+            }
+            "token-unwrap" => {
+                "gate: `let Some(t) = summon() else { fallback }` — an unwrap deletes the gate and panics under token-suppression tests"
+            }
+            "incant-in-vanilla" => {
+                "tokenless incant! needs a feature context — put #[rite(tier)]/#[arcane] on the caller, or pass an explicit Token arg"
+            }
+            "manual-tier-select" => {
+                "this is a hand-rolled dispatcher — replace with #[autoversion(v4,v3,scalar)] or an #[arcane] entry that incant!s inward"
+            }
+            "missing-tier-suffix" => {
+                "incant! resolves f_<tier>; name it f_v3/f_v4/f_neon/f_scalar/f_default to be incantable"
+            }
+            "boundary-in-loop" => {
+                "a feature boundary crossed per iteration — hoist the entry call above the loop or make the loop body a #[rite] fn"
+            }
+            "no-scalar-fallback" => {
+                "add `scalar`/`default` to the tier list — under token-suppression tests there is otherwise no fallback variant"
+            }
+            "scalar-should-be-default" => {
+                "ScalarToken is a const ZST and the param is unused — drop it and rename f_default; incant! strips Token args for the `default` tier"
+            }
+            "scalar-no-token-param" => {
+                "incant!([scalar]) emits f_scalar(ScalarToken, …) — either take a ScalarToken param or rename f_default (tokenless convention)"
+            }
+            "maybe-dead-variant" => {
+                "no resolved callers — dead variant, macro-only call site, or missing incant! edge"
+            }
+            "cross-isa-twin" => {
+                "same fn family across arch files — if the body is portable, one #[rite(v3,neon,wasm128)] replaces N copies"
+            }
             _ => "",
         }
     }

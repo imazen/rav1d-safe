@@ -95,6 +95,9 @@ wrap_fn_ptr!(pub unsafe extern "C" fn angular_ipred(
     _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
+#[cfg(target_arch = "x86_64")]
+static IPRED_SCALAR: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
 /// Direct dispatch for intra prediction - bypasses function pointer table.
 /// Selects optimal SIMD implementation at runtime based on CPU features.
 /// `mode`: prediction mode index (0-13)
@@ -112,18 +115,22 @@ fn intra_pred_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::ipred::intra_pred_dispatch::<BD>(
-        mode,
-        dst,
-        topleft,
-        topleft_off,
-        width,
-        height,
-        angle,
-        max_width,
-        max_height,
-        bd,
-    ) {
+    // Debug bisect gate: `IPRED_SCALAR=1` forces scalar ipred. Env read once
+    // per process — per-call cost is one atomic load.
+    if !*IPRED_SCALAR.get_or_init(|| std::env::var_os("IPRED_SCALAR").is_some())
+        && crate::src::safe_simd::ipred::intra_pred_dispatch::<BD>(
+            mode,
+            dst,
+            topleft,
+            topleft_off,
+            width,
+            height,
+            angle,
+            max_width,
+            max_height,
+            bd,
+        )
+    {
         return;
     }
 

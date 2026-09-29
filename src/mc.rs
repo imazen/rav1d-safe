@@ -136,7 +136,7 @@ fn get_filter(m: usize, d: usize, filter_type: Rav1dFilterMode) -> Option<&'stat
 }
 
 #[inline(never)]
-fn put_8tap_rust<BD: BitDepth>(
+pub(crate) fn put_8tap_rust<BD: BitDepth>(
     dst: PicOffset,
     src: PicOffset,
     w: usize,
@@ -394,7 +394,7 @@ fn filter_bilin<BD: BitDepth>(src: PicOffset, x: usize, mxy: usize, stride: isiz
     FilterResult { pixel }
 }
 
-fn put_bilin_rust<BD: BitDepth>(
+pub(crate) fn put_bilin_rust<BD: BitDepth>(
     dst: PicOffset,
     src: PicOffset,
     w: usize,
@@ -603,6 +603,21 @@ fn prep_bilin_scaled_rust<BD: BitDepth>(
     }
 }
 
+/// Debug bisect gate: `MC_SCALAR=1` forces every x86 SIMD mc dispatch to the
+/// scalar fallback (test/debug builds only). The env var is read once per
+/// process — the per-dispatch cost is a single atomic load.
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn mc_scalar_forced(site: &str) -> bool {
+    static SITES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+    let sites = SITES.get_or_init(|| {
+        std::env::var("MC_SCALAR")
+            .map(|v| v.split(',').map(|s| s.trim().to_owned()).collect())
+            .unwrap_or_default()
+    });
+    sites.iter().any(|s| s == "all" || s == "1" || s == site)
+}
+
 /// Direct dispatch for avg - bypasses function pointer table.
 #[cfg(not(feature = "asm"))]
 fn avg_direct<BD: BitDepth>(
@@ -614,7 +629,9 @@ fn avg_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, bd) {
+    if !mc_scalar_forced("avg_dispatch")
+        && crate::src::safe_simd::mc::avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, bd)
+    {
         return;
     }
     #[cfg(target_arch = "aarch64")]
@@ -641,7 +658,9 @@ fn w_avg_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::w_avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, weight, bd) {
+    if !mc_scalar_forced("w_avg_dispatch")
+        && crate::src::safe_simd::mc::w_avg_dispatch::<BD>(dst, tmp1, tmp2, w, h, weight, bd)
+    {
         return;
     }
     #[cfg(target_arch = "aarch64")]
@@ -668,7 +687,9 @@ fn mask_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::mask_dispatch::<BD>(dst, tmp1, tmp2, w, h, mask, bd) {
+    if !mc_scalar_forced("mask_dispatch")
+        && crate::src::safe_simd::mc::mask_dispatch::<BD>(dst, tmp1, tmp2, w, h, mask, bd)
+    {
         return;
     }
     #[cfg(target_arch = "aarch64")]
@@ -693,7 +714,9 @@ fn blend_direct<BD: BitDepth>(
     mask: &[u8],
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::blend_dispatch::<BD>(dst, tmp, w, h, mask) {
+    if !mc_scalar_forced("blend_dispatch")
+        && crate::src::safe_simd::mc::blend_dispatch::<BD>(dst, tmp, w, h, mask)
+    {
         return;
     }
     #[cfg(target_arch = "aarch64")]
@@ -717,7 +740,9 @@ fn mc_put_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd) {
+    if !mc_scalar_forced("mc_put_dispatch")
+        && crate::src::safe_simd::mc::mc_put_dispatch::<BD>(filter, dst, src, w, h, mx, my, bd)
+    {
         return;
     }
     // aarch64 + `__simd_test`: dual-compute the NEON output against the generic
@@ -798,7 +823,9 @@ fn mct_prep_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd) {
+    if !mc_scalar_forced("mct_prep_dispatch")
+        && crate::src::safe_simd::mc::mct_prep_dispatch::<BD>(filter, tmp, src, w, h, mx, my, bd)
+    {
         return;
     }
     // aarch64 + `__simd_test`: dual-compute NEON prep output vs scalar (issue #414).
@@ -881,9 +908,11 @@ fn mc_scaled_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::mc_scaled_dispatch::<BD>(
-        filter, dst, src, w, h, mx, my, dx, dy, bd,
-    ) {
+    if !mc_scalar_forced("mc_scaled_dispatch")
+        && crate::src::safe_simd::mc::mc_scaled_dispatch::<BD>(
+            filter, dst, src, w, h, mx, my, dx, dy, bd,
+        )
+    {
         return;
     }
     #[cfg(target_arch = "aarch64")]
@@ -922,9 +951,11 @@ fn mct_scaled_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::mct_scaled_dispatch::<BD>(
-        filter, tmp, src, w, h, mx, my, dx, dy, bd,
-    ) {
+    if !mc_scalar_forced("mct_scaled_dispatch")
+        && crate::src::safe_simd::mc::mct_scaled_dispatch::<BD>(
+            filter, tmp, src, w, h, mx, my, dx, dy, bd,
+        )
+    {
         return;
     }
     #[cfg(target_arch = "aarch64")]
@@ -959,7 +990,9 @@ fn blend_dir_direct<BD: BitDepth>(
     h: i32,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::blend_dir_dispatch::<BD>(is_h, dst, tmp, w, h) {
+    if !mc_scalar_forced("blend_dir_dispatch")
+        && crate::src::safe_simd::mc::blend_dir_dispatch::<BD>(is_h, dst, tmp, w, h)
+    {
         return;
     }
     #[cfg(target_arch = "aarch64")]
@@ -988,9 +1021,11 @@ fn w_mask_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::w_mask_dispatch::<BD>(
-        layout, dst, tmp1, tmp2, w, h, mask, sign, bd,
-    ) {
+    if !mc_scalar_forced("w_mask_dispatch")
+        && crate::src::safe_simd::mc::w_mask_dispatch::<BD>(
+            layout, dst, tmp1, tmp2, w, h, mask, sign, bd,
+        )
+    {
         return;
     }
     #[cfg(target_arch = "aarch64")]
@@ -1025,7 +1060,9 @@ fn warp8x8_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::warp8x8_dispatch::<BD>(dst, src, abcd, mx, my, bd) {
+    if !mc_scalar_forced("warp8x8_dispatch")
+        && crate::src::safe_simd::mc::warp8x8_dispatch::<BD>(dst, src, abcd, mx, my, bd)
+    {
         return;
     }
     #[cfg(target_arch = "aarch64")]
@@ -1048,7 +1085,11 @@ fn warp8x8t_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::warp8x8t_dispatch::<BD>(tmp, tmp_stride, src, abcd, mx, my, bd) {
+    if !mc_scalar_forced("warp8x8t_dispatch")
+        && crate::src::safe_simd::mc::warp8x8t_dispatch::<BD>(
+            tmp, tmp_stride, src, abcd, mx, my, bd,
+        )
+    {
         return;
     }
     #[cfg(target_arch = "aarch64")]
@@ -1075,9 +1116,11 @@ fn emu_edge_direct<BD: BitDepth>(
     src: &Rav1dPictureDataComponent,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::emu_edge_dispatch::<BD>(
-        bw, bh, iw, ih, x, y, dst, dst_stride, src,
-    ) {
+    if !mc_scalar_forced("emu_edge_dispatch")
+        && crate::src::safe_simd::mc::emu_edge_dispatch::<BD>(
+            bw, bh, iw, ih, x, y, dst, dst_stride, src,
+        )
+    {
         return;
     }
     #[cfg(target_arch = "aarch64")]
@@ -1103,7 +1146,9 @@ fn resize_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::mc::resize_dispatch::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd) {
+    if !mc_scalar_forced("resize_dispatch")
+        && crate::src::safe_simd::mc::resize_dispatch::<BD>(dst, src, dst_w, h, src_w, dx, mx, bd)
+    {
         return;
     }
     #[cfg(target_arch = "aarch64")]

@@ -306,7 +306,11 @@ impl From<Settings> for Rav1dSettings {
             all_layers: settings.all_layers,
             frame_size_limit: settings.frame_size_limit,
             allocator: Default::default(),
-            logger: None,
+            logger: if std::env::var_os("RAV1D_LOG").is_some() {
+                Some(crate::src::log::Rav1dLogger::Stderr)
+            } else {
+                None
+            },
             strictness,
             output_invisible_frames: settings.output_invisible_frames,
             inloop_filters: settings.inloop_filters.into(),
