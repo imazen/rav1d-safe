@@ -510,10 +510,7 @@ fn loop_filter_4_8bpc_wd6_simd_v(
     let store4 = |buf: &mut [u8], packed: i32, off: isize| {
         let start = signed_idx(base, strideb * off);
         let bytes = packed.to_le_bytes();
-        buf[start] = bytes[0];
-        buf[start + 1] = bytes[1];
-        buf[start + 2] = bytes[2];
-        buf[start + 3] = bytes[3];
+        buf[start..start + 4].copy_from_slice(&bytes);
     };
     store4(buf, pack4(final_p1), -2);
     store4(buf, pack4(final_p0), -1);
@@ -718,10 +715,7 @@ fn loop_filter_4_8bpc_wd8_simd_v(
     let store4 = |buf: &mut [u8], packed: i32, off: isize| {
         let start = signed_idx(base, strideb * off);
         let bytes = packed.to_le_bytes();
-        buf[start] = bytes[0];
-        buf[start + 1] = bytes[1];
-        buf[start + 2] = bytes[2];
-        buf[start + 3] = bytes[3];
+        buf[start..start + 4].copy_from_slice(&bytes);
     };
     // Wait — at -3 we should only store if flat (8-tap writes -3). Otherwise keep original.
     // The final_p2 already encodes this via blendv. But narrow doesn't touch -3 at all,
@@ -755,16 +749,10 @@ fn loop_filter_4_8bpc_wd8_simd_v_x8(
 ) {
     let load8 = |off: isize| -> __m256i {
         let start = signed_idx(base, strideb * off);
-        let lo = i64::from_ne_bytes([
-            buf[start],
-            buf[start + 1],
-            buf[start + 2],
-            buf[start + 3],
-            buf[start + 4],
-            buf[start + 5],
-            buf[start + 6],
-            buf[start + 7],
-        ]);
+        // Single range-checked [u8; 8] → one wide load. Per-element
+        // `buf[start + k]` bounds checks are individually trappable, which
+        // blocks LLVM from fusing them — this emits one `mov` + `vpmovzxbd`.
+        let lo = i64::from_ne_bytes(buf[start..start + 8].try_into().unwrap());
         let v8u8 = _mm_set_epi64x(0, lo);
         _mm256_cvtepu8_epi32(v8u8)
     };
@@ -972,16 +960,10 @@ fn loop_filter_4_8bpc_wd16_simd_v_x8(
 ) {
     let load8 = |off: isize| -> __m256i {
         let start = signed_idx(base, strideb * off);
-        let lo = i64::from_ne_bytes([
-            buf[start],
-            buf[start + 1],
-            buf[start + 2],
-            buf[start + 3],
-            buf[start + 4],
-            buf[start + 5],
-            buf[start + 6],
-            buf[start + 7],
-        ]);
+        // Single range-checked [u8; 8] → one wide load. Per-element
+        // `buf[start + k]` bounds checks are individually trappable, which
+        // blocks LLVM from fusing them — this emits one `mov` + `vpmovzxbd`.
+        let lo = i64::from_ne_bytes(buf[start..start + 8].try_into().unwrap());
         let v8u8 = _mm_set_epi64x(0, lo);
         _mm256_cvtepu8_epi32(v8u8)
     };
@@ -2010,10 +1992,7 @@ fn loop_filter_4_8bpc_wd16_simd_v(
     let store4 = |buf: &mut [u8], packed: i32, off: isize| {
         let start = signed_idx(base, strideb * off);
         let bytes = packed.to_le_bytes();
-        buf[start] = bytes[0];
-        buf[start + 1] = bytes[1];
-        buf[start + 2] = bytes[2];
-        buf[start + 3] = bytes[3];
+        buf[start..start + 4].copy_from_slice(&bytes);
     };
     store4(buf, pack4(final_m6), -6);
     store4(buf, pack4(final_m5), -5);
@@ -2167,10 +2146,7 @@ fn loop_filter_4_8bpc_narrow_simd_h(
     let store_row = |buf: &mut [u8], packed: i32, row: isize| {
         let start = signed_idx(base, row * stridea - 2);
         let bytes = packed.to_le_bytes();
-        buf[start] = bytes[0];
-        buf[start + 1] = bytes[1];
-        buf[start + 2] = bytes[2];
-        buf[start + 3] = bytes[3];
+        buf[start..start + 4].copy_from_slice(&bytes);
     };
     store_row(buf, pack_row(row0), 0);
     store_row(buf, pack_row(row1), 1);
@@ -2404,10 +2380,7 @@ fn loop_filter_4_8bpc_wd6_simd_h(
         // 4 contiguous bytes at row*stridea - 2 = [p1, p0, q0, q1]
         let start = signed_idx(base, row * stridea - 2);
         let bytes = packed.to_le_bytes();
-        buf[start] = bytes[0];
-        buf[start + 1] = bytes[1];
-        buf[start + 2] = bytes[2];
-        buf[start + 3] = bytes[3];
+        buf[start..start + 4].copy_from_slice(&bytes);
     };
     store_row(buf, pack_row(row0), 0);
     store_row(buf, pack_row(row1), 1);
@@ -2662,17 +2635,9 @@ fn loop_filter_4_8bpc_wd8_simd_h(
     };
     let store_row = |buf: &mut [u8], packed_lo: i32, packed_hi: i32, row: isize| {
         let start_lo = signed_idx(base, row * stridea - 4);
-        let bytes_lo = packed_lo.to_le_bytes();
-        buf[start_lo] = bytes_lo[0];
-        buf[start_lo + 1] = bytes_lo[1];
-        buf[start_lo + 2] = bytes_lo[2];
-        buf[start_lo + 3] = bytes_lo[3];
+        buf[start_lo..start_lo + 4].copy_from_slice(&packed_lo.to_le_bytes());
         let start_hi = signed_idx(base, row * stridea);
-        let bytes_hi = packed_hi.to_le_bytes();
-        buf[start_hi] = bytes_hi[0];
-        buf[start_hi + 1] = bytes_hi[1];
-        buf[start_hi + 2] = bytes_hi[2];
-        buf[start_hi + 3] = bytes_hi[3];
+        buf[start_hi..start_hi + 4].copy_from_slice(&packed_hi.to_le_bytes());
     };
     store_row(buf, pack_row(row_back_lo[0]), pack_row(row_back_hi[0]), 0);
     store_row(buf, pack_row(row_back_lo[1]), pack_row(row_back_hi[1]), 1);
@@ -2971,16 +2936,10 @@ fn loop_filter_4_8bpc_wd8_simd_h_x8(
     let store_row_6 = |buf: &mut [u8], packed_lo: i32, packed_hi: i32, row: isize| {
         // 4 bytes at -3..+1 = [p2, p1, p0, q0]
         let start_lo = signed_idx(base, row * stridea - 3);
-        let bytes_lo = packed_lo.to_le_bytes();
-        buf[start_lo] = bytes_lo[0];
-        buf[start_lo + 1] = bytes_lo[1];
-        buf[start_lo + 2] = bytes_lo[2];
-        buf[start_lo + 3] = bytes_lo[3];
+        buf[start_lo..start_lo + 4].copy_from_slice(&packed_lo.to_le_bytes());
         // 2 bytes at +1..+3 = [q1, q2]
         let start_hi = signed_idx(base, row * stridea + 1);
-        let bytes_hi = packed_hi.to_le_bytes();
-        buf[start_hi] = bytes_hi[0];
-        buf[start_hi + 1] = bytes_hi[1];
+        buf[start_hi..start_hi + 2].copy_from_slice(&packed_hi.to_le_bytes()[..2]);
     };
     store_row_6(buf, pack_row(rows_lo_a[0]), pack_row(rows_hi_a[0]), 0);
     store_row_6(buf, pack_row(rows_lo_a[1]), pack_row(rows_hi_a[1]), 1);
@@ -3423,10 +3382,7 @@ fn loop_filter_4_8bpc_wd16_simd_h(
     let store_4bytes = |buf: &mut [u8], packed: i32, row: isize, chunk_off: isize| {
         let start = signed_idx(base, row * stridea + chunk_off);
         let bytes = packed.to_le_bytes();
-        buf[start] = bytes[0];
-        buf[start + 1] = bytes[1];
-        buf[start + 2] = bytes[2];
-        buf[start + 3] = bytes[3];
+        buf[start..start + 4].copy_from_slice(&bytes);
     };
     // Store chunks 0, 1, 2 (we keep chunk 3 = q5/q6 - need to update q5 only)
     // chunk 0: -7..-4 (positions -7..-4: p6, p5, p4, p3 → final_m6 wrong: p6 untouched! Use originals at offset -7)
@@ -3576,10 +3532,7 @@ fn loop_filter_4_8bpc_narrow_simd_v(
     let store4 = |buf: &mut [u8], packed: i32, off: isize| {
         let start = signed_idx(base, strideb * off);
         let bytes = packed.to_le_bytes();
-        buf[start] = bytes[0];
-        buf[start + 1] = bytes[1];
-        buf[start + 2] = bytes[2];
-        buf[start + 3] = bytes[3];
+        buf[start..start + 4].copy_from_slice(&bytes);
     };
     store4(buf, pack4(p1_final), -2);
     store4(buf, pack4(p0_final), -1);
@@ -3611,16 +3564,10 @@ fn loop_filter_4_8bpc_narrow_simd_v_x8(
     // Load 8 contiguous u8 columns at a given row offset, widen to 8 i32.
     let load8 = |off: isize| -> __m256i {
         let start = signed_idx(base, strideb * off);
-        let lo = i64::from_ne_bytes([
-            buf[start],
-            buf[start + 1],
-            buf[start + 2],
-            buf[start + 3],
-            buf[start + 4],
-            buf[start + 5],
-            buf[start + 6],
-            buf[start + 7],
-        ]);
+        // Single range-checked [u8; 8] → one wide load. Per-element
+        // `buf[start + k]` bounds checks are individually trappable, which
+        // blocks LLVM from fusing them — this emits one `mov` + `vpmovzxbd`.
+        let lo = i64::from_ne_bytes(buf[start..start + 8].try_into().unwrap());
         let v8u8 = _mm_set_epi64x(0, lo);
         _mm256_cvtepu8_epi32(v8u8)
     };
@@ -4775,12 +4722,11 @@ fn lf16_load4(buf: &[u16], start: usize) -> __m128i {
 #[cfg(target_arch = "x86_64")]
 #[rite(v3)]
 fn lf16_load2(buf: &[u16], start: usize) -> __m128i {
-    let as_i64 = u32::from_le_bytes([
-        (buf[start] & 0xff) as u8,
-        (buf[start] >> 8) as u8,
-        (buf[start + 1] & 0xff) as u8,
-        (buf[start + 1] >> 8) as u8,
-    ]) as i32 as i64;
+    // One `try_into` range check → fixed [u16; 2] → single 4-byte load
+    // (per-element indexing on the dynamic slice stays two trappable loads
+    // that LLVM cannot merge).
+    let px: &[u16; 2] = buf[start..start + 2].try_into().unwrap();
+    let as_i64 = ((px[0] as u32) | ((px[1] as u32) << 16)) as i32 as i64;
     _mm_cvtepu16_epi32(_mm_cvtsi64_si128(as_i64))
 }
 

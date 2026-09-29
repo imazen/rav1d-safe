@@ -12772,9 +12772,7 @@ fn warp_v_pass_16bpc_put(
                 sum += filter[i] as i32 * mid[y + i][x] as i32;
             }
             let val = ((sum + round_v) >> shift_v).clamp(0, bitdepth_max) as u16;
-            let bytes = val.to_le_bytes();
-            dst[dst_off + x * 2] = bytes[0];
-            dst[dst_off + x * 2 + 1] = bytes[1];
+            dst[dst_off + x * 2..][..2].copy_from_slice(&val.to_le_bytes());
         }
     }
 }

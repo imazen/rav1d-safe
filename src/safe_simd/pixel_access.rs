@@ -753,7 +753,10 @@ pub(crate) use storeu_128;
 macro_rules! loadi32 {
     ($src:expr) => {{
         let bytes: &[u8] = $src;
-        let val = i32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        // One `try_into` range check → fixed [u8; 4] → single `movd` load.
+        // Per-element `bytes[i]` bounds checks are individually trappable,
+        // which blocks LLVM from merging them into one wide load.
+        let val = i32::from_ne_bytes(bytes[..4].try_into().unwrap());
         core::arch::x86_64::_mm_cvtsi32_si128(val)
     }};
 }
@@ -771,10 +774,10 @@ macro_rules! storei32 {
         let val = core::arch::x86_64::_mm_cvtsi128_si32($val);
         let bytes = val.to_ne_bytes();
         let dst: &mut [u8] = $dst;
-        dst[0] = bytes[0];
-        dst[1] = bytes[1];
-        dst[2] = bytes[2];
-        dst[3] = bytes[3];
+        // One `copy_from_slice` length check → single `movd` store.
+        // Per-element `dst[i]` bounds checks are individually trappable,
+        // which blocks LLVM from merging them into one wide store.
+        dst[..4].copy_from_slice(&bytes);
     }};
 }
 #[cfg(target_arch = "x86_64")]
@@ -789,9 +792,11 @@ pub(crate) use storei32;
 macro_rules! loadi64 {
     ($src:expr) => {{
         let bytes: &[u8] = $src;
-        let lo = i64::from_ne_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-        ]);
+        // One `try_into` range check → fixed [u8; 8] → single wide load.
+        // Per-element `bytes[i]` would each bounds-check (trappable), which
+        // blocks LLVM from merging them into one `movq`.
+        let arr: [u8; 8] = bytes[..8].try_into().unwrap();
+        let lo = i64::from_ne_bytes(arr);
         core::arch::x86_64::_mm_set_epi64x(0, lo)
     }};
 }
@@ -1048,7 +1053,7 @@ pub(crate) use wasm_store_128;
 macro_rules! wasm_loadi32 {
     ($src:expr) => {{
         let bytes: &[u8] = $src;
-        let val = i32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        let val = i32::from_ne_bytes(bytes[..4].try_into().unwrap());
         core::arch::wasm32::i32x4(val, 0, 0, 0)
     }};
 }
@@ -1066,10 +1071,7 @@ macro_rules! wasm_storei32 {
         let val = core::arch::wasm32::i32x4_extract_lane::<0>($val);
         let bytes = val.to_ne_bytes();
         let dst: &mut [u8] = $dst;
-        dst[0] = bytes[0];
-        dst[1] = bytes[1];
-        dst[2] = bytes[2];
-        dst[3] = bytes[3];
+        dst[..4].copy_from_slice(&bytes);
     }};
 }
 #[cfg(target_arch = "wasm32")]
@@ -1085,9 +1087,7 @@ pub(crate) use wasm_storei32;
 macro_rules! wasm_loadi64 {
     ($src:expr) => {{
         let bytes: &[u8] = $src;
-        let lo = i64::from_ne_bytes([
-            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-        ]);
+        let lo = i64::from_ne_bytes(bytes[..8].try_into().unwrap());
         core::arch::wasm32::i64x2(lo, 0)
     }};
 }
