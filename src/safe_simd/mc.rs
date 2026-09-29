@@ -2264,6 +2264,37 @@ fn h_filter_8tap_8bpc_avx2_inner(
         col += 16;
     }
 
+    // Small-width fast path (w = 4 or 8): one 16-byte load + pshufb pair-building
+    // covers all 8 taps; lanes past w are computed but not stored.
+    if (w == 4 || w == 8) && col == 0 && src.len() >= 16 {
+        let s = loadu_128!(<&[u8; 16]>::try_from(&src[..16]).unwrap());
+        let idx01 = _mm_setr_epi8(0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8);
+        let idx23 = _mm_setr_epi8(2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10);
+        let idx45 = _mm_setr_epi8(4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12);
+        let idx67 = _mm_setr_epi8(6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14);
+        let c01 = _mm256_castsi256_si128(coeff_01);
+        let c23 = _mm256_castsi256_si128(coeff_23);
+        let c45 = _mm256_castsi256_si128(coeff_45);
+        let c67 = _mm256_castsi256_si128(coeff_67);
+        let rnd128 = _mm_set1_epi16((1i16 << sh) >> 1);
+        let mut sum = _mm_add_epi16(
+            _mm_maddubs_epi16(_mm_shuffle_epi8(s, idx01), c01),
+            _mm_maddubs_epi16(_mm_shuffle_epi8(s, idx23), c23),
+        );
+        sum = _mm_add_epi16(sum, _mm_maddubs_epi16(_mm_shuffle_epi8(s, idx45), c45));
+        sum = _mm_add_epi16(sum, _mm_maddubs_epi16(_mm_shuffle_epi8(s, idx67), c67));
+        let res = _mm_sra_epi16(_mm_add_epi16(sum, rnd128), _mm_cvtsi32_si128(sh as i32));
+        if w == 8 {
+            storeu_128!(<&mut [i16; 8]>::try_from(&mut dst[..8]).unwrap(), res);
+        } else {
+            crate::src::safe_simd::partial_simd::mm_storel_epi64::<[i16; 4]>(
+                <&mut [i16; 4]>::try_from(&mut dst[..4]).unwrap(),
+                res,
+            );
+        }
+        return;
+    }
+
     // Scalar fallback for remaining pixels
     while col < w {
         // s offset = col
@@ -2288,6 +2319,12 @@ fn h_filter_8tap_8bpc_avx512_inner(
     filter: &[i8; 8],
     sh: u8,
 ) {
+    // w < 32 misses the 32-wide loop entirely; the AVX2 kernel handles
+    // w = 4/8 via pshufb and w = 16 via its 16-wide lane.
+    if w < 32 {
+        h_filter_8tap_8bpc_avx2_inner(_token.v3(), dst, src, w, filter, sh);
+        return;
+    }
     let mut dst = dst.flex_mut();
     let src = src.flex();
 
@@ -2393,78 +2430,108 @@ fn v_filter_8tap_8bpc_avx2_inner(
     max: i32,
 ) {
     let mut dst = dst.flex_mut();
-    // by the target_feature attribute, and pointer operations are valid per caller contract.
-    let rnd = _mm256_set1_epi32((1i32 << sh) >> 1);
-    let zero = _mm256_setzero_si256();
-    let _max_vec = _mm256_set1_epi16(max as i16);
+    // pmaddwd pair-interleave: pack filter coeffs as i16x2, interleave
+    // adjacent rows into i16 pairs, one madd per tap pair.
+    let pack_pair = |a: i8, b: i8| ((b as i32) << 16) | (a as i32 & 0xffff);
+    let c01 = _mm_set1_epi32(pack_pair(filter[0], filter[1]));
+    let c23 = _mm_set1_epi32(pack_pair(filter[2], filter[3]));
+    let c45 = _mm_set1_epi32(pack_pair(filter[4], filter[5]));
+    let c67 = _mm_set1_epi32(pack_pair(filter[6], filter[7]));
 
-    // Broadcast filter coefficients to 32-bit for multiplication
-    let c0 = _mm256_set1_epi32(filter[0] as i32);
-    let c1 = _mm256_set1_epi32(filter[1] as i32);
-    let c2 = _mm256_set1_epi32(filter[2] as i32);
-    let c3 = _mm256_set1_epi32(filter[3] as i32);
-    let c4 = _mm256_set1_epi32(filter[4] as i32);
-    let c5 = _mm256_set1_epi32(filter[5] as i32);
-    let c6 = _mm256_set1_epi32(filter[6] as i32);
-    let c7 = _mm256_set1_epi32(filter[7] as i32);
+    let rnd = _mm_set1_epi32((1i32 << sh) >> 1);
+    let zero = _mm_setzero_si128();
+    let max16 = _mm_set1_epi16(max as i16);
+    let shift_count = _mm_cvtsi32_si128(sh as i32);
 
     let mut col = 0usize;
 
-    // Process 8 pixels at a time using 32-bit arithmetic
+    // Process 8 columns at a time via pmaddwd on i16 row-pairs.
     while col + 8 <= w {
-        // Load 8 i16 values from each of 8 rows and convert to i32
-        let m0 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[0][col..col + 8]).unwrap()
-        ));
-        let m1 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[1][col..col + 8]).unwrap()
-        ));
-        let m2 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[2][col..col + 8]).unwrap()
-        ));
-        let m3 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[3][col..col + 8]).unwrap()
-        ));
-        let m4 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[4][col..col + 8]).unwrap()
-        ));
-        let m5 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[5][col..col + 8]).unwrap()
-        ));
-        let m6 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[6][col..col + 8]).unwrap()
-        ));
-        let m7 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[7][col..col + 8]).unwrap()
-        ));
+        let m0 = loadu_128!(<&[i16; 8]>::try_from(&mid[0][col..col + 8]).unwrap());
+        let m1 = loadu_128!(<&[i16; 8]>::try_from(&mid[1][col..col + 8]).unwrap());
+        let m2 = loadu_128!(<&[i16; 8]>::try_from(&mid[2][col..col + 8]).unwrap());
+        let m3 = loadu_128!(<&[i16; 8]>::try_from(&mid[3][col..col + 8]).unwrap());
+        let m4 = loadu_128!(<&[i16; 8]>::try_from(&mid[4][col..col + 8]).unwrap());
+        let m5 = loadu_128!(<&[i16; 8]>::try_from(&mid[5][col..col + 8]).unwrap());
+        let m6 = loadu_128!(<&[i16; 8]>::try_from(&mid[6][col..col + 8]).unwrap());
+        let m7 = loadu_128!(<&[i16; 8]>::try_from(&mid[7][col..col + 8]).unwrap());
 
-        // Multiply each row by its coefficient and accumulate
-        let mut sum = _mm256_mullo_epi32(m0, c0);
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m1, c1));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m2, c2));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m3, c3));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m4, c4));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m5, c5));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m6, c6));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m7, c7));
+        // Interleave adjacent rows: pairs (m0,m1) lo/hi cover cols 0..3 / 4..7
+        let p01l = _mm_unpacklo_epi16(m0, m1);
+        let p01h = _mm_unpackhi_epi16(m0, m1);
+        let p23l = _mm_unpacklo_epi16(m2, m3);
+        let p23h = _mm_unpackhi_epi16(m2, m3);
+        let p45l = _mm_unpacklo_epi16(m4, m5);
+        let p45h = _mm_unpackhi_epi16(m4, m5);
+        let p67l = _mm_unpacklo_epi16(m6, m7);
+        let p67h = _mm_unpackhi_epi16(m6, m7);
 
-        // Add rounding and shift
-        let shift_count = _mm_cvtsi32_si128(sh as i32);
-        let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+        let sum_l = _mm_add_epi32(
+            _mm_add_epi32(_mm_madd_epi16(p01l, c01), _mm_madd_epi16(p23l, c23)),
+            _mm_add_epi32(_mm_madd_epi16(p45l, c45), _mm_madd_epi16(p67l, c67)),
+        );
+        let sum_h = _mm_add_epi32(
+            _mm_add_epi32(_mm_madd_epi16(p01h, c01), _mm_madd_epi16(p23h, c23)),
+            _mm_add_epi32(_mm_madd_epi16(p45h, c45), _mm_madd_epi16(p67h, c67)),
+        );
 
-        // Clamp to [0, max] and pack to 16-bit
-        let clamped = _mm256_min_epi32(_mm256_max_epi32(shifted, zero), _mm256_set1_epi32(max));
+        let rl = _mm_sra_epi32(_mm_add_epi32(sum_l, rnd), shift_count);
+        let rh = _mm_sra_epi32(_mm_add_epi32(sum_h, rnd), shift_count);
 
-        // Pack 32-bit to 16-bit, then 16-bit to 8-bit
-        let packed16 = _mm256_packs_epi32(clamped, clamped);
-        let packed16 = _mm256_permute4x64_epi64(packed16, 0b11011000);
-        let packed8 = _mm256_packus_epi16(packed16, packed16);
-
-        // Store 8 bytes
-        let result_64 = _mm256_extract_epi64(packed8, 0);
-        dst[col..col + 8].copy_from_slice(&result_64.to_ne_bytes());
+        // i32 -> i16 preserving column order, clamp, then -> u8
+        let packed16 = _mm_packs_epi32(rl, rh);
+        let clamped = _mm_max_epi16(_mm_min_epi16(packed16, max16), zero);
+        let packed8 = _mm_packus_epi16(clamped, clamped);
+        crate::src::safe_simd::partial_simd::mm_storel_epi64::<[u8; 8]>(
+            <&mut [u8; 8]>::try_from(&mut dst[col..col + 8]).unwrap(),
+            packed8,
+        );
 
         col += 8;
+    }
+
+    // w=4 tail: 64-bit row loads, same pair-madd structure.
+    if w - col == 4 && mid[0].len() >= col + 4 {
+        let m0 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[0][col..col + 4]).unwrap(),
+        );
+        let m1 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[1][col..col + 4]).unwrap(),
+        );
+        let m2 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[2][col..col + 4]).unwrap(),
+        );
+        let m3 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[3][col..col + 4]).unwrap(),
+        );
+        let m4 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[4][col..col + 4]).unwrap(),
+        );
+        let m5 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[5][col..col + 4]).unwrap(),
+        );
+        let m6 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[6][col..col + 4]).unwrap(),
+        );
+        let m7 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[7][col..col + 4]).unwrap(),
+        );
+
+        let p01 = _mm_unpacklo_epi16(m0, m1);
+        let p23 = _mm_unpacklo_epi16(m2, m3);
+        let p45 = _mm_unpacklo_epi16(m4, m5);
+        let p67 = _mm_unpacklo_epi16(m6, m7);
+
+        let sum = _mm_add_epi32(
+            _mm_add_epi32(_mm_madd_epi16(p01, c01), _mm_madd_epi16(p23, c23)),
+            _mm_add_epi32(_mm_madd_epi16(p45, c45), _mm_madd_epi16(p67, c67)),
+        );
+        let r = _mm_sra_epi32(_mm_add_epi32(sum, rnd), shift_count);
+        let packed16 = _mm_packs_epi32(r, r);
+        let clamped = _mm_max_epi16(_mm_min_epi16(packed16, max16), zero);
+        let packed8 = _mm_packus_epi16(clamped, clamped);
+        dst[col..col + 4].copy_from_slice(&(_mm_cvtsi128_si32(packed8) as u32).to_ne_bytes());
+        col += 4;
     }
 
     // Scalar fallback
@@ -2507,6 +2574,10 @@ fn v_filter_8tap_8bpc_avx512_inner(
     sh: u8,
     max: i32,
 ) {
+    if w < 16 {
+        v_filter_8tap_8bpc_avx2_inner(_token.v3(), dst, mid, w, filter, sh, max);
+        return;
+    }
     let mut dst = dst.flex_mut();
 
     let rnd = _mm512_set1_epi32((1i32 << sh) >> 1);
@@ -2689,6 +2760,40 @@ fn h_filter_8tap_8bpc_put_avx2_inner(
         col += 16;
     }
 
+    // Small-width fast path (w = 4 or 8): one 16-byte load + pshufb pair-building.
+    if (w == 4 || w == 8) && col == 0 && src.len() >= 16 {
+        let s = loadu_128!(<&[u8; 16]>::try_from(&src[..16]).unwrap());
+        let idx01 = _mm_setr_epi8(0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8);
+        let idx23 = _mm_setr_epi8(2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10);
+        let idx45 = _mm_setr_epi8(4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12);
+        let idx67 = _mm_setr_epi8(6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 14);
+        let c01 = _mm256_castsi256_si128(coeff_01);
+        let c23 = _mm256_castsi256_si128(coeff_23);
+        let c45 = _mm256_castsi256_si128(coeff_45);
+        let c67 = _mm256_castsi256_si128(coeff_67);
+        let rnd128 = _mm_set1_epi16(34);
+        let zero128 = _mm_setzero_si128();
+        let max128 = _mm_set1_epi16(255);
+        let mut sum = _mm_add_epi16(
+            _mm_maddubs_epi16(_mm_shuffle_epi8(s, idx01), c01),
+            _mm_maddubs_epi16(_mm_shuffle_epi8(s, idx23), c23),
+        );
+        sum = _mm_add_epi16(sum, _mm_maddubs_epi16(_mm_shuffle_epi8(s, idx45), c45));
+        sum = _mm_add_epi16(sum, _mm_maddubs_epi16(_mm_shuffle_epi8(s, idx67), c67));
+        let shifted = _mm_sra_epi16(_mm_add_epi16(sum, rnd128), _mm_cvtsi32_si128(6));
+        let clamped = _mm_max_epi16(_mm_min_epi16(shifted, max128), zero128);
+        let packed8 = _mm_packus_epi16(clamped, clamped);
+        if w == 8 {
+            crate::src::safe_simd::partial_simd::mm_storel_epi64::<[u8; 8]>(
+                <&mut [u8; 8]>::try_from(&mut dst[..8]).unwrap(),
+                packed8,
+            );
+        } else {
+            dst[..4].copy_from_slice(&(_mm_cvtsi128_si32(packed8) as u32).to_ne_bytes());
+        }
+        return;
+    }
+
     // Scalar fallback (rnd=34 matches SIMD path above)
     while col < w {
         // s offset = col
@@ -2712,6 +2817,10 @@ fn h_filter_8tap_8bpc_put_avx512_inner(
     w: usize,
     filter: &[i8; 8],
 ) {
+    if w < 32 {
+        h_filter_8tap_8bpc_put_avx2_inner(_token.v3(), dst, src, w, filter);
+        return;
+    }
     let mut dst = dst.flex_mut();
     let src = src.flex();
 
@@ -2821,70 +2930,94 @@ fn v_filter_8tap_8bpc_direct_avx2_inner(
 ) {
     let mut dst = dst.flex_mut();
     let src = src.flex();
-    let c0 = _mm256_set1_epi32(filter[0] as i32);
-    let c1 = _mm256_set1_epi32(filter[1] as i32);
-    let c2 = _mm256_set1_epi32(filter[2] as i32);
-    let c3 = _mm256_set1_epi32(filter[3] as i32);
-    let c4 = _mm256_set1_epi32(filter[4] as i32);
-    let c5 = _mm256_set1_epi32(filter[5] as i32);
-    let c6 = _mm256_set1_epi32(filter[6] as i32);
-    let c7 = _mm256_set1_epi32(filter[7] as i32);
+    let pack_pair = |a: i8, b: i8| ((b as i32) << 16) | (a as i32 & 0xffff);
+    let c01 = _mm_set1_epi32(pack_pair(filter[0], filter[1]));
+    let c23 = _mm_set1_epi32(pack_pair(filter[2], filter[3]));
+    let c45 = _mm_set1_epi32(pack_pair(filter[4], filter[5]));
+    let c67 = _mm_set1_epi32(pack_pair(filter[6], filter[7]));
 
-    let rnd = _mm256_set1_epi32(32);
-    let zero = _mm256_setzero_si256();
-    let max = _mm256_set1_epi32(255);
+    let rnd = _mm_set1_epi32(32);
+    let zero = _mm_setzero_si128();
+    let max16 = _mm_set1_epi16(255);
+    let shift_count = _mm_cvtsi32_si128(6);
+    let stride = src_stride as usize;
 
     let mut col = 0usize;
 
+    // 8 columns at a time: u8 rows -> i16, unpack into pairs, pmaddwd.
     while col + 8 <= w {
-        // Load 8 u8 from each of 8 rows, zero-extend to i32
-        let p0 = _mm256_cvtepu8_epi32(loadi64!(&src[col..col + 8]));
-        let p1 = _mm256_cvtepu8_epi32(loadi64!(
-            &src[src_stride as usize + col..src_stride as usize + col + 8]
-        ));
-        let p2 = _mm256_cvtepu8_epi32(loadi64!(
-            &src[2 * src_stride as usize + col..2 * src_stride as usize + col + 8]
-        ));
-        let p3 = _mm256_cvtepu8_epi32(loadi64!(
-            &src[3 * src_stride as usize + col..3 * src_stride as usize + col + 8]
-        ));
-        let p4 = _mm256_cvtepu8_epi32(loadi64!(
-            &src[4 * src_stride as usize + col..4 * src_stride as usize + col + 8]
-        ));
-        let p5 = _mm256_cvtepu8_epi32(loadi64!(
-            &src[5 * src_stride as usize + col..5 * src_stride as usize + col + 8]
-        ));
-        let p6 = _mm256_cvtepu8_epi32(loadi64!(
-            &src[6 * src_stride as usize + col..6 * src_stride as usize + col + 8]
-        ));
-        let p7 = _mm256_cvtepu8_epi32(loadi64!(
-            &src[7 * src_stride as usize + col..7 * src_stride as usize + col + 8]
-        ));
+        let p0 = _mm_cvtepu8_epi16(loadi64!(&src[col..col + 8]));
+        let p1 = _mm_cvtepu8_epi16(loadi64!(&src[stride + col..stride + col + 8]));
+        let p2 = _mm_cvtepu8_epi16(loadi64!(&src[2 * stride + col..2 * stride + col + 8]));
+        let p3 = _mm_cvtepu8_epi16(loadi64!(&src[3 * stride + col..3 * stride + col + 8]));
+        let p4 = _mm_cvtepu8_epi16(loadi64!(&src[4 * stride + col..4 * stride + col + 8]));
+        let p5 = _mm_cvtepu8_epi16(loadi64!(&src[5 * stride + col..5 * stride + col + 8]));
+        let p6 = _mm_cvtepu8_epi16(loadi64!(&src[6 * stride + col..6 * stride + col + 8]));
+        let p7 = _mm_cvtepu8_epi16(loadi64!(&src[7 * stride + col..7 * stride + col + 8]));
 
-        // Multiply and accumulate
-        let mut sum = _mm256_mullo_epi32(p0, c0);
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p1, c1));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p2, c2));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p3, c3));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p4, c4));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p5, c5));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p6, c6));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(p7, c7));
+        let p01l = _mm_unpacklo_epi16(p0, p1);
+        let p01h = _mm_unpackhi_epi16(p0, p1);
+        let p23l = _mm_unpacklo_epi16(p2, p3);
+        let p23h = _mm_unpackhi_epi16(p2, p3);
+        let p45l = _mm_unpacklo_epi16(p4, p5);
+        let p45h = _mm_unpackhi_epi16(p4, p5);
+        let p67l = _mm_unpacklo_epi16(p6, p7);
+        let p67h = _mm_unpackhi_epi16(p6, p7);
 
-        // Round, shift, clamp
-        let shift_count = _mm_cvtsi32_si128(6);
-        let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
-        let clamped = _mm256_min_epi32(_mm256_max_epi32(shifted, zero), max);
+        let sum_l = _mm_add_epi32(
+            _mm_add_epi32(_mm_madd_epi16(p01l, c01), _mm_madd_epi16(p23l, c23)),
+            _mm_add_epi32(_mm_madd_epi16(p45l, c45), _mm_madd_epi16(p67l, c67)),
+        );
+        let sum_h = _mm_add_epi32(
+            _mm_add_epi32(_mm_madd_epi16(p01h, c01), _mm_madd_epi16(p23h, c23)),
+            _mm_add_epi32(_mm_madd_epi16(p45h, c45), _mm_madd_epi16(p67h, c67)),
+        );
 
-        // Pack to u8
-        let packed16 = _mm256_packs_epi32(clamped, clamped);
-        let packed16 = _mm256_permute4x64_epi64(packed16, 0b11011000);
-        let packed8 = _mm256_packus_epi16(packed16, packed16);
+        let rl = _mm_sra_epi32(_mm_add_epi32(sum_l, rnd), shift_count);
+        let rh = _mm_sra_epi32(_mm_add_epi32(sum_h, rnd), shift_count);
 
-        let result_64 = _mm256_extract_epi64(packed8, 0);
-        dst[col..col + 8].copy_from_slice(&result_64.to_ne_bytes());
+        let packed16 = _mm_packs_epi32(rl, rh);
+        let clamped = _mm_max_epi16(_mm_min_epi16(packed16, max16), zero);
+        let packed8 = _mm_packus_epi16(clamped, clamped);
+        crate::src::safe_simd::partial_simd::mm_storel_epi64::<[u8; 8]>(
+            <&mut [u8; 8]>::try_from(&mut dst[col..col + 8]).unwrap(),
+            packed8,
+        );
 
         col += 8;
+    }
+
+    // w=4 tail: 32-bit row loads -> i16 pairs -> madd.
+    if w - col == 4 {
+        let ld = |r: usize| -> __m128i {
+            let off = r * stride + col;
+            let b = u32::from_ne_bytes(*<&[u8; 4]>::try_from(&src[off..off + 4]).unwrap());
+            _mm_cvtsi32_si128(b as i32)
+        };
+        let p0 = _mm_cvtepu8_epi16(ld(0));
+        let p1 = _mm_cvtepu8_epi16(ld(1));
+        let p2 = _mm_cvtepu8_epi16(ld(2));
+        let p3 = _mm_cvtepu8_epi16(ld(3));
+        let p4 = _mm_cvtepu8_epi16(ld(4));
+        let p5 = _mm_cvtepu8_epi16(ld(5));
+        let p6 = _mm_cvtepu8_epi16(ld(6));
+        let p7 = _mm_cvtepu8_epi16(ld(7));
+
+        let p01 = _mm_unpacklo_epi16(p0, p1);
+        let p23 = _mm_unpacklo_epi16(p2, p3);
+        let p45 = _mm_unpacklo_epi16(p4, p5);
+        let p67 = _mm_unpacklo_epi16(p6, p7);
+
+        let sum = _mm_add_epi32(
+            _mm_add_epi32(_mm_madd_epi16(p01, c01), _mm_madd_epi16(p23, c23)),
+            _mm_add_epi32(_mm_madd_epi16(p45, c45), _mm_madd_epi16(p67, c67)),
+        );
+        let r = _mm_sra_epi32(_mm_add_epi32(sum, rnd), shift_count);
+        let packed16 = _mm_packs_epi32(r, r);
+        let clamped = _mm_max_epi16(_mm_min_epi16(packed16, max16), zero);
+        let packed8 = _mm_packus_epi16(clamped, clamped);
+        dst[col..col + 4].copy_from_slice(&(_mm_cvtsi128_si32(packed8) as u32).to_ne_bytes());
+        col += 4;
     }
 
     // Scalar fallback
@@ -2912,6 +3045,10 @@ fn v_filter_8tap_8bpc_direct_avx512_inner(
     w: usize,
     filter: &[i8; 8],
 ) {
+    if w < 16 {
+        v_filter_8tap_8bpc_direct_avx2_inner(_token.v3(), dst, src, src_stride, w, filter);
+        return;
+    }
     let mut dst = dst.flex_mut();
     let src = src.flex();
 
@@ -4172,68 +4309,100 @@ fn v_filter_8tap_to_i16_avx2_inner(
     sh: u8,
 ) {
     let mut dst = dst.flex_mut();
-    let rnd = _mm256_set1_epi32((1i32 << sh) >> 1);
-
-    let c0 = _mm256_set1_epi32(filter[0] as i32);
-    let c1 = _mm256_set1_epi32(filter[1] as i32);
-    let c2 = _mm256_set1_epi32(filter[2] as i32);
-    let c3 = _mm256_set1_epi32(filter[3] as i32);
-    let c4 = _mm256_set1_epi32(filter[4] as i32);
-    let c5 = _mm256_set1_epi32(filter[5] as i32);
-    let c6 = _mm256_set1_epi32(filter[6] as i32);
-    let c7 = _mm256_set1_epi32(filter[7] as i32);
+    let pack_pair = |a: i8, b: i8| ((b as i32) << 16) | (a as i32 & 0xffff);
+    let c01 = _mm_set1_epi32(pack_pair(filter[0], filter[1]));
+    let c23 = _mm_set1_epi32(pack_pair(filter[2], filter[3]));
+    let c45 = _mm_set1_epi32(pack_pair(filter[4], filter[5]));
+    let c67 = _mm_set1_epi32(pack_pair(filter[6], filter[7]));
+    let rnd = _mm_set1_epi32((1i32 << sh) >> 1);
+    let shift_count = _mm_cvtsi32_si128(sh as i32);
 
     let mut col = 0usize;
 
     while col + 8 <= w {
-        let m0 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[0][col..col + 8]).unwrap()
-        ));
-        let m1 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[1][col..col + 8]).unwrap()
-        ));
-        let m2 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[2][col..col + 8]).unwrap()
-        ));
-        let m3 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[3][col..col + 8]).unwrap()
-        ));
-        let m4 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[4][col..col + 8]).unwrap()
-        ));
-        let m5 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[5][col..col + 8]).unwrap()
-        ));
-        let m6 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[6][col..col + 8]).unwrap()
-        ));
-        let m7 = _mm256_cvtepi16_epi32(loadu_128!(
-            <&[i16; 8]>::try_from(&mid[7][col..col + 8]).unwrap()
-        ));
+        let m0 = loadu_128!(<&[i16; 8]>::try_from(&mid[0][col..col + 8]).unwrap());
+        let m1 = loadu_128!(<&[i16; 8]>::try_from(&mid[1][col..col + 8]).unwrap());
+        let m2 = loadu_128!(<&[i16; 8]>::try_from(&mid[2][col..col + 8]).unwrap());
+        let m3 = loadu_128!(<&[i16; 8]>::try_from(&mid[3][col..col + 8]).unwrap());
+        let m4 = loadu_128!(<&[i16; 8]>::try_from(&mid[4][col..col + 8]).unwrap());
+        let m5 = loadu_128!(<&[i16; 8]>::try_from(&mid[5][col..col + 8]).unwrap());
+        let m6 = loadu_128!(<&[i16; 8]>::try_from(&mid[6][col..col + 8]).unwrap());
+        let m7 = loadu_128!(<&[i16; 8]>::try_from(&mid[7][col..col + 8]).unwrap());
 
-        let mut sum = _mm256_mullo_epi32(m0, c0);
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m1, c1));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m2, c2));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m3, c3));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m4, c4));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m5, c5));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m6, c6));
-        sum = _mm256_add_epi32(sum, _mm256_mullo_epi32(m7, c7));
+        let p01l = _mm_unpacklo_epi16(m0, m1);
+        let p01h = _mm_unpackhi_epi16(m0, m1);
+        let p23l = _mm_unpacklo_epi16(m2, m3);
+        let p23h = _mm_unpackhi_epi16(m2, m3);
+        let p45l = _mm_unpacklo_epi16(m4, m5);
+        let p45h = _mm_unpackhi_epi16(m4, m5);
+        let p67l = _mm_unpacklo_epi16(m6, m7);
+        let p67h = _mm_unpackhi_epi16(m6, m7);
 
-        let shift_count = _mm_cvtsi32_si128(sh as i32);
-        let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+        let sum_l = _mm_add_epi32(
+            _mm_add_epi32(_mm_madd_epi16(p01l, c01), _mm_madd_epi16(p23l, c23)),
+            _mm_add_epi32(_mm_madd_epi16(p45l, c45), _mm_madd_epi16(p67l, c67)),
+        );
+        let sum_h = _mm_add_epi32(
+            _mm_add_epi32(_mm_madd_epi16(p01h, c01), _mm_madd_epi16(p23h, c23)),
+            _mm_add_epi32(_mm_madd_epi16(p45h, c45), _mm_madd_epi16(p67h, c67)),
+        );
 
-        // Pack to i16 (signed saturation is fine for intermediate values)
-        let packed = _mm256_packs_epi32(shifted, shifted);
-        let packed = _mm256_permute4x64_epi64(packed, 0b11011000);
+        let rl = _mm_sra_epi32(_mm_add_epi32(sum_l, rnd), shift_count);
+        let rh = _mm_sra_epi32(_mm_add_epi32(sum_h, rnd), shift_count);
 
-        // Store 8 i16 values
+        // i32 -> i16 preserving column order
+        let packed = _mm_packs_epi32(rl, rh);
         storeu_128!(
             <&mut [i16; 8]>::try_from(&mut dst[col..col + 8]).unwrap(),
-            _mm256_castsi256_si128(packed)
+            packed
         );
 
         col += 8;
+    }
+
+    // w=4 tail: 64-bit row loads, same pair-madd structure.
+    if w - col == 4 && mid[0].len() >= col + 4 {
+        let m0 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[0][col..col + 4]).unwrap(),
+        );
+        let m1 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[1][col..col + 4]).unwrap(),
+        );
+        let m2 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[2][col..col + 4]).unwrap(),
+        );
+        let m3 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[3][col..col + 4]).unwrap(),
+        );
+        let m4 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[4][col..col + 4]).unwrap(),
+        );
+        let m5 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[5][col..col + 4]).unwrap(),
+        );
+        let m6 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[6][col..col + 4]).unwrap(),
+        );
+        let m7 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+            <&[i16; 4]>::try_from(&mid[7][col..col + 4]).unwrap(),
+        );
+
+        let p01 = _mm_unpacklo_epi16(m0, m1);
+        let p23 = _mm_unpacklo_epi16(m2, m3);
+        let p45 = _mm_unpacklo_epi16(m4, m5);
+        let p67 = _mm_unpacklo_epi16(m6, m7);
+
+        let sum = _mm_add_epi32(
+            _mm_add_epi32(_mm_madd_epi16(p01, c01), _mm_madd_epi16(p23, c23)),
+            _mm_add_epi32(_mm_madd_epi16(p45, c45), _mm_madd_epi16(p67, c67)),
+        );
+        let r = _mm_sra_epi32(_mm_add_epi32(sum, rnd), shift_count);
+        let packed = _mm_packs_epi32(r, r);
+        crate::src::safe_simd::partial_simd::mm_storel_epi64::<[i16; 4]>(
+            <&mut [i16; 4]>::try_from(&mut dst[col..col + 4]).unwrap(),
+            packed,
+        );
+        col += 4;
     }
 
     while col < w {
@@ -4258,6 +4427,10 @@ fn v_filter_8tap_to_i16_avx512_inner(
     filter: &[i8; 8],
     sh: u8,
 ) {
+    if w < 16 {
+        v_filter_8tap_to_i16_avx2_inner(_token.v3(), mid, dst, w, filter, sh);
+        return;
+    }
     let mut dst = dst.flex_mut();
     let rnd = _mm512_set1_epi32((1i32 << sh) >> 1);
 
@@ -5035,6 +5208,41 @@ fn h_filter_8tap_16bpc_avx2_inner(
         col += 8;
     }
 
+    // w=4 tail: 128-bit loads + madd pairs, same coefficient packing.
+    if w - col == 4 && src.len() >= col + 11 {
+        let c01_128 = _mm256_castsi256_si128(coeff0);
+        let c23_128 = _mm256_castsi256_si128(coeff2);
+        let c45_128 = _mm256_castsi256_si128(coeff4);
+        let c67_128 = _mm256_castsi256_si128(coeff6);
+        let rnd128 = _mm_set1_epi32((1 << sh) >> 1);
+
+        let s0 = loadu_64!(<&[u16; 4]>::try_from(&src[col..col + 4]).unwrap());
+        let s1 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 1..col + 5]).unwrap());
+        let s2 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 2..col + 6]).unwrap());
+        let s3 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 3..col + 7]).unwrap());
+        let s4 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 4..col + 8]).unwrap());
+        let s5 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 5..col + 9]).unwrap());
+        let s6 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 6..col + 10]).unwrap());
+        let s7 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 7..col + 11]).unwrap());
+
+        let sum = _mm_add_epi32(
+            _mm_add_epi32(
+                _mm_madd_epi16(_mm_unpacklo_epi16(s0, s1), c01_128),
+                _mm_madd_epi16(_mm_unpacklo_epi16(s2, s3), c23_128),
+            ),
+            _mm_add_epi32(
+                _mm_madd_epi16(_mm_unpacklo_epi16(s4, s5), c45_128),
+                _mm_madd_epi16(_mm_unpacklo_epi16(s6, s7), c67_128),
+            ),
+        );
+        let res = _mm_sra_epi32(_mm_add_epi32(sum, rnd128), _mm_cvtsi32_si128(sh));
+        storeu_128!(
+            <&mut [i32; 4]>::try_from(&mut dst[col..col + 4]).unwrap(),
+            res
+        );
+        col += 4;
+    }
+
     // Scalar fallback for remaining pixels
     while col < w {
         let mut sum = 0i32;
@@ -5154,6 +5362,46 @@ fn v_filter_8tap_16bpc_avx2_inner(
         col += 8;
     }
 
+    // w=4 tail: 128-bit i32 row loads, mullo+packus path mirrors main loop.
+    if w - col == 4 && mid[0].len() >= col + 4 {
+        let c0 = _mm_set1_epi32(coeff[0]);
+        let c1 = _mm_set1_epi32(coeff[1]);
+        let c2 = _mm_set1_epi32(coeff[2]);
+        let c3 = _mm_set1_epi32(coeff[3]);
+        let c4 = _mm_set1_epi32(coeff[4]);
+        let c5 = _mm_set1_epi32(coeff[5]);
+        let c6 = _mm_set1_epi32(coeff[6]);
+        let c7 = _mm_set1_epi32(coeff[7]);
+        let rnd128 = _mm_set1_epi32((1 << sh) >> 1);
+        let zero128 = _mm_setzero_si128();
+        let max128 = _mm_set1_epi32(max);
+        let shift128 = _mm_cvtsi32_si128(sh);
+
+        let mut sum = _mm_setzero_si128();
+        for i in 0..8 {
+            let r = loadu_128!(<&[i32; 4]>::try_from(&mid[y + i][col..col + 4]).unwrap());
+            let c = match i {
+                0 => c0,
+                1 => c1,
+                2 => c2,
+                3 => c3,
+                4 => c4,
+                5 => c5,
+                6 => c6,
+                _ => c7,
+            };
+            sum = _mm_add_epi32(sum, _mm_mullo_epi32(r, c));
+        }
+        let shifted = _mm_sra_epi32(_mm_add_epi32(sum, rnd128), shift128);
+        let clamped = _mm_min_epi32(_mm_max_epi32(shifted, zero128), max128);
+        let packed = _mm_packus_epi32(clamped, clamped);
+        crate::src::safe_simd::partial_simd::mm_storel_epi64::<[u16; 4]>(
+            <&mut [u16; 4]>::try_from(&mut dst[col..col + 4]).unwrap(),
+            packed,
+        );
+        col += 4;
+    }
+
     // Scalar fallback for remaining pixels
     while col < w {
         let mut sum = 0i32;
@@ -5263,6 +5511,27 @@ fn v_filter_8tap_16bpc_prep_avx2_inner(
         );
 
         col += 8;
+    }
+
+    // w=4 tail: 128-bit i32 row loads, mullo chain, packs to i16.
+    if w - col == 4 && mid[0].len() >= col + 4 {
+        let rnd128 = _mm_set1_epi32((1 << sh) >> 1);
+        let bias128 = _mm_set1_epi32(prep_bias);
+        let shift128 = _mm_cvtsi32_si128(sh);
+
+        let mut sum = _mm_setzero_si128();
+        for i in 0..8 {
+            let r = loadu_128!(<&[i32; 4]>::try_from(&mid[y + i][col..col + 4]).unwrap());
+            sum = _mm_add_epi32(sum, _mm_mullo_epi32(r, _mm_set1_epi32(coeff[i])));
+        }
+        let shifted = _mm_sra_epi32(_mm_add_epi32(sum, rnd128), shift128);
+        let biased = _mm_sub_epi32(shifted, bias128);
+        let packed = _mm_packs_epi32(biased, biased);
+        crate::src::safe_simd::partial_simd::mm_storel_epi64::<[i16; 4]>(
+            <&mut [i16; 4]>::try_from(&mut dst[col..col + 4]).unwrap(),
+            packed,
+        );
+        col += 4;
     }
 
     // Scalar fallback
@@ -5386,6 +5655,45 @@ fn h_filter_8tap_16bpc_put_avx2_inner(
         );
 
         col += 8;
+    }
+
+    // w=4 tail: 128-bit loads + madd pairs, same coefficient packing.
+    if w - col == 4 && src.len() >= col + 11 {
+        let c01_128 = _mm256_castsi256_si128(coeff0);
+        let c23_128 = _mm256_castsi256_si128(coeff2);
+        let c45_128 = _mm256_castsi256_si128(coeff4);
+        let c67_128 = _mm256_castsi256_si128(coeff6);
+        let rnd128 = _mm_set1_epi32(32 + ((1 << (6 - intermediate_bits)) >> 1));
+        let zero128 = _mm_setzero_si128();
+        let max128 = _mm_set1_epi32(max);
+
+        let s0 = loadu_64!(<&[u16; 4]>::try_from(&src[col..col + 4]).unwrap());
+        let s1 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 1..col + 5]).unwrap());
+        let s2 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 2..col + 6]).unwrap());
+        let s3 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 3..col + 7]).unwrap());
+        let s4 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 4..col + 8]).unwrap());
+        let s5 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 5..col + 9]).unwrap());
+        let s6 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 6..col + 10]).unwrap());
+        let s7 = loadu_64!(<&[u16; 4]>::try_from(&src[col + 7..col + 11]).unwrap());
+
+        let sum = _mm_add_epi32(
+            _mm_add_epi32(
+                _mm_madd_epi16(_mm_unpacklo_epi16(s0, s1), c01_128),
+                _mm_madd_epi16(_mm_unpacklo_epi16(s2, s3), c23_128),
+            ),
+            _mm_add_epi32(
+                _mm_madd_epi16(_mm_unpacklo_epi16(s4, s5), c45_128),
+                _mm_madd_epi16(_mm_unpacklo_epi16(s6, s7), c67_128),
+            ),
+        );
+        let shifted = _mm_sra_epi32(_mm_add_epi32(sum, rnd128), _mm_cvtsi32_si128(6));
+        let clamped = _mm_min_epi32(_mm_max_epi32(shifted, zero128), max128);
+        let packed = _mm_packus_epi32(clamped, clamped);
+        crate::src::safe_simd::partial_simd::mm_storel_epi64::<[u16; 4]>(
+            <&mut [u16; 4]>::try_from(&mut dst[col..col + 4]).unwrap(),
+            packed,
+        );
+        col += 4;
     }
 
     // Scalar fallback for remaining pixels (w < 8 or w not divisible by 8)
@@ -5517,6 +5825,31 @@ fn v_filter_8tap_16bpc_direct_avx2_inner(
         );
 
         col += 8;
+    }
+
+    // w=4 tail: 64-bit u16 row loads -> i32, mullo chain.
+    if w - col == 4 {
+        let rnd128 = _mm_set1_epi32(32);
+        let zero128 = _mm_setzero_si128();
+        let max128 = _mm_set1_epi32(max);
+        let shift128 = _mm_cvtsi32_si128(6);
+
+        let mut sum = _mm_setzero_si128();
+        for i in 0..8 {
+            let off = i * stride_u + col;
+            let p = _mm_cvtepu16_epi32(loadu_64!(
+                <&[u16; 4]>::try_from(&src[off..off + 4]).unwrap()
+            ));
+            sum = _mm_add_epi32(sum, _mm_mullo_epi32(p, _mm_set1_epi32(coeff[i])));
+        }
+        let shifted = _mm_sra_epi32(_mm_add_epi32(sum, rnd128), shift128);
+        let clamped = _mm_min_epi32(_mm_max_epi32(shifted, zero128), max128);
+        let packed = _mm_packus_epi32(clamped, clamped);
+        crate::src::safe_simd::partial_simd::mm_storel_epi64::<[u16; 4]>(
+            <&mut [u16; 4]>::try_from(&mut dst[col..col + 4]).unwrap(),
+            packed,
+        );
+        col += 4;
     }
 
     // Scalar fallback
@@ -5767,6 +6100,30 @@ fn v_filter_8tap_16bpc_prep_direct_avx2_inner(
         col += 8;
     }
 
+    // w=4 tail: 64-bit u16 row loads -> i32, mullo chain, packs to i16.
+    if w - col == 4 {
+        let rnd128 = _mm_set1_epi32((1 << sh) >> 1);
+        let bias128 = _mm_set1_epi32(prep_bias);
+        let shift128 = _mm_cvtsi32_si128(sh);
+
+        let mut sum = _mm_setzero_si128();
+        for i in 0..8 {
+            let off = i * stride_u + col;
+            let p = _mm_cvtepu16_epi32(loadu_64!(
+                <&[u16; 4]>::try_from(&src[off..off + 4]).unwrap()
+            ));
+            sum = _mm_add_epi32(sum, _mm_mullo_epi32(p, _mm_set1_epi32(coeff[i])));
+        }
+        let shifted = _mm_sra_epi32(_mm_add_epi32(sum, rnd128), shift128);
+        let biased = _mm_sub_epi32(shifted, bias128);
+        let packed = _mm_packs_epi32(biased, biased);
+        crate::src::safe_simd::partial_simd::mm_storel_epi64::<[i16; 4]>(
+            <&mut [i16; 4]>::try_from(&mut dst[col..col + 4]).unwrap(),
+            packed,
+        );
+        col += 4;
+    }
+
     // Scalar fallback
     while col < w {
         let mut sum = 0i32;
@@ -5817,6 +6174,10 @@ fn h_filter_8tap_16bpc_avx512_inner(
     filter: &[i8; 8],
     sh: i32,
 ) {
+    if w < 16 {
+        h_filter_8tap_16bpc_avx2_inner(_token.v3(), dst, src, w, filter, sh);
+        return;
+    }
     let mut dst = dst.flex_mut();
     let src = src.flex();
 
@@ -5898,6 +6259,10 @@ fn v_filter_8tap_16bpc_avx512_inner(
     sh: i32,
     max: i32,
 ) {
+    if w < 16 {
+        v_filter_8tap_16bpc_avx2_inner(_token.v3(), dst, mid, w, y, filter, sh, max);
+        return;
+    }
     let mut dst = dst.flex_mut();
 
     let c0 = _mm512_set1_epi32(filter[0] as i32);
@@ -5971,6 +6336,10 @@ fn v_filter_8tap_16bpc_prep_avx512_inner(
     sh: i32,
     prep_bias: i32,
 ) {
+    if w < 16 {
+        v_filter_8tap_16bpc_prep_avx2_inner(_token.v3(), dst, mid, w, y, filter, sh, prep_bias);
+        return;
+    }
     let mut dst = dst.flex_mut();
 
     let c0 = _mm512_set1_epi32(filter[0] as i32);
@@ -6041,6 +6410,10 @@ fn h_filter_8tap_16bpc_put_avx512_inner(
     filter: &[i8; 8],
     max: i32,
 ) {
+    if w < 16 {
+        h_filter_8tap_16bpc_put_avx2_inner(_token.v3(), dst, src, w, filter, max);
+        return;
+    }
     let mut dst = dst.flex_mut();
     let src = src.flex();
 
@@ -6217,6 +6590,10 @@ fn v_filter_8tap_16bpc_direct_avx512_inner(
     filter: &[i8; 8],
     max: i32,
 ) {
+    if w < 16 {
+        v_filter_8tap_16bpc_direct_avx2_inner(_token.v3(), dst, src, src_stride, w, filter, max);
+        return;
+    }
     let mut dst = dst.flex_mut();
     let src = src.flex();
 
@@ -6307,6 +6684,19 @@ fn v_filter_8tap_16bpc_prep_direct_avx512_inner(
     sh: i32,
     prep_bias: i32,
 ) {
+    if w < 16 {
+        v_filter_8tap_16bpc_prep_direct_avx2_inner(
+            _token.v3(),
+            dst,
+            src,
+            src_stride,
+            w,
+            filter,
+            sh,
+            prep_bias,
+        );
+        return;
+    }
     let mut dst = dst.flex_mut();
     let src = src.flex();
 
