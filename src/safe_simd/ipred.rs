@@ -1783,27 +1783,36 @@ fn ipred_filter_8bpc_inner(
             };
 
             let p0 = tl_pixel;
-            let p = [p0, p1, p2, p3, p4, p5, p6];
 
-            // Process 4x2 = 8 output pixels using filter taps
+            // All 8 outputs are 7-tap dots on the same p vector. The taps
+            // table is pre-arranged for pmaddwd: xmm row k holds each
+            // output's tap pair in its i16 lanes, so one ymm madd per row
+            // produces all 8 outputs' partial sums (i32 lanes).
+            let p01 = _mm256_set1_epi32((p0 as u32 | ((p1 as u32) << 16)) as i32);
+            let p23 = _mm256_set1_epi32((p2 as u32 | ((p3 as u32) << 16)) as i32);
+            let p45 = _mm256_set1_epi32((p4 as u32 | ((p5 as u32) << 16)) as i32);
+            let p60 = _mm256_set1_epi32(p6);
             let flt = filter.as_slice();
-            let mut flt_offset = 0;
-
-            // Row 0 (4 pixels)
-            for xx in 0..4 {
-                let acc = filter_fn(&flt[flt_offset..], p);
-                let val = ((acc + 8) >> 4).clamp(0, 255) as u8;
-                dst[row0_off + x + xx] = val;
-                flt_offset += FLT_INCR;
-            }
-
-            // Row 1 (4 pixels)
-            for xx in 0..4 {
-                let acc = filter_fn(&flt[flt_offset..], p);
-                let val = ((acc + 8) >> 4).clamp(0, 255) as u8;
-                dst[row1_off + x + xx] = val;
-                flt_offset += FLT_INCR;
-            }
+            let t0 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[0..16]).unwrap()));
+            let t1 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[16..32]).unwrap()));
+            let t2 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[32..48]).unwrap()));
+            // Row 3 bytes 48+2o+1 are never written by gen_filters (stay 0),
+            // so the (f6, 0) pairs multiply cleanly.
+            let t3 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[48..64]).unwrap()));
+            let acc = _mm256_add_epi32(
+                _mm256_add_epi32(_mm256_madd_epi16(p01, t0), _mm256_madd_epi16(p23, t1)),
+                _mm256_add_epi32(_mm256_madd_epi16(p45, t2), _mm256_madd_epi16(p60, t3)),
+            );
+            let res = _mm256_srai_epi32::<4>(_mm256_add_epi32(acc, _mm256_set1_epi32(8)));
+            let res16 = _mm_packs_epi32(
+                _mm256_castsi256_si128(res),
+                _mm256_extracti128_si256::<1>(res),
+            );
+            let res8 = _mm_packus_epi16(res16, res16);
+            dst[row0_off + x..row0_off + x + 4]
+                .copy_from_slice(&(_mm_cvtsi128_si32(res8) as u32).to_ne_bytes());
+            dst[row1_off + x..row1_off + x + 4]
+                .copy_from_slice(&(_mm_extract_epi32::<1>(res8) as u32).to_ne_bytes());
 
             // Update topleft for next 4x2 block (8bpc)
             tl_pixel = p4;
@@ -5872,29 +5881,37 @@ fn ipred_filter_16bpc_inner(
             };
 
             let p0 = tl_pixel;
-            let p = [p0, p1, p2, p3, p4, p5, p6];
 
-            // Process 4x2 = 8 output pixels using filter taps
+            // Same pmaddwd layout as the 8bpc kernel — p fits i16 (<= 4095)
+            // and i32 lanes accumulate all 8 outputs at once.
+            let p01 = _mm256_set1_epi32((p0 as u32 | ((p1 as u32) << 16)) as i32);
+            let p23 = _mm256_set1_epi32((p2 as u32 | ((p3 as u32) << 16)) as i32);
+            let p45 = _mm256_set1_epi32((p4 as u32 | ((p5 as u32) << 16)) as i32);
+            let p60 = _mm256_set1_epi32(p6);
             let flt = filter.as_slice();
-            let mut flt_offset = 0;
-
-            // Row 0 (4 pixels)
-            for xx in 0..4 {
-                let acc = filter_fn(&flt[flt_offset..], p);
-                let val = ((acc + 8) >> 4).clamp(0, bitdepth_max as i32) as u16;
-                let off = row0_off + (x + xx) * 2;
-                dst[off..off + 2].copy_from_slice(&val.to_ne_bytes());
-                flt_offset += FLT_INCR;
-            }
-
-            // Row 1 (4 pixels)
-            for xx in 0..4 {
-                let acc = filter_fn(&flt[flt_offset..], p);
-                let val = ((acc + 8) >> 4).clamp(0, bitdepth_max as i32) as u16;
-                let off = row1_off + (x + xx) * 2;
-                dst[off..off + 2].copy_from_slice(&val.to_ne_bytes());
-                flt_offset += FLT_INCR;
-            }
+            let t0 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[0..16]).unwrap()));
+            let t1 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[16..32]).unwrap()));
+            let t2 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[32..48]).unwrap()));
+            let t3 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[48..64]).unwrap()));
+            let acc = _mm256_add_epi32(
+                _mm256_add_epi32(_mm256_madd_epi16(p01, t0), _mm256_madd_epi16(p23, t1)),
+                _mm256_add_epi32(_mm256_madd_epi16(p45, t2), _mm256_madd_epi16(p60, t3)),
+            );
+            let res = _mm256_srai_epi32::<4>(_mm256_add_epi32(acc, _mm256_set1_epi32(8)));
+            // packs saturation can only push results above bitdepth_max
+            // further upward; min/max restore the exact clamp.
+            let res16 = _mm_packs_epi32(
+                _mm256_castsi256_si128(res),
+                _mm256_extracti128_si256::<1>(res),
+            );
+            let clamped = _mm_max_epi16(
+                _mm_min_epi16(res16, _mm_set1_epi16(bitdepth_max as i16)),
+                _mm_setzero_si128(),
+            );
+            dst[row0_off + x * 2..row0_off + x * 2 + 8]
+                .copy_from_slice(&(_mm_cvtsi128_si64(clamped) as u64).to_ne_bytes());
+            dst[row1_off + x * 2..row1_off + x * 2 + 8]
+                .copy_from_slice(&(_mm_extract_epi64::<1>(clamped) as u64).to_ne_bytes());
 
             // Update topleft for next 4x2 block (16bpc)
             tl_pixel = p4;
