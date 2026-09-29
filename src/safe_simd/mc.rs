@@ -17,7 +17,7 @@ use core::arch::x86_64::*;
 use crate::src::safe_simd::pixel_access::Flex;
 #[cfg(target_arch = "x86_64")]
 use crate::src::safe_simd::pixel_access::{
-    loadi64, loadu_64, loadu_128, loadu_256, loadu_512, storeu_128, storeu_256, storeu_512,
+    loadi32, loadi64, loadu_64, loadu_128, loadu_256, loadu_512, storeu_128, storeu_256, storeu_512,
 };
 #[cfg(target_arch = "x86_64")]
 use archmage::{Desktop64, Server64, arcane, rite};
@@ -3256,7 +3256,7 @@ fn put_8tap_8bpc_avx2_impl_inner(
                 let src_row_base = (sb + y as isize * src_stride) as usize;
                 let src_row = &src[src_row_base..];
                 let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
-                dst_row[..w].copy_from_slice(&src_row[..w]);
+                copy_row_px(dst_row, src_row, w);
             }
         }
     }
@@ -3352,7 +3352,7 @@ fn put_8tap_8bpc_avx512_impl_inner(
                 let src_row_base = (sb + y as isize * src_stride) as usize;
                 let src_row = &src[src_row_base..];
                 let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
-                dst_row[..w].copy_from_slice(&src_row[..w]);
+                copy_row_px(dst_row, src_row, w);
             }
         }
     }
@@ -4057,6 +4057,57 @@ pub unsafe extern "C" fn put_8tap_sharp_8bpc_v3(
 // 8-TAP PREP FUNCTIONS (mct)
 // =============================================================================
 
+/// `dst[..N] = src[..N]` with a compile-time trip count — the array copy
+/// lowers to inline vector load/store, not a libc memcpy call (same idiom as
+/// `copy_n` in cdef_arm; docs/SIZE_SWEEP.md profiled the libc-call cost).
+#[inline(always)]
+fn copy_n_px<T: Copy, const N: usize>(dst: &mut [T], src: &[T]) {
+    let a = <&[T; N]>::try_from(&src[..N]).unwrap();
+    let d = <&mut [T; N]>::try_from(&mut dst[..N]).unwrap();
+    *d = *a;
+}
+
+/// Row copy for the no-filter MC cases — `w` is always a block width, so a
+/// match gives every arm a constant length and no per-row libc memcpy calls.
+#[inline(always)]
+fn copy_row_px<T: Copy>(dst: &mut [T], src: &[T], w: usize) {
+    match w {
+        4 => copy_n_px::<T, 4>(dst, src),
+        8 => copy_n_px::<T, 8>(dst, src),
+        16 => copy_n_px::<T, 16>(dst, src),
+        32 => copy_n_px::<T, 32>(dst, src),
+        64 => copy_n_px::<T, 64>(dst, src),
+        128 => copy_n_px::<T, 128>(dst, src),
+        _ => dst[..w].copy_from_slice(&src[..w]),
+    }
+}
+
+/// Widen a u8 row into `dst` as `i16 << ib` (prep V-only mid fill + copy case).
+/// `dst` and `src` must both be at least `w` long.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn widen_row_u8_shl_8bpc(_t: Desktop64, dst: &mut [i16], src: &[u8], w: usize, ib: i32) {
+    let cnt = _mm_cvtsi32_si128(ib);
+    let mut x = 0usize;
+    while x + 8 <= w {
+        let v = _mm_cvtepu8_epi16(loadu_64!(<&[u8; 8]>::try_from(&src[x..x + 8]).unwrap()));
+        storeu_128!(&mut dst[x..x + 8], [i16; 8], _mm_sll_epi16(v, cnt));
+        x += 8;
+    }
+    if x + 4 <= w {
+        let v = _mm_cvtepu8_epi16(loadi32!(&src[x..x + 4]));
+        crate::src::safe_simd::partial_simd::mm_storel_epi64::<[i16; 4]>(
+            <&mut [i16; 4]>::try_from(&mut dst[x..x + 4]).unwrap(),
+            _mm_sll_epi16(v, cnt),
+        );
+        x += 4;
+    }
+    while x < w {
+        dst[x] = (src[x] as i16) << ib;
+        x += 1;
+    }
+}
+
 /// Generic 8-tap prep function for 8bpc
 ///
 /// Similar to put but writes to i16 intermediate buffer instead of pixel output
@@ -4150,9 +4201,7 @@ fn prep_8tap_8bpc_avx2_impl_inner(
                 for i in 0..8 {
                     let src_row =
                         &src[(sb + (y as isize + i as isize - 3) * src_stride) as usize..];
-                    for x in 0..w {
-                        mid[i][x] = (src_row[x] as i16) << intermediate_bits;
-                    }
+                    widen_row_u8_shl_8bpc(_token, &mut mid[i], src_row, w, intermediate_bits as i32);
                 }
 
                 v_filter_8tap_to_i16_avx2_inner(_token, &mid, &mut tmp[out_row..], w, fv, 6);
@@ -4164,9 +4213,13 @@ fn prep_8tap_8bpc_avx2_impl_inner(
                 let src_row_base = (sb + y as isize * src_stride) as usize;
                 let src_row = &src[src_row_base..];
                 let out_row = y * w;
-                for x in 0..w {
-                    tmp[out_row + x] = (src_row[x] as i16) << intermediate_bits;
-                }
+                widen_row_u8_shl_8bpc(
+                    _token,
+                    &mut tmp[out_row..],
+                    src_row,
+                    w,
+                    intermediate_bits as i32,
+                );
             }
         }
     }
@@ -4244,9 +4297,13 @@ fn prep_8tap_8bpc_avx512_impl_inner(
                 for i in 0..8 {
                     let src_row =
                         &src[(sb + (y as isize + i as isize - 3) * src_stride) as usize..];
-                    for x in 0..w {
-                        mid[i][x] = (src_row[x] as i16) << intermediate_bits;
-                    }
+                    widen_row_u8_shl_8bpc(
+                        _token.v3(),
+                        &mut mid[i],
+                        src_row,
+                        w,
+                        intermediate_bits as i32,
+                    );
                 }
                 v_filter_8tap_to_i16_avx512_inner(_token, &mid, &mut tmp[out_row..], w, fv, 6);
             }
@@ -4256,9 +4313,13 @@ fn prep_8tap_8bpc_avx512_impl_inner(
                 let src_row_base = (sb + y as isize * src_stride) as usize;
                 let src_row = &src[src_row_base..];
                 let out_row = y * w;
-                for x in 0..w {
-                    tmp[out_row + x] = (src_row[x] as i16) << intermediate_bits;
-                }
+                widen_row_u8_shl_8bpc(
+                    _token.v3(),
+                    &mut tmp[out_row..],
+                    src_row,
+                    w,
+                    intermediate_bits as i32,
+                );
             }
         }
     }
@@ -6868,7 +6929,7 @@ fn put_8tap_16bpc_avx512_impl_inner(
             for y in 0..h {
                 let src_row = &src[(sb + y as isize * src_stride_elems) as usize..];
                 let dst_row = &mut dst[(y as isize * dst_stride_elems) as usize..];
-                dst_row[..w].copy_from_slice(&src_row[..w]);
+                copy_row_px(dst_row, src_row, w);
             }
         }
     }
@@ -7159,7 +7220,7 @@ fn put_8tap_16bpc_avx2_impl_inner(
             for y in 0..h {
                 let src_row = &src[(sb + y as isize * src_stride_elems) as usize..];
                 let dst_row = &mut dst[(y as isize * dst_stride_elems) as usize..];
-                dst_row[..w].copy_from_slice(&src_row[..w]);
+                copy_row_px(dst_row, src_row, w);
             }
         }
     }
@@ -9368,7 +9429,7 @@ fn put_bilin_8bpc_avx512_impl_inner(
             for y in 0..h {
                 let src_row_base = (y as isize * src_stride) as usize;
                 let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
-                dst_row[..w].copy_from_slice(&src[src_row_base..src_row_base + w]);
+                copy_row_px(dst_row, &src[src_row_base..], w);
             }
         }
     }
@@ -9550,7 +9611,7 @@ fn put_bilin_8bpc_avx2_impl_inner(
                 let src_row_base = (y as isize * src_stride) as usize;
                 let src_row = &src[src_row_base..];
                 let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
-                dst_row[..w].copy_from_slice(&src_row[..w]);
+                copy_row_px(dst_row, src_row, w);
             }
         }
     }
@@ -11630,7 +11691,7 @@ fn put_bilin_16bpc_avx512_impl_inner(
             for y in 0..h {
                 let src_off = (y as isize * src_stride) as usize;
                 let dst_off = (y as isize * dst_stride) as usize;
-                dst[dst_off..dst_off + w].copy_from_slice(&src[src_off..src_off + w]);
+                copy_row_px(&mut dst[dst_off..], &src[src_off..], w);
             }
         }
     }
@@ -11813,7 +11874,7 @@ fn put_bilin_16bpc_avx2_impl_inner_safe(
             for y in 0..h {
                 let src_off = (y as isize * src_stride) as usize;
                 let dst_off = (y as isize * dst_stride) as usize;
-                dst[dst_off..dst_off + w].copy_from_slice(&src[src_off..src_off + w]);
+                copy_row_px(&mut dst[dst_off..], &src[src_off..], w);
             }
         }
     }
