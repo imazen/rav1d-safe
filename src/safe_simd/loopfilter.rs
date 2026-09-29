@@ -537,195 +537,41 @@ fn loop_filter_4_8bpc_wd8_simd_v(
     h: i32,
     strideb: isize,
 ) {
+    // 4-byte row loads keep the pixels packed as u8 lanes 0-3;
+    // lanes 4-7 stay zero and are masked out of the early-out check.
     let load4 = |off: isize| -> __m128i {
         let start = signed_idx(base, strideb * off);
-        _mm_cvtepu8_epi32(loadi32!(&buf[start..start + 4]))
+        loadi32!(&buf[start..start + 4])
     };
 
-    let p3_v = load4(-4);
-    let p2_v = load4(-3);
-    let p1_v = load4(-2);
-    let p0_v = load4(-1);
-    let q0_v = load4(0);
-    let q1_v = load4(1);
-    let q2_v = load4(2);
-    let q3_v = load4(3);
-
-    let i_v = _mm_set1_epi32(i);
-    let e_v = _mm_set1_epi32(e);
-    let h_v = _mm_set1_epi32(h);
-    let f_v = _mm_set1_epi32(1);
-
-    let abs = |a: __m128i, b: __m128i| _mm_abs_epi32(_mm_sub_epi32(a, b));
-
-    let abs_p1p0 = abs(p1_v, p0_v);
-    let abs_q1q0 = abs(q1_v, q0_v);
-    let abs_p0q0 = abs(p0_v, q0_v);
-    let abs_p1q1 = abs(p1_v, q1_v);
-    let abs_p2p1 = abs(p2_v, p1_v);
-    let abs_q2q1 = abs(q2_v, q1_v);
-    let abs_p3p2 = abs(p3_v, p2_v);
-    let abs_q3q2 = abs(q3_v, q2_v);
-
-    let not_gt = |a: __m128i, b: __m128i| -> __m128i {
-        _mm_andnot_si128(_mm_cmpgt_epi32(a, b), _mm_set1_epi32(-1))
-    };
-
-    let m_p1p0 = not_gt(abs_p1p0, i_v);
-    let m_q1q0 = not_gt(abs_q1q0, i_v);
-    let val_ee = _mm_add_epi32(_mm_slli_epi32::<1>(abs_p0q0), _mm_srli_epi32::<1>(abs_p1q1));
-    let m_val = not_gt(val_ee, e_v);
-    let m_p2p1 = not_gt(abs_p2p1, i_v);
-    let m_q2q1 = not_gt(abs_q2q1, i_v);
-    let m_p3p2 = not_gt(abs_p3p2, i_v);
-    let m_q3q2 = not_gt(abs_q3q2, i_v);
-    let fm_mask = _mm_and_si128(
-        _mm_and_si128(_mm_and_si128(m_p1p0, m_q1q0), m_val),
-        _mm_and_si128(_mm_and_si128(m_p2p1, m_q2q1), _mm_and_si128(m_p3p2, m_q3q2)),
-    );
-
-    // Early-out: an all-false filter mask selects the original
-    // pixels at every lane — the flat-mask, filter arithmetic,
-    // blends and stores below are all dead work (~85%/64% of
-    // calls on the 4K-t8 census). Skipping them is bit-identical.
-    if _mm_movemask_epi8(fm_mask) == 0 {
+    let taps = [
+        load4(-4),
+        load4(-3),
+        load4(-2),
+        load4(-1),
+        load4(0),
+        load4(1),
+        load4(2),
+        load4(3),
+    ];
+    let Some([final_p2, final_p1, final_p0, final_q0, final_q1, final_q2]) =
+        lf_wd8_8bpc_core_u8(taps, e, i, h, 0x0F)
+    else {
         return;
-    }
-
-    // flat8in = abs(p2-p0)<=f && abs(p1-p0)<=f && abs(q1-q0)<=f && abs(q2-q0)<=f
-    //          && abs(p3-p0)<=f && abs(q3-q0)<=f
-    let abs_p2p0 = abs(p2_v, p0_v);
-    let abs_q2q0 = abs(q2_v, q0_v);
-    let abs_p3p0 = abs(p3_v, p0_v);
-    let abs_q3q0 = abs(q3_v, q0_v);
-    let flat_mask = _mm_and_si128(
-        _mm_and_si128(not_gt(abs_p2p0, f_v), not_gt(abs_p1p0, f_v)),
-        _mm_and_si128(
-            _mm_and_si128(not_gt(abs_q1q0, f_v), not_gt(abs_q2q0, f_v)),
-            _mm_and_si128(not_gt(abs_p3p0, f_v), not_gt(abs_q3q0, f_v)),
-        ),
-    );
-
-    // 8-tap filter outputs (positions -3..2):
-    //   out[-3] = (p3 + p3 + p3 + 2*p2 + p1 + p0 + q0 + 4) >> 3
-    //   out[-2] = (p3 + p3 + p2 + 2*p1 + p0 + q0 + q1 + 4) >> 3
-    //   out[-1] = (p3 + p2 + p1 + 2*p0 + q0 + q1 + q2 + 4) >> 3
-    //   out[ 0] = (p2 + p1 + p0 + 2*q0 + q1 + q2 + q3 + 4) >> 3
-    //   out[ 1] = (p1 + p0 + q0 + 2*q1 + q2 + q3 + q3 + 4) >> 3
-    //   out[ 2] = (p0 + q0 + q1 + 2*q2 + q3 + q3 + q3 + 4) >> 3
-    let dbl = |v: __m128i| _mm_slli_epi32::<1>(v);
-    let triple = |v: __m128i| _mm_add_epi32(dbl(v), v);
-    let c4 = _mm_set1_epi32(4);
-    let add = |a: __m128i, b: __m128i| _mm_add_epi32(a, b);
-    let add3 = |a: __m128i, b: __m128i, c: __m128i| add(add(a, b), c);
-    let add4 = |a: __m128i, b: __m128i, c: __m128i, d: __m128i| add(add(a, b), add(c, d));
-
-    let out_m3 = _mm_srai_epi32::<3>(add(
-        add4(triple(p3_v), dbl(p2_v), p1_v, p0_v),
-        add(q0_v, c4),
-    ));
-    let out_m2 = _mm_srai_epi32::<3>(add(
-        add4(dbl(p3_v), p2_v, dbl(p1_v), p0_v),
-        add3(q0_v, q1_v, c4),
-    ));
-    let out_m1 = _mm_srai_epi32::<3>(add(
-        add4(p3_v, p2_v, p1_v, dbl(p0_v)),
-        add4(q0_v, q1_v, q2_v, c4),
-    ));
-    let out_0 = _mm_srai_epi32::<3>(add(
-        add4(p2_v, p1_v, p0_v, dbl(q0_v)),
-        add4(q1_v, q2_v, q3_v, c4),
-    ));
-    let out_1 = _mm_srai_epi32::<3>(add(
-        add4(p1_v, p0_v, q0_v, dbl(q1_v)),
-        add4(q2_v, q3_v, q3_v, c4),
-    ));
-    let out_2 = _mm_srai_epi32::<3>(add(
-        add4(p0_v, q0_v, q1_v, dbl(q2_v)),
-        add4(q3_v, q3_v, q3_v, c4),
-    ));
-
-    // Narrow filter (4-tap)
-    let neg128 = _mm_set1_epi32(-128);
-    let pos127 = _mm_set1_epi32(127);
-    let iclip = |v: __m128i| _mm_min_epi32(_mm_max_epi32(v, neg128), pos127);
-
-    let diff_q0p0 = _mm_sub_epi32(q0_v, p0_v);
-    let three_d = _mm_add_epi32(_mm_slli_epi32::<1>(diff_q0p0), diff_q0p0);
-    let diff_p1q1 = _mm_sub_epi32(p1_v, q1_v);
-
-    let hev_mask = _mm_or_si128(
-        _mm_cmpgt_epi32(abs_p1p0, h_v),
-        _mm_cmpgt_epi32(abs_q1q0, h_v),
-    );
-
-    let f_hev = iclip(_mm_add_epi32(three_d, iclip(diff_p1q1)));
-    let f_no = iclip(three_d);
-
-    let c4i = _mm_set1_epi32(4);
-    let c3i = _mm_set1_epi32(3);
-    let one = _mm_set1_epi32(1);
-
-    let f1_hev = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_hev, c4i), pos127));
-    let f2_hev = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_hev, c3i), pos127));
-    let f1_no = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_no, c4i), pos127));
-    let f2_no = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_no, c3i), pos127));
-    let f_extra = _mm_srai_epi32::<1>(_mm_add_epi32(f1_no, one));
-
-    let p0_hev = _mm_add_epi32(p0_v, f2_hev);
-    let q0_hev = _mm_sub_epi32(q0_v, f1_hev);
-    let p0_no = _mm_add_epi32(p0_v, f2_no);
-    let q0_no = _mm_sub_epi32(q0_v, f1_no);
-    let p1_no = _mm_add_epi32(p1_v, f_extra);
-    let q1_no = _mm_sub_epi32(q1_v, f_extra);
-
-    let blendv = |a: __m128i, b: __m128i, mask: __m128i| -> __m128i {
-        _mm_or_si128(_mm_andnot_si128(mask, a), _mm_and_si128(mask, b))
     };
 
-    let narrow_p1 = blendv(p1_no, p1_v, hev_mask);
-    let narrow_p0 = blendv(p0_no, p0_hev, hev_mask);
-    let narrow_q0 = blendv(q0_no, q0_hev, hev_mask);
-    let narrow_q1 = blendv(q1_no, q1_v, hev_mask);
-
-    // Select between 8-tap (flat_mask) and narrow (otherwise):
-    //   At -3, 2: narrow doesn't touch, keep p3/q2 from original
-    //   At -2, 1: narrow output (depending on hev)
-    //   At -1, 0: narrow output (always written)
-    let out_m3_sel = blendv(p2_v, out_m3, flat_mask); // narrow keeps original p2 (= position -3 in 8-tap)
-    let out_m2_sel = blendv(narrow_p1, out_m2, flat_mask);
-    let out_m1_sel = blendv(narrow_p0, out_m1, flat_mask);
-    let out_0_sel = blendv(narrow_q0, out_0, flat_mask);
-    let out_1_sel = blendv(narrow_q1, out_1, flat_mask);
-    let out_2_sel = blendv(q2_v, out_2, flat_mask);
-
-    // Apply fm mask: if !fm, keep original
-    let final_p2 = blendv(p2_v, out_m3_sel, fm_mask);
-    let final_p1 = blendv(p1_v, out_m2_sel, fm_mask);
-    let final_p0 = blendv(p0_v, out_m1_sel, fm_mask);
-    let final_q0 = blendv(q0_v, out_0_sel, fm_mask);
-    let final_q1 = blendv(q1_v, out_1_sel, fm_mask);
-    let final_q2 = blendv(q2_v, out_2_sel, fm_mask);
-
-    let pack4 = |v: __m128i| -> i32 {
-        let u16x4 = _mm_packus_epi32(v, v);
-        let u8x4 = _mm_packus_epi16(u16x4, u16x4);
-        _mm_cvtsi128_si32(u8x4)
-    };
-    let store4 = |buf: &mut [u8], packed: i32, off: isize| {
+    // fm_mask=0 keeps original via the blend; always storing final_* is
+    // correct since they select originals at unfiltered lanes.
+    let store4 = |buf: &mut [u8], v: __m128i, off: isize| {
         let start = signed_idx(base, strideb * off);
-        let bytes = packed.to_le_bytes();
-        buf[start..start + 4].copy_from_slice(&bytes);
+        buf[start..start + 4].copy_from_slice(&_mm_cvtsi128_si32(v).to_le_bytes());
     };
-    // Wait — at -3 we should only store if flat (8-tap writes -3). Otherwise keep original.
-    // The final_p2 already encodes this via blendv. But narrow doesn't touch -3 at all,
-    // and fm_mask=0 keeps original. So always storing final_p2 is correct.
-    store4(buf, pack4(final_p2), -3);
-    store4(buf, pack4(final_p1), -2);
-    store4(buf, pack4(final_p0), -1);
-    store4(buf, pack4(final_q0), 0);
-    store4(buf, pack4(final_q1), 1);
-    store4(buf, pack4(final_q2), 2);
+    store4(buf, final_p2, -3);
+    store4(buf, final_p1, -2);
+    store4(buf, final_p0, -1);
+    store4(buf, final_q0, 0);
+    store4(buf, final_q1, 1);
+    store4(buf, final_q2, 2);
 }
 
 // ============================================================================
@@ -744,7 +590,13 @@ fn loop_filter_4_8bpc_wd8_simd_v(
 /// outputs are `maddubs` pairs accumulated in i16 — never widened to i32.
 #[cfg(target_arch = "x86_64")]
 #[rite(v3)]
-fn lf_wd8_8bpc_core_u8(taps: [__m128i; 8], e: i32, i: i32, h: i32) -> Option<[__m128i; 6]> {
+fn lf_wd8_8bpc_core_u8(
+    taps: [__m128i; 8],
+    e: i32,
+    i: i32,
+    h: i32,
+    live_lanes: i32,
+) -> Option<[__m128i; 6]> {
     let [p3_v, p2_v, p1_v, p0_v, q0_v, q1_v, q2_v, q3_v] = taps;
 
     let zero = _mm_setzero_si128();
@@ -798,8 +650,8 @@ fn lf_wd8_8bpc_core_u8(taps: [__m128i; 8], e: i32, i: i32, h: i32) -> Option<[__
     // pixels at every lane — the flat-mask, filter arithmetic,
     // blends and stores below are all dead work (~85%/64% of
     // calls on the 4K-t8 census). Skipping them is bit-identical.
-    // Lanes 8..15 are dead (zero-filled) — mask them off.
-    if _mm_movemask_epi8(fm_mask) & 0xFF == 0 {
+    // `live_lanes` masks off dead upper lanes (always-masked zeros).
+    if _mm_movemask_epi8(fm_mask) & live_lanes == 0 {
         return None;
     }
 
@@ -946,7 +798,7 @@ fn loop_filter_4_8bpc_wd8_simd_v_x8(
         load8(3),
     ];
     let Some([final_p2, final_p1, final_p0, final_q0, final_q1, final_q2]) =
-        lf_wd8_8bpc_core_u8(taps, e, i, h)
+        lf_wd8_8bpc_core_u8(taps, e, i, h, 0xFF)
     else {
         return;
     };
@@ -2433,242 +2285,72 @@ fn loop_filter_4_8bpc_wd8_simd_h(
     h: i32,
     stridea: isize,
 ) {
-    // Per row k, load p3..q3 = 8 contiguous bytes at offset base + k*stridea - 4 .. +4
-    let load_row_lo = |row: isize| -> __m128i {
+    // Load each row's 8-byte filter window [p3..q3] = offsets -4..+3,
+    // then a 4x8 u8 transpose yields the 8 pixel-position vectors the
+    // shared u8 core expects (4 row lanes in each vector's low bytes).
+    let load_row = |row: isize| -> __m128i {
         let start = signed_idx(base, row * stridea - 4);
-        _mm_cvtepu8_epi32(loadi32!(&buf[start..start + 4]))
+        loadi64!(&buf[start..start + 8])
     };
-    let load_row_hi = |row: isize| -> __m128i {
-        let start = signed_idx(base, row * stridea);
-        _mm_cvtepu8_epi32(loadi32!(&buf[start..start + 4]))
-    };
+    let r0 = load_row(0);
+    let r1 = load_row(1);
+    let r2 = load_row(2);
+    let r3 = load_row(3);
 
-    let r0_lo = load_row_lo(0); // row 0: [p3, p2, p1, p0]
-    let r1_lo = load_row_lo(1);
-    let r2_lo = load_row_lo(2);
-    let r3_lo = load_row_lo(3);
-    let r0_hi = load_row_hi(0); // row 0: [q0, q1, q2, q3]
-    let r1_hi = load_row_hi(1);
-    let r2_hi = load_row_hi(2);
-    let r3_hi = load_row_hi(3);
+    // cols j: byte-interleave row pairs, then dword-interleave to get
+    // [col_j rows0-3] u32s.
+    let a01 = _mm_unpacklo_epi8(r0, r1);
+    let a23 = _mm_unpacklo_epi8(r2, r3);
+    let b_lo = _mm_unpacklo_epi16(a01, a23); // [c0|c1|c2|c3] rows 0-3
+    let b_hi = _mm_unpackhi_epi16(a01, a23); // [c4|c5|c6|c7] rows 0-3
 
-    // Transpose 4x4 i32: rows -> columns
-    let transpose4 = |r0: __m128i, r1: __m128i, r2: __m128i, r3: __m128i| -> [__m128i; 4] {
-        let t0 = _mm_unpacklo_epi32(r0, r1);
-        let t1 = _mm_unpackhi_epi32(r0, r1);
-        let t2 = _mm_unpacklo_epi32(r2, r3);
-        let t3 = _mm_unpackhi_epi32(r2, r3);
-        [
-            _mm_unpacklo_epi64(t0, t2),
-            _mm_unpackhi_epi64(t0, t2),
-            _mm_unpacklo_epi64(t1, t3),
-            _mm_unpackhi_epi64(t1, t3),
-        ]
-    };
+    let taps = [
+        _mm_shuffle_epi32::<0x00>(b_lo),
+        _mm_shuffle_epi32::<0x55>(b_lo),
+        _mm_shuffle_epi32::<0xAA>(b_lo),
+        _mm_shuffle_epi32::<0xFF>(b_lo),
+        _mm_shuffle_epi32::<0x00>(b_hi),
+        _mm_shuffle_epi32::<0x55>(b_hi),
+        _mm_shuffle_epi32::<0xAA>(b_hi),
+        _mm_shuffle_epi32::<0xFF>(b_hi),
+    ];
 
-    let lo = transpose4(r0_lo, r1_lo, r2_lo, r3_lo);
-    let hi = transpose4(r0_hi, r1_hi, r2_hi, r3_hi);
-    let p3_v = lo[0];
-    let p2_v = lo[1];
-    let p1_v = lo[2];
-    let p0_v = lo[3];
-    let q0_v = hi[0];
-    let q1_v = hi[1];
-    let q2_v = hi[2];
-    let q3_v = hi[3];
-
-    // Same compute as v-filter wd=8
-    let i_v = _mm_set1_epi32(i);
-    let e_v = _mm_set1_epi32(e);
-    let h_v = _mm_set1_epi32(h);
-    let f_v = _mm_set1_epi32(1);
-
-    let abs = |a: __m128i, b: __m128i| _mm_abs_epi32(_mm_sub_epi32(a, b));
-
-    let abs_p1p0 = abs(p1_v, p0_v);
-    let abs_q1q0 = abs(q1_v, q0_v);
-    let abs_p0q0 = abs(p0_v, q0_v);
-    let abs_p1q1 = abs(p1_v, q1_v);
-    let abs_p2p1 = abs(p2_v, p1_v);
-    let abs_q2q1 = abs(q2_v, q1_v);
-    let abs_p3p2 = abs(p3_v, p2_v);
-    let abs_q3q2 = abs(q3_v, q2_v);
-
-    let not_gt = |a: __m128i, b: __m128i| -> __m128i {
-        _mm_andnot_si128(_mm_cmpgt_epi32(a, b), _mm_set1_epi32(-1))
-    };
-
-    let m_p1p0 = not_gt(abs_p1p0, i_v);
-    let m_q1q0 = not_gt(abs_q1q0, i_v);
-    let val_ee = _mm_add_epi32(_mm_slli_epi32::<1>(abs_p0q0), _mm_srli_epi32::<1>(abs_p1q1));
-    let m_val = not_gt(val_ee, e_v);
-    let m_p2p1 = not_gt(abs_p2p1, i_v);
-    let m_q2q1 = not_gt(abs_q2q1, i_v);
-    let m_p3p2 = not_gt(abs_p3p2, i_v);
-    let m_q3q2 = not_gt(abs_q3q2, i_v);
-    let fm_mask = _mm_and_si128(
-        _mm_and_si128(_mm_and_si128(m_p1p0, m_q1q0), m_val),
-        _mm_and_si128(_mm_and_si128(m_p2p1, m_q2q1), _mm_and_si128(m_p3p2, m_q3q2)),
-    );
-
-    // Early-out: an all-false filter mask selects the original
-    // pixels at every lane — the flat-mask, filter arithmetic,
-    // blends and stores below are all dead work (~85%/64% of
-    // calls on the 4K-t8 census). Skipping them is bit-identical.
-    if _mm_movemask_epi8(fm_mask) == 0 {
+    let Some([final_p2, final_p1, final_p0, final_q0, final_q1, final_q2]) =
+        lf_wd8_8bpc_core_u8(taps, e, i, h, 0x0F)
+    else {
         return;
+    };
+
+    // Back-transpose the 8 position vecs (4B rows each) into 4 row vecs
+    // of 8B: byte-interleave col pairs, dword-interleave to row dwords,
+    // then pair each row's lo/hi half. Untouched positions (p3, q3) are
+    // zero-padded — only the middle 6 bytes of each row are stored.
+    let z = _mm_setzero_si128();
+    let v = [
+        z, final_p2, final_p1, final_p0, final_q0, final_q1, final_q2, z,
+    ];
+    let t01 = _mm_unpacklo_epi8(v[0], v[1]);
+    let t23 = _mm_unpacklo_epi8(v[2], v[3]);
+    let t45 = _mm_unpacklo_epi8(v[4], v[5]);
+    let t67 = _mm_unpacklo_epi8(v[6], v[7]);
+    let c_lo = _mm_unpacklo_epi16(t01, t23); // [row0 c0-3|row1|row2|row3]
+    let c_hi = _mm_unpacklo_epi16(t45, t67); // [row0 c4-7|row1|row2|row3]
+    let rows01 = _mm_unpacklo_epi32(c_lo, c_hi); // row0 lo64 | row1 hi64
+    let rows23 = _mm_unpackhi_epi32(c_lo, c_hi); // row2 lo64 | row3 hi64
+    let rows = [
+        rows01,
+        _mm_unpackhi_epi64(rows01, rows01),
+        rows23,
+        _mm_unpackhi_epi64(rows23, rows23),
+    ];
+
+    // Window byte j sits at offset j-4; writing bytes 1..6 stores
+    // offsets -3..+2 = [p2,p1,p0,q0,q1,q2] — the positions 8-tap updates.
+    for k in 0..4 {
+        let start = signed_idx(base, k as isize * stridea - 3);
+        let b = _mm_cvtsi128_si64(rows[k]).to_ne_bytes();
+        buf[start..start + 6].copy_from_slice(&b[1..7]);
     }
-
-    let abs_p2p0 = abs(p2_v, p0_v);
-    let abs_q2q0 = abs(q2_v, q0_v);
-    let abs_p3p0 = abs(p3_v, p0_v);
-    let abs_q3q0 = abs(q3_v, q0_v);
-    let flat_mask = _mm_and_si128(
-        _mm_and_si128(not_gt(abs_p2p0, f_v), not_gt(abs_p1p0, f_v)),
-        _mm_and_si128(
-            _mm_and_si128(not_gt(abs_q1q0, f_v), not_gt(abs_q2q0, f_v)),
-            _mm_and_si128(not_gt(abs_p3p0, f_v), not_gt(abs_q3q0, f_v)),
-        ),
-    );
-
-    let dbl = |v: __m128i| _mm_slli_epi32::<1>(v);
-    let triple = |v: __m128i| _mm_add_epi32(dbl(v), v);
-    let c4 = _mm_set1_epi32(4);
-    let add = |a: __m128i, b: __m128i| _mm_add_epi32(a, b);
-    let add3 = |a: __m128i, b: __m128i, c: __m128i| add(add(a, b), c);
-    let add4 = |a: __m128i, b: __m128i, c: __m128i, d: __m128i| add(add(a, b), add(c, d));
-
-    let out_m3 = _mm_srai_epi32::<3>(add(
-        add4(triple(p3_v), dbl(p2_v), p1_v, p0_v),
-        add(q0_v, c4),
-    ));
-    let out_m2 = _mm_srai_epi32::<3>(add(
-        add4(dbl(p3_v), p2_v, dbl(p1_v), p0_v),
-        add3(q0_v, q1_v, c4),
-    ));
-    let out_m1 = _mm_srai_epi32::<3>(add(
-        add4(p3_v, p2_v, p1_v, dbl(p0_v)),
-        add4(q0_v, q1_v, q2_v, c4),
-    ));
-    let out_0 = _mm_srai_epi32::<3>(add(
-        add4(p2_v, p1_v, p0_v, dbl(q0_v)),
-        add4(q1_v, q2_v, q3_v, c4),
-    ));
-    let out_1 = _mm_srai_epi32::<3>(add(
-        add4(p1_v, p0_v, q0_v, dbl(q1_v)),
-        add4(q2_v, q3_v, q3_v, c4),
-    ));
-    let out_2 = _mm_srai_epi32::<3>(add(
-        add4(p0_v, q0_v, q1_v, dbl(q2_v)),
-        add4(q3_v, q3_v, q3_v, c4),
-    ));
-
-    let neg128 = _mm_set1_epi32(-128);
-    let pos127 = _mm_set1_epi32(127);
-    let iclip = |v: __m128i| _mm_min_epi32(_mm_max_epi32(v, neg128), pos127);
-    let diff_q0p0 = _mm_sub_epi32(q0_v, p0_v);
-    let three_d = _mm_add_epi32(_mm_slli_epi32::<1>(diff_q0p0), diff_q0p0);
-    let diff_p1q1 = _mm_sub_epi32(p1_v, q1_v);
-    let hev_mask = _mm_or_si128(
-        _mm_cmpgt_epi32(abs_p1p0, h_v),
-        _mm_cmpgt_epi32(abs_q1q0, h_v),
-    );
-    let f_hev = iclip(_mm_add_epi32(three_d, iclip(diff_p1q1)));
-    let f_no = iclip(three_d);
-    let c4i = _mm_set1_epi32(4);
-    let c3i = _mm_set1_epi32(3);
-    let one = _mm_set1_epi32(1);
-    let f1_hev = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_hev, c4i), pos127));
-    let f2_hev = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_hev, c3i), pos127));
-    let f1_no = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_no, c4i), pos127));
-    let f2_no = _mm_srai_epi32::<3>(_mm_min_epi32(_mm_add_epi32(f_no, c3i), pos127));
-    let f_extra = _mm_srai_epi32::<1>(_mm_add_epi32(f1_no, one));
-    let p0_hev = _mm_add_epi32(p0_v, f2_hev);
-    let q0_hev = _mm_sub_epi32(q0_v, f1_hev);
-    let p0_no = _mm_add_epi32(p0_v, f2_no);
-    let q0_no = _mm_sub_epi32(q0_v, f1_no);
-    let p1_no = _mm_add_epi32(p1_v, f_extra);
-    let q1_no = _mm_sub_epi32(q1_v, f_extra);
-
-    let blendv = |a: __m128i, b: __m128i, mask: __m128i| -> __m128i {
-        _mm_or_si128(_mm_andnot_si128(mask, a), _mm_and_si128(mask, b))
-    };
-
-    let narrow_p1 = blendv(p1_no, p1_v, hev_mask);
-    let narrow_p0 = blendv(p0_no, p0_hev, hev_mask);
-    let narrow_q0 = blendv(q0_no, q0_hev, hev_mask);
-    let narrow_q1 = blendv(q1_no, q1_v, hev_mask);
-
-    let out_m3_sel = blendv(p2_v, out_m3, flat_mask);
-    let out_m2_sel = blendv(narrow_p1, out_m2, flat_mask);
-    let out_m1_sel = blendv(narrow_p0, out_m1, flat_mask);
-    let out_0_sel = blendv(narrow_q0, out_0, flat_mask);
-    let out_1_sel = blendv(narrow_q1, out_1, flat_mask);
-    let out_2_sel = blendv(q2_v, out_2, flat_mask);
-
-    let final_p2 = blendv(p2_v, out_m3_sel, fm_mask);
-    let final_p1 = blendv(p1_v, out_m2_sel, fm_mask);
-    let final_p0 = blendv(p0_v, out_m1_sel, fm_mask);
-    let final_q0 = blendv(q0_v, out_0_sel, fm_mask);
-    let final_q1 = blendv(q1_v, out_1_sel, fm_mask);
-    let final_q2 = blendv(q2_v, out_2_sel, fm_mask);
-
-    // p3 and q3 are unchanged by 8-tap filter; keep originals.
-    let final_p3 = p3_v;
-    let final_q3 = q3_v;
-
-    // Clip to [0, 255] (8-tap outputs may exceed range)
-    let zero = _mm_setzero_si128();
-    let max_u8 = _mm_set1_epi32(255);
-    let clip_u8 = |v: __m128i| _mm_min_epi32(_mm_max_epi32(v, zero), max_u8);
-    let final_p2 = clip_u8(final_p2);
-    let final_p1 = clip_u8(final_p1);
-    let final_p0 = clip_u8(final_p0);
-    let final_q0 = clip_u8(final_q0);
-    let final_q1 = clip_u8(final_q1);
-    let final_q2 = clip_u8(final_q2);
-
-    // Transpose back: pixel-position vectors -> row vectors
-    let row_back_lo = {
-        let t0 = _mm_unpacklo_epi32(final_p3, final_p2); // [a_p3, a_p2, b_p3, b_p2]
-        let t1 = _mm_unpackhi_epi32(final_p3, final_p2); // [c_p3, c_p2, d_p3, d_p2]
-        let t2 = _mm_unpacklo_epi32(final_p1, final_p0); // [a_p1, a_p0, b_p1, b_p0]
-        let t3 = _mm_unpackhi_epi32(final_p1, final_p0); // [c_p1, c_p0, d_p1, d_p0]
-        [
-            _mm_unpacklo_epi64(t0, t2), // row 0: [p3, p2, p1, p0]
-            _mm_unpackhi_epi64(t0, t2), // row 1
-            _mm_unpacklo_epi64(t1, t3), // row 2
-            _mm_unpackhi_epi64(t1, t3), // row 3
-        ]
-    };
-    let row_back_hi = {
-        let t0 = _mm_unpacklo_epi32(final_q0, final_q1);
-        let t1 = _mm_unpackhi_epi32(final_q0, final_q1);
-        let t2 = _mm_unpacklo_epi32(final_q2, final_q3);
-        let t3 = _mm_unpackhi_epi32(final_q2, final_q3);
-        [
-            _mm_unpacklo_epi64(t0, t2),
-            _mm_unpackhi_epi64(t0, t2),
-            _mm_unpacklo_epi64(t1, t3),
-            _mm_unpackhi_epi64(t1, t3),
-        ]
-    };
-
-    let pack_row = |v: __m128i| -> i32 {
-        let u16x4 = _mm_packus_epi32(v, v);
-        let u8x4 = _mm_packus_epi16(u16x4, u16x4);
-        _mm_cvtsi128_si32(u8x4)
-    };
-    let store_row = |buf: &mut [u8], packed_lo: i32, packed_hi: i32, row: isize| {
-        let start_lo = signed_idx(base, row * stridea - 4);
-        buf[start_lo..start_lo + 4].copy_from_slice(&packed_lo.to_le_bytes());
-        let start_hi = signed_idx(base, row * stridea);
-        buf[start_hi..start_hi + 4].copy_from_slice(&packed_hi.to_le_bytes());
-    };
-    store_row(buf, pack_row(row_back_lo[0]), pack_row(row_back_hi[0]), 0);
-    store_row(buf, pack_row(row_back_lo[1]), pack_row(row_back_hi[1]), 1);
-    store_row(buf, pack_row(row_back_lo[2]), pack_row(row_back_hi[2]), 2);
-    store_row(buf, pack_row(row_back_lo[3]), pack_row(row_back_hi[3]), 3);
 }
 
 // ============================================================================
@@ -2747,7 +2429,7 @@ fn loop_filter_4_8bpc_wd8_simd_h_x8(
     let taps = transpose8x8(rows);
 
     let Some([final_p2, final_p1, final_p0, final_q0, final_q1, final_q2]) =
-        lf_wd8_8bpc_core_u8(taps, e, i, h)
+        lf_wd8_8bpc_core_u8(taps, e, i, h, 0xFF)
     else {
         return;
     };
