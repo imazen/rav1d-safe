@@ -29,6 +29,39 @@ use bitflags::bitflags;
 use std::cmp;
 use std::ffi::c_int;
 
+/// `n` is always a multiple of 16 ≤ 256 (`min(4*tw, 4*(w-x))` with 4-aligned
+/// geometry). Match arms give LLVM a compile-time length so the copy lowers
+/// to vector moves instead of libc.
+#[inline(always)]
+fn px_copy_n<T: Copy, const N: usize>(dst: &mut [T], src: &[T]) {
+    let a = <&[T; N]>::try_from(&src[..N]).unwrap();
+    let d = <&mut [T; N]>::try_from(&mut dst[..N]).unwrap();
+    *d = *a;
+}
+
+#[inline(always)]
+fn px_copy<T: Copy>(dst: &mut [T], src: &[T], n: usize) {
+    match n {
+        16 => px_copy_n::<T, 16>(dst, src),
+        32 => px_copy_n::<T, 32>(dst, src),
+        48 => px_copy_n::<T, 48>(dst, src),
+        64 => px_copy_n::<T, 64>(dst, src),
+        80 => px_copy_n::<T, 80>(dst, src),
+        96 => px_copy_n::<T, 96>(dst, src),
+        112 => px_copy_n::<T, 112>(dst, src),
+        128 => px_copy_n::<T, 128>(dst, src),
+        144 => px_copy_n::<T, 144>(dst, src),
+        160 => px_copy_n::<T, 160>(dst, src),
+        176 => px_copy_n::<T, 176>(dst, src),
+        192 => px_copy_n::<T, 192>(dst, src),
+        208 => px_copy_n::<T, 208>(dst, src),
+        224 => px_copy_n::<T, 224>(dst, src),
+        240 => px_copy_n::<T, 240>(dst, src),
+        256 => px_copy_n::<T, 256>(dst, src),
+        _ => dst[..n].copy_from_slice(&src[..n]),
+    }
+}
+
 #[inline]
 fn smooth(m: u8) -> c_int {
     if m == SMOOTH_PRED || m == SMOOTH_H_PRED || m == SMOOTH_V_PRED {
@@ -347,7 +380,7 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
         let top = &mut topleft_out[topleft_out_offset + 1..];
         if have_top {
             let px_have = cmp::min(sz, (w - x << 2) as usize);
-            BD::pixel_copy(top, &dst_top[have_left as usize..], px_have);
+            px_copy(top, &dst_top[have_left as usize..], px_have);
             if px_have < sz {
                 let fill_value = top[px_have - 1];
                 BD::pixel_set(&mut top[px_have..], fill_value, sz - px_have);
@@ -375,7 +408,7 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
             if have_topright {
                 let top_right = &mut top[sz..];
                 let px_have = cmp::min(sz, (w - x - tw << 2) as usize);
-                BD::pixel_copy(top_right, &dst_top[sz + have_left as usize..], px_have);
+                px_copy(top_right, &dst_top[sz + have_left as usize..], px_have);
                 if px_have < sz {
                     let fill_value = top_right[px_have - 1];
                     BD::pixel_set(&mut top_right[px_have..], fill_value, sz - px_have);
