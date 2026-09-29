@@ -275,9 +275,18 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
             col_pic.with_block::<BD, _>(1, px_have, |bytes, offset, stride| {
                 let pixels: &[BD::Pixel] = zerocopy::FromBytes::ref_from_bytes(bytes)
                     .expect("bytes pixel reinterpretation");
-                for i in 0..px_have {
-                    let row_off = (offset as isize + i as isize * stride) as usize / pixel_size;
-                    left[sz - 1 - i] = pixels[row_off];
+                // Strided column read + reversed store. Pre-slicing `pixels`
+                // to the exact touched range lets the bounds check hoist out
+                // of the loop; the write cursor just walks backwards.
+                let stride_px = stride as usize / pixel_size;
+                let start = offset as usize / pixel_size;
+                if px_have != 0 {
+                    let src = &pixels[start..start + (px_have - 1) * stride_px + 1];
+                    let mut si = 0usize;
+                    for d in left[sz - px_have..sz].iter_mut().rev() {
+                        *d = src[si];
+                        si += stride_px;
+                    }
                 }
             });
             if px_have < sz {
@@ -311,9 +320,15 @@ pub fn rav1d_prepare_intra_edges<BD: BitDepth>(
                 col_pic.with_block::<BD, _>(1, px_have, |bytes, offset, stride| {
                     let pixels: &[BD::Pixel] = zerocopy::FromBytes::ref_from_bytes(bytes)
                         .expect("bytes pixel reinterpretation");
-                    for i in 0..px_have {
-                        let row_off = (offset as isize + i as isize * stride) as usize / pixel_size;
-                        bottom_left[sz - 1 - i] = pixels[row_off];
+                    let stride_px = stride as usize / pixel_size;
+                    let start = offset as usize / pixel_size;
+                    if px_have != 0 {
+                        let src = &pixels[start..start + (px_have - 1) * stride_px + 1];
+                        let mut si = 0usize;
+                        for d in bottom_left[sz - px_have..sz].iter_mut().rev() {
+                            *d = src[si];
+                            si += stride_px;
+                        }
                     }
                 });
                 if px_have < sz {
