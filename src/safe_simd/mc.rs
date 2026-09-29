@@ -12436,6 +12436,22 @@ pub(crate) fn mc_put_dispatch_inner<BD: BitDepth>(
     true
 }
 
+/// Debug bisect gate (feature `__bisect`): `MCT_PREP_LOG=1` logs every
+/// mct_prep 16bpc call shape. Env read once per process.
+#[cfg(all(feature = "__bisect", target_arch = "x86_64"))]
+#[inline]
+fn mct_prep_log_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("MCT_PREP_LOG").is_some())
+}
+
+/// Default build: no env read, no atomic — the log call folds away.
+#[cfg(all(not(feature = "__bisect"), target_arch = "x86_64"))]
+#[inline(always)]
+fn mct_prep_log_enabled() -> bool {
+    false
+}
+
 #[cfg(target_arch = "x86_64")]
 pub fn mct_prep_dispatch<BD: BitDepth>(
     filter: Filter2d,
@@ -12486,8 +12502,7 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
         BPC::BPC16 => {
             let (src_guard, src_base) = reference::filter_guard::<BD>(src, filter, w, h, mx, my);
             let bd_c = bd.into_c();
-            static MCT_PREP_LOG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-            if *MCT_PREP_LOG.get_or_init(|| std::env::var_os("MCT_PREP_LOG").is_some()) {
+            if mct_prep_log_enabled() {
                 eprintln!(
                     "mct_prep_16bpc filter={} w={w} h={h} mx={mx} my={my} base={src_base}",
                     filter as usize

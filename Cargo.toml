@@ -120,6 +120,11 @@ __probe_lf_hull = []
 __probe_rect_hull = []
 # Same-binary owned-band A/B override; ordinary builds never consult the env.
 __probe_owned_recon = []
+# Triage knobs (measurement/debugging only): arms env vars that force scalar
+# fallbacks per dispatch site — `MC_SCALAR=<site>|all`, `IPRED_SCALAR=1` —
+# plus `MCT_PREP_LOG=1` call-shape logging and `RAV1D_LOG=1` managed-API
+# stderr logging. Default builds contain stubs: no env read, no atomic.
+__bisect = []
 # Restrict exact rectangles to one shard for diagnostic comparison.
 __lf_rect1 = ["rav1d-disjoint-mut/__rect_1shard"]
 # MARGINAL-PRICE ARM for the CDEF registration population (measurement only):

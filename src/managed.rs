@@ -295,6 +295,21 @@ impl Default for Settings {
     }
 }
 
+/// Debug gate (feature `__bisect`): `RAV1D_LOG=1` enables stderr decode
+/// logging through the managed API. Default builds never read the env.
+#[cfg(feature = "__bisect")]
+#[inline]
+fn env_logger_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("RAV1D_LOG").is_some())
+}
+
+#[cfg(not(feature = "__bisect"))]
+#[inline(always)]
+fn env_logger_enabled() -> bool {
+    false
+}
+
 impl From<Settings> for Rav1dSettings {
     fn from(settings: Settings) -> Self {
         let strictness = settings.effective_strictness();
@@ -306,7 +321,7 @@ impl From<Settings> for Rav1dSettings {
             all_layers: settings.all_layers,
             frame_size_limit: settings.frame_size_limit,
             allocator: Default::default(),
-            logger: if std::env::var_os("RAV1D_LOG").is_some() {
+            logger: if env_logger_enabled() {
                 Some(crate::src::log::Rav1dLogger::Stderr)
             } else {
                 None

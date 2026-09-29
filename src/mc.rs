@@ -603,10 +603,10 @@ fn prep_bilin_scaled_rust<BD: BitDepth>(
     }
 }
 
-/// Debug bisect gate: `MC_SCALAR=1` forces every x86 SIMD mc dispatch to the
-/// scalar fallback (test/debug builds only). The env var is read once per
-/// process — the per-dispatch cost is a single atomic load.
-#[cfg(target_arch = "x86_64")]
+/// Debug bisect gate (feature `__bisect`): `MC_SCALAR=<site>|all` forces the
+/// named dispatch site to scalar. Env read once per process — per-call cost
+/// is one atomic load.
+#[cfg(all(feature = "__bisect", target_arch = "x86_64"))]
 #[inline]
 fn mc_scalar_forced(site: &str) -> bool {
     static SITES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
@@ -616,6 +616,13 @@ fn mc_scalar_forced(site: &str) -> bool {
             .unwrap_or_default()
     });
     sites.iter().any(|s| s == "all" || s == "1" || s == site)
+}
+
+/// Default build: no env read, no atomic — the gate folds away entirely.
+#[cfg(all(not(feature = "__bisect"), target_arch = "x86_64"))]
+#[inline(always)]
+fn mc_scalar_forced(_site: &str) -> bool {
+    false
 }
 
 /// Direct dispatch for avg - bypasses function pointer table.
