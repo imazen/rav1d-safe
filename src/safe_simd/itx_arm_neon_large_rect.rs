@@ -587,7 +587,7 @@ pub(crate) fn inv_txfm_add_dct_dct_8x32_16bpc_neon_inner(
                 *val = ((*val as i64 * scale + 16384) >> 15) as i32;
             }
             // 8-point DCT (scalar)
-            let out = scalar_dct8_1d(&input);
+            let out = scalar_dct8_1d(&input); // audit:allow(tier-boundary) aarch64 baseline includes NEON; the scalar DCT helper has no feature loss
             // srshr>>1
             for x in 0..8 {
                 let v = (out[x] + 1) >> 1;
@@ -845,7 +845,7 @@ pub(crate) fn inv_txfm_add_dct_dct_32x8_16bpc_neon_inner(
             input[x] = coeff[y + x * 8];
             coeff[y + x * 8] = 0;
         }
-        let out = scalar_dct32_1d(&input);
+        let out = scalar_dct32_1d(&input); // audit:allow(tier-boundary) aarch64 baseline includes NEON; the scalar DCT helper has no feature loss
         // shift >>1 for rect2
         for x in 0..32 {
             let v = (out[x] + 1) >> 1;
@@ -975,7 +975,7 @@ pub(crate) fn inv_txfm_add_dct_dct_16x32_16bpc_neon_inner(
             for val in input.iter_mut() {
                 *val = ((*val as i64 * scale + 16384) >> 15) as i32;
             }
-            let out = scalar_dct16_1d(&input);
+            let out = scalar_dct16_1d(&input); // audit:allow(tier-boundary) aarch64 baseline includes NEON; the scalar DCT helper has no feature loss
             for x in 0..16 {
                 let v = (out[x] + 1) >> 1;
                 scratch[y * 16 + x] = v.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
@@ -1101,7 +1101,7 @@ pub(crate) fn inv_txfm_add_dct_dct_32x16_16bpc_neon_inner(
                 input[x] = coeff[y + x * 16];
                 coeff[y + x * 16] = 0;
             }
-            let out = scalar_dct32_1d(&input);
+            let out = scalar_dct32_1d(&input); // audit:allow(tier-boundary) aarch64 baseline includes NEON; the scalar DCT helper has no feature loss
             for x in 0..32 {
                 let v = (out[x] + 1) >> 1;
                 scratch[y * 32 + x] = v.clamp(i16::MIN as i32, i16::MAX as i32) as i16;

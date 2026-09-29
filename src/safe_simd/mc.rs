@@ -9933,15 +9933,26 @@ pub unsafe extern "C" fn w_mask_420_16bpc_v3(
 // ============================================================================
 
 /// Horizontal bilinear filter for 16bpc using AVX2
-/// Formula: pixel = 16 * x0 + mx * (x1 - x0) = (16 - mx) * x0 + mx * x1
+/// Formula: pixel = 16 * x0 + mx * (x1 - x0) = (16 - mx) * x0 + mx * x1,
+/// then FILTER_BILIN_RND with `h_sh` = 4 - intermediate_bits (0 for 10bpc,
+/// 2 for 12bpc), stored in the reference's i16 (wrapping) convention.
 #[cfg(target_arch = "x86_64")]
 #[rite]
-fn h_bilin_16bpc_avx2_inner(_token: Desktop64, dst: &mut [i32], src: &[u16], w: usize, mx: i32) {
+fn h_bilin_16bpc_avx2_inner(
+    _token: Desktop64,
+    dst: &mut [i32],
+    src: &[u16],
+    w: usize,
+    mx: i32,
+    h_sh: i32,
+) {
     let mut dst = dst.flex_mut();
     let src = src.flex();
     // Bilinear weights: w0 = (16 - mx), w1 = mx
     let w0 = _mm256_set1_epi32(16 - mx);
     let w1 = _mm256_set1_epi32(mx);
+    let rnd = _mm256_set1_epi32((1 << h_sh) >> 1);
+    let shift_count = _mm_cvtsi32_si128(h_sh);
 
     let mut col = 0usize;
 
@@ -9959,7 +9970,10 @@ fn h_bilin_16bpc_avx2_inner(_token: Desktop64, dst: &mut [i32], src: &[u16], w: 
         // Compute: w0 * p0 + w1 * p1
         let term0 = _mm256_mullo_epi32(p0_lo, w0);
         let term1 = _mm256_mullo_epi32(p1_lo, w1);
-        let result = _mm256_add_epi32(term0, term1);
+        let sum = _mm256_add_epi32(term0, term1);
+        // mid is int16_t in the C reference: truncate to match.
+        let rnd_sum = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+        let result = _mm256_srai_epi32::<16>(_mm256_slli_epi32::<16>(rnd_sum));
 
         storeu_256!(
             <&mut [i32; 8]>::try_from(&mut dst[col..col + 8]).unwrap(),
@@ -9969,10 +9983,11 @@ fn h_bilin_16bpc_avx2_inner(_token: Desktop64, dst: &mut [i32], src: &[u16], w: 
     }
 
     // Scalar fallback
+    let r = (1 << h_sh) >> 1;
     while col < w {
         let x0 = src[col] as i32;
         let x1 = src[col + 1] as i32;
-        dst[col] = 16 * x0 + mx * (x1 - x0);
+        dst[col] = (((16 * x0 + mx * (x1 - x0)) + r) >> h_sh) as i16 as i32;
         col += 1;
     }
 }
@@ -9982,7 +9997,9 @@ fn h_bilin_16bpc_avx2_inner(_token: Desktop64, dst: &mut [i32], src: &[u16], w: 
 unsafe fn h_bilin_16bpc_v3(dst: *mut i32, src: *const u16, w: usize, mx: i32) {
     #[deny(unsafe_op_in_unsafe_fn)]
     let token = archmage::X64V3Token::from_context();
-    unsafe { h_bilin_16bpc_avx2_inner(token, dst, src, w, mx) }
+    // No bitdepth in the asm-ABI signature: preserves the original 10bpc
+    // (h_sh = 0) semantics for this compat shim.
+    unsafe { h_bilin_16bpc_avx2_inner(token, dst, src, w, mx, 0) }
 }
 
 /// Vertical bilinear filter for 16bpc using AVX2
@@ -10096,8 +10113,10 @@ fn v_bilin_16bpc_prep_avx2_inner(
         let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
         let biased = _mm256_sub_epi32(shifted, bias);
 
-        // Pack to signed 16-bit
-        let packed = _mm256_packs_epi32(biased, biased);
+        // Wrap to i16 like the C `int16_t` store (packs would saturate,
+        // which diverges from the reference for out-of-range 12bpc values).
+        let wrapped = _mm256_and_si256(biased, _mm256_set1_epi32(0xFFFF));
+        let packed = _mm256_packus_epi32(wrapped, wrapped);
         let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
 
         storeu_128!(
@@ -10146,13 +10165,19 @@ fn h_bilin_16bpc_put_avx2_inner(
     w: usize,
     mx: i32,
     bd_max: i32,
+    intermediate_bits: i32,
 ) {
     let mut dst = dst.flex_mut();
     let src = src.flex();
     let w0 = _mm256_set1_epi32(16 - mx);
     let w1 = _mm256_set1_epi32(mx);
-    let rnd = _mm256_set1_epi32(8);
-    let shift_count = _mm_cvtsi32_si128(4);
+    // Reference rounds twice: rnd(4 - ib) then (px + ((1<<ib)>>1)) >> ib.
+    // For 10bpc (ib=4) this degenerates to (sum + 8) >> 4.
+    let h_sh = 4 - intermediate_bits;
+    let rnd1 = _mm256_set1_epi32((1 << h_sh) >> 1);
+    let rnd2 = _mm256_set1_epi32((1 << intermediate_bits) >> 1);
+    let shift1 = _mm_cvtsi32_si128(h_sh);
+    let shift2 = _mm_cvtsi32_si128(intermediate_bits);
     let zero = _mm256_setzero_si256();
     let max_val = _mm256_set1_epi32(bd_max);
 
@@ -10172,8 +10197,9 @@ fn h_bilin_16bpc_put_avx2_inner(
         let term1 = _mm256_mullo_epi32(p1, w1);
         let sum = _mm256_add_epi32(term0, term1);
 
-        // (sum + 8) >> 4, clamp to [0, max]
-        let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
+        // Two-stage round: ((sum + r1) >> h_sh + r2) >> ib, clamp to [0, max]
+        let t = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd1), shift1);
+        let shifted = _mm256_sra_epi32(_mm256_add_epi32(t, rnd2), shift2);
         let clamped = _mm256_min_epi32(_mm256_max_epi32(shifted, zero), max_val);
 
         // Pack to u16
@@ -10188,11 +10214,13 @@ fn h_bilin_16bpc_put_avx2_inner(
     }
 
     // Scalar fallback
+    let r1 = (1 << h_sh) >> 1;
+    let r2 = (1 << intermediate_bits) >> 1;
     while col < w {
         let x0 = src[col] as i32;
         let x1 = src[col + 1] as i32;
         let pixel = (16 - mx) * x0 + mx * x1;
-        let result = ((pixel + 8) >> 4).clamp(0, bd_max);
+        let result = ((((pixel + r1) >> h_sh) + r2) >> intermediate_bits).clamp(0, bd_max);
         dst[col] = result as u16;
         col += 1;
     }
@@ -10203,7 +10231,9 @@ fn h_bilin_16bpc_put_avx2_inner(
 unsafe fn h_bilin_16bpc_put_v3(dst: *mut u16, src: *const u16, w: usize, mx: i32, bd_max: i32) {
     #[deny(unsafe_op_in_unsafe_fn)]
     let token = archmage::X64V3Token::from_context();
-    unsafe { h_bilin_16bpc_put_avx2_inner(token, dst, src, w, mx, bd_max) }
+    // No bitdepth in the asm-ABI signature: keeps the original 10bpc
+    // (intermediate_bits = 4) semantics for this compat shim.
+    unsafe { h_bilin_16bpc_put_avx2_inner(token, dst, src, w, mx, bd_max, 4) }
 }
 
 /// Vertical bilinear filter for 16bpc put (V-only case)
@@ -10297,13 +10327,14 @@ fn h_bilin_16bpc_prep_direct_avx2_inner(
     w: usize,
     mx: i32,
     prep_bias: i32,
+    h_sh: i32,
 ) {
     let mut dst = dst.flex_mut();
     let src = src.flex();
     let w0 = _mm256_set1_epi32(16 - mx);
     let w1 = _mm256_set1_epi32(mx);
-    let rnd = _mm256_set1_epi32(8);
-    let shift_count = _mm_cvtsi32_si128(4);
+    let rnd = _mm256_set1_epi32((1 << h_sh) >> 1);
+    let shift_count = _mm_cvtsi32_si128(h_sh);
     let bias = _mm256_set1_epi32(prep_bias);
 
     let mut col = 0usize;
@@ -10322,12 +10353,13 @@ fn h_bilin_16bpc_prep_direct_avx2_inner(
         let term1 = _mm256_mullo_epi32(p1, w1);
         let sum = _mm256_add_epi32(term0, term1);
 
-        // (sum + 8) >> 4 - bias
+        // Round with 4 - intermediate_bits (0 for 10bpc, 2 for 12bpc),
+        // subtract bias, wrap to i16 like the C int16_t store
+        // (packs would saturate).
         let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
         let biased = _mm256_sub_epi32(shifted, bias);
-
-        // Pack to i16
-        let packed = _mm256_packs_epi32(biased, biased);
+        let wrapped = _mm256_and_si256(biased, _mm256_set1_epi32(0xFFFF));
+        let packed = _mm256_packus_epi32(wrapped, wrapped);
         let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
 
         storeu_128!(
@@ -10338,12 +10370,12 @@ fn h_bilin_16bpc_prep_direct_avx2_inner(
     }
 
     // Scalar fallback
+    let r = (1 << h_sh) >> 1;
     while col < w {
         let x0 = src[col] as i32;
         let x1 = src[col + 1] as i32;
         let pixel = (16 - mx) * x0 + mx * x1;
-        let result = ((pixel + 8) >> 4) - prep_bias;
-        dst[col] = result as i16;
+        dst[col] = (((pixel + r) >> h_sh) - prep_bias) as i16;
         col += 1;
     }
 }
@@ -10359,7 +10391,9 @@ unsafe fn h_bilin_16bpc_prep_direct_v3(
 ) {
     #[deny(unsafe_op_in_unsafe_fn)]
     let token = archmage::X64V3Token::from_context();
-    unsafe { h_bilin_16bpc_prep_direct_avx2_inner(token, dst, src, w, mx, prep_bias) }
+    // No bitdepth in the asm-ABI signature: keeps the original 10bpc
+    // (h_sh = 0) semantics for this compat shim.
+    unsafe { h_bilin_16bpc_prep_direct_avx2_inner(token, dst, src, w, mx, prep_bias, 0) }
 }
 
 /// Vertical bilinear filter for 16bpc prep (V-only case)
@@ -10374,13 +10408,14 @@ fn v_bilin_16bpc_prep_direct_avx2_inner(
     w: usize,
     my: i32,
     prep_bias: i32,
+    v_sh: i32,
 ) {
     let mut dst = dst.flex_mut();
     let src = src.flex();
     let w0 = _mm256_set1_epi32(16 - my);
     let w1 = _mm256_set1_epi32(my);
-    let rnd = _mm256_set1_epi32(8);
-    let shift_count = _mm_cvtsi32_si128(4);
+    let rnd = _mm256_set1_epi32((1 << v_sh) >> 1);
+    let shift_count = _mm_cvtsi32_si128(v_sh);
     let bias = _mm256_set1_epi32(prep_bias);
 
     let mut col = 0usize;
@@ -10400,12 +10435,12 @@ fn v_bilin_16bpc_prep_direct_avx2_inner(
         let term1 = _mm256_mullo_epi32(p1, w1);
         let sum = _mm256_add_epi32(term0, term1);
 
-        // (sum + 8) >> 4 - bias
+        // Round with 4 - intermediate_bits (0 for 10bpc, 2 for 12bpc),
+        // subtract bias, wrap to i16 like the C int16_t store.
         let shifted = _mm256_sra_epi32(_mm256_add_epi32(sum, rnd), shift_count);
         let biased = _mm256_sub_epi32(shifted, bias);
-
-        // Pack to i16
-        let packed = _mm256_packs_epi32(biased, biased);
+        let wrapped = _mm256_and_si256(biased, _mm256_set1_epi32(0xFFFF));
+        let packed = _mm256_packus_epi32(wrapped, wrapped);
         let result = _mm256_permute4x64_epi64(packed, 0b00_00_10_00);
 
         storeu_128!(
@@ -10416,12 +10451,12 @@ fn v_bilin_16bpc_prep_direct_avx2_inner(
     }
 
     // Scalar fallback
+    let r = (1 << v_sh) >> 1;
     while col < w {
         let x0 = src[col] as i32;
         let x1 = src[src_stride as usize + col] as i32;
         let pixel = (16 - my) * x0 + my * x1;
-        let result = ((pixel + 8) >> 4) - prep_bias;
-        dst[col] = result as i16;
+        dst[col] = (((pixel + r) >> v_sh) - prep_bias) as i16;
         col += 1;
     }
 }
@@ -10438,7 +10473,11 @@ unsafe fn v_bilin_16bpc_prep_direct_v3(
 ) {
     #[deny(unsafe_op_in_unsafe_fn)]
     let token = archmage::X64V3Token::from_context();
-    unsafe { v_bilin_16bpc_prep_direct_avx2_inner(token, dst, src, src_stride, w, my, prep_bias) }
+    // No bitdepth in the asm-ABI signature: keeps the original 10bpc
+    // (v_sh = 0) semantics for this compat shim.
+    unsafe {
+        v_bilin_16bpc_prep_direct_avx2_inner(token, dst, src, src_stride, w, my, prep_bias, 0)
+    }
 }
 
 /// Bilinear put for 16bpc
@@ -10467,12 +10506,11 @@ unsafe fn put_bilin_16bpc_avx2_inner(
     let src_stride = src_stride / 2;
     let bd_max = bitdepth_max as i32;
 
-    // For 16bpc: intermediate_bits = 4
-    // H pass shift = 4 - intermediate_bits = 0 (no shift for intermediate)
-    // V pass shift = 4 + intermediate_bits = 8
-    let intermediate_bits = 4i32;
-    let _h_pass_sh = 4 - intermediate_bits; // = 0
-    let v_pass_sh = 4 + intermediate_bits; // = 8
+    // intermediate_bits = 14 - bitdepth: 4 for 10bpc, 2 for 12bpc.
+    // H pass shift = 4 - intermediate_bits; V pass shift = 4 + intermediate_bits.
+    let intermediate_bits = 14 - (u16::BITS - (bitdepth_max as u16).leading_zeros()) as i32;
+    let h_pass_sh = 4 - intermediate_bits;
+    let v_pass_sh = 4 + intermediate_bits;
 
     unsafe {
         if mx != 0 {
@@ -10484,7 +10522,7 @@ unsafe fn put_bilin_16bpc_avx2_inner(
                 // Horizontal pass using SIMD (output unshifted)
                 for y in 0..tmp_h {
                     let src_row = src.offset(y as isize * src_stride);
-                    h_bilin_16bpc_avx2_inner(_token, &mut mid[y], src_row, w, mx as i32);
+                    h_bilin_16bpc_avx2_inner(_token, &mut mid[y], src_row, w, mx as i32, h_pass_sh);
                 }
 
                 // Vertical pass using SIMD
@@ -10500,7 +10538,15 @@ unsafe fn put_bilin_16bpc_avx2_inner(
                 for y in 0..h {
                     let src_row = src.offset(y as isize * src_stride);
                     let dst_row = dst.offset(y as isize * dst_stride);
-                    h_bilin_16bpc_put_avx2_inner(_token, dst_row, src_row, w, mx as i32, bd_max);
+                    h_bilin_16bpc_put_avx2_inner(
+                        _token,
+                        dst_row,
+                        src_row,
+                        w,
+                        mx as i32,
+                        bd_max,
+                        intermediate_bits,
+                    );
                 }
             }
         } else if my != 0 {
@@ -10603,6 +10649,7 @@ unsafe fn prep_bilin_16bpc_avx2_inner(
     h: i32,
     mx: i32,
     my: i32,
+    bitdepth_max: i32,
 ) {
     let w = w as usize;
     let h = h as usize;
@@ -10614,12 +10661,13 @@ unsafe fn prep_bilin_16bpc_avx2_inner(
     // For 16bpc prep: PREP_BIAS = 8192
     let prep_bias = 8192i32;
 
-    // For 16bpc: intermediate_bits = 4
-    // H pass shift = 4 - intermediate_bits = 0 (no shift for intermediate)
-    // V pass shift = 4 + intermediate_bits = 8
-    let intermediate_bits = 4i32;
-    let _h_pass_sh = 4 - intermediate_bits; // = 0
-    let v_pass_sh = 4 + intermediate_bits; // = 8
+    // intermediate_bits = 14 - bitdepth: 4 for 10bpc, 2 for 12bpc.
+    // H pass rounds with 4 - intermediate_bits; the V pass in
+    // prep_bilin_c always rounds with FILTER_BILIN_RND(..., 4) —
+    // 4 + intermediate_bits is the PUT convention, not prep.
+    let intermediate_bits = 14 - (u16::BITS - (bitdepth_max as u16).leading_zeros()) as i32;
+    let h_pass_sh = 4 - intermediate_bits;
+    let v_pass_sh = 4i32;
 
     unsafe {
         if mx != 0 {
@@ -10631,7 +10679,7 @@ unsafe fn prep_bilin_16bpc_avx2_inner(
                 // Horizontal pass using SIMD
                 for y in 0..tmp_h {
                     let src_row = src.offset(y as isize * src_stride);
-                    h_bilin_16bpc_avx2_inner(_token, &mut mid[y], src_row, w, mx as i32);
+                    h_bilin_16bpc_avx2_inner(_token, &mut mid[y], src_row, w, mx as i32, h_pass_sh);
                 }
 
                 // Vertical pass using SIMD (with bias subtraction)
@@ -10648,7 +10696,7 @@ unsafe fn prep_bilin_16bpc_avx2_inner(
                     let src_row = src.offset(y as isize * src_stride);
                     let dst_row = tmp.add(y * w);
                     h_bilin_16bpc_prep_direct_avx2_inner(
-                        _token, dst_row, src_row, w, mx as i32, prep_bias,
+                        _token, dst_row, src_row, w, mx as i32, prep_bias, h_pass_sh,
                     );
                 }
             }
@@ -10658,16 +10706,17 @@ unsafe fn prep_bilin_16bpc_avx2_inner(
                 let src_row = src.offset(y as isize * src_stride);
                 let dst_row = tmp.add(y * w);
                 v_bilin_16bpc_prep_direct_avx2_inner(
-                    _token, dst_row, src_row, src_stride, w, my as i32, prep_bias,
+                    _token, dst_row, src_row, src_stride, w, my as i32, prep_bias, h_pass_sh,
                 );
             }
-            // Simple copy to prep format
+        } else {
+            // Simple copy to prep format: (pixel << intermediate_bits) - bias
             for y in 0..h {
                 let src_row = src.offset(y as isize * src_stride);
                 let dst_row = tmp.add(y * w);
                 for x in 0..w {
                     let pixel = src_row[x] as i32;
-                    *dst_row.add(x) = (pixel - prep_bias) as i16;
+                    *dst_row.add(x) = ((pixel << intermediate_bits) - prep_bias) as i16;
                 }
             }
         }
@@ -10689,7 +10738,9 @@ unsafe fn prep_bilin_16bpc_impl_v3(
 ) {
     #[deny(unsafe_op_in_unsafe_fn)]
     let token = archmage::X64V3Token::from_context();
-    unsafe { prep_bilin_16bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my) }
+    // No bitdepth in this signature: keeps the original 10bpc
+    // (intermediate_bits = 4) semantics for this compat shim.
+    unsafe { prep_bilin_16bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, 1023) }
 }
 
 #[cfg(all(feature = "asm", target_arch = "x86_64"))]
@@ -10702,13 +10753,15 @@ pub unsafe extern "C" fn prep_bilin_16bpc_v3(
     h: i32,
     mx: i32,
     my: i32,
-    _bitdepth_max: i32,
+    bitdepth_max: i32,
     _src: *const FFISafe<PicOffset>,
 ) {
     #[deny(unsafe_op_in_unsafe_fn)]
     let token = archmage::X64V3Token::from_context();
 
-    unsafe { prep_bilin_16bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my) }
+    unsafe {
+        prep_bilin_16bpc_avx2_inner(token, tmp, src_ptr, src_stride, w, h, mx, my, bitdepth_max)
+    }
 }
 
 // ============================================================================
@@ -10719,11 +10772,20 @@ pub unsafe extern "C" fn prep_bilin_16bpc_v3(
 /// 16 pixels/iter using cvtepu16_epi32 + mullo_epi32
 #[cfg(target_arch = "x86_64")]
 #[rite]
-fn h_bilin_16bpc_avx512_inner(_token: Server64, dst: &mut [i32], src: &[u16], w: usize, mx: i32) {
+fn h_bilin_16bpc_avx512_inner(
+    _token: Server64,
+    dst: &mut [i32],
+    src: &[u16],
+    w: usize,
+    mx: i32,
+    h_sh: i32,
+) {
     let mut dst = dst.flex_mut();
     let src = src.flex();
     let w0 = _mm512_set1_epi32(16 - mx);
     let w1 = _mm512_set1_epi32(mx);
+    let rnd = _mm512_set1_epi32((1 << h_sh) >> 1);
+    let shift_count = _mm_cvtsi32_si128(h_sh);
 
     let mut col = 0usize;
     while col + 16 <= w {
@@ -10736,16 +10798,20 @@ fn h_bilin_16bpc_avx512_inner(_token: Server64, dst: &mut [i32], src: &[u16], w:
 
         let term0 = _mm512_mullo_epi32(p0, w0);
         let term1 = _mm512_mullo_epi32(p1, w1);
-        let result = _mm512_add_epi32(term0, term1);
+        let sum = _mm512_add_epi32(term0, term1);
+        // mid is int16_t in the C reference: wrap like the AVX2 path.
+        let rnd_sum = _mm512_sra_epi32(_mm512_add_epi32(sum, rnd), shift_count);
+        let result = _mm512_srai_epi32::<16>(_mm512_slli_epi32::<16>(rnd_sum));
 
         storeu_512!(&mut dst[col..col + 16], [i32; 16], result);
         col += 16;
     }
 
+    let r = (1 << h_sh) >> 1;
     while col < w {
         let x0 = src[col] as i32;
         let x1 = src[col + 1] as i32;
-        dst[col] = 16 * x0 + mx * (x1 - x0);
+        dst[col] = (((16 * x0 + mx * (x1 - x0)) + r) >> h_sh) as i16 as i32;
         col += 1;
     }
 }
@@ -10836,7 +10902,10 @@ fn v_bilin_16bpc_prep_avx512_inner(
         let shifted = _mm512_sra_epi32(_mm512_add_epi32(sum, rnd), shift_count);
         let biased = _mm512_sub_epi32(shifted, bias);
 
-        let packed = _mm512_cvtsepi32_epi16(biased);
+        // Wrap to i16 like the C int16_t store; cvtsepi32 saturates, which
+        // diverges from the reference for out-of-range 12bpc values.
+        let wrapped = _mm512_and_si512(biased, _mm512_set1_epi32(0xFFFF));
+        let packed = _mm512_cvtusepi32_epi16(wrapped);
         storeu_256!(
             <&mut [i16; 16]>::try_from(&mut dst[col..col + 16]).unwrap(),
             packed
@@ -10865,13 +10934,19 @@ fn h_bilin_16bpc_put_avx512_inner(
     w: usize,
     mx: i32,
     bd_max: i32,
+    intermediate_bits: i32,
 ) {
     let mut dst = dst.flex_mut();
     let src = src.flex();
     let w0 = _mm512_set1_epi32(16 - mx);
     let w1 = _mm512_set1_epi32(mx);
-    let rnd = _mm512_set1_epi32(8);
-    let shift_count = _mm_cvtsi32_si128(4);
+    // Reference rounds twice: rnd(4 - ib) then (px + ((1<<ib)>>1)) >> ib.
+    // For 10bpc (ib=4) this degenerates to (sum + 8) >> 4.
+    let h_sh = 4 - intermediate_bits;
+    let rnd1 = _mm512_set1_epi32((1 << h_sh) >> 1);
+    let rnd2 = _mm512_set1_epi32((1 << intermediate_bits) >> 1);
+    let shift1 = _mm_cvtsi32_si128(h_sh);
+    let shift2 = _mm_cvtsi32_si128(intermediate_bits);
     let zero = _mm512_setzero_si512();
     let max_val = _mm512_set1_epi32(bd_max);
 
@@ -10888,7 +10963,9 @@ fn h_bilin_16bpc_put_avx512_inner(
         let term1 = _mm512_mullo_epi32(p1, w1);
         let sum = _mm512_add_epi32(term0, term1);
 
-        let shifted = _mm512_sra_epi32(_mm512_add_epi32(sum, rnd), shift_count);
+        // Two-stage round: ((sum + r1) >> h_sh + r2) >> ib
+        let t = _mm512_sra_epi32(_mm512_add_epi32(sum, rnd1), shift1);
+        let shifted = _mm512_sra_epi32(_mm512_add_epi32(t, rnd2), shift2);
         let clamped = _mm512_min_epi32(_mm512_max_epi32(shifted, zero), max_val);
 
         let packed = _mm512_cvtusepi32_epi16(clamped);
@@ -10899,11 +10976,13 @@ fn h_bilin_16bpc_put_avx512_inner(
         col += 16;
     }
 
+    let r1 = (1 << h_sh) >> 1;
+    let r2 = (1 << intermediate_bits) >> 1;
     while col < w {
         let x0 = src[col] as i32;
         let x1 = src[col + 1] as i32;
         let pixel = (16 - mx) * x0 + mx * x1;
-        let result = ((pixel + 8) >> 4).clamp(0, bd_max);
+        let result = ((((pixel + r1) >> h_sh) + r2) >> intermediate_bits).clamp(0, bd_max);
         dst[col] = result as u16;
         col += 1;
     }
@@ -10975,13 +11054,14 @@ fn h_bilin_16bpc_prep_direct_avx512_inner(
     w: usize,
     mx: i32,
     prep_bias: i32,
+    h_sh: i32,
 ) {
     let mut dst = dst.flex_mut();
     let src = src.flex();
     let w0 = _mm512_set1_epi32(16 - mx);
     let w1 = _mm512_set1_epi32(mx);
-    let rnd = _mm512_set1_epi32(8);
-    let shift_count = _mm_cvtsi32_si128(4);
+    let rnd = _mm512_set1_epi32((1 << h_sh) >> 1);
+    let shift_count = _mm_cvtsi32_si128(h_sh);
     let bias = _mm512_set1_epi32(prep_bias);
 
     let mut col = 0usize;
@@ -10997,10 +11077,12 @@ fn h_bilin_16bpc_prep_direct_avx512_inner(
         let term1 = _mm512_mullo_epi32(p1, w1);
         let sum = _mm512_add_epi32(term0, term1);
 
+        // Round with 4 - intermediate_bits (0 for 10bpc, 2 for 12bpc),
+        // subtract bias, wrap to i16 like the C int16_t store.
         let shifted = _mm512_sra_epi32(_mm512_add_epi32(sum, rnd), shift_count);
         let biased = _mm512_sub_epi32(shifted, bias);
-
-        let packed = _mm512_cvtsepi32_epi16(biased);
+        let wrapped = _mm512_and_si512(biased, _mm512_set1_epi32(0xFFFF));
+        let packed = _mm512_cvtusepi32_epi16(wrapped);
         storeu_256!(
             <&mut [i16; 16]>::try_from(&mut dst[col..col + 16]).unwrap(),
             packed
@@ -11008,12 +11090,12 @@ fn h_bilin_16bpc_prep_direct_avx512_inner(
         col += 16;
     }
 
+    let r = (1 << h_sh) >> 1;
     while col < w {
         let x0 = src[col] as i32;
         let x1 = src[col + 1] as i32;
         let pixel = (16 - mx) * x0 + mx * x1;
-        let result = ((pixel + 8) >> 4) - prep_bias;
-        dst[col] = result as i16;
+        dst[col] = (((pixel + r) >> h_sh) - prep_bias) as i16;
         col += 1;
     }
 }
@@ -11029,13 +11111,14 @@ fn v_bilin_16bpc_prep_direct_avx512_inner(
     w: usize,
     my: i32,
     prep_bias: i32,
+    v_sh: i32,
 ) {
     let mut dst = dst.flex_mut();
     let src = src.flex();
     let w0 = _mm512_set1_epi32(16 - my);
     let w1 = _mm512_set1_epi32(my);
-    let rnd = _mm512_set1_epi32(8);
-    let shift_count = _mm_cvtsi32_si128(4);
+    let rnd = _mm512_set1_epi32((1 << v_sh) >> 1);
+    let shift_count = _mm_cvtsi32_si128(v_sh);
     let bias = _mm512_set1_epi32(prep_bias);
 
     let mut col = 0usize;
@@ -11052,10 +11135,12 @@ fn v_bilin_16bpc_prep_direct_avx512_inner(
         let term1 = _mm512_mullo_epi32(p1, w1);
         let sum = _mm512_add_epi32(term0, term1);
 
+        // Round with 4 - intermediate_bits (0 for 10bpc, 2 for 12bpc),
+        // subtract bias, wrap to i16 like the C int16_t store.
         let shifted = _mm512_sra_epi32(_mm512_add_epi32(sum, rnd), shift_count);
         let biased = _mm512_sub_epi32(shifted, bias);
-
-        let packed = _mm512_cvtsepi32_epi16(biased);
+        let wrapped = _mm512_and_si512(biased, _mm512_set1_epi32(0xFFFF));
+        let packed = _mm512_cvtusepi32_epi16(wrapped);
         storeu_256!(
             <&mut [i16; 16]>::try_from(&mut dst[col..col + 16]).unwrap(),
             packed
@@ -11063,12 +11148,12 @@ fn v_bilin_16bpc_prep_direct_avx512_inner(
         col += 16;
     }
 
+    let r = (1 << v_sh) >> 1;
     while col < w {
         let x0 = src[col] as i32;
         let x1 = src[src_stride as usize + col] as i32;
         let pixel = (16 - my) * x0 + my * x1;
-        let result = ((pixel + 8) >> 4) - prep_bias;
-        dst[col] = result as i16;
+        dst[col] = (((pixel + r) >> v_sh) - prep_bias) as i16;
         col += 1;
     }
 }
@@ -11093,7 +11178,10 @@ fn put_bilin_16bpc_avx512_impl_inner(
     let w = w as usize;
     let h = h as usize;
     let bd_max = bitdepth_max;
-    let v_pass_sh = 8; // 4 + intermediate_bits(4)
+    // intermediate_bits = 14 - bitdepth: 4 for 10bpc, 2 for 12bpc.
+    let intermediate_bits = 14 - (u16::BITS - (bitdepth_max as u16).leading_zeros()) as i32;
+    let h_pass_sh = 4 - intermediate_bits;
+    let v_pass_sh = 4 + intermediate_bits;
 
     match (mx != 0, my != 0) {
         (true, true) => {
@@ -11101,7 +11189,7 @@ fn put_bilin_16bpc_avx512_impl_inner(
             let mut mid = take_mid_i32_130();
             for y in 0..tmp_h {
                 let src_off = (y as isize * src_stride) as usize;
-                h_bilin_16bpc_avx512_inner(_token, &mut mid[y], &src[src_off..], w, mx);
+                h_bilin_16bpc_avx512_inner(_token, &mut mid[y], &src[src_off..], w, mx, h_pass_sh);
             }
             for y in 0..h {
                 let dst_off = (y as isize * dst_stride) as usize;
@@ -11129,6 +11217,7 @@ fn put_bilin_16bpc_avx512_impl_inner(
                     w,
                     mx,
                     bd_max,
+                    intermediate_bits,
                 );
             }
         }
@@ -11176,7 +11265,12 @@ fn prep_bilin_16bpc_avx512_impl_inner(
     let w = w as usize;
     let h = h as usize;
     let prep_bias = 8192i32;
-    let v_pass_sh = 8; // 4 + intermediate_bits(4)
+    // intermediate_bits = 14 - bitdepth: 4 for 10bpc, 2 for 12bpc.
+    let intermediate_bits = 14 - (u16::BITS - (bitdepth_max as u16).leading_zeros()) as i32;
+    let h_pass_sh = 4 - intermediate_bits;
+    // prep_bilin_c rounds the V pass with FILTER_BILIN_RND(..., 4);
+    // 4 + intermediate_bits is the PUT convention, not prep.
+    let v_pass_sh = 4i32;
 
     match (mx != 0, my != 0) {
         (true, true) => {
@@ -11184,7 +11278,7 @@ fn prep_bilin_16bpc_avx512_impl_inner(
             let mut mid = take_mid_i32_130();
             for y in 0..tmp_h {
                 let src_off = (y as isize * src_stride) as usize;
-                h_bilin_16bpc_avx512_inner(_token, &mut mid[y], &src[src_off..], w, mx);
+                h_bilin_16bpc_avx512_inner(_token, &mut mid[y], &src[src_off..], w, mx, h_pass_sh);
             }
             for y in 0..h {
                 let dst_row = y * w;
@@ -11212,6 +11306,7 @@ fn prep_bilin_16bpc_avx512_impl_inner(
                     w,
                     mx,
                     prep_bias,
+                    h_pass_sh,
                 );
             }
         }
@@ -11227,17 +11322,18 @@ fn prep_bilin_16bpc_avx512_impl_inner(
                     w,
                     my,
                     prep_bias,
+                    h_pass_sh,
                 );
             }
         }
         (false, false) => {
-            // Simple copy: pixel - prep_bias
+            // Copy to prep format: (pixel << intermediate_bits) - bias
             for y in 0..h {
                 let src_off = (y as isize * src_stride) as usize;
                 let dst_row = y * w;
                 for x in 0..w {
                     let pixel = src[src_off + x] as i32;
-                    tmp[dst_row + x] = (pixel - prep_bias) as i16;
+                    tmp[dst_row + x] = ((pixel << intermediate_bits) - prep_bias) as i16;
                 }
             }
         }
@@ -11265,7 +11361,10 @@ fn put_bilin_16bpc_avx2_impl_inner_safe(
     let w = w as usize;
     let h = h as usize;
     let bd_max = bitdepth_max;
-    let v_pass_sh = 8;
+    // intermediate_bits = 14 - bitdepth: 4 for 10bpc, 2 for 12bpc.
+    let intermediate_bits = 14 - (u16::BITS - (bitdepth_max as u16).leading_zeros()) as i32;
+    let h_pass_sh = 4 - intermediate_bits;
+    let v_pass_sh = 4 + intermediate_bits;
 
     match (mx != 0, my != 0) {
         (true, true) => {
@@ -11273,7 +11372,7 @@ fn put_bilin_16bpc_avx2_impl_inner_safe(
             let mut mid = take_mid_i32_130();
             for y in 0..tmp_h {
                 let src_off = (y as isize * src_stride) as usize;
-                h_bilin_16bpc_avx2_inner(_token, &mut mid[y], &src[src_off..], w, mx);
+                h_bilin_16bpc_avx2_inner(_token, &mut mid[y], &src[src_off..], w, mx, h_pass_sh);
             }
             for y in 0..h {
                 let dst_off = (y as isize * dst_stride) as usize;
@@ -11301,6 +11400,7 @@ fn put_bilin_16bpc_avx2_impl_inner_safe(
                     w,
                     mx,
                     bd_max,
+                    intermediate_bits,
                 );
             }
         }
@@ -11348,7 +11448,12 @@ fn prep_bilin_16bpc_avx2_impl_inner_safe(
     let w = w as usize;
     let h = h as usize;
     let prep_bias = 8192i32;
-    let v_pass_sh = 8;
+    // intermediate_bits = 14 - bitdepth: 4 for 10bpc, 2 for 12bpc.
+    let intermediate_bits = 14 - (u16::BITS - (bitdepth_max as u16).leading_zeros()) as i32;
+    let h_pass_sh = 4 - intermediate_bits;
+    // prep_bilin_c rounds the V pass with FILTER_BILIN_RND(..., 4);
+    // 4 + intermediate_bits is the PUT convention, not prep.
+    let v_pass_sh = 4i32;
 
     match (mx != 0, my != 0) {
         (true, true) => {
@@ -11356,7 +11461,7 @@ fn prep_bilin_16bpc_avx2_impl_inner_safe(
             let mut mid = take_mid_i32_130();
             for y in 0..tmp_h {
                 let src_off = (y as isize * src_stride) as usize;
-                h_bilin_16bpc_avx2_inner(_token, &mut mid[y], &src[src_off..], w, mx);
+                h_bilin_16bpc_avx2_inner(_token, &mut mid[y], &src[src_off..], w, mx, h_pass_sh);
             }
             for y in 0..h {
                 let dst_row = y * w;
@@ -11384,6 +11489,7 @@ fn prep_bilin_16bpc_avx2_impl_inner_safe(
                     w,
                     mx,
                     prep_bias,
+                    h_pass_sh,
                 );
             }
         }
@@ -11399,16 +11505,18 @@ fn prep_bilin_16bpc_avx2_impl_inner_safe(
                     w,
                     my,
                     prep_bias,
+                    h_pass_sh,
                 );
             }
         }
         (false, false) => {
+            // Copy to prep format: (pixel << intermediate_bits) - bias
             for y in 0..h {
                 let src_off = (y as isize * src_stride) as usize;
                 let dst_row = y * w;
                 for x in 0..w {
                     let pixel = src[src_off + x] as i32;
-                    tmp[dst_row + x] = (pixel - prep_bias) as i16;
+                    tmp[dst_row + x] = ((pixel << intermediate_bits) - prep_bias) as i16;
                 }
             }
         }
@@ -12328,6 +12436,22 @@ pub(crate) fn mc_put_dispatch_inner<BD: BitDepth>(
     true
 }
 
+/// Debug bisect gate (feature `__bisect`): `MCT_PREP_LOG=1` logs every
+/// mct_prep 16bpc call shape. Env read once per process.
+#[cfg(all(feature = "__bisect", target_arch = "x86_64"))]
+#[inline]
+fn mct_prep_log_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("MCT_PREP_LOG").is_some())
+}
+
+/// Default build: no env read, no atomic — the log call folds away.
+#[cfg(all(not(feature = "__bisect"), target_arch = "x86_64"))]
+#[inline(always)]
+fn mct_prep_log_enabled() -> bool {
+    false
+}
+
 #[cfg(target_arch = "x86_64")]
 pub fn mct_prep_dispatch<BD: BitDepth>(
     filter: Filter2d,
@@ -12378,6 +12502,12 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
         BPC::BPC16 => {
             let (src_guard, src_base) = reference::filter_guard::<BD>(src, filter, w, h, mx, my);
             let bd_c = bd.into_c();
+            if mct_prep_log_enabled() {
+                eprintln!(
+                    "mct_prep_16bpc filter={} w={w} h={h} mx={mx} my={my} base={src_base}",
+                    filter as usize
+                );
+            }
             match filter {
                 Filter2d::Bilinear => {
                     // Bilinear only accesses current + next row, no negative offsets
@@ -12772,9 +12902,7 @@ fn warp_v_pass_16bpc_put(
                 sum += filter[i] as i32 * mid[y + i][x] as i32;
             }
             let val = ((sum + round_v) >> shift_v).clamp(0, bitdepth_max) as u16;
-            let bytes = val.to_le_bytes();
-            dst[dst_off + x * 2] = bytes[0];
-            dst[dst_off + x * 2 + 1] = bytes[1];
+            dst[dst_off + x * 2..][..2].copy_from_slice(&val.to_le_bytes());
         }
     }
 }

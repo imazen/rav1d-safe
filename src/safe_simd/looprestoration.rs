@@ -15,6 +15,7 @@ use core::arch::x86_64::*;
 #[cfg(target_arch = "x86_64")]
 use crate::src::cpu::summon_avx2;
 use archmage::{Desktop64, Server64, SimdToken, arcane, rite};
+use std::cell::RefCell;
 use std::cmp;
 use std::ffi::c_int;
 use std::ffi::c_uint;
@@ -46,6 +47,94 @@ type ptrdiff_t = isize;
 // Must match the constant in looprestoration.rs
 const REST_UNIT_STRIDE: usize = 256 * 3 / 2 + 3 + 3; // = 390
 
+const TMP_LEN: usize = (64 + 3 + 3) * REST_UNIT_STRIDE;
+const BOX_LEN: usize = (64 + 2 + 2) * REST_UNIT_STRIDE;
+const DST_LEN: usize = 64 * MAX_RESTORATION_WIDTH;
+
+/// Per-thread loop-restoration scratch.
+///
+/// These buffers back what were uninitialized stack arrays in C: every
+/// element read is written earlier in the same call (`padding` fills
+/// `tmp`'s read region, the horizontal pass fills `hor`'s, `boxsum*` fills
+/// the box arrays', and `selfguided` fills `dst` before the apply pass
+/// reads it), so each array is initialized once per thread instead of
+/// being re-zeroed for every restoration unit.
+struct WienerScratch8 {
+    tmp: [u8; TMP_LEN],
+    hor: [u16; TMP_LEN],
+}
+
+struct WienerScratch16 {
+    tmp: [u16; TMP_LEN],
+    hor: [i32; TMP_LEN],
+}
+
+struct SgrScratch8 {
+    tmp: [u8; TMP_LEN],
+    dst0: [i16; DST_LEN],
+    dst1: [i16; DST_LEN],
+}
+
+struct SgrScratch16 {
+    tmp: [u16; TMP_LEN],
+    dst0: [i32; DST_LEN],
+    dst1: [i32; DST_LEN],
+}
+
+struct SgScratch8 {
+    sumsq: [i32; BOX_LEN],
+    sum: [i16; BOX_LEN],
+}
+
+struct SgScratch16 {
+    sumsq: [i64; BOX_LEN],
+    sum: [i32; BOX_LEN],
+    aa: [i32; BOX_LEN],
+    bb: [i32; BOX_LEN],
+}
+
+struct BoxTmp8 {
+    sum: [i16; REST_UNIT_STRIDE],
+    sumsq: [i32; REST_UNIT_STRIDE],
+}
+
+struct BoxTmp16 {
+    sum: [i32; REST_UNIT_STRIDE],
+    sumsq: [i64; REST_UNIT_STRIDE],
+}
+
+thread_local! {
+    static WIENER_SCRATCH8: RefCell<WienerScratch8> = const {
+        RefCell::new(WienerScratch8 { tmp: [0; TMP_LEN], hor: [0; TMP_LEN] })
+    };
+    static WIENER_SCRATCH16: RefCell<WienerScratch16> = const {
+        RefCell::new(WienerScratch16 { tmp: [0; TMP_LEN], hor: [0; TMP_LEN] })
+    };
+    static SGR_SCRATCH8: RefCell<SgrScratch8> = const {
+        RefCell::new(SgrScratch8 { tmp: [0; TMP_LEN], dst0: [0; DST_LEN], dst1: [0; DST_LEN] })
+    };
+    static SGR_SCRATCH16: RefCell<SgrScratch16> = const {
+        RefCell::new(SgrScratch16 { tmp: [0; TMP_LEN], dst0: [0; DST_LEN], dst1: [0; DST_LEN] })
+    };
+    static SG_SCRATCH8: RefCell<SgScratch8> = const {
+        RefCell::new(SgScratch8 { sumsq: [0; BOX_LEN], sum: [0; BOX_LEN] })
+    };
+    static SG_SCRATCH16: RefCell<SgScratch16> = const {
+        RefCell::new(SgScratch16 {
+            sumsq: [0; BOX_LEN],
+            sum: [0; BOX_LEN],
+            aa: [0; BOX_LEN],
+            bb: [0; BOX_LEN],
+        })
+    };
+    static BOX_TMP8: RefCell<BoxTmp8> = const {
+        RefCell::new(BoxTmp8 { sum: [0; REST_UNIT_STRIDE], sumsq: [0; REST_UNIT_STRIDE] })
+    };
+    static BOX_TMP16: RefCell<BoxTmp16> = const {
+        RefCell::new(BoxTmp16 { sum: [0; REST_UNIT_STRIDE], sumsq: [0; REST_UNIT_STRIDE] })
+    };
+}
+
 // ============================================================================
 // WIENER FILTER - AVX2 IMPLEMENTATION
 // ============================================================================
@@ -68,14 +157,31 @@ fn wiener_filter7_8bpc_avx2_inner(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
 ) {
+    WIENER_SCRATCH8.with_borrow_mut(|s| {
+        let WienerScratch8 { tmp, hor } = s;
+        wiener_filter7_8bpc_avx2_body(_token, p, left, lpf, lpf_off, w, h, params, edges, tmp, hor)
+    });
+}
+
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn wiener_filter7_8bpc_avx2_body(
+    _token: Desktop64,
+    p: PicOffset,
+    left: &[LeftPixelRow<u8>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: usize,
+    h: usize,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
     // Temporary buffer for padded input - same layout as Rust fallback
-    let mut tmp = [0u8; (64 + 3 + 3) * REST_UNIT_STRIDE];
-
-    // Use the existing padding function
-    padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
-
+    tmp: &mut [u8; TMP_LEN],
     // Intermediate buffer for horizontal filter output (16-bit values)
-    let mut hor = [0u16; (64 + 3 + 3) * REST_UNIT_STRIDE];
+    hor: &mut [u16; TMP_LEN],
+) {
+    // Use the existing padding function
+    padding::<BitDepth8>(tmp, p, left, lpf, lpf_off, w, h, edges);
 
     let filter = &params.filter;
     let round_bits_h = 3i32;
@@ -283,10 +389,30 @@ fn wiener_filter7_8bpc_avx512_inner(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
 ) {
-    let mut tmp = [0u8; (64 + 3 + 3) * REST_UNIT_STRIDE];
-    padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
+    WIENER_SCRATCH8.with_borrow_mut(|s| {
+        let WienerScratch8 { tmp, hor } = s;
+        wiener_filter7_8bpc_avx512_body(
+            _token, p, left, lpf, lpf_off, w, h, params, edges, tmp, hor,
+        )
+    });
+}
 
-    let mut hor = [0u16; (64 + 3 + 3) * REST_UNIT_STRIDE];
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn wiener_filter7_8bpc_avx512_body(
+    _token: Server64,
+    p: PicOffset,
+    left: &[LeftPixelRow<u8>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: usize,
+    h: usize,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    tmp: &mut [u8; TMP_LEN],
+    hor: &mut [u16; TMP_LEN],
+) {
+    padding::<BitDepth8>(tmp, p, left, lpf, lpf_off, w, h, edges);
 
     let filter = &params.filter;
     let round_bits_h = 3i32;
@@ -561,12 +687,44 @@ fn wiener_filter7_16bpc_avx512_inner(
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
 ) {
+    WIENER_SCRATCH16.with_borrow_mut(|s| {
+        let WienerScratch16 { tmp, hor } = s;
+        wiener_filter7_16bpc_avx512_body(
+            _token,
+            p,
+            left,
+            lpf,
+            lpf_off,
+            w,
+            h,
+            params,
+            edges,
+            bitdepth_max,
+            tmp,
+            hor,
+        )
+    });
+}
+
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn wiener_filter7_16bpc_avx512_body(
+    _token: Server64,
+    p: PicOffset,
+    left: &[LeftPixelRow<u16>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: usize,
+    h: usize,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    bitdepth_max: c_int,
+    tmp: &mut [u16; TMP_LEN],
+    hor: &mut [i32; TMP_LEN],
+) {
     let bitdepth = if bitdepth_max == 1023 { 10 } else { 12 };
 
-    let mut tmp = [0u16; (64 + 3 + 3) * REST_UNIT_STRIDE];
-    padding::<BitDepth16>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
-
-    let mut hor = [0i32; (64 + 3 + 3) * REST_UNIT_STRIDE];
+    padding::<BitDepth16>(tmp, p, left, lpf, lpf_off, w, h, edges);
 
     let filter = &params.filter;
     let round_bits_h = if bitdepth == 12 { 5 } else { 3 };
@@ -789,17 +947,48 @@ fn wiener_filter7_16bpc_avx2_inner(
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
 ) {
+    WIENER_SCRATCH16.with_borrow_mut(|s| {
+        let WienerScratch16 { tmp, hor } = s;
+        wiener_filter7_16bpc_avx2_body(
+            _token,
+            p,
+            left,
+            lpf,
+            lpf_off,
+            w,
+            h,
+            params,
+            edges,
+            bitdepth_max,
+            tmp,
+            hor,
+        )
+    });
+}
+
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn wiener_filter7_16bpc_avx2_body(
+    _token: Desktop64,
+    p: PicOffset,
+    left: &[LeftPixelRow<u16>],
+    lpf: &DisjointMut<AlignedVec64<u8>>,
+    lpf_off: isize,
+    w: usize,
+    h: usize,
+    params: &LooprestorationParams,
+    edges: LrEdgeFlags,
+    bitdepth_max: c_int,
+    // Temporary buffer for padded input
+    tmp: &mut [u16; TMP_LEN],
+    // Intermediate buffer for horizontal filter output
+    hor: &mut [i32; TMP_LEN],
+) {
     // Determine bitdepth (10 or 12)
     let bitdepth = if bitdepth_max == 1023 { 10 } else { 12 };
 
-    // Temporary buffer for padded input
-    let mut tmp = [0u16; (64 + 3 + 3) * REST_UNIT_STRIDE];
-
     // Use the existing padding function
-    padding::<BitDepth16>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
-
-    // Intermediate buffer for horizontal filter output
-    let mut hor = [0i32; (64 + 3 + 3) * REST_UNIT_STRIDE];
+    padding::<BitDepth16>(tmp, p, left, lpf, lpf_off, w, h, edges);
 
     let filter = &params.filter;
 
@@ -1336,18 +1525,32 @@ fn selfguided_filter_8bpc(
     n: i32,
     s: u32,
 ) {
-    let sgr_one_by_x: u32 = if n == 25 { 164 } else { 455 };
+    SG_SCRATCH8.with_borrow_mut(|scratch| {
+        let SgScratch8 { sumsq, sum } = scratch;
+        selfguided_filter_8bpc_impl(dst, src, w, h, n, s, sumsq, sum)
+    });
+}
 
+#[inline(never)]
+fn selfguided_filter_8bpc_impl(
+    dst: &mut [i16; 64 * MAX_RESTORATION_WIDTH],
+    src: &[u8; (64 + 3 + 3) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+    n: i32,
+    s: u32,
     // Working buffers
-    let mut sumsq = [0i32; (64 + 2 + 2) * REST_UNIT_STRIDE];
-    let mut sum = [0i16; (64 + 2 + 2) * REST_UNIT_STRIDE];
+    sumsq: &mut [i32; BOX_LEN],
+    sum: &mut [i16; BOX_LEN],
+) {
+    let sgr_one_by_x: u32 = if n == 25 { 164 } else { 455 };
 
     let step = if n == 25 { 2 } else { 1 };
 
     if n == 25 {
-        boxsum5_8bpc(&mut sumsq, &mut sum, src, w + 6, h + 6);
+        boxsum5_8bpc(sumsq, sum, src, w + 6, h + 6);
     } else {
-        boxsum3_8bpc(&mut sumsq, &mut sum, src, w + 6, h + 6);
+        boxsum3_8bpc(sumsq, sum, src, w + 6, h + 6);
     }
 
     // For 8bpc, bitdepth_min_8 = 0, so the scaling factors are 1
@@ -1689,10 +1892,28 @@ fn boxsum5_h_avx2(
     w: usize,
     h: usize,
 ) {
+    BOX_TMP8.with_borrow_mut(|t| {
+        let BoxTmp8 {
+            sum: sum_tmp,
+            sumsq: sumsq_tmp,
+        } = t;
+        boxsum5_h_avx2_impl(_token, sumsq, sum, w, h, sum_tmp, sumsq_tmp)
+    });
+}
+
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn boxsum5_h_avx2_impl(
+    _token: Desktop64,
+    sumsq: &mut [i32; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    sum: &mut [i16; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+    sum_tmp: &mut [i16; REST_UNIT_STRIDE],
+    sumsq_tmp: &mut [i32; REST_UNIT_STRIDE],
+) {
     // Horizontal pass needs a temporary row buffer to avoid WAR hazard
     // (writes to position x overlap with reads from x+2 in next iteration)
-    let mut sum_tmp = [0i16; REST_UNIT_STRIDE];
-    let mut sumsq_tmp = [0i32; REST_UNIT_STRIDE];
 
     for row in 1..h - 3 {
         let row_off = row * REST_UNIT_STRIDE;
@@ -1868,9 +2089,26 @@ fn boxsum3_h_avx2(
     w: usize,
     h: usize,
 ) {
-    let mut sum_tmp = [0i16; REST_UNIT_STRIDE];
-    let mut sumsq_tmp = [0i32; REST_UNIT_STRIDE];
+    BOX_TMP8.with_borrow_mut(|t| {
+        let BoxTmp8 {
+            sum: sum_tmp,
+            sumsq: sumsq_tmp,
+        } = t;
+        boxsum3_h_avx2_impl(_token, sumsq, sum, w, h, sum_tmp, sumsq_tmp)
+    });
+}
 
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn boxsum3_h_avx2_impl(
+    _token: Desktop64,
+    sumsq: &mut [i32; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    sum: &mut [i16; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+    sum_tmp: &mut [i16; REST_UNIT_STRIDE],
+    sumsq_tmp: &mut [i32; REST_UNIT_STRIDE],
+) {
     for row in 1..h - 3 {
         let row_off = row * REST_UNIT_STRIDE;
         let mut x = 2usize;
@@ -2076,9 +2314,26 @@ fn boxsum5_h_avx512(
     w: usize,
     h: usize,
 ) {
-    let mut sum_tmp = [0i16; REST_UNIT_STRIDE];
-    let mut sumsq_tmp = [0i32; REST_UNIT_STRIDE];
+    BOX_TMP8.with_borrow_mut(|t| {
+        let BoxTmp8 {
+            sum: sum_tmp,
+            sumsq: sumsq_tmp,
+        } = t;
+        boxsum5_h_avx512_impl(_token, sumsq, sum, w, h, sum_tmp, sumsq_tmp)
+    });
+}
 
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn boxsum5_h_avx512_impl(
+    _token: Server64,
+    sumsq: &mut [i32; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    sum: &mut [i16; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+    sum_tmp: &mut [i16; REST_UNIT_STRIDE],
+    sumsq_tmp: &mut [i32; REST_UNIT_STRIDE],
+) {
     for row in 1..h - 3 {
         let row_off = row * REST_UNIT_STRIDE;
 
@@ -2263,9 +2518,26 @@ fn boxsum3_h_avx512(
     w: usize,
     h: usize,
 ) {
-    let mut sum_tmp = [0i16; REST_UNIT_STRIDE];
-    let mut sumsq_tmp = [0i32; REST_UNIT_STRIDE];
+    BOX_TMP8.with_borrow_mut(|t| {
+        let BoxTmp8 {
+            sum: sum_tmp,
+            sumsq: sumsq_tmp,
+        } = t;
+        boxsum3_h_avx512_impl(_token, sumsq, sum, w, h, sum_tmp, sumsq_tmp)
+    });
+}
 
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn boxsum3_h_avx512_impl(
+    _token: Server64,
+    sumsq: &mut [i32; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    sum: &mut [i16; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+    sum_tmp: &mut [i16; REST_UNIT_STRIDE],
+    sumsq_tmp: &mut [i32; REST_UNIT_STRIDE],
+) {
     for row in 1..h - 3 {
         let row_off = row * REST_UNIT_STRIDE;
         let mut x = 2usize;
@@ -2317,20 +2589,36 @@ fn selfguided_filter_8bpc_avx2(
     n: i32,
     s: u32,
 ) {
-    let sgr_one_by_x: u32 = if n == 25 { 164 } else { 455 };
+    SG_SCRATCH8.with_borrow_mut(|scratch| {
+        let SgScratch8 { sumsq, sum } = scratch;
+        selfguided_filter_8bpc_avx2_impl(_token, dst, src, w, h, n, s, sumsq, sum)
+    });
+}
 
-    let mut sumsq = [0i32; (64 + 2 + 2) * REST_UNIT_STRIDE];
-    let mut sum = [0i16; (64 + 2 + 2) * REST_UNIT_STRIDE];
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn selfguided_filter_8bpc_avx2_impl(
+    _token: Desktop64,
+    dst: &mut [i16; 64 * MAX_RESTORATION_WIDTH],
+    src: &[u8; (64 + 3 + 3) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+    n: i32,
+    s: u32,
+    sumsq: &mut [i32; BOX_LEN],
+    sum: &mut [i16; BOX_LEN],
+) {
+    let sgr_one_by_x: u32 = if n == 25 { 164 } else { 455 };
 
     let step = if n == 25 { 2 } else { 1 };
 
     // AVX2 boxsum
     if n == 25 {
-        boxsum5_v_avx2(_token, &mut sumsq, &mut sum, src, w + 6, h + 6);
-        boxsum5_h_avx2(_token, &mut sumsq, &mut sum, w + 6, h + 6);
+        boxsum5_v_avx2(_token, sumsq, sum, src, w + 6, h + 6);
+        boxsum5_h_avx2(_token, sumsq, sum, w + 6, h + 6);
     } else {
-        boxsum3_v_avx2(_token, &mut sumsq, &mut sum, src, w + 6, h + 6);
-        boxsum3_h_avx2(_token, &mut sumsq, &mut sum, w + 6, h + 6);
+        boxsum3_v_avx2(_token, sumsq, sum, src, w + 6, h + 6);
+        boxsum3_h_avx2(_token, sumsq, sum, w + 6, h + 6);
     }
 
     // Coefficient calculation (scalar — table lookup dominates)
@@ -2761,20 +3049,36 @@ fn selfguided_filter_8bpc_avx512(
     n: i32,
     s: u32,
 ) {
-    let sgr_one_by_x: u32 = if n == 25 { 164 } else { 455 };
+    SG_SCRATCH8.with_borrow_mut(|scratch| {
+        let SgScratch8 { sumsq, sum } = scratch;
+        selfguided_filter_8bpc_avx512_impl(_token, dst, src, w, h, n, s, sumsq, sum)
+    });
+}
 
-    let mut sumsq = [0i32; (64 + 2 + 2) * REST_UNIT_STRIDE];
-    let mut sum = [0i16; (64 + 2 + 2) * REST_UNIT_STRIDE];
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn selfguided_filter_8bpc_avx512_impl(
+    _token: Server64,
+    dst: &mut [i16; 64 * MAX_RESTORATION_WIDTH],
+    src: &[u8; (64 + 3 + 3) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+    n: i32,
+    s: u32,
+    sumsq: &mut [i32; BOX_LEN],
+    sum: &mut [i16; BOX_LEN],
+) {
+    let sgr_one_by_x: u32 = if n == 25 { 164 } else { 455 };
 
     let step = if n == 25 { 2 } else { 1 };
 
     // AVX-512 boxsum (32 cols/iter for sum, 16 for sumsq)
     if n == 25 {
-        boxsum5_v_avx512(_token, &mut sumsq, &mut sum, src, w + 6, h + 6);
-        boxsum5_h_avx512(_token, &mut sumsq, &mut sum, w + 6, h + 6);
+        boxsum5_v_avx512(_token, sumsq, sum, src, w + 6, h + 6);
+        boxsum5_h_avx512(_token, sumsq, sum, w + 6, h + 6);
     } else {
-        boxsum3_v_avx512(_token, &mut sumsq, &mut sum, src, w + 6, h + 6);
-        boxsum3_h_avx512(_token, &mut sumsq, &mut sum, w + 6, h + 6);
+        boxsum3_v_avx512(_token, sumsq, sum, src, w + 6, h + 6);
+        boxsum3_h_avx512(_token, sumsq, sum, w + 6, h + 6);
     }
 
     // Coefficient calculation (scalar — table lookup dominates)
@@ -3450,46 +3754,48 @@ fn sgr_5x5_8bpc_avx2_inner(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
 ) {
-    let mut tmp = [0u8; (64 + 3 + 3) * REST_UNIT_STRIDE];
-    let mut dst = [0i16; 64 * MAX_RESTORATION_WIDTH];
+    SGR_SCRATCH8.with_borrow_mut(|s| {
+        let SgrScratch8 { tmp, dst0: dst, .. } = s;
 
-    padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
+        padding::<BitDepth8>(tmp, p, left, lpf, lpf_off, w, h, edges);
 
-    let sgr = params.sgr();
-    #[cfg(target_arch = "x86_64")]
-    if let Some(token) = crate::src::cpu::summon_avx512() {
-        selfguided_filter_8bpc_avx512(token, &mut dst, &tmp, w, h, 25, sgr.s0);
-    } else if let Some(token) = summon_avx2() {
-        selfguided_filter_8bpc_avx2(token, &mut dst, &tmp, w, h, 25, sgr.s0);
-    } else {
-        selfguided_filter_8bpc(&mut dst, &tmp, w, h, 25, sgr.s0);
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    selfguided_filter_8bpc(&mut dst, &tmp, w, h, 25, sgr.s0);
+        let sgr = params.sgr();
+        #[cfg(target_arch = "x86_64")]
+        if let Some(token) = crate::src::cpu::summon_avx512() {
+            selfguided_filter_8bpc_avx512(token, dst, tmp, w, h, 25, sgr.s0);
+        } else if let Some(token) = summon_avx2() {
+            selfguided_filter_8bpc_avx2(token, dst, tmp, w, h, 25, sgr.s0);
+        } else {
+            selfguided_filter_8bpc(dst, tmp, w, h, 25, sgr.s0);
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        selfguided_filter_8bpc(dst, tmp, w, h, 25, sgr.s0);
 
-    let w0 = sgr.w0 as i32;
+        let w0 = sgr.w0 as i32;
 
-    crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth8, _>(
-        &p,
-        w,
-        h,
-        |bytes, offset, stride| {
-            if let Some(token) = summon_avx2() {
-                sgr_apply_8bpc(token, bytes, offset, stride, &dst, w, h, w0);
-            } else {
-                let dst = dst.as_slice().flex();
-                let mut cp = bytes.flex_mut();
-                for j in 0..h {
-                    let row_off = (offset as isize + j as isize * stride) as usize;
-                    for i in 0..w {
-                        let v = w0 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
-                        cp[row_off + i] =
-                            iclip(cp[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
+        crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth8, _>(
+            &p,
+            w,
+            h,
+            |bytes, offset, stride| {
+                if let Some(token) = summon_avx2() {
+                    sgr_apply_8bpc(token, bytes, offset, stride, &*dst, w, h, w0);
+                } else {
+                    let dst = dst.as_slice().flex();
+                    let mut cp = bytes.flex_mut();
+                    for j in 0..h {
+                        let row_off = (offset as isize + j as isize * stride) as usize;
+                        for i in 0..w {
+                            let v = w0 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
+                            cp[row_off + i] =
+                                iclip(cp[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255)
+                                    as u8;
+                        }
                     }
                 }
-            }
-        },
-    ); // with_pixel_guard_mut
+            },
+        ); // with_pixel_guard_mut
+    });
 }
 
 /// SGR 3x3 filter for 8bpc using AVX2
@@ -3504,46 +3810,48 @@ fn sgr_3x3_8bpc_avx2_inner(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
 ) {
-    let mut tmp = [0u8; (64 + 3 + 3) * REST_UNIT_STRIDE];
-    let mut dst = [0i16; 64 * MAX_RESTORATION_WIDTH];
+    SGR_SCRATCH8.with_borrow_mut(|s| {
+        let SgrScratch8 { tmp, dst0: dst, .. } = s;
 
-    padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
+        padding::<BitDepth8>(tmp, p, left, lpf, lpf_off, w, h, edges);
 
-    let sgr = params.sgr();
-    #[cfg(target_arch = "x86_64")]
-    if let Some(token) = crate::src::cpu::summon_avx512() {
-        selfguided_filter_8bpc_avx512(token, &mut dst, &tmp, w, h, 9, sgr.s1);
-    } else if let Some(token) = summon_avx2() {
-        selfguided_filter_8bpc_avx2(token, &mut dst, &tmp, w, h, 9, sgr.s1);
-    } else {
-        selfguided_filter_8bpc(&mut dst, &tmp, w, h, 9, sgr.s1);
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    selfguided_filter_8bpc(&mut dst, &tmp, w, h, 9, sgr.s1);
+        let sgr = params.sgr();
+        #[cfg(target_arch = "x86_64")]
+        if let Some(token) = crate::src::cpu::summon_avx512() {
+            selfguided_filter_8bpc_avx512(token, dst, tmp, w, h, 9, sgr.s1);
+        } else if let Some(token) = summon_avx2() {
+            selfguided_filter_8bpc_avx2(token, dst, tmp, w, h, 9, sgr.s1);
+        } else {
+            selfguided_filter_8bpc(dst, tmp, w, h, 9, sgr.s1);
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        selfguided_filter_8bpc(dst, tmp, w, h, 9, sgr.s1);
 
-    let w1 = sgr.w1 as i32;
+        let w1 = sgr.w1 as i32;
 
-    crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth8, _>(
-        &p,
-        w,
-        h,
-        |bytes, offset, stride| {
-            if let Some(token) = summon_avx2() {
-                sgr_apply_8bpc(token, bytes, offset, stride, &dst, w, h, w1);
-            } else {
-                let dst = dst.as_slice().flex();
-                let mut cp = bytes.flex_mut();
-                for j in 0..h {
-                    let row_off = (offset as isize + j as isize * stride) as usize;
-                    for i in 0..w {
-                        let v = w1 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
-                        cp[row_off + i] =
-                            iclip(cp[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
+        crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth8, _>(
+            &p,
+            w,
+            h,
+            |bytes, offset, stride| {
+                if let Some(token) = summon_avx2() {
+                    sgr_apply_8bpc(token, bytes, offset, stride, &*dst, w, h, w1);
+                } else {
+                    let dst = dst.as_slice().flex();
+                    let mut cp = bytes.flex_mut();
+                    for j in 0..h {
+                        let row_off = (offset as isize + j as isize * stride) as usize;
+                        for i in 0..w {
+                            let v = w1 * dst[j * MAX_RESTORATION_WIDTH + i] as i32;
+                            cp[row_off + i] =
+                                iclip(cp[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255)
+                                    as u8;
+                        }
                     }
                 }
-            }
-        },
-    ); // with_pixel_guard_mut
+            },
+        ); // with_pixel_guard_mut
+    });
 }
 
 /// SGR mix filter for 8bpc using AVX2 (combines 5x5 and 3x3)
@@ -3558,56 +3866,57 @@ fn sgr_mix_8bpc_avx2_inner(
     params: &LooprestorationParams,
     edges: LrEdgeFlags,
 ) {
-    let mut tmp = [0u8; (64 + 3 + 3) * REST_UNIT_STRIDE];
-    let mut dst0 = [0i16; 64 * MAX_RESTORATION_WIDTH];
-    let mut dst1 = [0i16; 64 * MAX_RESTORATION_WIDTH];
+    SGR_SCRATCH8.with_borrow_mut(|s| {
+        let SgrScratch8 { tmp, dst0, dst1 } = s;
 
-    padding::<BitDepth8>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
+        padding::<BitDepth8>(tmp, p, left, lpf, lpf_off, w, h, edges);
 
-    let sgr = params.sgr();
-    #[cfg(target_arch = "x86_64")]
-    if let Some(token) = crate::src::cpu::summon_avx512() {
-        selfguided_filter_8bpc_avx512(token, &mut dst0, &tmp, w, h, 25, sgr.s0);
-        selfguided_filter_8bpc_avx512(token, &mut dst1, &tmp, w, h, 9, sgr.s1);
-    } else if let Some(token) = summon_avx2() {
-        selfguided_filter_8bpc_avx2(token, &mut dst0, &tmp, w, h, 25, sgr.s0);
-        selfguided_filter_8bpc_avx2(token, &mut dst1, &tmp, w, h, 9, sgr.s1);
-    } else {
-        selfguided_filter_8bpc(&mut dst0, &tmp, w, h, 25, sgr.s0);
-        selfguided_filter_8bpc(&mut dst1, &tmp, w, h, 9, sgr.s1);
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        selfguided_filter_8bpc(&mut dst0, &tmp, w, h, 25, sgr.s0);
-        selfguided_filter_8bpc(&mut dst1, &tmp, w, h, 9, sgr.s1);
-    }
+        let sgr = params.sgr();
+        #[cfg(target_arch = "x86_64")]
+        if let Some(token) = crate::src::cpu::summon_avx512() {
+            selfguided_filter_8bpc_avx512(token, dst0, tmp, w, h, 25, sgr.s0);
+            selfguided_filter_8bpc_avx512(token, dst1, tmp, w, h, 9, sgr.s1);
+        } else if let Some(token) = summon_avx2() {
+            selfguided_filter_8bpc_avx2(token, dst0, tmp, w, h, 25, sgr.s0);
+            selfguided_filter_8bpc_avx2(token, dst1, tmp, w, h, 9, sgr.s1);
+        } else {
+            selfguided_filter_8bpc(dst0, tmp, w, h, 25, sgr.s0);
+            selfguided_filter_8bpc(dst1, tmp, w, h, 9, sgr.s1);
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            selfguided_filter_8bpc(dst0, tmp, w, h, 25, sgr.s0);
+            selfguided_filter_8bpc(dst1, tmp, w, h, 9, sgr.s1);
+        }
 
-    let w0 = sgr.w0 as i32;
-    let w1 = sgr.w1 as i32;
+        let w0 = sgr.w0 as i32;
+        let w1 = sgr.w1 as i32;
 
-    crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth8, _>(
-        &p,
-        w,
-        h,
-        |bytes, offset, stride| {
-            if let Some(token) = summon_avx2() {
-                sgr_apply_mix_8bpc(token, bytes, offset, stride, &dst0, &dst1, w, h, w0, w1);
-            } else {
-                let d0 = dst0.as_slice().flex();
-                let d1 = dst1.as_slice().flex();
-                let mut cp = bytes.flex_mut();
-                for j in 0..h {
-                    let row_off = (offset as isize + j as isize * stride) as usize;
-                    for i in 0..w {
-                        let v = w0 * d0[j * MAX_RESTORATION_WIDTH + i] as i32
-                            + w1 * d1[j * MAX_RESTORATION_WIDTH + i] as i32;
-                        cp[row_off + i] =
-                            iclip(cp[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255) as u8;
+        crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth8, _>(
+            &p,
+            w,
+            h,
+            |bytes, offset, stride| {
+                if let Some(token) = summon_avx2() {
+                    sgr_apply_mix_8bpc(token, bytes, offset, stride, &*dst0, &*dst1, w, h, w0, w1);
+                } else {
+                    let d0 = dst0.as_slice().flex();
+                    let d1 = dst1.as_slice().flex();
+                    let mut cp = bytes.flex_mut();
+                    for j in 0..h {
+                        let row_off = (offset as isize + j as isize * stride) as usize;
+                        for i in 0..w {
+                            let v = w0 * d0[j * MAX_RESTORATION_WIDTH + i] as i32
+                                + w1 * d1[j * MAX_RESTORATION_WIDTH + i] as i32;
+                            cp[row_off + i] =
+                                iclip(cp[row_off + i] as i32 + ((v + (1 << 10)) >> 11), 0, 255)
+                                    as u8;
+                        }
                     }
                 }
-            }
-        },
-    ); // with_pixel_guard_mut
+            },
+        ); // with_pixel_guard_mut
+    });
 }
 
 // ============================================================================
@@ -3969,9 +4278,26 @@ fn boxsum5_h_16bpc_avx512(
     w: usize,
     h: usize,
 ) {
-    let mut sum_tmp = [0i32; REST_UNIT_STRIDE];
-    let mut sumsq_tmp = [0i64; REST_UNIT_STRIDE];
+    BOX_TMP16.with_borrow_mut(|t| {
+        let BoxTmp16 {
+            sum: sum_tmp,
+            sumsq: sumsq_tmp,
+        } = t;
+        boxsum5_h_16bpc_avx512_impl(_token, sumsq, sum, w, h, sum_tmp, sumsq_tmp)
+    });
+}
 
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn boxsum5_h_16bpc_avx512_impl(
+    _token: Server64,
+    sumsq: &mut [i64; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    sum: &mut [i32; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+    sum_tmp: &mut [i32; REST_UNIT_STRIDE],
+    sumsq_tmp: &mut [i64; REST_UNIT_STRIDE],
+) {
     for row in 1..h - 3 {
         let row_off = row * REST_UNIT_STRIDE;
 
@@ -4134,9 +4460,26 @@ fn boxsum3_h_16bpc_avx512(
     w: usize,
     h: usize,
 ) {
-    let mut sum_tmp = [0i32; REST_UNIT_STRIDE];
-    let mut sumsq_tmp = [0i64; REST_UNIT_STRIDE];
+    BOX_TMP16.with_borrow_mut(|t| {
+        let BoxTmp16 {
+            sum: sum_tmp,
+            sumsq: sumsq_tmp,
+        } = t;
+        boxsum3_h_16bpc_avx512_impl(_token, sumsq, sum, w, h, sum_tmp, sumsq_tmp)
+    });
+}
 
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn boxsum3_h_16bpc_avx512_impl(
+    _token: Server64,
+    sumsq: &mut [i64; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    sum: &mut [i32; (64 + 2 + 2) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+    sum_tmp: &mut [i32; REST_UNIT_STRIDE],
+    sumsq_tmp: &mut [i64; REST_UNIT_STRIDE],
+) {
     for row in 1..h - 3 {
         let row_off = row * REST_UNIT_STRIDE;
         let mut x = 2usize;
@@ -4189,26 +4532,40 @@ fn selfguided_filter_16bpc(
     s: u32,
     bitdepth_max: i32,
 ) {
+    SG_SCRATCH16.with_borrow_mut(|scratch| {
+        let SgScratch16 { sumsq, sum, aa, bb } = scratch;
+        selfguided_filter_16bpc_impl(dst, src, w, h, n, s, bitdepth_max, sumsq, sum, aa, bb)
+    });
+}
+
+#[inline(never)]
+fn selfguided_filter_16bpc_impl(
+    dst: &mut [i32; 64 * MAX_RESTORATION_WIDTH],
+    src: &[u16; (64 + 3 + 3) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+    n: i32,
+    s: u32,
+    bitdepth_max: i32,
+    // Working buffers - use i64 for sumsq to handle large squared values
+    sumsq: &mut [i64; BOX_LEN],
+    sum: &mut [i32; BOX_LEN],
+    // Coefficient buffers (reuse sumsq/sum after boxsum)
+    aa: &mut [i32; BOX_LEN],
+    bb: &mut [i32; BOX_LEN],
+) {
     let sgr_one_by_x: u32 = if n == 25 { 164 } else { 455 };
 
     // Determine bitdepth_min_8 (10bpc -> 2, 12bpc -> 4)
     let bitdepth = if bitdepth_max == 1023 { 10 } else { 12 };
     let bitdepth_min_8 = bitdepth - 8;
 
-    // Working buffers - use i64 for sumsq to handle large squared values
-    let mut sumsq = [0i64; (64 + 2 + 2) * REST_UNIT_STRIDE];
-    let mut sum = [0i32; (64 + 2 + 2) * REST_UNIT_STRIDE];
-
-    // Coefficient buffers (reuse sumsq/sum after boxsum)
-    let mut aa = [0i32; (64 + 2 + 2) * REST_UNIT_STRIDE];
-    let mut bb = [0i32; (64 + 2 + 2) * REST_UNIT_STRIDE];
-
     let step = if n == 25 { 2 } else { 1 };
 
     if n == 25 {
-        boxsum5_16bpc(&mut sumsq, &mut sum, src, w + 6, h + 6);
+        boxsum5_16bpc(sumsq, sum, src, w + 6, h + 6);
     } else {
-        boxsum3_16bpc(&mut sumsq, &mut sum, src, w + 6, h + 6);
+        boxsum3_16bpc(sumsq, sum, src, w + 6, h + 6);
     }
 
     // Calculate filter coefficients a and b with bitdepth scaling
@@ -4400,23 +4757,53 @@ fn selfguided_filter_16bpc_avx2(
     s: u32,
     bitdepth_max: i32,
 ) {
+    SG_SCRATCH16.with_borrow_mut(|scratch| {
+        let SgScratch16 { sumsq, sum, aa, bb } = scratch;
+        selfguided_filter_16bpc_avx2_impl(
+            _token,
+            dst,
+            src,
+            w,
+            h,
+            n,
+            s,
+            bitdepth_max,
+            sumsq,
+            sum,
+            aa,
+            bb,
+        )
+    });
+}
+
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn selfguided_filter_16bpc_avx2_impl(
+    _token: Desktop64,
+    dst: &mut [i32; 64 * MAX_RESTORATION_WIDTH],
+    src: &[u16; (64 + 3 + 3) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+    n: i32,
+    s: u32,
+    bitdepth_max: i32,
+    sumsq: &mut [i64; BOX_LEN],
+    sum: &mut [i32; BOX_LEN],
+    aa: &mut [i32; BOX_LEN],
+    bb: &mut [i32; BOX_LEN],
+) {
     let sgr_one_by_x: u32 = if n == 25 { 164 } else { 455 };
 
     let bitdepth = if bitdepth_max == 1023 { 10 } else { 12 };
     let bitdepth_min_8 = bitdepth - 8;
 
-    let mut sumsq = [0i64; (64 + 2 + 2) * REST_UNIT_STRIDE];
-    let mut sum = [0i32; (64 + 2 + 2) * REST_UNIT_STRIDE];
-    let mut aa = [0i32; (64 + 2 + 2) * REST_UNIT_STRIDE];
-    let mut bb = [0i32; (64 + 2 + 2) * REST_UNIT_STRIDE];
-
     let step = if n == 25 { 2 } else { 1 };
 
     // Boxsum (scalar)
     if n == 25 {
-        boxsum5_16bpc(&mut sumsq, &mut sum, src, w + 6, h + 6);
+        boxsum5_16bpc(sumsq, sum, src, w + 6, h + 6);
     } else {
-        boxsum3_16bpc(&mut sumsq, &mut sum, src, w + 6, h + 6);
+        boxsum3_16bpc(sumsq, sum, src, w + 6, h + 6);
     }
 
     // Coefficient calculation (scalar — table lookup dominates)
@@ -4843,25 +5230,55 @@ fn selfguided_filter_16bpc_avx512(
     s: u32,
     bitdepth_max: i32,
 ) {
+    SG_SCRATCH16.with_borrow_mut(|scratch| {
+        let SgScratch16 { sumsq, sum, aa, bb } = scratch;
+        selfguided_filter_16bpc_avx512_impl(
+            _token,
+            dst,
+            src,
+            w,
+            h,
+            n,
+            s,
+            bitdepth_max,
+            sumsq,
+            sum,
+            aa,
+            bb,
+        )
+    });
+}
+
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn selfguided_filter_16bpc_avx512_impl(
+    _token: Server64,
+    dst: &mut [i32; 64 * MAX_RESTORATION_WIDTH],
+    src: &[u16; (64 + 3 + 3) * REST_UNIT_STRIDE],
+    w: usize,
+    h: usize,
+    n: i32,
+    s: u32,
+    bitdepth_max: i32,
+    sumsq: &mut [i64; BOX_LEN],
+    sum: &mut [i32; BOX_LEN],
+    aa: &mut [i32; BOX_LEN],
+    bb: &mut [i32; BOX_LEN],
+) {
     let sgr_one_by_x: u32 = if n == 25 { 164 } else { 455 };
 
     let bitdepth = if bitdepth_max == 1023 { 10 } else { 12 };
     let bitdepth_min_8 = bitdepth - 8;
 
-    let mut sumsq = [0i64; (64 + 2 + 2) * REST_UNIT_STRIDE];
-    let mut sum = [0i32; (64 + 2 + 2) * REST_UNIT_STRIDE];
-    let mut aa = [0i32; (64 + 2 + 2) * REST_UNIT_STRIDE];
-    let mut bb = [0i32; (64 + 2 + 2) * REST_UNIT_STRIDE];
-
     let step = if n == 25 { 2 } else { 1 };
 
     // AVX-512 boxsum (16 cols/iter for sum, 8 for sumsq i64)
     if n == 25 {
-        boxsum5_v_16bpc_avx512(_token, &mut sumsq, &mut sum, src, w + 6, h + 6);
-        boxsum5_h_16bpc_avx512(_token, &mut sumsq, &mut sum, w + 6, h + 6);
+        boxsum5_v_16bpc_avx512(_token, sumsq, sum, src, w + 6, h + 6);
+        boxsum5_h_16bpc_avx512(_token, sumsq, sum, w + 6, h + 6);
     } else {
-        boxsum3_v_16bpc_avx512(_token, &mut sumsq, &mut sum, src, w + 6, h + 6);
-        boxsum3_h_16bpc_avx512(_token, &mut sumsq, &mut sum, w + 6, h + 6);
+        boxsum3_v_16bpc_avx512(_token, sumsq, sum, src, w + 6, h + 6);
+        boxsum3_h_16bpc_avx512(_token, sumsq, sum, w + 6, h + 6);
     }
 
     // Coefficient calculation (scalar — table lookup dominates)
@@ -5440,61 +5857,62 @@ fn sgr_5x5_16bpc_avx2_inner(
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
 ) {
-    let mut tmp = [0u16; (64 + 3 + 3) * REST_UNIT_STRIDE];
-    let mut dst = [0i32; 64 * MAX_RESTORATION_WIDTH];
+    SGR_SCRATCH16.with_borrow_mut(|s| {
+        let SgrScratch16 { tmp, dst0: dst, .. } = s;
 
-    padding::<BitDepth16>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
+        padding::<BitDepth16>(tmp, p, left, lpf, lpf_off, w, h, edges);
 
-    let sgr = params.sgr();
-    #[cfg(target_arch = "x86_64")]
-    if let Some(token) = crate::src::cpu::summon_avx512() {
-        selfguided_filter_16bpc_avx512(token, &mut dst, &tmp, w, h, 25, sgr.s0, bitdepth_max);
-    } else if let Some(token) = summon_avx2() {
-        selfguided_filter_16bpc_avx2(token, &mut dst, &tmp, w, h, 25, sgr.s0, bitdepth_max);
-    } else {
-        selfguided_filter_16bpc(&mut dst, &tmp, w, h, 25, sgr.s0, bitdepth_max);
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    selfguided_filter_16bpc(&mut dst, &tmp, w, h, 25, sgr.s0, bitdepth_max);
+        let sgr = params.sgr();
+        #[cfg(target_arch = "x86_64")]
+        if let Some(token) = crate::src::cpu::summon_avx512() {
+            selfguided_filter_16bpc_avx512(token, dst, tmp, w, h, 25, sgr.s0, bitdepth_max);
+        } else if let Some(token) = summon_avx2() {
+            selfguided_filter_16bpc_avx2(token, dst, tmp, w, h, 25, sgr.s0, bitdepth_max);
+        } else {
+            selfguided_filter_16bpc(dst, tmp, w, h, 25, sgr.s0, bitdepth_max);
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        selfguided_filter_16bpc(dst, tmp, w, h, 25, sgr.s0, bitdepth_max);
 
-    let w0 = sgr.w0 as i32;
+        let w0 = sgr.w0 as i32;
 
-    crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth16, _>(
-        &p,
-        w,
-        h,
-        |bytes, offset, stride| {
-            let p_u16: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(&mut bytes[..])
-                .expect("bytes alignment/size mismatch for u16 reinterpretation");
-            if let Some(token) = summon_avx2() {
-                sgr_apply_16bpc(
-                    token,
-                    p_u16,
-                    offset / 2,
-                    stride / 2,
-                    &dst,
-                    w,
-                    h,
-                    w0,
-                    bitdepth_max,
-                );
-            } else {
-                let dst = dst.as_slice().flex();
-                let mut cp = p_u16.flex_mut();
-                for j in 0..h {
-                    let row_off = (offset as isize + j as isize * stride) as usize / 2;
-                    for i in 0..w {
-                        let v = w0 * dst[j * MAX_RESTORATION_WIDTH + i];
-                        cp[row_off + i] = iclip(
-                            cp[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
-                            0,
-                            bitdepth_max,
-                        ) as u16;
+        crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth16, _>(
+            &p,
+            w,
+            h,
+            |bytes, offset, stride| {
+                let p_u16: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(&mut bytes[..])
+                    .expect("bytes alignment/size mismatch for u16 reinterpretation");
+                if let Some(token) = summon_avx2() {
+                    sgr_apply_16bpc(
+                        token,
+                        p_u16,
+                        offset / 2,
+                        stride / 2,
+                        &*dst,
+                        w,
+                        h,
+                        w0,
+                        bitdepth_max,
+                    );
+                } else {
+                    let dst = dst.as_slice().flex();
+                    let mut cp = p_u16.flex_mut();
+                    for j in 0..h {
+                        let row_off = (offset as isize + j as isize * stride) as usize / 2;
+                        for i in 0..w {
+                            let v = w0 * dst[j * MAX_RESTORATION_WIDTH + i];
+                            cp[row_off + i] = iclip(
+                                cp[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                                0,
+                                bitdepth_max,
+                            ) as u16;
+                        }
                     }
                 }
-            }
-        },
-    ); // with_pixel_guard_mut
+            },
+        ); // with_pixel_guard_mut
+    });
 }
 
 /// SGR 3x3 filter for 16bpc using AVX2
@@ -5510,61 +5928,62 @@ fn sgr_3x3_16bpc_avx2_inner(
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
 ) {
-    let mut tmp = [0u16; (64 + 3 + 3) * REST_UNIT_STRIDE];
-    let mut dst = [0i32; 64 * MAX_RESTORATION_WIDTH];
+    SGR_SCRATCH16.with_borrow_mut(|s| {
+        let SgrScratch16 { tmp, dst0: dst, .. } = s;
 
-    padding::<BitDepth16>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
+        padding::<BitDepth16>(tmp, p, left, lpf, lpf_off, w, h, edges);
 
-    let sgr = params.sgr();
-    #[cfg(target_arch = "x86_64")]
-    if let Some(token) = crate::src::cpu::summon_avx512() {
-        selfguided_filter_16bpc_avx512(token, &mut dst, &tmp, w, h, 9, sgr.s1, bitdepth_max);
-    } else if let Some(token) = summon_avx2() {
-        selfguided_filter_16bpc_avx2(token, &mut dst, &tmp, w, h, 9, sgr.s1, bitdepth_max);
-    } else {
-        selfguided_filter_16bpc(&mut dst, &tmp, w, h, 9, sgr.s1, bitdepth_max);
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    selfguided_filter_16bpc(&mut dst, &tmp, w, h, 9, sgr.s1, bitdepth_max);
+        let sgr = params.sgr();
+        #[cfg(target_arch = "x86_64")]
+        if let Some(token) = crate::src::cpu::summon_avx512() {
+            selfguided_filter_16bpc_avx512(token, dst, tmp, w, h, 9, sgr.s1, bitdepth_max);
+        } else if let Some(token) = summon_avx2() {
+            selfguided_filter_16bpc_avx2(token, dst, tmp, w, h, 9, sgr.s1, bitdepth_max);
+        } else {
+            selfguided_filter_16bpc(dst, tmp, w, h, 9, sgr.s1, bitdepth_max);
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        selfguided_filter_16bpc(dst, tmp, w, h, 9, sgr.s1, bitdepth_max);
 
-    let w1 = sgr.w1 as i32;
+        let w1 = sgr.w1 as i32;
 
-    crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth16, _>(
-        &p,
-        w,
-        h,
-        |bytes, offset, stride| {
-            let p_u16: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(&mut bytes[..])
-                .expect("bytes alignment/size mismatch for u16 reinterpretation");
-            if let Some(token) = summon_avx2() {
-                sgr_apply_16bpc(
-                    token,
-                    p_u16,
-                    offset / 2,
-                    stride / 2,
-                    &dst,
-                    w,
-                    h,
-                    w1,
-                    bitdepth_max,
-                );
-            } else {
-                let dst = dst.as_slice().flex();
-                let mut cp = p_u16.flex_mut();
-                for j in 0..h {
-                    let row_off = (offset as isize + j as isize * stride) as usize / 2;
-                    for i in 0..w {
-                        let v = w1 * dst[j * MAX_RESTORATION_WIDTH + i];
-                        cp[row_off + i] = iclip(
-                            cp[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
-                            0,
-                            bitdepth_max,
-                        ) as u16;
+        crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth16, _>(
+            &p,
+            w,
+            h,
+            |bytes, offset, stride| {
+                let p_u16: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(&mut bytes[..])
+                    .expect("bytes alignment/size mismatch for u16 reinterpretation");
+                if let Some(token) = summon_avx2() {
+                    sgr_apply_16bpc(
+                        token,
+                        p_u16,
+                        offset / 2,
+                        stride / 2,
+                        &*dst,
+                        w,
+                        h,
+                        w1,
+                        bitdepth_max,
+                    );
+                } else {
+                    let dst = dst.as_slice().flex();
+                    let mut cp = p_u16.flex_mut();
+                    for j in 0..h {
+                        let row_off = (offset as isize + j as isize * stride) as usize / 2;
+                        for i in 0..w {
+                            let v = w1 * dst[j * MAX_RESTORATION_WIDTH + i];
+                            cp[row_off + i] = iclip(
+                                cp[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                                0,
+                                bitdepth_max,
+                            ) as u16;
+                        }
                     }
                 }
-            }
-        },
-    ); // with_pixel_guard_mut
+            },
+        ); // with_pixel_guard_mut
+    });
 }
 
 /// SGR mix filter for 16bpc using AVX2 (combines 5x5 and 3x3)
@@ -5580,73 +5999,73 @@ fn sgr_mix_16bpc_avx2_inner(
     edges: LrEdgeFlags,
     bitdepth_max: c_int,
 ) {
-    let mut tmp = [0u16; (64 + 3 + 3) * REST_UNIT_STRIDE];
-    let mut dst0 = [0i32; 64 * MAX_RESTORATION_WIDTH];
-    let mut dst1 = [0i32; 64 * MAX_RESTORATION_WIDTH];
+    SGR_SCRATCH16.with_borrow_mut(|s| {
+        let SgrScratch16 { tmp, dst0, dst1 } = s;
 
-    padding::<BitDepth16>(&mut tmp, p, left, lpf, lpf_off, w, h, edges);
+        padding::<BitDepth16>(tmp, p, left, lpf, lpf_off, w, h, edges);
 
-    let sgr = params.sgr();
-    #[cfg(target_arch = "x86_64")]
-    if let Some(token) = crate::src::cpu::summon_avx512() {
-        selfguided_filter_16bpc_avx512(token, &mut dst0, &tmp, w, h, 25, sgr.s0, bitdepth_max);
-        selfguided_filter_16bpc_avx512(token, &mut dst1, &tmp, w, h, 9, sgr.s1, bitdepth_max);
-    } else if let Some(token) = summon_avx2() {
-        selfguided_filter_16bpc_avx2(token, &mut dst0, &tmp, w, h, 25, sgr.s0, bitdepth_max);
-        selfguided_filter_16bpc_avx2(token, &mut dst1, &tmp, w, h, 9, sgr.s1, bitdepth_max);
-    } else {
-        selfguided_filter_16bpc(&mut dst0, &tmp, w, h, 25, sgr.s0, bitdepth_max);
-        selfguided_filter_16bpc(&mut dst1, &tmp, w, h, 9, sgr.s1, bitdepth_max);
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        selfguided_filter_16bpc(&mut dst0, &tmp, w, h, 25, sgr.s0, bitdepth_max);
-        selfguided_filter_16bpc(&mut dst1, &tmp, w, h, 9, sgr.s1, bitdepth_max);
-    }
+        let sgr = params.sgr();
+        #[cfg(target_arch = "x86_64")]
+        if let Some(token) = crate::src::cpu::summon_avx512() {
+            selfguided_filter_16bpc_avx512(token, dst0, tmp, w, h, 25, sgr.s0, bitdepth_max);
+            selfguided_filter_16bpc_avx512(token, dst1, tmp, w, h, 9, sgr.s1, bitdepth_max);
+        } else if let Some(token) = summon_avx2() {
+            selfguided_filter_16bpc_avx2(token, dst0, tmp, w, h, 25, sgr.s0, bitdepth_max);
+            selfguided_filter_16bpc_avx2(token, dst1, tmp, w, h, 9, sgr.s1, bitdepth_max);
+        } else {
+            selfguided_filter_16bpc(dst0, tmp, w, h, 25, sgr.s0, bitdepth_max);
+            selfguided_filter_16bpc(dst1, tmp, w, h, 9, sgr.s1, bitdepth_max);
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            selfguided_filter_16bpc(dst0, tmp, w, h, 25, sgr.s0, bitdepth_max);
+            selfguided_filter_16bpc(dst1, tmp, w, h, 9, sgr.s1, bitdepth_max);
+        }
 
-    let w0 = sgr.w0 as i32;
-    let w1 = sgr.w1 as i32;
+        let w0 = sgr.w0 as i32;
+        let w1 = sgr.w1 as i32;
 
-    crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth16, _>(
-        &p,
-        w,
-        h,
-        |bytes, offset, stride| {
-            let p_u16: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(&mut bytes[..])
-                .expect("bytes alignment/size mismatch for u16 reinterpretation");
-            if let Some(token) = summon_avx2() {
-                sgr_apply_mix_16bpc(
-                    token,
-                    p_u16,
-                    offset / 2,
-                    stride / 2,
-                    &dst0,
-                    &dst1,
-                    w,
-                    h,
-                    w0,
-                    w1,
-                    bitdepth_max,
-                );
-            } else {
-                let d0 = dst0.as_slice().flex();
-                let d1 = dst1.as_slice().flex();
-                let mut cp = p_u16.flex_mut();
-                for j in 0..h {
-                    let row_off = (offset as isize + j as isize * stride) as usize / 2;
-                    for i in 0..w {
-                        let v = w0 * d0[j * MAX_RESTORATION_WIDTH + i]
-                            + w1 * d1[j * MAX_RESTORATION_WIDTH + i];
-                        cp[row_off + i] = iclip(
-                            cp[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
-                            0,
-                            bitdepth_max,
-                        ) as u16;
+        crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth16, _>(
+            &p,
+            w,
+            h,
+            |bytes, offset, stride| {
+                let p_u16: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(&mut bytes[..])
+                    .expect("bytes alignment/size mismatch for u16 reinterpretation");
+                if let Some(token) = summon_avx2() {
+                    sgr_apply_mix_16bpc(
+                        token,
+                        p_u16,
+                        offset / 2,
+                        stride / 2,
+                        &*dst0,
+                        &*dst1,
+                        w,
+                        h,
+                        w0,
+                        w1,
+                        bitdepth_max,
+                    );
+                } else {
+                    let d0 = dst0.as_slice().flex();
+                    let d1 = dst1.as_slice().flex();
+                    let mut cp = p_u16.flex_mut();
+                    for j in 0..h {
+                        let row_off = (offset as isize + j as isize * stride) as usize / 2;
+                        for i in 0..w {
+                            let v = w0 * d0[j * MAX_RESTORATION_WIDTH + i]
+                                + w1 * d1[j * MAX_RESTORATION_WIDTH + i];
+                            cp[row_off + i] = iclip(
+                                cp[row_off + i] as i32 + ((v + (1 << 10)) >> 11),
+                                0,
+                                bitdepth_max,
+                            ) as u16;
+                        }
                     }
                 }
-            }
-        },
-    ); // with_pixel_guard_mut
+            },
+        ); // with_pixel_guard_mut
+    });
 }
 
 // ============================================================================

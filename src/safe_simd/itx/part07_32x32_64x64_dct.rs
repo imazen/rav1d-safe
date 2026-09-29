@@ -223,7 +223,7 @@ fn inv_txfm_32x32_inner<C: Copy + Into<i32>>(
 /// Used for w>=32 transforms (32x32, 64x64, 32x64, 64x32, 64x16).
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn add_to_dst_8bpc_avx512(
+fn add_to_dst_8bpc_v4(
     _token: Server64,
     dst: &mut [u8],
     dst_stride: usize,
@@ -321,7 +321,7 @@ fn add_to_dst_8bpc_avx512(
 /// Used for w>=16 transforms (32x32, 64x64, 32x64, 64x32, 16x64, 64x16).
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn add_to_dst_16bpc_avx512(
+fn add_to_dst_16bpc_v4(
     _token: Server64,
     dst: &mut [u16],
     dst_stride_u16: usize,
@@ -513,7 +513,7 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
     // SIMD column transform: 8 columns x 4 chunks
     dct32x32_cols_simd(_token, &mut tmp, col_clip_min, col_clip_max);
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 32, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 32, 32, 32, bitdepth_max);
     } else {
         add_32x32_to_dst(
             _token,
@@ -559,7 +559,7 @@ fn inv_txfm_add_identity_identity_32x32_8bpc_avx2_inner(
     );
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 32, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 32, 32, 32, bitdepth_max);
     } else {
         add_32x32_to_dst(
             _token,
@@ -759,7 +759,7 @@ fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
     dct32x32_cols_simd(_token, &mut tmp, col_clip_min, col_clip_max);
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_16bpc_avx512(
+        add_to_dst_16bpc_v4(
             t512,
             &mut *dst,
             dst_stride / 2,
@@ -1584,7 +1584,7 @@ fn inv_txfm_add_dct_dct_64x64_8bpc_avx2_inner(
         col_clip_max,
     );
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 64, 64, 64, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 64, 64, 64, bitdepth_max);
     } else {
         add_64x64_to_dst(
             _token,
@@ -1746,7 +1746,7 @@ fn inv_txfm_add_dct_dct_64x64_16bpc_avx2_inner(
     );
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_16bpc_avx512(
+        add_to_dst_16bpc_v4(
             t512,
             &mut *dst,
             dst_stride / 2,

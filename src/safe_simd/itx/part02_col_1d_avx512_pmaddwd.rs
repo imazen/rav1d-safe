@@ -639,7 +639,7 @@ fn dct32_1d_cols16(token: Server64, c: &mut [__m512i; 32], min_v: __m512i, max_v
 /// Processes 16 cols at a time. `total_w` must be a multiple of 16.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct32_cols_avx512(
+fn dct32_cols_v4(
     token: Server64,
     tmp: &mut [i32],
     total_w: usize,
@@ -674,7 +674,7 @@ fn dct32_cols_avx512(
 /// `n_chunks` = `total_w / 16`. Caller is responsible for ensuring this divides.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct16_cols_avx512(
+fn dct16_cols_v4(
     token: Server64,
     tmp: &mut [i32],
     total_w: usize,
@@ -1597,6 +1597,142 @@ fn identity8_1d_cols8(_token: Desktop64, c: &mut [__m256i; 8], _min_v: __m256i, 
     }
 }
 
+/// ADST4 1D transform across 8 columns in parallel (lane = row index).
+/// Mirrors the scalar `adst4_1d` butterfly exactly.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn adst4_1d_cols8(_token: Desktop64, c: &mut [__m256i; 4], _min_v: __m256i, _max_v: __m256i) {
+    // Scalar `inv_adst4_1d_internal_c` ignores its min/max bounds entirely —
+    // no iclip at any stage — so outputs are deliberately left unclipped here
+    // (the caller's own rounding/clip produces the reference result).
+    let k1321 = _mm256_set1_epi32(1321);
+    let k3803 = _mm256_set1_epi32(3803 - 4096);
+    let k2482 = _mm256_set1_epi32(2482 - 4096);
+    let k3344 = _mm256_set1_epi32(3344 - 4096);
+    let k209 = _mm256_set1_epi32(209);
+    let r12 = _mm256_set1_epi32(2048);
+    let r8 = _mm256_set1_epi32(128);
+    let in0 = c[0];
+    let in1 = c[1];
+    let in2 = c[2];
+    let in3 = c[3];
+    // out0 = ((1321*in0 + k3803*in2 + k2482*in3 + k3344*in1 + 2048) >> 12) + in2 + in3 + in1
+    let o0 = _mm256_add_epi32(
+        _mm256_srai_epi32::<12>(_mm256_add_epi32(
+            _mm256_add_epi32(
+                _mm256_add_epi32(_mm256_mullo_epi32(in0, k1321), _mm256_mullo_epi32(in2, k3803)),
+                _mm256_add_epi32(_mm256_mullo_epi32(in3, k2482), _mm256_mullo_epi32(in1, k3344)),
+            ),
+            r12,
+        )),
+        _mm256_add_epi32(_mm256_add_epi32(in2, in3), in1),
+    );
+    // out1 = ((k2482*in0 - 1321*in2 - k3803*in3 + k3344*in1 + 2048) >> 12) + in0 - in3 + in1
+    let o1 = _mm256_add_epi32(
+        _mm256_sub_epi32(
+            _mm256_add_epi32(
+                _mm256_srai_epi32::<12>(_mm256_add_epi32(
+                    _mm256_sub_epi32(
+                        _mm256_add_epi32(
+                            _mm256_mullo_epi32(in0, k2482),
+                            _mm256_mullo_epi32(in1, k3344),
+                        ),
+                        _mm256_add_epi32(
+                            _mm256_mullo_epi32(in2, k1321),
+                            _mm256_mullo_epi32(in3, k3803),
+                        ),
+                    ),
+                    r12,
+                )),
+                in0,
+            ),
+            in3,
+        ),
+        in1,
+    );
+    // out2 = (209 * (in0 - in2 + in3) + 128) >> 8
+    let o2 = _mm256_srai_epi32::<8>(_mm256_add_epi32(
+        _mm256_mullo_epi32(
+            _mm256_add_epi32(_mm256_sub_epi32(in0, in2), in3),
+            k209,
+        ),
+        r8,
+    ));
+    // out3 = ((k3803*in0 + k2482*in2 - 1321*in3 - k3344*in1 + 2048) >> 12) + in0 + in2 - in1
+    let o3 = _mm256_add_epi32(
+        _mm256_sub_epi32(
+            _mm256_add_epi32(
+                _mm256_srai_epi32::<12>(_mm256_add_epi32(
+                    _mm256_sub_epi32(
+                        _mm256_add_epi32(
+                            _mm256_mullo_epi32(in0, k3803),
+                            _mm256_mullo_epi32(in2, k2482),
+                        ),
+                        _mm256_add_epi32(
+                            _mm256_mullo_epi32(in1, k3344),
+                            _mm256_mullo_epi32(in3, k1321),
+                        ),
+                    ),
+                    r12,
+                )),
+                in0,
+            ),
+            in1,
+        ),
+        in2,
+    );
+    c[0] = o0;
+    c[1] = o1;
+    c[2] = o2;
+    c[3] = o3;
+}
+
+/// FlipADST4 1D transform across 8 columns in parallel: ADST4 + reversed output.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn flipadst4_1d_cols8(token: Desktop64, c: &mut [__m256i; 4], min_v: __m256i, max_v: __m256i) {
+    adst4_1d_cols8(token, c, min_v, max_v);
+    c.reverse();
+}
+
+/// Identity4 1D transform across 8 columns in parallel:
+/// out = in + (in * 1697 + 2048) >> 12.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn identity4_1d_cols8(_token: Desktop64, c: &mut [__m256i; 4], _min_v: __m256i, _max_v: __m256i) {
+    let k1697 = _mm256_set1_epi32(1697);
+    let bias = _mm256_set1_epi32(2048);
+    for i in 0..4 {
+        c[i] = _mm256_add_epi32(
+            c[i],
+            _mm256_srai_epi32::<12>(_mm256_add_epi32(_mm256_mullo_epi32(c[i], k1697), bias)),
+        );
+    }
+}
+
+/// FlipADST16 1D transform across 8 columns in parallel: ADST16 + reversed output.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn flipadst16_1d_cols8(token: Desktop64, c: &mut [__m256i; 16], min_v: __m256i, max_v: __m256i) {
+    adst16_1d_cols8(token, c, min_v, max_v);
+    c.reverse();
+}
+
+/// Identity16 1D transform across 8 columns in parallel:
+/// out = 2*in + (in * 1697 + 1024) >> 11.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn identity16_1d_cols8(_token: Desktop64, c: &mut [__m256i; 16], _min_v: __m256i, _max_v: __m256i) {
+    let k1697 = _mm256_set1_epi32(1697);
+    let bias = _mm256_set1_epi32(1024);
+    for i in 0..16 {
+        c[i] = _mm256_add_epi32(
+            _mm256_slli_epi32::<1>(c[i]),
+            _mm256_srai_epi32::<11>(_mm256_add_epi32(_mm256_mullo_epi32(c[i], k1697), bias)),
+        );
+    }
+}
+
 /// DCT16 1D transform across 8 columns in parallel.
 #[cfg(target_arch = "x86_64")]
 #[rite]
@@ -2106,7 +2242,7 @@ fn adst16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max: i3
 fn dct16x16_cols_simd(token: Desktop64, tmp: &mut [i32; 256], min: i32, max: i32) {
     // Try AVX-512 first: processes 16 cols at once instead of 8.
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        dct16_cols_avx512(t512, tmp, 16, 16, min, max);
+        dct16_cols_v4(t512, tmp, 16, 16, min, max);
         return;
     }
     let min_v = _mm256_set1_epi32(min);
@@ -3208,7 +3344,7 @@ fn dct32_1d_cols8_i16(token: Desktop64, c: &mut [__m256i; 32], min_v: __m256i, m
 fn dct32x32_cols_simd(token: Desktop64, tmp: &mut [i32; 1024], min: i32, max: i32) {
     // Try AVX-512 first: 16 cols per chunk (2 chunks total for 32x32).
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        dct32_cols_avx512(t512, tmp, 32, 32, min, max);
+        dct32_cols_v4(t512, tmp, 32, 32, min, max);
         return;
     }
     // Use i16-packed pmaddwd when values are in i16 range (8bpc column pass).

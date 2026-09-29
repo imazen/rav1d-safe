@@ -16,7 +16,7 @@ Completed modules (AVX2 + NEON, 8bpc + 16bpc):
 - filmgrain
 - pal (palette)
 - refmvs (reference MVs)
-- msac (SSE2 adapt4/adapt8/hi_tok when unchecked+x86_64, branchless scalar otherwise, serial loop adapt16)
+- msac (safe SSE2 adapt8/adapt16 + SIMD cdf update in the default build; branchless scalar adapt4 — measured faster than SIMD for n<=3)
 
 **Remaining (not ported, scalar fallback):**
 - Scaled MC (put_8tap_scaled, prep_8tap_scaled, bilin_scaled) — complex per-pixel filter selection, ~2% of profile
@@ -199,7 +199,7 @@ QEMU aarch64 `cross test` path stay on `cargo test` (nextest can't host them).
 | filmgrain | `src/safe_simd/filmgrain.rs` | **Complete** - 8bpc + 16bpc |
 | pal | `src/safe_simd/pal.rs` | **Complete** - pal_idx_finish AVX2 |
 | refmvs | `src/safe_simd/refmvs.rs` | **Complete** - splat_mv AVX2 |
-| msac | `src/msac.rs` (inline) | **Complete** - SSE2 adapt4/adapt8/hi_tok (unchecked), branchless scalar (default) |
+| msac | `src/msac.rs` (inline) | **Complete** - SSE2 adapt8/adapt16 + update_cdf3 (default build); branchless scalar adapt4 (faster than SIMD for n<=3) |
 
 ### ARM aarch64 (NEON)
 
@@ -213,7 +213,7 @@ QEMU aarch64 `cross test` path stay on `cargo test` (nextest can't host them).
 | itx_arm | `src/safe_simd/itx_arm.rs` | **Complete** - 334 FFI functions, 320 dispatch entries |
 | filmgrain_arm | `src/safe_simd/filmgrain_arm.rs` | **Complete** - 8bpc + 16bpc |
 | refmvs_arm | `src/safe_simd/refmvs_arm.rs` | **Complete** - splat_mv NEON |
-| msac | `src/msac.rs` (inline) | **Complete** - SSE2 adapt4/adapt8/hi_tok (unchecked), branchless scalar (default) |
+| msac | `src/msac.rs` (inline) | **Complete** - SSE2 adapt8/adapt16 + update_cdf3 (default build); branchless scalar adapt4 (faster than SIMD for n<=3) |
 
 ## Cross-compilation
 
@@ -305,7 +305,7 @@ All unsafe is now confined to:
 
 **FFI wrappers gated behind `feature = "asm"`** in: cdef, cdef_arm, loopfilter, looprestoration, looprestoration_arm, filmgrain, filmgrain_arm, pal. (`loopfilter_arm`'s were deleted 2026-08-07 — nothing referenced them.)
 
-**Archmage conversions complete:** cdef constrain_avx2. msac SSE2 uses sse2!() macro (not archmage).
+**Archmage conversions complete:** cdef constrain_avx2. msac SSE2 kernels are `#[arcane]` `*_v1` + `*_scalar` twins dispatched via `incant!`; `decode_coefs`/`decode_coefs_class` are `#[autoversion(v3, scalar)]` so inner msac calls resolve to same-tier variants (fully inlined inside `decode_coefs_class_v3`).
 
 **Feature flags:**
 - `unchecked` - Use unchecked slice access in SIMD hot paths (skips bounds checks)

@@ -907,7 +907,7 @@ fn identity_32x32_8bpc_impl(
 
 /// Identity 32x32 for 16bpc.
 #[cfg(target_arch = "aarch64")]
-#[arcane]
+#[rite]
 pub(crate) fn inv_txfm_add_identity_identity_32x32_16bpc_neon_inner(
     _token: Arm64,
     dst: &mut [u16],
@@ -1039,7 +1039,7 @@ pub(crate) fn inv_txfm_add_dct_dct_32x32_8bpc_neon_inner(
 
 /// NEON implementation of 32x32 DCT_DCT inverse transform add for 16bpc.
 #[cfg(target_arch = "aarch64")]
-#[arcane]
+#[rite]
 pub(crate) fn inv_txfm_add_dct_dct_32x32_16bpc_neon_inner(
     _token: Arm64,
     dst: &mut [u16],

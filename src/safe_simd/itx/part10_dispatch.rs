@@ -556,6 +556,103 @@ fn itxfm_dispatch_8bpc(
         (S16x16, H_FLIPADST) => arcane!(inv_txfm_add_flipadst_identity_16x16_8bpc_avx2_inner),
         (S16x16, V_FLIPADST) => arcane!(inv_txfm_add_identity_flipadst_16x16_8bpc_avx2_inner),
 
+        // Mixed rectangular transforms (kernel name = row_col)
+        (R4x8, IDTX) => arcane!(inv_txfm_add_identity_identity_4x8_8bpc_avx2_inner),
+        (R4x8, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_4x8_8bpc_avx2_inner),
+        (R4x8, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_4x8_8bpc_avx2_inner),
+        (R4x8, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_4x8_8bpc_avx2_inner),
+        (R4x8, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_4x8_8bpc_avx2_inner),
+        (R4x8, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_4x8_8bpc_avx2_inner),
+        (R4x8, FLIPADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_flipadst_4x8_8bpc_avx2_inner),
+        (R4x8, ADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_adst_4x8_8bpc_avx2_inner),
+        (R4x8, FLIPADST_ADST) => arcane!(inv_txfm_add_adst_flipadst_4x8_8bpc_avx2_inner),
+        (R4x8, H_DCT) => arcane!(inv_txfm_add_dct_identity_4x8_8bpc_avx2_inner),
+        (R4x8, V_DCT) => arcane!(inv_txfm_add_identity_dct_4x8_8bpc_avx2_inner),
+        (R4x8, H_ADST) => arcane!(inv_txfm_add_adst_identity_4x8_8bpc_avx2_inner),
+        (R4x8, V_ADST) => arcane!(inv_txfm_add_identity_adst_4x8_8bpc_avx2_inner),
+        (R4x8, H_FLIPADST) => arcane!(inv_txfm_add_flipadst_identity_4x8_8bpc_avx2_inner),
+        (R4x8, V_FLIPADST) => arcane!(inv_txfm_add_identity_flipadst_4x8_8bpc_avx2_inner),
+
+        (R8x4, IDTX) => arcane!(inv_txfm_add_identity_identity_8x4_8bpc_avx2_inner),
+        (R8x4, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_8x4_8bpc_avx2_inner),
+        (R8x4, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_8x4_8bpc_avx2_inner),
+        (R8x4, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_8x4_8bpc_avx2_inner),
+        (R8x4, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_8x4_8bpc_avx2_inner),
+        (R8x4, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_8x4_8bpc_avx2_inner),
+        (R8x4, FLIPADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_flipadst_8x4_8bpc_avx2_inner),
+        (R8x4, ADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_adst_8x4_8bpc_avx2_inner),
+        (R8x4, FLIPADST_ADST) => arcane!(inv_txfm_add_adst_flipadst_8x4_8bpc_avx2_inner),
+        (R8x4, H_DCT) => arcane!(inv_txfm_add_dct_identity_8x4_8bpc_avx2_inner),
+        (R8x4, V_DCT) => arcane!(inv_txfm_add_identity_dct_8x4_8bpc_avx2_inner),
+        (R8x4, H_ADST) => arcane!(inv_txfm_add_adst_identity_8x4_8bpc_avx2_inner),
+        (R8x4, V_ADST) => arcane!(inv_txfm_add_identity_adst_8x4_8bpc_avx2_inner),
+        (R8x4, H_FLIPADST) => arcane!(inv_txfm_add_flipadst_identity_8x4_8bpc_avx2_inner),
+        (R8x4, V_FLIPADST) => arcane!(inv_txfm_add_identity_flipadst_8x4_8bpc_avx2_inner),
+
+        (R4x16, IDTX) => arcane!(inv_txfm_add_identity_identity_4x16_8bpc_avx2_inner),
+        (R4x16, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_4x16_8bpc_avx2_inner),
+        (R4x16, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_4x16_8bpc_avx2_inner),
+        (R4x16, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_4x16_8bpc_avx2_inner),
+        (R4x16, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_4x16_8bpc_avx2_inner),
+        (R4x16, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_4x16_8bpc_avx2_inner),
+        (R4x16, FLIPADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_flipadst_4x16_8bpc_avx2_inner),
+        (R4x16, ADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_adst_4x16_8bpc_avx2_inner),
+        (R4x16, FLIPADST_ADST) => arcane!(inv_txfm_add_adst_flipadst_4x16_8bpc_avx2_inner),
+        (R4x16, H_DCT) => arcane!(inv_txfm_add_dct_identity_4x16_8bpc_avx2_inner),
+        (R4x16, V_DCT) => arcane!(inv_txfm_add_identity_dct_4x16_8bpc_avx2_inner),
+        (R4x16, H_ADST) => arcane!(inv_txfm_add_adst_identity_4x16_8bpc_avx2_inner),
+        (R4x16, V_ADST) => arcane!(inv_txfm_add_identity_adst_4x16_8bpc_avx2_inner),
+        (R4x16, H_FLIPADST) => arcane!(inv_txfm_add_flipadst_identity_4x16_8bpc_avx2_inner),
+        (R4x16, V_FLIPADST) => arcane!(inv_txfm_add_identity_flipadst_4x16_8bpc_avx2_inner),
+
+        (R16x4, IDTX) => arcane!(inv_txfm_add_identity_identity_16x4_8bpc_avx2_inner),
+        (R16x4, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_16x4_8bpc_avx2_inner),
+        (R16x4, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_16x4_8bpc_avx2_inner),
+        (R16x4, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_16x4_8bpc_avx2_inner),
+        (R16x4, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_16x4_8bpc_avx2_inner),
+        (R16x4, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_16x4_8bpc_avx2_inner),
+        (R16x4, FLIPADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_flipadst_16x4_8bpc_avx2_inner),
+        (R16x4, ADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_adst_16x4_8bpc_avx2_inner),
+        (R16x4, FLIPADST_ADST) => arcane!(inv_txfm_add_adst_flipadst_16x4_8bpc_avx2_inner),
+        (R16x4, H_DCT) => arcane!(inv_txfm_add_dct_identity_16x4_8bpc_avx2_inner),
+        (R16x4, V_DCT) => arcane!(inv_txfm_add_identity_dct_16x4_8bpc_avx2_inner),
+        (R16x4, H_ADST) => arcane!(inv_txfm_add_adst_identity_16x4_8bpc_avx2_inner),
+        (R16x4, V_ADST) => arcane!(inv_txfm_add_identity_adst_16x4_8bpc_avx2_inner),
+        (R16x4, H_FLIPADST) => arcane!(inv_txfm_add_flipadst_identity_16x4_8bpc_avx2_inner),
+        (R16x4, V_FLIPADST) => arcane!(inv_txfm_add_identity_flipadst_16x4_8bpc_avx2_inner),
+
+        (R8x16, IDTX) => arcane!(inv_txfm_add_identity_identity_8x16_8bpc_avx2_inner),
+        (R8x16, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_8x16_8bpc_avx2_inner),
+        (R8x16, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_8x16_8bpc_avx2_inner),
+        (R8x16, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_8x16_8bpc_avx2_inner),
+        (R8x16, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_8x16_8bpc_avx2_inner),
+        (R8x16, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_8x16_8bpc_avx2_inner),
+        (R8x16, FLIPADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_flipadst_8x16_8bpc_avx2_inner),
+        (R8x16, ADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_adst_8x16_8bpc_avx2_inner),
+        (R8x16, FLIPADST_ADST) => arcane!(inv_txfm_add_adst_flipadst_8x16_8bpc_avx2_inner),
+        (R8x16, H_DCT) => arcane!(inv_txfm_add_dct_identity_8x16_8bpc_avx2_inner),
+        (R8x16, V_DCT) => arcane!(inv_txfm_add_identity_dct_8x16_8bpc_avx2_inner),
+        (R8x16, H_ADST) => arcane!(inv_txfm_add_adst_identity_8x16_8bpc_avx2_inner),
+        (R8x16, V_ADST) => arcane!(inv_txfm_add_identity_adst_8x16_8bpc_avx2_inner),
+        (R8x16, H_FLIPADST) => arcane!(inv_txfm_add_flipadst_identity_8x16_8bpc_avx2_inner),
+        (R8x16, V_FLIPADST) => arcane!(inv_txfm_add_identity_flipadst_8x16_8bpc_avx2_inner),
+
+        (R16x8, IDTX) => arcane!(inv_txfm_add_identity_identity_16x8_8bpc_avx2_inner),
+        (R16x8, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_16x8_8bpc_avx2_inner),
+        (R16x8, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_16x8_8bpc_avx2_inner),
+        (R16x8, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_16x8_8bpc_avx2_inner),
+        (R16x8, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_16x8_8bpc_avx2_inner),
+        (R16x8, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_16x8_8bpc_avx2_inner),
+        (R16x8, FLIPADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_flipadst_16x8_8bpc_avx2_inner),
+        (R16x8, ADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_adst_16x8_8bpc_avx2_inner),
+        (R16x8, FLIPADST_ADST) => arcane!(inv_txfm_add_adst_flipadst_16x8_8bpc_avx2_inner),
+        (R16x8, H_DCT) => arcane!(inv_txfm_add_dct_identity_16x8_8bpc_avx2_inner),
+        (R16x8, V_DCT) => arcane!(inv_txfm_add_identity_dct_16x8_8bpc_avx2_inner),
+        (R16x8, H_ADST) => arcane!(inv_txfm_add_adst_identity_16x8_8bpc_avx2_inner),
+        (R16x8, V_ADST) => arcane!(inv_txfm_add_identity_adst_16x8_8bpc_avx2_inner),
+        (R16x8, H_FLIPADST) => arcane!(inv_txfm_add_flipadst_identity_16x8_8bpc_avx2_inner),
+        (R16x8, V_FLIPADST) => arcane!(inv_txfm_add_identity_flipadst_16x8_8bpc_avx2_inner),
+
         // ===== 4x4 ADST/FLIPADST/hybrid (scalar, 14 types) =====
         (S4x4, ADST_DCT) => scalar!(inv_txfm_add_dct_adst_4x4_8bpc_avx2_inner),
         (S4x4, DCT_ADST) => scalar!(inv_txfm_add_adst_dct_4x4_8bpc_avx2_inner),
@@ -687,6 +784,211 @@ fn itxfm_dispatch_16bpc(
         (R16x32, IDTX) => arcane!(inv_txfm_add_identity_identity_16x32_16bpc_avx2_inner),
         (R32x16, IDTX) => arcane!(inv_txfm_add_identity_identity_32x16_16bpc_avx2_inner),
         (S32x32, IDTX) => arcane!(inv_txfm_add_identity_identity_32x32_16bpc_avx2_inner),
+
+        // Mixed transforms: kernel names list row then column, while
+        // TxfmType lists column then row (as in the scalar reference).
+
+        // 4x4 (14 mixed types)
+        (S4x4, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_4x4_16bpc_avx2_inner),
+        (S4x4, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_4x4_16bpc_avx2_inner),
+        (S4x4, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_4x4_16bpc_avx2_inner),
+        (S4x4, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_4x4_16bpc_avx2_inner),
+        (S4x4, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_4x4_16bpc_avx2_inner),
+        (S4x4, FLIPADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_flipadst_4x4_16bpc_avx2_inner)
+        }
+        (S4x4, ADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_adst_4x4_16bpc_avx2_inner),
+        (S4x4, FLIPADST_ADST) => arcane!(inv_txfm_add_adst_flipadst_4x4_16bpc_avx2_inner),
+        (S4x4, H_DCT) => arcane!(inv_txfm_add_dct_identity_4x4_16bpc_avx2_inner),
+        (S4x4, V_DCT) => arcane!(inv_txfm_add_identity_dct_4x4_16bpc_avx2_inner),
+        (S4x4, H_ADST) => arcane!(inv_txfm_add_adst_identity_4x4_16bpc_avx2_inner),
+        (S4x4, V_ADST) => arcane!(inv_txfm_add_identity_adst_4x4_16bpc_avx2_inner),
+        (S4x4, H_FLIPADST) => arcane!(inv_txfm_add_flipadst_identity_4x4_16bpc_avx2_inner),
+        (S4x4, V_FLIPADST) => arcane!(inv_txfm_add_identity_flipadst_4x4_16bpc_avx2_inner),
+
+        // 8x8 (14 mixed types)
+        (S8x8, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_8x8_16bpc_avx2_inner),
+        (S8x8, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_8x8_16bpc_avx2_inner),
+        (S8x8, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_8x8_16bpc_avx2_inner),
+        (S8x8, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_8x8_16bpc_avx2_inner),
+        (S8x8, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_8x8_16bpc_avx2_inner),
+        (S8x8, FLIPADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_flipadst_8x8_16bpc_avx2_inner)
+        }
+        (S8x8, ADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_adst_8x8_16bpc_avx2_inner),
+        (S8x8, FLIPADST_ADST) => arcane!(inv_txfm_add_adst_flipadst_8x8_16bpc_avx2_inner),
+        (S8x8, H_DCT) => arcane!(inv_txfm_add_dct_identity_8x8_16bpc_avx2_inner),
+        (S8x8, V_DCT) => arcane!(inv_txfm_add_identity_dct_8x8_16bpc_avx2_inner),
+        (S8x8, H_ADST) => arcane!(inv_txfm_add_adst_identity_8x8_16bpc_avx2_inner),
+        (S8x8, V_ADST) => arcane!(inv_txfm_add_identity_adst_8x8_16bpc_avx2_inner),
+        (S8x8, H_FLIPADST) => arcane!(inv_txfm_add_flipadst_identity_8x8_16bpc_avx2_inner),
+        (S8x8, V_FLIPADST) => arcane!(inv_txfm_add_identity_flipadst_8x8_16bpc_avx2_inner),
+
+        // 16x16 (14 mixed types)
+        (S16x16, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_16x16_16bpc_avx2_inner),
+        (S16x16, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_16x16_16bpc_avx2_inner),
+        (S16x16, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_16x16_16bpc_avx2_inner),
+        (S16x16, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_16x16_16bpc_avx2_inner),
+        (S16x16, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_16x16_16bpc_avx2_inner),
+        (S16x16, FLIPADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_flipadst_16x16_16bpc_avx2_inner)
+        }
+        (S16x16, ADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_adst_16x16_16bpc_avx2_inner)
+        }
+        (S16x16, FLIPADST_ADST) => {
+            arcane!(inv_txfm_add_adst_flipadst_16x16_16bpc_avx2_inner)
+        }
+        (S16x16, H_DCT) => arcane!(inv_txfm_add_dct_identity_16x16_16bpc_avx2_inner),
+        (S16x16, V_DCT) => arcane!(inv_txfm_add_identity_dct_16x16_16bpc_avx2_inner),
+        (S16x16, H_ADST) => arcane!(inv_txfm_add_adst_identity_16x16_16bpc_avx2_inner),
+        (S16x16, V_ADST) => arcane!(inv_txfm_add_identity_adst_16x16_16bpc_avx2_inner),
+        (S16x16, H_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_identity_16x16_16bpc_avx2_inner)
+        }
+        (S16x16, V_FLIPADST) => {
+            arcane!(inv_txfm_add_identity_flipadst_16x16_16bpc_avx2_inner)
+        }
+
+        // 4x8 (14 mixed types)
+        (R4x8, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_4x8_16bpc_avx2_inner),
+        (R4x8, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_4x8_16bpc_avx2_inner),
+        (R4x8, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_4x8_16bpc_avx2_inner),
+        (R4x8, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_4x8_16bpc_avx2_inner),
+        (R4x8, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_4x8_16bpc_avx2_inner),
+        (R4x8, FLIPADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_flipadst_4x8_16bpc_avx2_inner)
+        }
+        (R4x8, ADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_adst_4x8_16bpc_avx2_inner),
+        (R4x8, FLIPADST_ADST) => arcane!(inv_txfm_add_adst_flipadst_4x8_16bpc_avx2_inner),
+        (R4x8, H_DCT) => arcane!(inv_txfm_add_dct_identity_4x8_16bpc_avx2_inner),
+        (R4x8, V_DCT) => arcane!(inv_txfm_add_identity_dct_4x8_16bpc_avx2_inner),
+        (R4x8, H_ADST) => arcane!(inv_txfm_add_adst_identity_4x8_16bpc_avx2_inner),
+        (R4x8, V_ADST) => arcane!(inv_txfm_add_identity_adst_4x8_16bpc_avx2_inner),
+        (R4x8, H_FLIPADST) => arcane!(inv_txfm_add_flipadst_identity_4x8_16bpc_avx2_inner),
+        (R4x8, V_FLIPADST) => arcane!(inv_txfm_add_identity_flipadst_4x8_16bpc_avx2_inner),
+
+        // 8x4 (14 mixed types)
+        (R8x4, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_8x4_16bpc_avx2_inner),
+        (R8x4, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_8x4_16bpc_avx2_inner),
+        (R8x4, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_8x4_16bpc_avx2_inner),
+        (R8x4, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_8x4_16bpc_avx2_inner),
+        (R8x4, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_8x4_16bpc_avx2_inner),
+        (R8x4, FLIPADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_flipadst_8x4_16bpc_avx2_inner)
+        }
+        (R8x4, ADST_FLIPADST) => arcane!(inv_txfm_add_flipadst_adst_8x4_16bpc_avx2_inner),
+        (R8x4, FLIPADST_ADST) => arcane!(inv_txfm_add_adst_flipadst_8x4_16bpc_avx2_inner),
+        (R8x4, H_DCT) => arcane!(inv_txfm_add_dct_identity_8x4_16bpc_avx2_inner),
+        (R8x4, V_DCT) => arcane!(inv_txfm_add_identity_dct_8x4_16bpc_avx2_inner),
+        (R8x4, H_ADST) => arcane!(inv_txfm_add_adst_identity_8x4_16bpc_avx2_inner),
+        (R8x4, V_ADST) => arcane!(inv_txfm_add_identity_adst_8x4_16bpc_avx2_inner),
+        (R8x4, H_FLIPADST) => arcane!(inv_txfm_add_flipadst_identity_8x4_16bpc_avx2_inner),
+        (R8x4, V_FLIPADST) => arcane!(inv_txfm_add_identity_flipadst_8x4_16bpc_avx2_inner),
+
+        // 4x16 (14 mixed types)
+        (R4x16, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_4x16_16bpc_avx2_inner),
+        (R4x16, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_4x16_16bpc_avx2_inner),
+        (R4x16, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_4x16_16bpc_avx2_inner),
+        (R4x16, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_4x16_16bpc_avx2_inner),
+        (R4x16, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_4x16_16bpc_avx2_inner),
+        (R4x16, FLIPADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_flipadst_4x16_16bpc_avx2_inner)
+        }
+        (R4x16, ADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_adst_4x16_16bpc_avx2_inner)
+        }
+        (R4x16, FLIPADST_ADST) => {
+            arcane!(inv_txfm_add_adst_flipadst_4x16_16bpc_avx2_inner)
+        }
+        (R4x16, H_DCT) => arcane!(inv_txfm_add_dct_identity_4x16_16bpc_avx2_inner),
+        (R4x16, V_DCT) => arcane!(inv_txfm_add_identity_dct_4x16_16bpc_avx2_inner),
+        (R4x16, H_ADST) => arcane!(inv_txfm_add_adst_identity_4x16_16bpc_avx2_inner),
+        (R4x16, V_ADST) => arcane!(inv_txfm_add_identity_adst_4x16_16bpc_avx2_inner),
+        (R4x16, H_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_identity_4x16_16bpc_avx2_inner)
+        }
+        (R4x16, V_FLIPADST) => {
+            arcane!(inv_txfm_add_identity_flipadst_4x16_16bpc_avx2_inner)
+        }
+
+        // 16x4 (14 mixed types)
+        (R16x4, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_16x4_16bpc_avx2_inner),
+        (R16x4, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_16x4_16bpc_avx2_inner),
+        (R16x4, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_16x4_16bpc_avx2_inner),
+        (R16x4, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_16x4_16bpc_avx2_inner),
+        (R16x4, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_16x4_16bpc_avx2_inner),
+        (R16x4, FLIPADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_flipadst_16x4_16bpc_avx2_inner)
+        }
+        (R16x4, ADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_adst_16x4_16bpc_avx2_inner)
+        }
+        (R16x4, FLIPADST_ADST) => {
+            arcane!(inv_txfm_add_adst_flipadst_16x4_16bpc_avx2_inner)
+        }
+        (R16x4, H_DCT) => arcane!(inv_txfm_add_dct_identity_16x4_16bpc_avx2_inner),
+        (R16x4, V_DCT) => arcane!(inv_txfm_add_identity_dct_16x4_16bpc_avx2_inner),
+        (R16x4, H_ADST) => arcane!(inv_txfm_add_adst_identity_16x4_16bpc_avx2_inner),
+        (R16x4, V_ADST) => arcane!(inv_txfm_add_identity_adst_16x4_16bpc_avx2_inner),
+        (R16x4, H_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_identity_16x4_16bpc_avx2_inner)
+        }
+        (R16x4, V_FLIPADST) => {
+            arcane!(inv_txfm_add_identity_flipadst_16x4_16bpc_avx2_inner)
+        }
+
+        // 8x16 (14 mixed types)
+        (R8x16, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_8x16_16bpc_avx2_inner),
+        (R8x16, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_8x16_16bpc_avx2_inner),
+        (R8x16, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_8x16_16bpc_avx2_inner),
+        (R8x16, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_8x16_16bpc_avx2_inner),
+        (R8x16, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_8x16_16bpc_avx2_inner),
+        (R8x16, FLIPADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_flipadst_8x16_16bpc_avx2_inner)
+        }
+        (R8x16, ADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_adst_8x16_16bpc_avx2_inner)
+        }
+        (R8x16, FLIPADST_ADST) => {
+            arcane!(inv_txfm_add_adst_flipadst_8x16_16bpc_avx2_inner)
+        }
+        (R8x16, H_DCT) => arcane!(inv_txfm_add_dct_identity_8x16_16bpc_avx2_inner),
+        (R8x16, V_DCT) => arcane!(inv_txfm_add_identity_dct_8x16_16bpc_avx2_inner),
+        (R8x16, H_ADST) => arcane!(inv_txfm_add_adst_identity_8x16_16bpc_avx2_inner),
+        (R8x16, V_ADST) => arcane!(inv_txfm_add_identity_adst_8x16_16bpc_avx2_inner),
+        (R8x16, H_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_identity_8x16_16bpc_avx2_inner)
+        }
+        (R8x16, V_FLIPADST) => {
+            arcane!(inv_txfm_add_identity_flipadst_8x16_16bpc_avx2_inner)
+        }
+
+        // 16x8 (14 mixed types)
+        (R16x8, ADST_DCT) => arcane!(inv_txfm_add_dct_adst_16x8_16bpc_avx2_inner),
+        (R16x8, DCT_ADST) => arcane!(inv_txfm_add_adst_dct_16x8_16bpc_avx2_inner),
+        (R16x8, ADST_ADST) => arcane!(inv_txfm_add_adst_adst_16x8_16bpc_avx2_inner),
+        (R16x8, FLIPADST_DCT) => arcane!(inv_txfm_add_dct_flipadst_16x8_16bpc_avx2_inner),
+        (R16x8, DCT_FLIPADST) => arcane!(inv_txfm_add_flipadst_dct_16x8_16bpc_avx2_inner),
+        (R16x8, FLIPADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_flipadst_16x8_16bpc_avx2_inner)
+        }
+        (R16x8, ADST_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_adst_16x8_16bpc_avx2_inner)
+        }
+        (R16x8, FLIPADST_ADST) => {
+            arcane!(inv_txfm_add_adst_flipadst_16x8_16bpc_avx2_inner)
+        }
+        (R16x8, H_DCT) => arcane!(inv_txfm_add_dct_identity_16x8_16bpc_avx2_inner),
+        (R16x8, V_DCT) => arcane!(inv_txfm_add_identity_dct_16x8_16bpc_avx2_inner),
+        (R16x8, H_ADST) => arcane!(inv_txfm_add_adst_identity_16x8_16bpc_avx2_inner),
+        (R16x8, V_ADST) => arcane!(inv_txfm_add_identity_adst_16x8_16bpc_avx2_inner),
+        (R16x8, H_FLIPADST) => {
+            arcane!(inv_txfm_add_flipadst_identity_16x8_16bpc_avx2_inner)
+        }
+        (R16x8, V_FLIPADST) => {
+            arcane!(inv_txfm_add_identity_flipadst_16x8_16bpc_avx2_inner)
+        }
 
         _ => return false,
     }

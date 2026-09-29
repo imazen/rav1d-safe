@@ -160,7 +160,7 @@ fn decode_frames(
         }
         Ok(None) => {}
         Err(e) => {
-            eprintln!("Decode error: {}", e);
+            eprintln!("Decode error: {:?} ({})", e, e);
             return;
         }
     }
@@ -185,6 +185,8 @@ fn main() {
     let mut filmgrain = false;
     let mut quiet = false;
     let mut per_frame = false;
+    let mut level: Option<rav1d_safe::src::managed::CpuLevel> = None;
+    let mut settings_strictness: Option<rav1d_safe::src::managed::Strictness> = None;
     // Default 1 to keep every existing invocation byte-identical. `--threads 8`
     // exists because a single-threaded-only identity check cannot see a
     // tile-threading or borrow-tracker defect at all, and ad-hoc vectors (a
@@ -199,6 +201,21 @@ fn main() {
             "--filmgrain" => filmgrain = true,
             "-q" | "--quiet" => quiet = true,
             "--per-frame" => per_frame = true,
+            "--scalar" => level = Some(rav1d_safe::src::managed::CpuLevel::Scalar),
+            "--lenient" => {
+                settings_strictness = Some(rav1d_safe::src::managed::Strictness::Lenient)
+            }
+            "--level" => {
+                use rav1d_safe::src::managed::CpuLevel as L;
+                level = Some(match it.next().map(|s| s.as_str()) {
+                    Some("scalar") => L::Scalar,
+                    Some("v2") => L::X86V2,
+                    Some("v3") => L::X86V3,
+                    Some("v4") => L::X86V4,
+                    Some("native") => L::Native,
+                    other => panic!("--level needs scalar|v2|v3|v4|native, got {other:?}"),
+                });
+            }
             "--threads" => {
                 threads = it
                     .next()
@@ -225,6 +242,12 @@ fn main() {
     let mut settings = Settings::default();
     settings.threads = threads;
     settings.apply_grain = filmgrain;
+    if let Some(l) = level {
+        settings.cpu_level = l;
+    }
+    if let Some(s) = settings_strictness {
+        settings.strictness = s;
+    }
     let mut decoder = Decoder::with_settings(settings).expect("decoder creation failed");
     let mut hasher = md5::Context::new();
     let mut frame_count = 0u32;
@@ -249,7 +272,10 @@ fn main() {
                 if verbose {
                     eprintln!("Annex B: {} temporal units", units.len());
                 }
-                for unit in &units {
+                for (tu_idx, unit) in units.iter().enumerate() {
+                    if verbose {
+                        eprintln!("  TU {tu_idx}: {} bytes", unit.data.len());
+                    }
                     decode_frames(
                         &mut decoder,
                         &unit.data,

@@ -445,6 +445,87 @@ pub(crate) fn recycle_compact_scratch(buf: Vec<u8>) {
     });
 }
 
+#[cfg(not(feature = "c-ffi"))]
+thread_local! {
+    /// Reusable scratch components (emu-edge / lap / interintra `tmp`).
+    ///
+    /// Unlike [`COMPACT_SCRATCH`], which keeps bare `Vec`s, this keeps the
+    /// whole [`Rav1dPictureDataComponent`]: re-creating one per block ran a
+    /// `BorrowTracker` zero-init of ~64KB per call (measured at ~23% of a
+    /// 10-bit decode's instructions). Three slots cover the largest working
+    /// set — `obmc` can hold a `lap` component while nested `mc` needs an
+    /// emu-edge one, and warp/interintra take a third.
+    static SCRATCH_COMPONENT_POOL: Cell<[Option<Rav1dPictureDataComponent>; 3]> =
+        const { Cell::new([None, None, None]) };
+}
+
+/// Take a pooled scratch component (or build one) sized for `usable_px`
+/// pixels at `stride_px` row stride — the [`Rav1dPictureDataComponent`]
+/// counterpart of [`take_compact_scratch`].
+///
+/// A pooled component whose backing allocation covers the request is
+/// re-purposed in place via [`Rav1dPictureDataComponent::reset_scratch`];
+/// `PicBuf`'s usable region shrinks to the request while the allocation
+/// (and its tracker) stay.
+#[cfg(not(feature = "c-ffi"))]
+pub(crate) fn take_scratch_component<BD: BitDepth>(
+    usable_px: usize,
+    stride_px: usize,
+) -> Rav1dPictureDataComponent {
+    let need = usable_px * mem::size_of::<BD::Pixel>() + RAV1D_PICTURE_ALIGNMENT - 1;
+    let found = SCRATCH_COMPONENT_POOL.with(|c| {
+        let mut slots = c.take();
+        let mut found = None;
+        for slot in slots.iter_mut() {
+            let Some(comp) = slot else { continue };
+            if comp.scratch_storage_len() >= need {
+                comp.reset_scratch::<BD>(usable_px, stride_px);
+                found = slot.take();
+                break;
+            }
+        }
+        c.set(slots);
+        found
+    });
+    found.unwrap_or_else(|| {
+        Rav1dPictureDataComponent::wrap_owned_scratch::<BD>(Vec::new(), usable_px, stride_px)
+    })
+}
+
+/// Return a scratch component to the pool — fills an empty slot, else
+/// replaces the smallest pooled allocation. Dropping is always a correct
+/// fallback; pooling is purely allocation reuse.
+#[cfg(not(feature = "c-ffi"))]
+pub(crate) fn recycle_scratch_component(mut comp: Rav1dPictureDataComponent) {
+    let comp_len = comp.scratch_storage_len();
+    SCRATCH_COMPONENT_POOL.with(|c| {
+        let mut slots = c.take();
+        let mut smallest = usize::MAX;
+        let mut smallest_len = usize::MAX;
+        for (i, slot) in slots.iter_mut().enumerate() {
+            match slot {
+                None => {
+                    smallest = i;
+                    smallest_len = 0;
+                    break;
+                }
+                Some(existing) => {
+                    let len = existing.scratch_storage_len();
+                    if len < smallest_len {
+                        smallest_len = len;
+                        smallest = i;
+                    }
+                }
+            }
+        }
+        // smallest_len == 0 means an empty slot; otherwise keep the larger.
+        if smallest_len == 0 || comp_len >= smallest_len {
+            slots[smallest] = Some(comp);
+        }
+        c.set(slots);
+    });
+}
+
 use crate::include::common::bitdepth::BitDepth;
 
 /// Execute a closure with mutable byte access to a w×h pixel block.
@@ -961,8 +1042,84 @@ impl Rav1dPictureDataComponent {
     /// `None` for borrowed scratch buffers (from `wrap_buf`).
     /// Used by [`Rav1dPictureData::drop`] to return buffers to the memory pool.
     #[cfg(not(feature = "c-ffi"))]
-    fn take_buf(&mut self) -> Option<Vec<u8>> {
+    pub(crate) fn take_buf(&mut self) -> Option<Vec<u8>> {
         self.data.get_mut().take_buf()
+    }
+
+    /// Wrap an **owned** `Vec<u8>` as a scratch component — the inverse of
+    /// [`Self::wrap_buf`]'s copy: the Vec is adopted via
+    /// [`PicBuf::from_vec_aligned`] with no memcpy at all.
+    ///
+    /// Pair the fill-then-borrow pattern with [`Self::usable_pixels_mut`]
+    /// (write the scratch before the component is lent out as a source) and
+    /// [`take_compact_scratch`]/[`recycle_compact_scratch`] to keep the
+    /// allocation hot across blocks. Per-block `wrap_buf` copies of the
+    /// `emu_edge`/`lap`/`interintra` POD scratches were ~65% of a 10-bit
+    /// decode's instruction profile.
+    ///
+    /// `usable_px` is in `BD::Pixel` units; `stride_px` is the row stride in
+    /// `BD::Pixel` units (same convention as [`Self::wrap_buf`]).
+    ///
+    /// # Panics
+    ///
+    /// `usable_px * size_of::<BD::Pixel>()` must be a multiple of
+    /// `RAV1D_PICTURE_GUARANTEED_MULTIPLE`, matching `wrap_buf`'s invariant.
+    #[cfg(not(feature = "c-ffi"))]
+    pub(crate) fn wrap_owned_scratch<BD: BitDepth>(
+        mut vec: Vec<u8>,
+        usable_px: usize,
+        stride_px: usize,
+    ) -> Self {
+        let usable_len = usable_px * mem::size_of::<BD::Pixel>();
+        assert!(usable_len % RAV1D_PICTURE_GUARANTEED_MULTIPLE == 0);
+        // Head-room for the alignment offset — up to ALIGNMENT-1 bytes.
+        let need = usable_len + RAV1D_PICTURE_ALIGNMENT - 1;
+        if vec.len() < need {
+            vec.resize(need, 0);
+        }
+        let inner = PicBuf::from_vec_aligned(vec, RAV1D_PICTURE_ALIGNMENT, usable_len);
+        let mut this = Self::from_parts(inner, (stride_px * mem::size_of::<BD::Pixel>()) as isize);
+        this.data.configure_parallelism(1, 1);
+        this
+    }
+
+    /// Mutable access to the usable region as pixels. Fill the scratch through
+    /// this before lending `&self` to a consumer.
+    #[cfg(not(feature = "c-ffi"))]
+    pub(crate) fn usable_pixels_mut<BD: BitDepth>(&mut self) -> &mut [BD::Pixel] {
+        zerocopy::FromBytes::mut_from_bytes(self.data.get_mut().as_usable_bytes_mut()).unwrap()
+    }
+
+    /// Read the usable region as pixels — e.g. to feed a blend kernel directly
+    /// instead of `copy_pixels_to`-ing back into a POD scratch array.
+    #[cfg(not(feature = "c-ffi"))]
+    pub(crate) fn usable_pixels<BD: BitDepth>(&mut self) -> &[BD::Pixel] {
+        zerocopy::FromBytes::ref_from_bytes(self.data.get_mut().as_usable_bytes()).unwrap()
+    }
+
+    /// Backing allocation size in bytes — the capacity bound for
+    /// [`Self::reset_scratch`].
+    #[cfg(not(feature = "c-ffi"))]
+    pub(crate) fn scratch_storage_len(&mut self) -> usize {
+        self.data.get_mut().storage_len()
+    }
+
+    /// Re-purpose a pooled scratch component for a new (usable_px, stride_px)
+    /// request, keeping its Vec *and* BorrowTracker allocations alive.
+    ///
+    /// Re-declaring the row stride is sound for any value — the tracker's
+    /// block-shift derivation only chooses granularity, and `&mut self`
+    /// guarantees no guard is outstanding while boundaries move (see
+    /// `DisjointMut::declare_row_stride`).
+    #[cfg(not(feature = "c-ffi"))]
+    pub(crate) fn reset_scratch<BD: BitDepth>(&mut self, usable_px: usize, stride_px: usize) {
+        self.data
+            .get_mut()
+            .set_usable_len(usable_px * mem::size_of::<BD::Pixel>());
+        self.stride = (stride_px * mem::size_of::<BD::Pixel>()) as isize;
+        self.data
+            .declare_row_stride(stride_px * mem::size_of::<BD::Pixel>());
+        self.data.probe_declare_stride(self.stride);
     }
 
     /// Create from a pixel buffer for use as a scratch source or destination.

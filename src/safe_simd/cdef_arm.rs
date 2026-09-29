@@ -1181,6 +1181,7 @@ fn cdef_dir_core(rows: &[int16x8_t; 8], variance: &mut c_uint) -> c_int {
     safe_simd::vst1q_s16(&mut hv1, hv1v);
 
     cdef_dir_cost(
+        // audit:allow(tier-boundary) aarch64 baseline includes NEON; the scalar DCT helper has no feature loss
         &diag0,
         &diag1,
         [&alt0, &alt1, &alt2, &alt3],

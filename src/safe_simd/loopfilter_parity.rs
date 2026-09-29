@@ -471,3 +471,213 @@ mod mask_parity_tests {
         eprintln!("packed wide H footprint: {cells} exact spans and {cells} short-view rejections");
     }
 }
+
+// ----------------------------------------------------------------------------
+// 16bpc parity: the SIMD u16 kernels must produce the exact scalar
+// `loop_filter` output at both 10-bit (1023) and 12-bit (4095) clip bounds.
+// ----------------------------------------------------------------------------
+#[cfg(all(test, target_arch = "x86_64", feature = "bitdepth_16"))]
+mod mask_parity_tests_16bpc {
+    use super::*;
+
+    // (width, horizontal): narrow/6/8/16 x V/H. Lanes is always 4 — the u16
+    // kernels have no x8/x16 variants.
+    const KERNELS: [(usize, bool); 8] = [
+        (4, false),
+        (6, false),
+        (8, false),
+        (16, false),
+        (4, true),
+        (6, true),
+        (8, true),
+        (16, true),
+    ];
+
+    fn next(state: &mut u64) -> u16 {
+        *state ^= *state >> 12;
+        *state ^= *state << 25;
+        *state ^= *state >> 27;
+        (state.wrapping_mul(0x2545_f491_4f6c_dd1d) >> 32) as u16
+    }
+
+    fn input(
+        horizontal: bool,
+        stride: isize,
+        offset: usize,
+        pattern: usize,
+        bd_max: u16,
+    ) -> (Vec<u16>, usize, isize, isize) {
+        let lanes = 4usize;
+        let pitch = stride.unsigned_abs();
+        let base = pitch
+            * if horizontal && stride < 0 {
+                lanes + 8
+            } else {
+                16
+            }
+            + 8
+            + offset;
+        let (stridea, strideb) = if horizontal { (stride, 1) } else { (1, stride) };
+        let mut state = 0x1bad_b00b_5eed_c0de;
+        let mut buf: Vec<u16> = (0..pitch * (lanes + 32) + 64)
+            .map(|_| next(&mut state) & bd_max)
+            .collect();
+        let lo = (bd_max / 4).max(1);
+        let hi = lo + (bd_max >> 6).max(4);
+        for lane in 0..lanes {
+            for k in -7isize..=6 {
+                let kind = match pattern {
+                    4 => usize::from(lane == 0),
+                    5 => lane % 2,
+                    _ => pattern,
+                };
+                let value = match kind {
+                    // Alternating extremes — fm fails (no filtering).
+                    0 => {
+                        if k % 2 == 0 {
+                            0
+                        } else {
+                            bd_max
+                        }
+                    }
+                    // Flat block, small step across the edge — fm + flat path.
+                    1 => {
+                        if k < 0 {
+                            lo
+                        } else {
+                            hi
+                        }
+                    }
+                    // Flat-inner but not flat-outer (wd16 8-tap arm).
+                    2 => {
+                        let base_v = if k < 0 { lo } else { hi };
+                        base_v + if !(-4..=3).contains(&k) { bd_max >> 4 } else { 0 }
+                    }
+                    // Flat at wd6 but not wd8.
+                    3 => {
+                        let base_v = if k < 0 { lo } else { hi };
+                        base_v + if k == -3 || k == 2 { bd_max >> 5 } else { 0 }
+                    }
+                    // Narrow with clip pressure at the low bound.
+                    6 => {
+                        if k < 0 {
+                            0
+                        } else {
+                            bd_max >> 6
+                        }
+                    }
+                    // Narrow with clip pressure at the high bound.
+                    7 => {
+                        if k < 0 {
+                            bd_max
+                        } else {
+                            bd_max - (bd_max >> 6)
+                        }
+                    }
+                    // hev-triggering gradient (p1/q1 far from p0/q0).
+                    8 => {
+                        let base_v = if k < 0 { lo } else { hi };
+                        base_v + if k == -2 || k == 1 { bd_max >> 2 } else { 0 }
+                    }
+                    _ => next(&mut state) & bd_max,
+                };
+                buf[base
+                    .checked_add_signed(lane as isize * stridea + k * strideb)
+                    .unwrap()] = value;
+            }
+        }
+        (buf, base, stridea, strideb)
+    }
+
+    fn run_kernel(
+        token: Desktop64,
+        kernel: usize,
+        buf: &mut [u16],
+        base: usize,
+        stride: isize,
+        levels: [u8; 3],
+        _wd: usize,
+        bd_max: u16,
+    ) {
+        // The kernels take e/i/h already shifted by bitdepth_min_8 — the same
+        // values `loop_filter_4_16bpc` computes before dispatching.
+        let bdm8: i32 = if bd_max > 1023 {
+            4
+        } else if bd_max > 255 {
+            2
+        } else {
+            0
+        };
+        let [e, i, h] = levels.map(|v| i32::from(v) << bdm8);
+        let bdm = bd_max as i32;
+        match kernel {
+            0 => loop_filter_4_16bpc_narrow_simd_v(token, buf, base, e, i, h, stride, bdm8, bdm),
+            1 => loop_filter_4_16bpc_wd6_simd_v(token, buf, base, e, i, h, stride, bdm8, bdm),
+            2 => loop_filter_4_16bpc_wd8_simd_v(token, buf, base, e, i, h, stride, bdm8, bdm),
+            3 => loop_filter_4_16bpc_wd16_simd_v(token, buf, base, e, i, h, stride, bdm8, bdm),
+            4 => loop_filter_4_16bpc_narrow_simd_h(token, buf, base, e, i, h, stride, bdm8, bdm),
+            5 => loop_filter_4_16bpc_wd6_simd_h(token, buf, base, e, i, h, stride, bdm8, bdm),
+            6 => loop_filter_4_16bpc_wd8_simd_h(token, buf, base, e, i, h, stride, bdm8, bdm),
+            _ => loop_filter_4_16bpc_wd16_simd_h(token, buf, base, e, i, h, stride, bdm8, bdm),
+        }
+    }
+
+    #[test]
+    fn test_loopfilter_16bpc_masks_match_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            return;
+        };
+        let mut cells = 0;
+        for (kernel, &(width, horizontal)) in KERNELS.iter().enumerate() {
+            for stride in [40, 67, -40, -67] {
+                for offset in [0, 3] {
+                    for bd_max in [1023u16, 4095] {
+                        for pattern in 0..10 {
+                            for levels in [
+                                [0, 0, 0],
+                                [8, 4, 0],
+                                [16, 8, 1],
+                                [63, 63, 3],
+                                [255, 255, 255],
+                            ] {
+                                let (pixels, base, stridea, strideb) =
+                                    input(horizontal, stride, offset, pattern, bd_max);
+                                let mut actual = pixels.clone();
+                                let mut expected = pixels.clone();
+                                run_kernel(
+                                    token, kernel, &mut actual, base, stride, levels, width,
+                                    bd_max,
+                                );
+                                crate::src::loopfilter::loop_filter_scalar_for_test_u16(
+                                    &mut expected,
+                                    base,
+                                    [stridea, strideb],
+                                    4,
+                                    levels,
+                                    width,
+                                    bd_max,
+                                );
+                                assert_eq!(
+                                    actual.iter().zip(&expected).position(|(a, b)| a != b),
+                                    None,
+                                    "kernel={kernel}, wd={width}, horiz={horizontal}, stride={stride}, offset={offset}, bd_max={bd_max}, pattern={pattern}, levels={levels:?}"
+                                );
+                                // A rejected group is unchanged; a flat block
+                                // with a visible step must be filtered.
+                                if pattern == 0 && levels != [0, 0, 0] {
+                                    assert_eq!(actual, pixels);
+                                } else if pattern == 1 && levels == [63, 63, 3] {
+                                    assert_ne!(actual, pixels);
+                                }
+                                cells += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(cells, 8 * 4 * 2 * 2 * 10 * 5);
+        eprintln!("loopfilter 16bpc sweep: {cells} SIMD cells match the scalar decoder");
+    }
+}

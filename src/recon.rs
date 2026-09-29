@@ -17,6 +17,10 @@ use crate::include::dav1d::headers::Rav1dWarpedMotionParams;
 use crate::include::dav1d::headers::Rav1dWarpedMotionType;
 use crate::include::dav1d::picture::PicOffset;
 use crate::include::dav1d::picture::Rav1dPictureDataComponent;
+#[cfg(not(feature = "c-ffi"))]
+use crate::include::dav1d::picture::recycle_scratch_component;
+#[cfg(not(feature = "c-ffi"))]
+use crate::include::dav1d::picture::take_scratch_component;
 
 use crate::src::cdef_apply::rav1d_cdef_brow;
 use crate::src::ctx::CaseSet;
@@ -27,10 +31,14 @@ use crate::src::in_range::InRange;
 use crate::src::internal::Bxy;
 use crate::src::internal::Cf;
 use crate::src::internal::CodedBlockInfo;
+#[cfg(not(feature = "c-ffi"))]
+use crate::src::internal::EMU_EDGE_LEN;
 use crate::src::internal::Rav1dContext;
 use crate::src::internal::Rav1dFrameData;
 use crate::src::internal::Rav1dTaskContext;
 use crate::src::internal::Rav1dTileStateContext;
+use crate::src::internal::SCRATCH_INTER_INTRA_BUF_LEN;
+use crate::src::internal::SCRATCH_LAP_LEN;
 use crate::src::internal::ScratchEmuEdge;
 use crate::src::internal::TaskContextScratch;
 use crate::src::internal::TileStateRef;
@@ -93,7 +101,9 @@ use crate::src::tables::dav1d_txtp_from_uvmode;
 use crate::src::wedge::dav1d_ii_masks;
 use crate::src::wedge::dav1d_wedge_masks;
 use crate::src::with_offset::WithOffset;
+use archmage::incant;
 use assert_matches::debug_assert_matches;
+use likely_stable::{likely, unlikely};
 #[allow(non_camel_case_types)]
 type intptr_t = isize;
 use std::array;
@@ -523,6 +533,41 @@ fn get_lo_ctx(
         }
 }
 
+struct CfSlice<'a, BD: BitDepth>(&'a mut [BD::Coef]);
+
+impl<'a, BD: BitDepth> CfSlice<'a, BD> {
+    fn index(&self, rc: u16) -> usize {
+        let i = rc as usize & (self.0.len() - 1);
+        // `self.0.len()` is either `cf_len` or `CF_LEN`,
+        // both of which are powers of 2.
+        // `cf_len` is a power of 2 since it's from `1 << n`, etc.
+        // Thus, `& (self.0.len() - 1)` is the same as `% self.0.len()`.
+        debug_assert!(i < self.0.len());
+        i
+    }
+
+    #[cfg_attr(
+        any(debug_assertions, feature = "__probe_sites", feature = "__probe_usage"),
+        track_caller
+    )]
+    pub fn get(&self, rc: u16) -> i32 {
+        self.0[self.index(rc)].into()
+    }
+
+    #[cfg_attr(
+        any(debug_assertions, feature = "__probe_sites", feature = "__probe_usage"),
+        track_caller
+    )]
+    pub fn set<T: ToPrimitive<BD::Coef>>(&mut self, rc: u16, value: T) {
+        self.0[self.index(rc)] = value.as_();
+    }
+}
+
+/// `#[autoversion]` — the dispatcher summons the best token once per call
+/// and the `_v3`/`_scalar` variants are compiled in matching feature
+/// contexts, so `incant!` calls inside thread the held token instead of
+/// re-summoning per callee.
+#[archmage::autoversion(v3, scalar)]
 fn decode_coefs<BD: BitDepth>(
     f: &Rav1dFrameData,
     ts: usize,
@@ -556,7 +601,7 @@ fn decode_coefs<BD: BitDepth>(
     let t_dim = &dav1d_txfm_dimensions[tx as usize];
     let dbg = dbg_block_info && plane != 0 && false;
 
-    if dbg {
+    if unlikely(dbg) {
         println!("Start: r={}", ts_c.msac.rng);
     }
 
@@ -566,7 +611,7 @@ fn decode_coefs<BD: BitDepth>(
         &mut ts_c.msac,
         &mut ts_c.cdf.coef.skip[t_dim.ctx as usize][sctx.get() as usize],
     );
-    if dbg {
+    if unlikely(dbg) {
         println!(
             "Post-non-zero[{}][{}][{}]: r={}",
             t_dim.ctx, sctx, all_skip, ts_c.msac.rng,
@@ -616,7 +661,7 @@ fn decode_coefs<BD: BitDepth>(
                 );
                 dav1d_tx_types_per_set[idx as usize + 5]
             };
-            if dbg {
+            if unlikely(dbg) {
                 println!(
                     "Post-txtp-intra[{:?}->{}][{}][{}->{}]: r={}",
                     tx, t_dim.min, y_mode_nofilt, idx, txtp, ts_c.msac.rng,
@@ -648,7 +693,7 @@ fn decode_coefs<BD: BitDepth>(
                 );
                 dav1d_tx_types_per_set[idx as usize + 24]
             };
-            if dbg {
+            if unlikely(dbg) {
                 println!(
                     "Post-txtp-inter[{:?}->{}][{}->{}]: r={}",
                     tx, t_dim.min, idx, txtp, ts_c.msac.rng,
@@ -697,7 +742,7 @@ fn decode_coefs<BD: BitDepth>(
         // and we cover `0..=6`.  `rustc` should eliminate this.
         _ => unreachable!(),
     };
-    if dbg {
+    if unlikely(dbg) {
         println!(
             "Post-eob_bin_{}[{}][{}][{}]: r={}",
             16 << tx2dszctx,
@@ -711,7 +756,7 @@ fn decode_coefs<BD: BitDepth>(
         let eob_hi_bit_cdf =
             &mut ts_c.cdf.coef.eob_hi_bit[t_dim.ctx as usize][chroma][eob_bin as usize];
         let eob_hi_bit = rav1d_msac_decode_bool_adapt(&mut ts_c.msac, eob_hi_bit_cdf) as u16;
-        if dbg {
+        if unlikely(dbg) {
             println!(
                 "Post-eob_hi_bit[{}][{}][{}][{}]: r={}",
                 t_dim.ctx, chroma, eob_bin, eob_hi_bit, ts_c.msac.rng,
@@ -719,43 +764,13 @@ fn decode_coefs<BD: BitDepth>(
         }
         let eob = ((eob_hi_bit | 2) << (eob_bin - 2))
             | rav1d_msac_decode_bools(&mut ts_c.msac, eob_bin - 2) as u16;
-        if dbg {
+        if unlikely(dbg) {
             println!("Post-eob[{}]: r={}", eob, ts_c.msac.rng);
         }
         eob
     } else {
         eob_bin as u16
     };
-
-    struct Cf<'a, BD: BitDepth>(&'a mut [BD::Coef]);
-
-    impl<'a, BD: BitDepth> Cf<'a, BD> {
-        fn index(&self, rc: u16) -> usize {
-            let i = rc as usize & (self.0.len() - 1);
-            // `self.0.len()` is either `cf_len` or `CF_LEN`,
-            // both of which are powers of 2.
-            // `cf_len` is a power of 2 since it's from `1 << n`, etc.
-            // Thus, `& (self.0.len() - 1)` is the same as `% self.0.len()`.
-            debug_assert!(i < self.0.len());
-            i
-        }
-
-        #[cfg_attr(
-            any(debug_assertions, feature = "__probe_sites", feature = "__probe_usage"),
-            track_caller
-        )]
-        pub fn get(&self, rc: u16) -> i32 {
-            self.0[self.index(rc)].into()
-        }
-
-        #[cfg_attr(
-            any(debug_assertions, feature = "__probe_sites", feature = "__probe_usage"),
-            track_caller
-        )]
-        pub fn set<T: ToPrimitive<BD::Coef>>(&mut self, rc: u16, value: T) {
-            self.0[self.index(rc)] = value.as_();
-        }
-    }
 
     let sw = cmp::min(1 << t_dim.lw, 8) as usize;
     let sh = cmp::min(1 << t_dim.lh, 8) as usize;
@@ -767,292 +782,35 @@ fn decode_coefs<BD: BitDepth>(
             .mut_slice_as((offset as usize.., ..cf_len)),
         CfSelect::Task => t_cf.select_mut::<BD>(),
     };
-    let mut cf = Cf::<BD>(cf);
+    let mut cf = CfSlice::<BD>(cf);
 
     // base tokens
     let mut rc;
     let mut dc_tok;
 
-    #[inline]
-    fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
-        ts_c: &mut Rav1dTileStateContext,
-        t_dim: &TxfmInfo,
-        chroma: usize,
-        scratch: &mut TaskContextScratch,
-        eob: u16,
-        tx: TxfmSize,
-        dbg: bool,
-        cf: &mut Cf<BD>,
-    ) -> (u16, u32) {
-        let tx_class = const { TxClass::from_repr(TX_CLASS) }.unwrap();
-
-        let eob_cdf = &mut ts_c.cdf.coef.eob_base_tok[t_dim.ctx as usize][chroma];
-        let hi_cdf = &mut ts_c.cdf.coef.br_tok[cmp::min(t_dim.ctx, 3) as usize][chroma];
-
-        let lo_cdf = &mut ts_c.cdf.coef.base_tok[t_dim.ctx as usize][chroma];
-        let levels = scratch.inter_intra_mut().levels_pal.levels_mut();
-        // dav1d 5ef6b241 (1.5.0) "decode_coefs: Optimize index offset calculations":
-        // cache the capped log2 sizes and reuse `tx2dszctx` as a shift instead of
-        // recomputing `sw * sh` multiplies. `sw == 1 << slw`, `sh == 1 << slh`, so
-        // `sw * sh == 1 << tx2dszctx`.
-        let slw = cmp::min(t_dim.lw, TxfmSize::S32x32 as u8);
-        let slh = cmp::min(t_dim.lh, TxfmSize::S32x32 as u8);
-        let tx2dszctx = slw + slh;
-        let sw = cmp::min(t_dim.w, 8);
-        let sh = cmp::min(t_dim.h, 8);
-
-        // eob
-        let mut ctx = 1 + (eob > (2u16 << tx2dszctx)) as u8 + (eob > (4u16 << tx2dszctx)) as u8;
-        let eob_tok =
-            rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut eob_cdf[ctx as usize], 2);
-        let mut tok = eob_tok + 1;
-        let mut level_tok = tok * 0x41;
-        let mut mag = 0;
-
-        let lo_ctx_offsets;
-        let scan;
-        let stride;
-        match tx_class {
-            TxClass::TwoD => {
-                let is_rect = tx.is_rect() as usize;
-                lo_ctx_offsets = Some(&dav1d_lo_ctx_offsets[is_rect + (tx as usize & is_rect)]);
-                scan = dav1d_scans[tx as usize];
-                stride = 4 * sh;
-            }
-            TxClass::H | TxClass::V => {
-                lo_ctx_offsets = None;
-                scan = &[];
-                stride = 16;
-            }
-        }
-
-        let shift;
-        let shift2;
-        let mask;
-        let swh_zero;
-        match tx_class {
-            TxClass::TwoD => {
-                shift = if t_dim.lh < 4 { t_dim.lh + 2 } else { 5 };
-                shift2 = 0;
-                mask = 4 * sh - 1;
-                swh_zero = sw;
-            }
-            TxClass::H => {
-                shift = t_dim.lh + 2;
-                shift2 = 0;
-                mask = 4 * sh - 1;
-                swh_zero = sh;
-            }
-            TxClass::V => {
-                shift = t_dim.lw + 2;
-                shift2 = t_dim.lh + 2;
-                mask = 4 * sw - 1;
-                swh_zero = sw;
-            }
-        }
-
-        // Optimizes better than `.fill(0)`,
-        // which doesn't elide the bounds check, inline, or vectorize.
-        for i in 0..stride as usize * (4 * swh_zero as usize + 2) {
-            levels[i] = 0;
-        }
-
-        let mut rc;
-        let mut x;
-        let mut y;
-        match tx_class {
-            TxClass::TwoD => {
-                rc = scan[eob as usize].get();
-                x = (rc >> shift) as u8;
-                y = rc as u8 & mask;
-            }
-            TxClass::H => {
-                // Transposing reduces the stride and padding requirements.
-                x = eob as u8 & mask;
-                y = (eob >> shift) as u8;
-                rc = eob as u16;
-            }
-            TxClass::V => {
-                x = eob as u8 & mask;
-                y = (eob >> shift) as u8;
-                rc = (x as u16) << shift2 | y as u16;
-            }
-        }
-        if dbg {
-            println!(
-                "Post-lo_tok[{}][{}][{}][{}={}={}]: r={}",
-                t_dim.ctx, chroma, ctx, eob, rc, tok, ts_c.msac.rng,
-            );
-        }
-        if eob_tok == 2 {
-            ctx = if if tx_class == TxClass::TwoD {
-                (x | y) > 1
-            } else {
-                y != 0
-            } {
-                14
-            } else {
-                7
-            };
-            tok = rav1d_msac_decode_hi_tok(&mut ts_c.msac, &mut hi_cdf[ctx as usize]);
-            level_tok = tok + (3 << 6);
-            if dbg {
-                println!(
-                    "Post-hi_tok[{}][{}][{}][{}={}={}]: r={}",
-                    cmp::min(t_dim.ctx, 3),
-                    chroma,
-                    ctx,
-                    eob,
-                    rc,
-                    tok,
-                    ts_c.msac.rng,
-                );
-            }
-        }
-        cf.set(rc, tok.to::<i16>() << 11);
-        // For TX_CLASS_2D, `rc == x * stride + y` (stride is `1 << shift`, `y < stride`),
-        // so index `levels` by `rc` directly and skip the multiply (dav1d 5ef6b241,
-        // corrected by 63bf075a — the C version had an `if (TX_CLASS_2D)` typo that
-        // left this disabled for ~10 months; we use the correct comparison + `rc_i`).
-        if tx_class == TxClass::TwoD {
-            levels[rc as usize] = level_tok as u8;
-        } else {
-            levels[x as usize * stride as usize + y as usize] = level_tok as u8;
-        }
-        for i in (1..eob).rev() {
-            // ac
-            let rc_i;
-            match tx_class {
-                TxClass::TwoD => {
-                    rc_i = scan[i as usize].get();
-                    x = (rc_i >> shift) as u8;
-                    y = rc_i as u8 & mask;
-                }
-                TxClass::H => {
-                    x = i as u8 & mask;
-                    y = (i >> shift) as u8;
-                    rc_i = i as u16;
-                }
-                TxClass::V => {
-                    x = i as u8 & mask;
-                    y = (i >> shift) as u8;
-                    rc_i = (x as u16) << shift2 | y as u16;
-                }
-            }
-            debug_assert!(x < 32 && y < 32);
-            x %= 32;
-            y %= 32;
-            // Hot path: for TX_CLASS_2D, `rc_i == x * stride + y`, so index by `rc_i`
-            // directly and drop the per-coefficient multiply (dav1d 5ef6b241 + fix 63bf075a).
-            let level = if tx_class == TxClass::TwoD {
-                &mut levels[rc_i as usize..]
-            } else {
-                &mut levels[x as usize * stride as usize + y as usize..]
-            };
-            ctx = get_lo_ctx(level, tx_class, &mut mag, lo_ctx_offsets, x, y, stride);
-            if tx_class == TxClass::TwoD {
-                y |= x;
-            }
-            tok = rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut lo_cdf[ctx as usize], 3);
-            if dbg {
-                println!(
-                    "Post-lo_tok[{}][{}][{}][{}={}={}]: r={}",
-                    t_dim.ctx, chroma, ctx, i, rc_i, tok, ts_c.msac.rng,
-                );
-            }
-            if tok == 3 {
-                let mag = mag as u8 & 63;
-                ctx = if y > (tx_class == TxClass::TwoD) as u8 {
-                    14
-                } else {
-                    7
-                } + if mag > 12 { 6 } else { (mag + 1) >> 1 };
-                tok = rav1d_msac_decode_hi_tok(&mut ts_c.msac, &mut hi_cdf[ctx as usize]);
-                if dbg {
-                    println!(
-                        "Post-hi_tok[{}][{}][{}][{}={}={}]: r={}",
-                        cmp::min(t_dim.ctx, 3),
-                        chroma,
-                        ctx,
-                        i,
-                        rc_i,
-                        tok,
-                        ts_c.msac.rng,
-                    );
-                }
-                level[0] = (tok + (3 << 6)) as u8;
-                cf.set(rc_i, ((tok as u16) << 11) | rc);
-                rc = rc_i;
-            } else {
-                // `0x1` for `tok`, `0x7ff` as bitmask for `rc`, `0x41` for `level_tok`.
-                let tok = tok as u32 * 0x17ff41;
-                level[0] = tok as u8;
-
-                let tok_check = if tok != 0 {
-                    ((tok as u16) << 11) | rc
-                } else {
-                    0
-                };
-
-                // This is optimized differently from C to avoid branches,
-                // as simple branches are not always optimized to branchless `cmov`s.
-                let mask = tok >> 9;
-                let tok = mask & (rc as u32 + !0x7ff);
-                let mask = mask as u16;
-                rc = (rc_i & mask) | (rc & !mask);
-
-                debug_assert!(tok == tok_check as u32);
-                cf.set(rc_i, tok);
-            }
-        }
-        // dc
-        ctx = if tx_class == TxClass::TwoD {
-            0
-        } else {
-            get_lo_ctx(levels, tx_class, &mut mag, lo_ctx_offsets, 0, 0, stride)
-        };
-        let mut dc_tok =
-            rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut lo_cdf[ctx as usize], 3) as c_uint;
-        if dbg {
-            println!(
-                "Post-dc_lo_tok[{}][{}][{}][{}]: r={}",
-                t_dim.ctx, chroma, ctx, dc_tok, ts_c.msac.rng,
-            );
-        }
-        if dc_tok == 3 {
-            if tx_class == TxClass::TwoD {
-                mag = levels[0 * stride as usize + 1] as c_uint
-                    + levels[1 * stride as usize + 0] as c_uint
-                    + levels[1 * stride as usize + 1] as c_uint;
-            }
-            let mag = mag as u8 & 63;
-            ctx = if mag > 12 { 6 } else { (mag + 1) >> 1 };
-            dc_tok = rav1d_msac_decode_hi_tok(&mut ts_c.msac, &mut hi_cdf[ctx as usize]) as c_uint;
-            if dbg {
-                println!(
-                    "Post-dc_hi_tok[{}][{}][0][{}]: r={}",
-                    cmp::min(t_dim.ctx, 3),
-                    chroma,
-                    dc_tok,
-                    ts_c.msac.rng,
-                );
-            }
-        }
-
-        (rc, dc_tok)
-    }
-
     if eob != 0 {
         let cf = &mut cf;
+        // `incant!` resolves the caller's own tier: inside `decode_coefs_v3`
+        // this is a direct call to `decode_coefs_class_v3` — the token is
+        // threaded, not re-summoned.
         (rc, dc_tok) = match tx_class {
-            TxClass::TwoD => decode_coefs_class::<{ TxClass::TwoD as _ }, BD>(
-                ts_c, t_dim, chroma, scratch, eob, tx, dbg, cf,
+            TxClass::TwoD => incant!(
+                decode_coefs_class::<{ TxClass::TwoD as _ }, BD>(
+                    Token, ts_c, t_dim, chroma, scratch, eob, tx, dbg, cf,
+                ),
+                [v3, scalar]
             ),
-            TxClass::H => decode_coefs_class::<{ TxClass::H as _ }, BD>(
-                ts_c, t_dim, chroma, scratch, eob, tx, dbg, cf,
+            TxClass::H => incant!(
+                decode_coefs_class::<{ TxClass::H as _ }, BD>(
+                    Token, ts_c, t_dim, chroma, scratch, eob, tx, dbg, cf,
+                ),
+                [v3, scalar]
             ),
-            TxClass::V => decode_coefs_class::<{ TxClass::V as _ }, BD>(
-                ts_c, t_dim, chroma, scratch, eob, tx, dbg, cf,
+            TxClass::V => incant!(
+                decode_coefs_class::<{ TxClass::V as _ }, BD>(
+                    Token, ts_c, t_dim, chroma, scratch, eob, tx, dbg, cf,
+                ),
+                [v3, scalar]
             ),
         };
     } else {
@@ -1062,7 +820,7 @@ fn decode_coefs<BD: BitDepth>(
         // dc-only
         let tok_br = rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut eob_cdf[0], 2) as c_uint;
         dc_tok = 1 + tok_br;
-        if dbg {
+        if unlikely(dbg) {
             println!(
                 "Post-dc_lo_tok[{}][{}][{}][{}]: r={}",
                 t_dim.ctx, chroma, 0, dc_tok, ts_c.msac.rng,
@@ -1070,7 +828,7 @@ fn decode_coefs<BD: BitDepth>(
         }
         if tok_br == 2 {
             dc_tok = rav1d_msac_decode_hi_tok(&mut ts_c.msac, &mut hi_cdf[0]) as c_uint;
-            if dbg {
+            if unlikely(dbg) {
                 println!(
                     "Post-dc_hi_tok[{}][{}][0][{}]: r={}",
                     cmp::min(t_dim.ctx, 3),
@@ -1120,7 +878,7 @@ fn decode_coefs<BD: BitDepth>(
         dc_sign_ctx = get_dc_sign_ctx(tx, a, l) as c_int;
         let dc_sign_cdf = &mut ts_c.cdf.coef.dc_sign[chroma][dc_sign_ctx as usize];
         dc_sign = rav1d_msac_decode_bool_adapt(&mut ts_c.msac, dc_sign_cdf) as c_int;
-        if dbg {
+        if unlikely(dbg) {
             println!(
                 "Post-dc_sign[{}][{}][{}]: r={}",
                 chroma, dc_sign_ctx, dc_sign, ts_c.msac.rng,
@@ -1135,7 +893,7 @@ fn decode_coefs<BD: BitDepth>(
 
             if dc_tok == 15 {
                 dc_tok = (read_golomb(&mut ts_c.msac)).wrapping_add(15);
-                if dbg {
+                if unlikely(dbg) {
                     println!(
                         "Post-dc_residual[{}->{}]: r={}",
                         dc_tok.wrapping_sub(15),
@@ -1160,7 +918,7 @@ fn decode_coefs<BD: BitDepth>(
             // non-qmatrix is the common case and allows for additional optimizations
             if dc_tok == 15 {
                 dc_tok = (read_golomb(&mut ts_c.msac)).wrapping_add(15);
-                if dbg {
+                if unlikely(dbg) {
                     println!(
                         "Post-dc_residual[{}->{}]: r={}",
                         dc_tok.wrapping_sub(15),
@@ -1189,7 +947,7 @@ fn decode_coefs<BD: BitDepth>(
             let ac_dq: c_uint = dq_tbl[1].get() as c_uint;
             loop {
                 let sign = rav1d_msac_decode_bool_equi(&mut ts_c.msac);
-                if dbg {
+                if unlikely(dbg) {
                     println!("Post-sign[{}={}]: r={}", rc, sign, ts_c.msac.rng);
                 }
                 let rc_tok = cf.get(rc) as u32;
@@ -1202,7 +960,7 @@ fn decode_coefs<BD: BitDepth>(
 
                 if rc_tok >= 15 << 11 {
                     tok = (read_golomb(&mut ts_c.msac)).wrapping_add(15);
-                    if dbg {
+                    if unlikely(dbg) {
                         println!(
                             "Post-residual[{}={}->{}]: r={}",
                             rc,
@@ -1234,7 +992,7 @@ fn decode_coefs<BD: BitDepth>(
             let ac_dq: c_uint = dq_tbl[1].get() as c_uint;
             loop {
                 let sign = rav1d_msac_decode_bool_equi(&mut ts_c.msac) as c_int;
-                if dbg {
+                if unlikely(dbg) {
                     println!("Post-sign[{}={}]: r={}", rc, sign, ts_c.msac.rng);
                 }
                 let rc_tok = cf.get(rc) as u32;
@@ -1244,7 +1002,7 @@ fn decode_coefs<BD: BitDepth>(
                 // residual
                 if rc_tok >= 15 << 11 {
                     tok = (read_golomb(&mut ts_c.msac)).wrapping_add(15);
-                    if dbg {
+                    if unlikely(dbg) {
                         println!(
                             "Post-residual[{}={}->{}]: r={}",
                             rc,
@@ -1282,6 +1040,283 @@ fn decode_coefs<BD: BitDepth>(
     *res_ctx = (cmp::min(cul_level, 63) | dc_sign_level) as u8;
 
     eob as i32
+}
+
+/// `#[magetypes(v3, scalar)]` — stamps `decode_coefs_class_v3`/`_scalar`
+/// directly; no dispatcher. `incant!` inside `decode_coefs`'s variants calls
+/// the matching tier variant with `from_context()` — the token is threaded,
+/// not re-summoned. `Token` is the placeholder replaced per variant.
+#[archmage::magetypes(v3, scalar)]
+fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
+    _token: Token,
+    ts_c: &mut Rav1dTileStateContext,
+    t_dim: &TxfmInfo,
+    chroma: usize,
+    scratch: &mut TaskContextScratch,
+    eob: u16,
+    tx: TxfmSize,
+    dbg: bool,
+    cf: &mut CfSlice<BD>,
+) -> (u16, u32) {
+    let tx_class = const { TxClass::from_repr(TX_CLASS) }.unwrap();
+
+    let eob_cdf = &mut ts_c.cdf.coef.eob_base_tok[t_dim.ctx as usize][chroma];
+    let hi_cdf = &mut ts_c.cdf.coef.br_tok[cmp::min(t_dim.ctx, 3) as usize][chroma];
+
+    let lo_cdf = &mut ts_c.cdf.coef.base_tok[t_dim.ctx as usize][chroma];
+    let levels = scratch.inter_intra_mut().levels_pal.levels_mut();
+    // dav1d 5ef6b241 (1.5.0) "decode_coefs: Optimize index offset calculations":
+    // cache the capped log2 sizes and reuse `tx2dszctx` as a shift instead of
+    // recomputing `sw * sh` multiplies. `sw == 1 << slw`, `sh == 1 << slh`, so
+    // `sw * sh == 1 << tx2dszctx`.
+    let slw = cmp::min(t_dim.lw, TxfmSize::S32x32 as u8);
+    let slh = cmp::min(t_dim.lh, TxfmSize::S32x32 as u8);
+    let tx2dszctx = slw + slh;
+    let sw = cmp::min(t_dim.w, 8);
+    let sh = cmp::min(t_dim.h, 8);
+
+    // eob
+    let mut ctx = 1 + (eob > (2u16 << tx2dszctx)) as u8 + (eob > (4u16 << tx2dszctx)) as u8;
+    let eob_tok = rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut eob_cdf[ctx as usize], 2);
+    let mut tok = eob_tok + 1;
+    let mut level_tok = tok * 0x41;
+    let mut mag = 0;
+
+    let lo_ctx_offsets;
+    let scan;
+    let stride;
+    match tx_class {
+        TxClass::TwoD => {
+            let is_rect = tx.is_rect() as usize;
+            lo_ctx_offsets = Some(&dav1d_lo_ctx_offsets[is_rect + (tx as usize & is_rect)]);
+            // Truncate to `eob + 1` once: the prologue reads `scan[eob]` and
+            // the ac loop iterates `i < eob`, so LLVM then proves the
+            // in-bounds accesses and drops per-coefficient bounds checks. An
+            // invalid `eob` still panics here exactly where `scan[..]` would.
+            scan = &dav1d_scans[tx as usize][..eob as usize + 1];
+            stride = 4 * sh;
+        }
+        TxClass::H | TxClass::V => {
+            lo_ctx_offsets = None;
+            scan = &[];
+            stride = 16;
+        }
+    }
+
+    let shift;
+    let shift2;
+    let mask;
+    let swh_zero;
+    match tx_class {
+        TxClass::TwoD => {
+            shift = if t_dim.lh < 4 { t_dim.lh + 2 } else { 5 };
+            shift2 = 0;
+            mask = 4 * sh - 1;
+            swh_zero = sw;
+        }
+        TxClass::H => {
+            shift = t_dim.lh + 2;
+            shift2 = 0;
+            mask = 4 * sh - 1;
+            swh_zero = sh;
+        }
+        TxClass::V => {
+            shift = t_dim.lw + 2;
+            shift2 = t_dim.lh + 2;
+            mask = 4 * sw - 1;
+            swh_zero = sw;
+        }
+    }
+
+    // Optimizes better than `.fill(0)`,
+    // which doesn't elide the bounds check, inline, or vectorize.
+    for i in 0..stride as usize * (4 * swh_zero as usize + 2) {
+        levels[i] = 0;
+    }
+
+    let mut rc;
+    let mut x;
+    let mut y;
+    match tx_class {
+        TxClass::TwoD => {
+            rc = scan[eob as usize].get();
+            x = (rc >> shift) as u8;
+            y = rc as u8 & mask;
+        }
+        TxClass::H => {
+            // Transposing reduces the stride and padding requirements.
+            x = eob as u8 & mask;
+            y = (eob >> shift) as u8;
+            rc = eob as u16;
+        }
+        TxClass::V => {
+            x = eob as u8 & mask;
+            y = (eob >> shift) as u8;
+            rc = (x as u16) << shift2 | y as u16;
+        }
+    }
+    if unlikely(dbg) {
+        println!(
+            "Post-lo_tok[{}][{}][{}][{}={}={}]: r={}",
+            t_dim.ctx, chroma, ctx, eob, rc, tok, ts_c.msac.rng,
+        );
+    }
+    if unlikely(eob_tok == 2) {
+        ctx = if if tx_class == TxClass::TwoD {
+            (x | y) > 1
+        } else {
+            y != 0
+        } {
+            14
+        } else {
+            7
+        };
+        tok = rav1d_msac_decode_hi_tok(&mut ts_c.msac, &mut hi_cdf[ctx as usize]);
+        level_tok = tok + (3 << 6);
+        if unlikely(dbg) {
+            println!(
+                "Post-hi_tok[{}][{}][{}][{}={}={}]: r={}",
+                cmp::min(t_dim.ctx, 3),
+                chroma,
+                ctx,
+                eob,
+                rc,
+                tok,
+                ts_c.msac.rng,
+            );
+        }
+    }
+    cf.set(rc, tok.to::<i16>() << 11);
+    // For TX_CLASS_2D, `rc == x * stride + y` (stride is `1 << shift`, `y < stride`),
+    // so index `levels` by `rc` directly and skip the multiply (dav1d 5ef6b241,
+    // corrected by 63bf075a — the C version had an `if (TX_CLASS_2D)` typo that
+    // left this disabled for ~10 months; we use the correct comparison + `rc_i`).
+    if tx_class == TxClass::TwoD {
+        levels[rc as usize] = level_tok as u8;
+    } else {
+        levels[x as usize * stride as usize + y as usize] = level_tok as u8;
+    }
+    for i in (1..eob).rev() {
+        // ac
+        let rc_i;
+        match tx_class {
+            TxClass::TwoD => {
+                rc_i = scan[i as usize].get();
+                x = (rc_i >> shift) as u8;
+                y = rc_i as u8 & mask;
+            }
+            TxClass::H => {
+                x = i as u8 & mask;
+                y = (i >> shift) as u8;
+                rc_i = i as u16;
+            }
+            TxClass::V => {
+                x = i as u8 & mask;
+                y = (i >> shift) as u8;
+                rc_i = (x as u16) << shift2 | y as u16;
+            }
+        }
+        debug_assert!(x < 32 && y < 32);
+        x %= 32;
+        y %= 32;
+        // Hot path: for TX_CLASS_2D, `rc_i == x * stride + y`, so index by `rc_i`
+        // directly and drop the per-coefficient multiply (dav1d 5ef6b241 + fix 63bf075a).
+        let level = if tx_class == TxClass::TwoD {
+            &mut levels[rc_i as usize..]
+        } else {
+            &mut levels[x as usize * stride as usize + y as usize..]
+        };
+        ctx = get_lo_ctx(level, tx_class, &mut mag, lo_ctx_offsets, x, y, stride);
+        if tx_class == TxClass::TwoD {
+            y |= x;
+        }
+        tok = rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut lo_cdf[ctx as usize], 3);
+        if unlikely(dbg) {
+            println!(
+                "Post-lo_tok[{}][{}][{}][{}={}={}]: r={}",
+                t_dim.ctx, chroma, ctx, i, rc_i, tok, ts_c.msac.rng,
+            );
+        }
+        if unlikely(tok == 3) {
+            let mag = mag as u8 & 63;
+            ctx = if y > (tx_class == TxClass::TwoD) as u8 {
+                14
+            } else {
+                7
+            } + if mag > 12 { 6 } else { (mag + 1) >> 1 };
+            tok = rav1d_msac_decode_hi_tok(&mut ts_c.msac, &mut hi_cdf[ctx as usize]);
+            if unlikely(dbg) {
+                println!(
+                    "Post-hi_tok[{}][{}][{}][{}={}={}]: r={}",
+                    cmp::min(t_dim.ctx, 3),
+                    chroma,
+                    ctx,
+                    i,
+                    rc_i,
+                    tok,
+                    ts_c.msac.rng,
+                );
+            }
+            level[0] = (tok + (3 << 6)) as u8;
+            cf.set(rc_i, ((tok as u16) << 11) | rc);
+            rc = rc_i;
+        } else {
+            // `0x1` for `tok`, `0x7ff` as bitmask for `rc`, `0x41` for `level_tok`.
+            let tok = tok as u32 * 0x17ff41;
+            level[0] = tok as u8;
+
+            let tok_check = if tok != 0 {
+                ((tok as u16) << 11) | rc
+            } else {
+                0
+            };
+
+            // This is optimized differently from C to avoid branches,
+            // as simple branches are not always optimized to branchless `cmov`s.
+            let mask = tok >> 9;
+            let tok = mask & (rc as u32 + !0x7ff);
+            let mask = mask as u16;
+            rc = (rc_i & mask) | (rc & !mask);
+
+            debug_assert!(tok == tok_check as u32);
+            cf.set(rc_i, tok);
+        }
+    }
+    // dc
+    ctx = if tx_class == TxClass::TwoD {
+        0
+    } else {
+        get_lo_ctx(levels, tx_class, &mut mag, lo_ctx_offsets, 0, 0, stride)
+    };
+    let mut dc_tok =
+        rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut lo_cdf[ctx as usize], 3) as c_uint;
+    if unlikely(dbg) {
+        println!(
+            "Post-dc_lo_tok[{}][{}][{}][{}]: r={}",
+            t_dim.ctx, chroma, ctx, dc_tok, ts_c.msac.rng,
+        );
+    }
+    if unlikely(dc_tok == 3) {
+        if tx_class == TxClass::TwoD {
+            mag = levels[0 * stride as usize + 1] as c_uint
+                + levels[1 * stride as usize + 0] as c_uint
+                + levels[1 * stride as usize + 1] as c_uint;
+        }
+        let mag = mag as u8 & 63;
+        ctx = if mag > 12 { 6 } else { (mag + 1) >> 1 };
+        dc_tok = rav1d_msac_decode_hi_tok(&mut ts_c.msac, &mut hi_cdf[ctx as usize]) as c_uint;
+        if unlikely(dbg) {
+            println!(
+                "Post-dc_hi_tok[{}][{}][0][{}]: r={}",
+                cmp::min(t_dim.ctx, 3),
+                chroma,
+                dc_tok,
+                ts_c.msac.rng,
+            );
+        }
+    }
+
+    (rc, dc_tok)
 }
 
 #[derive(Clone, Copy)]
@@ -1750,6 +1785,68 @@ enum MaybeTempPixels<'a, TmpStride> {
     },
 }
 
+/// Adopt a pooled scratch component (default build only).
+///
+/// Keeps the whole `Rav1dPictureDataComponent` — Vec *and* BorrowTracker —
+/// in the thread-local pool so reuse costs a `reset_scratch`, not a
+/// `TrackerStorage::eager` zero-init per block.
+#[cfg(not(feature = "c-ffi"))]
+fn pooled_scratch_component<BD: BitDepth>(
+    len_px: usize,
+    stride_px: usize,
+) -> Rav1dPictureDataComponent {
+    take_scratch_component::<BD>(len_px, stride_px)
+}
+
+/// Fill an emu-edge scratch and return it as an MC source component.
+///
+/// `c-ffi`: `emu_edge` writes into the POD `ScratchEmuEdge` array and
+/// `wrap_buf` wraps that pointer — zero-copy already.
+///
+/// Default build: writes into a pooled `Vec<u8>` which the component adopts
+/// via [`Rav1dPictureDataComponent::wrap_owned_scratch`] — no 168K memcpy per
+/// call (that copy was ~65% of a 10-bit decode's instruction profile). The
+/// returned component is recyclable via
+/// [`crate::include::dav1d::picture::recycle_scratch_component`].
+fn emu_edge_component<BD: BitDepth>(
+    f: &Rav1dFrameData,
+    #[cfg_attr(not(feature = "c-ffi"), allow(unused_variables))] emu_edge: &mut ScratchEmuEdge,
+    bw: isize,
+    bh: isize,
+    iw: isize,
+    ih: isize,
+    x: isize,
+    y: isize,
+    ref_data: &Rav1dPictureDataComponent,
+    stride_px: usize,
+) -> Rav1dPictureDataComponent {
+    #[cfg(not(feature = "c-ffi"))]
+    {
+        let mut comp = pooled_scratch_component::<BD>(EMU_EDGE_LEN, stride_px);
+        let dst: &mut [BD::Pixel; EMU_EDGE_LEN] =
+            comp.usable_pixels_mut::<BD>().try_into().unwrap();
+        f.dsp
+            .mc
+            .emu_edge
+            .call::<BD>(bw, bh, iw, ih, x, y, dst, stride_px, ref_data);
+        comp
+    }
+    #[cfg(feature = "c-ffi")]
+    {
+        let dst = emu_edge.buf_mut::<BD>();
+        f.dsp
+            .mc
+            .emu_edge
+            .call::<BD>(bw, bh, iw, ih, x, y, dst, stride_px, ref_data);
+        Rav1dPictureDataComponent::wrap_buf::<BD>(dst, stride_px)
+    }
+}
+
+/// Return a scratch component to the thread-local pool. Under c-ffi the
+/// component borrows a POD scratch array; dropping it is enough.
+#[cfg(feature = "c-ffi")]
+fn recycle_scratch_component(_comp: Rav1dPictureDataComponent) {}
+
 fn mc<BD: BitDepth>(
     f: &Rav1dFrameData,
     emu_edge: &mut ScratchEmuEdge,
@@ -1778,7 +1875,7 @@ fn mc<BD: BitDepth>(
     let mx = mvx & 15 >> (ss_hor == 0) as c_int;
     let my = mvy & 15 >> (ss_ver == 0) as c_int;
 
-    if refp.p.p.w == f.cur.p.w && refp.p.p.h == f.cur.p.h {
+    if likely(refp.p.p.w == f.cur.p.w && refp.p.p.h == f.cur.p.h) {
         let dx = bx * h_mul + (mvx >> 3 + ss_hor);
         let dy = by * v_mul + (mvy >> 3 + ss_ver);
         let w;
@@ -1791,26 +1888,28 @@ fn mc<BD: BitDepth>(
             w = f.bw * 4 >> ss_hor;
             h = f.bh * 4 >> ss_ver;
         }
-        let r#ref = if dx < (mx != 0) as c_int * 3
-            || dy < (my != 0) as c_int * 3
-            || dx + bw4 * h_mul + (mx != 0) as c_int * 4 > w
-            || dy + bh4 * v_mul + (my != 0) as c_int * 4 > h
-        {
-            let emu_edge_buf = emu_edge.buf_mut::<BD>();
-            f.dsp.mc.emu_edge.call::<BD>(
+        let mut emu_comp = None;
+        let r#ref = if unlikely(
+            dx < (mx != 0) as c_int * 3
+                || dy < (my != 0) as c_int * 3
+                || dx + bw4 * h_mul + (mx != 0) as c_int * 4 > w
+                || dy + bh4 * v_mul + (my != 0) as c_int * 4 > h,
+        ) {
+            let stride = 192;
+            emu_comp = Some(emu_edge_component::<BD>(
+                f,
+                emu_edge,
                 (bw4 * h_mul + (mx != 0) as c_int * 7) as intptr_t,
                 (bh4 * v_mul + (my != 0) as c_int * 7) as intptr_t,
                 w as intptr_t,
                 h as intptr_t,
                 (dx - (mx != 0) as c_int * 3) as intptr_t,
                 (dy - (my != 0) as c_int * 3) as intptr_t,
-                emu_edge_buf,
-                192,
                 &ref_data[pl],
-            );
-            let stride = 192;
+                stride,
+            ));
             PicOffset {
-                data: &Rav1dPictureDataComponent::wrap_buf::<BD>(emu_edge_buf, stride),
+                data: emu_comp.as_ref().unwrap(),
                 offset: stride * (my != 0) as usize * 3 + (mx != 0) as usize * 3,
             }
         } else {
@@ -1829,6 +1928,9 @@ fn mc<BD: BitDepth>(
             MaybeTempPixels::Temp { tmp, tmp_stride: _ } => {
                 f.dsp.mc.mct[filter_2d].call::<BD>(filter_2d, tmp, r#ref, w, h, mx, my, bd);
             }
+        }
+        if let Some(c) = emu_comp {
+            recycle_scratch_component(c);
         }
     } else {
         assert!(!ptr::eq(refp, &f.sr_cur));
@@ -1865,25 +1967,26 @@ fn mc<BD: BitDepth>(
 
         let w = refp.p.p.w + ss_hor >> ss_hor;
         let h = refp.p.p.h + ss_ver >> ss_ver;
-        let r#ref = if left < 3 || top < 3 || right + 4 > w || bottom + 4 > h {
-            let emu_edge_buf = emu_edge.buf_mut::<BD>();
-            f.dsp.mc.emu_edge.call::<BD>(
+        let mut emu_comp = None;
+        let r#ref = if unlikely(left < 3 || top < 3 || right + 4 > w || bottom + 4 > h) {
+            let stride = 320;
+            emu_comp = Some(emu_edge_component::<BD>(
+                f,
+                emu_edge,
                 (right - left + 7) as intptr_t,
                 (bottom - top + 7) as intptr_t,
                 w as intptr_t,
                 h as intptr_t,
                 (left - 3) as intptr_t,
                 (top - 3) as intptr_t,
-                emu_edge_buf,
-                320,
                 &ref_data[pl],
-            );
+                stride,
+            ));
             if debug_block_info!(f, b) {
                 println!("Emu");
             }
-            let stride = 320;
             PicOffset {
-                data: &Rav1dPictureDataComponent::wrap_buf::<BD>(emu_edge_buf, stride),
+                data: emu_comp.as_ref().unwrap(),
                 offset: stride * 3 + 3,
             }
         } else {
@@ -1907,6 +2010,9 @@ fn mc<BD: BitDepth>(
                     .call::<BD>(filter_2d, tmp, r#ref, w, h, mx, my, dx, dy, bd);
             }
         }
+        if let Some(c) = emu_comp {
+            recycle_scratch_component(c);
+        }
     }
 
     Ok(())
@@ -1926,6 +2032,10 @@ fn obmc<BD: BitDepth>(
     assert!(t.b.x & 1 == 0 && t.b.y & 1 == 0);
     let r = &t.rt.r[(t.b.y as usize & 31) + 5 - 1..];
     let scratch = t.scratch.inter_mut();
+    // c-ffi: MC writes lap in place through the wrapped pointer.
+    // Default build: MC dst is a pooled-scratch component; blend reads it via
+    // `usable_pixels` — no wrap/copy-back round-trip per overlap block.
+    #[cfg(feature = "c-ffi")]
     let lap = scratch.lap_inter.lap_mut::<BD>();
     let ss_ver = (pl != 0 && f.cur.p.layout == Rav1dPixelLayout::I420) as c_int;
     let ss_hor = (pl != 0 && f.cur.p.layout != Rav1dPixelLayout::I444) as c_int;
@@ -1947,8 +2057,11 @@ fn obmc<BD: BitDepth>(
             if a_r.r#ref.r#ref[0] > 0 {
                 let ow4 = cmp::min(step4, b_dim[0]);
                 let oh4 = cmp::min(b_dim[1], 16) >> 1;
-                let lap_component =
-                    Rav1dPictureDataComponent::wrap_buf::<BD>(lap, ow4 as usize * h_mul as usize);
+                let stride_px = ow4 as usize * h_mul as usize;
+                #[cfg(feature = "c-ffi")]
+                let lap_component = Rav1dPictureDataComponent::wrap_buf::<BD>(lap, stride_px);
+                #[cfg(not(feature = "c-ffi"))]
+                let mut lap_component = pooled_scratch_component::<BD>(SCRATCH_LAP_LEN, stride_px);
                 mc::<BD>(
                     f,
                     &mut scratch.emu_edge,
@@ -1970,17 +2083,19 @@ fn obmc<BD: BitDepth>(
                     dav1d_filter_2d[*f.a[t.a].filter[1].index((bx4 + x + 1) as usize) as usize]
                         [*f.a[t.a].filter[0].index((bx4 + x + 1) as usize) as usize],
                 )?;
-                // In safe mode, wrap_buf copies into an owned Vec.
-                // Copy MC results back to scratch for blend to read.
+                #[cfg(feature = "c-ffi")]
+                let lap_px: &[BD::Pixel; SCRATCH_LAP_LEN] = lap;
                 #[cfg(not(feature = "c-ffi"))]
-                lap_component.copy_pixels_to::<BD>(lap);
+                let lap_px: &[BD::Pixel; SCRATCH_LAP_LEN] =
+                    lap_component.usable_pixels::<BD>().try_into().unwrap();
                 f.dsp.mc.blend_h.call::<BD>(
                     true,
                     dst + (x * h_mul) as usize,
-                    lap,
+                    lap_px,
                     h_mul * ow4 as c_int,
                     v_mul * oh4 as c_int,
                 );
+                recycle_scratch_component(lap_component);
                 i += 1;
             }
             x += step4 as c_int;
@@ -2006,8 +2121,11 @@ fn obmc<BD: BitDepth>(
                 let lf1 = t.l.filter[1].get_mut()[(by4 + y + 1) as usize] as usize;
                 let lf0 = t.l.filter[0].get_mut()[(by4 + y + 1) as usize] as usize;
                 let left_filter_2d = dav1d_filter_2d[lf1][lf0];
-                let lap_component =
-                    Rav1dPictureDataComponent::wrap_buf::<BD>(lap, ow4 as usize * h_mul as usize);
+                let stride_px = ow4 as usize * h_mul as usize;
+                #[cfg(feature = "c-ffi")]
+                let lap_component = Rav1dPictureDataComponent::wrap_buf::<BD>(lap, stride_px);
+                #[cfg(not(feature = "c-ffi"))]
+                let mut lap_component = pooled_scratch_component::<BD>(SCRATCH_LAP_LEN, stride_px);
                 mc::<BD>(
                     f,
                     &mut scratch.emu_edge,
@@ -2028,15 +2146,19 @@ fn obmc<BD: BitDepth>(
                     l_r.r#ref.r#ref[0] as usize - 1,
                     left_filter_2d,
                 )?;
+                #[cfg(feature = "c-ffi")]
+                let lap_px: &[BD::Pixel; SCRATCH_LAP_LEN] = lap;
                 #[cfg(not(feature = "c-ffi"))]
-                lap_component.copy_pixels_to::<BD>(lap);
+                let lap_px: &[BD::Pixel; SCRATCH_LAP_LEN] =
+                    lap_component.usable_pixels::<BD>().try_into().unwrap();
                 f.dsp.mc.blend_v.call::<BD>(
                     false,
                     dst + (y * v_mul) as isize * dst.pixel_stride::<BD>(),
-                    lap,
+                    lap_px,
                     h_mul * ow4 as c_int,
                     v_mul * oh4 as c_int,
                 );
+                recycle_scratch_component(lap_component);
                 i += 1;
             }
             y += step4 as c_int;
@@ -2086,22 +2208,23 @@ fn warp_affine<BD: BitDepth>(
             let my =
                 (mvy as i32 & 0xffff) - wmp.gamma() as i32 * 4 - wmp.delta() as i32 * 4 & !0x3f;
 
-            let r#ref = if dx < 3 || dx + 8 + 4 > width || dy < 3 || dy + 8 + 4 > height {
-                let emu_edge_buf = emu_edge.buf_mut::<BD>();
-                f.dsp.mc.emu_edge.call::<BD>(
+            let mut emu_comp = None;
+            let r#ref = if unlikely(dx < 3 || dx + 8 + 4 > width || dy < 3 || dy + 8 + 4 > height) {
+                let stride = 32;
+                emu_comp = Some(emu_edge_component::<BD>(
+                    f,
+                    emu_edge,
                     15,
                     15,
                     width as intptr_t,
                     height as intptr_t,
                     (dx - 3) as intptr_t,
                     (dy - 3) as intptr_t,
-                    emu_edge_buf,
-                    32,
                     &ref_data[pl],
-                );
-                let stride = 32;
+                    stride,
+                ));
                 PicOffset {
-                    data: &Rav1dPictureDataComponent::wrap_buf::<BD>(emu_edge_buf, stride),
+                    data: emu_comp.as_ref().unwrap(),
                     offset: stride * 3 + 3,
                 }
             } else {
@@ -2122,6 +2245,9 @@ fn warp_affine<BD: BitDepth>(
                 MaybeTempPixels::NonTemp { dst } => {
                     f.dsp.mc.warp8x8.call(dst + x, r#ref, abcd, mx, my, bd);
                 }
+            }
+            if let Some(c) = emu_comp {
+                recycle_scratch_component(c);
             }
         }
         dst = match dst {
@@ -3117,9 +3243,11 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
         let filter_2d = inter.filter2d;
 
         if cmp::min(bw4, bh4) > 1
-            && (inter.inter_mode == GLOBALMV && f.gmv_warp_allowed[inter.r#ref[0] as usize] != 0
-                || inter.motion_mode == MotionMode::Warp
-                    && t.warpmv.r#type > Rav1dWarpedMotionType::Translation)
+            && unlikely(
+                inter.inter_mode == GLOBALMV && f.gmv_warp_allowed[inter.r#ref[0] as usize] != 0
+                    || inter.motion_mode == MotionMode::Warp
+                        && t.warpmv.r#type > Rav1dWarpedMotionType::Translation,
+            )
         {
             warp_affine::<BD>(
                 f,
@@ -3151,7 +3279,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                 inter.r#ref[0] as usize,
                 filter_2d,
             )?;
-            if inter.motion_mode == MotionMode::Obmc {
+            if unlikely(inter.motion_mode == MotionMode::Obmc) {
                 obmc::<BD>(f, t, y_dst, b_dim, 0, bx4, by4, w4, h4)?;
             }
         }
@@ -3191,8 +3319,14 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                 tl_edge_offset,
                 bd,
             );
+            let stride_px = 4 * bw4 as usize;
+            #[cfg(feature = "c-ffi")]
             let tmp = interintra_edge_pal.interintra.buf_mut::<BD>();
-            let tmp_component = Rav1dPictureDataComponent::wrap_buf::<BD>(tmp, 4 * bw4 as usize);
+            #[cfg(feature = "c-ffi")]
+            let tmp_component = Rav1dPictureDataComponent::wrap_buf::<BD>(tmp, stride_px);
+            #[cfg(not(feature = "c-ffi"))]
+            let mut tmp_component =
+                pooled_scratch_component::<BD>(SCRATCH_INTER_INTRA_BUF_LEN, stride_px);
             f.dsp.ipred.intra_pred[m as usize].call(
                 m as usize,
                 &mut crate::src::owned_recon::ReconDst::Pic(PicOffset {
@@ -3208,8 +3342,6 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                 0,
                 bd,
             );
-            #[cfg(not(feature = "c-ffi"))]
-            tmp_component.copy_pixels_to::<BD>(tmp);
             let ii_mask = match interintra_type {
                 InterIntraType::Blend => {
                     dav1d_ii_masks[bs as usize][0][inter.nd.one_d.interintra_mode.get() as usize]
@@ -3218,10 +3350,16 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                     dav1d_wedge_masks[bs as usize][0][0][inter.nd.one_d.wedge_idx as usize]
                 }
             };
+            #[cfg(feature = "c-ffi")]
+            let tmp_px: &[BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN] = tmp;
+            #[cfg(not(feature = "c-ffi"))]
+            let tmp_px: &[BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN] =
+                tmp_component.usable_pixels::<BD>().try_into().unwrap();
             f.dsp
                 .mc
                 .blend
-                .call::<BD>(y_dst, tmp, bw4 * 4, bh4 * 4, ii_mask);
+                .call::<BD>(y_dst, tmp_px, bw4 * 4, bh4 * 4, ii_mask);
+            recycle_scratch_component(tmp_component);
         }
 
         if has_chroma {
@@ -3381,10 +3519,12 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                 }
             } else {
                 if cmp::min(cbw4, cbh4) > 1
-                    && (inter.inter_mode == GLOBALMV
-                        && f.gmv_warp_allowed[inter.r#ref[0] as usize] != 0
-                        || inter.motion_mode == MotionMode::Warp
-                            && t.warpmv.r#type > Rav1dWarpedMotionType::Translation)
+                    && unlikely(
+                        inter.inter_mode == GLOBALMV
+                            && f.gmv_warp_allowed[inter.r#ref[0] as usize] != 0
+                            || inter.motion_mode == MotionMode::Warp
+                                && t.warpmv.r#type > Rav1dWarpedMotionType::Translation,
+                    )
                 {
                     for pl in 0..2 {
                         warp_affine::<BD>(
@@ -3424,7 +3564,7 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             filter_2d,
                         )?;
                         let uv_dst = cur_data[1 + pl].with_offset::<BD>() + uvdstoff;
-                        if inter.motion_mode == MotionMode::Obmc {
+                        if unlikely(inter.motion_mode == MotionMode::Obmc) {
                             obmc::<BD>(f, t, uv_dst, b_dim, 1 + pl, bx4, by4, w4, h4)?;
                         }
                     }
@@ -3482,9 +3622,15 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             tl_edge_offset,
                             bd,
                         );
+                        let stride_px = 4 * cbw4 as usize;
+                        #[cfg(feature = "c-ffi")]
                         let tmp = interintra_edge_pal.interintra.buf_mut::<BD>();
+                        #[cfg(feature = "c-ffi")]
                         let tmp_component =
-                            Rav1dPictureDataComponent::wrap_buf::<BD>(tmp, 4 * cbw4 as usize);
+                            Rav1dPictureDataComponent::wrap_buf::<BD>(tmp, stride_px);
+                        #[cfg(not(feature = "c-ffi"))]
+                        let mut tmp_component =
+                            pooled_scratch_component::<BD>(SCRATCH_INTER_INTRA_BUF_LEN, stride_px);
                         f.dsp.ipred.intra_pred[m as usize].call(
                             m as usize,
                             &mut crate::src::owned_recon::ReconDst::Pic(PicOffset {
@@ -3500,12 +3646,18 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             0,
                             bd,
                         );
+                        #[cfg(feature = "c-ffi")]
+                        let tmp_px: &[BD::Pixel;
+                             SCRATCH_INTER_INTRA_BUF_LEN] = tmp;
                         #[cfg(not(feature = "c-ffi"))]
-                        tmp_component.copy_pixels_to::<BD>(tmp);
+                        let tmp_px: &[BD::Pixel;
+                             SCRATCH_INTER_INTRA_BUF_LEN] =
+                            tmp_component.usable_pixels::<BD>().try_into().unwrap();
                         f.dsp
                             .mc
                             .blend
-                            .call::<BD>(uv_dst, tmp, cbw4 * 4, cbh4 * 4, ii_mask);
+                            .call::<BD>(uv_dst, tmp_px, cbw4 * 4, cbh4 * 4, ii_mask);
+                        recycle_scratch_component(tmp_component);
                     }
                 }
             }

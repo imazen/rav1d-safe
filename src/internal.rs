@@ -1074,6 +1074,9 @@ pub const SCRATCH_LAP_LEN: usize = 128 * 32;
 pub struct ScratchLapInter([u8; SCRATCH_COMPINTER_SIZE]);
 
 impl ScratchLapInter {
+    // Only the c-ffi wrap_buf path writes through this POD array; the default
+    // build routes lap scratch through `pooled_scratch_component`.
+    #[cfg(feature = "c-ffi")]
     pub fn lap_mut<BD: BitDepth>(&mut self) -> &mut [BD::Pixel; SCRATCH_LAP_LEN] {
         FromBytes::mut_from_prefix(&mut self.0).unwrap().0
     }
@@ -1090,6 +1093,7 @@ pub const EMU_EDGE_LEN: usize = 320 * (256 + 7);
 pub struct ScratchEmuEdge([u8; EMU_EDGE_LEN * 2]);
 
 impl ScratchEmuEdge {
+    #[cfg(feature = "c-ffi")]
     pub fn buf_mut<BD: BitDepth>(&mut self) -> &mut [BD::Pixel; EMU_EDGE_LEN] {
         FromBytes::mut_from_prefix(&mut self.0).unwrap().0
     }
@@ -1130,6 +1134,7 @@ pub const SCRATCH_INTER_INTRA_BUF_LEN: usize = 64 * 64;
 pub struct ScratchInterIntraBuf([u16; SCRATCH_INTER_INTRA_BUF_LEN * 2]);
 
 impl ScratchInterIntraBuf {
+    #[cfg(feature = "c-ffi")]
     pub fn buf_mut<BD: BitDepth>(&mut self) -> &mut [BD::Pixel; SCRATCH_INTER_INTRA_BUF_LEN] {
         FromBytes::mut_from_prefix(IntoBytes::as_mut_bytes(&mut self.0))
             .unwrap()

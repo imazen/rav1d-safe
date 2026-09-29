@@ -6,6 +6,7 @@ use crate::include::common::intops::ulog2;
 use crate::src::c_arc::CArc;
 use crate::src::cpu::CpuFlags;
 use cfg_if::cfg_if;
+use likely_stable::{likely, unlikely};
 use std::ffi::c_int;
 use std::ffi::c_uint;
 use std::mem;
@@ -360,19 +361,17 @@ const EC_WIN_SIZE: usize = mem::size_of::<EcWin>() << 3;
 #[inline(always)]
 fn update_cdf(cdf: &mut [u16], n: usize, val: usize, rate: u16, count: u16) {
     #[cfg(all(not(asm_msac), target_arch = "x86_64"))]
-    {
-        use archmage::SimdToken as _;
-        if n == 3 && rate < 16 {
-            if let Some(token) = archmage::X64V1Token::summon() {
-                return update_cdf3_simd(
-                    token,
-                    (&mut cdf[..4]).try_into().unwrap(),
-                    val.min(3),
-                    rate,
-                    count,
-                );
-            }
-        }
+    if n == 3 && rate < 16 {
+        return archmage::incant!(
+            update_cdf3(
+                Token,
+                (&mut cdf[..4]).try_into().unwrap(),
+                val.min(3),
+                rate,
+                count
+            ),
+            [v1, default]
+        );
     }
     for i in 0..n {
         let mask = ((i < val) as u16).wrapping_neg(); // 0xFFFF if below val, 0 otherwise
@@ -386,12 +385,34 @@ fn update_cdf(cdf: &mut [u16], n: usize, val: usize, rate: u16, count: u16) {
     cdf[n] = count + (count < 32) as u16;
 }
 
+/// Scalar fallback for `update_cdf3` — the same mask-select update over the
+/// three symbol lanes, with the count landing in lane 3. `default` tier:
+/// tokenless — `incant!` strips the `Token` arg for default callees.
+#[cfg(all(not(asm_msac), target_arch = "x86_64"))]
+fn update_cdf3_default(cdf: &mut [u16; 4], val: usize, rate: u16, count: u16) {
+    for i in 0..3 {
+        let mask = ((i < val) as u16).wrapping_neg();
+        let delta_up = (32768u16.wrapping_sub(cdf[i])) >> rate;
+        let delta_dn = cdf[i] >> rate;
+        cdf[i] = cdf[i]
+            .wrapping_add(delta_up & mask)
+            .wrapping_sub(delta_dn & !mask);
+    }
+    cdf[3] = count + (count < 32) as u16;
+}
+
 /// A leaf kernel: keep normalization/refill outside the SIMD call so no coder
 /// state or vector registers must survive a refill. Each lane keeps the
 /// scalar wrapping arithmetic, including zero and high u16 probabilities.
+///
+/// `#[arcane]` emits a safe `#[inline(always)]` wrapper over the
+/// `#[target_feature]` inner — the shape `incant!` dispatches to (`_v1`
+/// suffix convention). Callers already inside a matching or superset
+/// feature context (e.g. an `#[autoversion]` variant) inline the whole
+/// chain; plain callers cross exactly one boundary, no manual `summon()`.
 #[cfg(all(not(asm_msac), target_arch = "x86_64"))]
 #[archmage::arcane]
-fn update_cdf3_simd(
+fn update_cdf3_v1(
     _token: archmage::X64V1Token,
     cdf: &mut [u16; 4],
     val: usize,
@@ -500,7 +521,7 @@ fn ctx_norm(s: &mut MsacContext, dif: EcWin, rng: c_uint) {
     // panics on every EOB. Use `wrapping_sub` to match dav1d's C semantics.
     s.cnt = cnt.wrapping_sub(d);
     // unsigned compare avoids redundant refills at eob
-    if (cnt as u32) < (d as u32) {
+    if unlikely((cnt as u32) < (d as u32)) {
         ctx_refill(s);
     }
 }
@@ -561,6 +582,10 @@ pub fn rav1d_msac_decode_subexp(s: &mut MsacContext, r#ref: c_uint, n: c_uint, m
 /// Return value is in the range `0..=n_symbols`.
 ///
 /// `n_symbols` is in the range `0..16`, so it is really a `u4`.
+// #[inline]: called from `adapt8_v1`/`adapt16_v1` feature contexts on the
+// small-CDF guard path — inlineable so it folds into the caller's context
+// instead of crossing a hard scalar boundary.
+#[inline]
 fn rav1d_msac_decode_symbol_adapt_rust(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
     let c = (s.dif >> (EC_WIN_SIZE - 16)) as c_uint;
     let r = s.rng >> 8;
@@ -585,7 +610,7 @@ fn rav1d_msac_decode_symbol_adapt_rust(s: &mut MsacContext, cdf: &mut [u16], n_s
         s.dif.wrapping_sub((v as EcWin) << (EC_WIN_SIZE - 16)),
         u - v,
     );
-    if s.allow_update_cdf() {
+    if likely(s.allow_update_cdf()) {
         let n_usize = n_symbols as usize;
         let count = cdf[n_usize];
         let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
@@ -633,7 +658,7 @@ unsafe extern "C" fn rav1d_msac_decode_symbol_adapt_c(
 )]
 fn rav1d_msac_decode_bool_adapt_rust(s: &mut MsacContext, cdf: &mut [u16; 2]) -> bool {
     let bit = rav1d_msac_decode_bool(s, cdf[0] as c_uint);
-    if s.allow_update_cdf() {
+    if likely(s.allow_update_cdf()) {
         let count = cdf[1];
         let rate = 4 + (count >> 4);
         update_cdf(cdf, 1, bit as usize, rate, count);
@@ -650,13 +675,13 @@ fn rav1d_msac_decode_bool_adapt_rust(s: &mut MsacContext, cdf: &mut [u16; 2]) ->
 fn rav1d_msac_decode_hi_tok_rust(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
     let mut tok_br = rav1d_msac_decode_symbol_adapt4(s, cdf, 3);
     let mut tok = 3 + tok_br;
-    if tok_br == 3 {
+    if unlikely(tok_br == 3) {
         tok_br = rav1d_msac_decode_symbol_adapt4(s, cdf, 3);
         tok = 6 + tok_br;
-        if tok_br == 3 {
+        if unlikely(tok_br == 3) {
             tok_br = rav1d_msac_decode_symbol_adapt4(s, cdf, 3);
             tok = 9 + tok_br;
-            if tok_br == 3 {
+            if unlikely(tok_br == 3) {
                 tok = 12 + rav1d_msac_decode_symbol_adapt4(s, cdf, 3);
             }
         }
@@ -718,7 +743,7 @@ fn rav1d_msac_decode_symbol_adapt4_branchless(
         u - v_val,
     );
 
-    if s.allow_update_cdf() {
+    if likely(s.allow_update_cdf()) {
         let n_usize = n_symbols as usize;
         let count = cdf[n_usize];
         let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
@@ -768,7 +793,7 @@ fn rav1d_msac_decode_symbol_adapt8_branchless(
         u - v_val,
     );
 
-    if s.allow_update_cdf() {
+    if likely(s.allow_update_cdf()) {
         let n_usize = n_symbols as usize;
         let count = cdf[n_usize];
         let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
@@ -808,6 +833,219 @@ impl MsacContext {
     }
 }
 
+// ============================================================================
+// Safe SSE2 symbol decode (x86_64 default builds, no asm) — adapt8/adapt16.
+//
+// Mirrors dav1d's `msac.asm`: every `v[i]` threshold is computed in parallel
+// 16-bit lanes (`pmulhuw`) and `val` is recovered with `pmovmskb`+`tzcnt`,
+// replacing the serial per-symbol scan with ~15 vector instructions. The CDF
+// update uses unsigned `srl` deltas (bit-exact vs the scalar wrap semantics,
+// where dav1d's signed `pavgw`/`psraw` trick is not) plus a lane-select merge
+// so tail lanes past `n` are preserved, not clobbered. SSE2 is in the x86_64
+// baseline, so the `#[target_feature]` context does the real checking — the
+// `X64V1Token` param exists only as the trampoline witness for vanilla
+// callers (`#[arcane]` boundary); inside feature contexts `incant!` conjures
+// it for free. The `_scalar` twins serve exotic targets and archmage's
+// token-permutation test harness.
+//
+// adapt4 is deliberately absent: for n<=3 the branchless scalar's three
+// independent multiplies beat the vector splat→pmulhuw→pmovmskb→tzcnt chain
+// on serial latency, and this decoder is latency-bound (4K AVIF: SIMD adapt4
+// cost +3.4ms/iter vs branchless).
+// ============================================================================
+#[cfg(all(not(asm_msac), target_arch = "x86_64"))]
+mod simd {
+    use super::*;
+    use crate::src::safe_simd::pixel_access::{loadu_128, storeu_128};
+    use archmage::X64V1Token;
+    use core::arch::x86_64::*;
+
+    /// Byte-identical layout to dav1d's `min_prob`+`pw_0xff00` rodata pair:
+    /// lane i of a window starting at `15 - n` holds `4*(n-i)`, and indices
+    /// past 15 read `0xff00` — a value so large it can never win the `c >= v`
+    /// race, so the same window serves every `n` and dead lanes stay dead.
+    static MIN_PROB: [u16; 24] = [
+        60, 56, 52, 48, 44, 40, 36, 32, 28, 24, 20, 16, 12, 8, 4, 0, 0xff00, 0xff00, 0xff00,
+        0xff00, 0xff00, 0xff00, 0xff00, 0xff00,
+    ];
+
+    /// The `c >= v[i]` mask for `v[i] = (r * (cdf[i] >> 6) >> 1) + 4*(n - i)`,
+    /// computed in all lanes at once. `pmulhuw((cdf>>6)<<7, r<<8) =
+    /// r*(cdf>>6)>>1` whenever the left factor fits u16, i.e. `cdf < 0x8000`.
+    ///
+    /// At `cdf >= 0x8000` the `(cdf>>6)<<7` operand wraps by `512<<7`, dropping
+    /// `256*r` from the product. Restore it with a saturating add of `r_hi`
+    /// (`256*r`) on negative-i16 lanes: where the true `v` exceeds 65535 the
+    /// saturated `0xffff` still beats every `c <= rng-1 <= 65534`, so the mask
+    /// (and thus `val`) is unaffected.
+    ///
+    /// `#[rite(v1)]` — tokenless tier helper: gets the v1 target features and
+    /// inlines into the `#[arcane]` kernels that call it.
+    #[archmage::rite(v1)]
+    fn v_eq(cdfv: __m128i, r_hi: __m128i, mprob: __m128i, cv: __m128i) -> __m128i {
+        let shifted = _mm_slli_epi16(_mm_srli_epi16(cdfv, 6), 7);
+        let v = _mm_add_epi16(_mm_mulhi_epu16(shifted, r_hi), mprob);
+        let wrapped = _mm_and_si128(_mm_cmpgt_epi16(_mm_setzero_si128(), cdfv), r_hi);
+        let v = _mm_adds_epu16(v, wrapped);
+        _mm_cmpeq_epi16(_mm_subs_epu16(v, cv), _mm_setzero_si128())
+    }
+
+    /// `i<val`: `cdf[i] += ((32768-cdf[i]) mod 2^16)>>rate`; `i>=val`:
+    /// `cdf[i] -= cdf[i]>>rate` — branchlessly for all lanes, bit-exact vs
+    /// the scalar mask-select update for every u16 input. `eq` is the
+    /// `i>=val` suffix mask (`v` is non-increasing), so below-val lanes add
+    /// `up` and eq lanes subtract `dn`. Both deltas use `srl`: the scalar
+    /// computes `(32768u16.wrapping_sub(cdf)) >> rate` — the wrapped unsigned
+    /// value — so `cdf=0` (up=32768>>rate) and `cdf>=0x8000` (up wraps large
+    /// positive) need no patching, unlike dav1d's fused `pavgw`/`sra` trick
+    /// which relies on i16 sign wraparound and diverges at both edges.
+    #[archmage::rite(v1)]
+    fn cdf_update(cdfv: __m128i, eq: __m128i, rate: i32) -> __m128i {
+        let sh = _mm_cvtsi32_si128(rate);
+        let dn = _mm_srl_epi16(cdfv, sh);
+        let up = _mm_srl_epi16(_mm_sub_epi16(_mm_set1_epi16(i16::MIN), cdfv), sh);
+        _mm_sub_epi16(
+            _mm_add_epi16(cdfv, _mm_andnot_si128(eq, up)),
+            _mm_and_si128(eq, dn),
+        )
+    }
+
+    /// Lane-select a CDF row for a full-width store: lanes `< n` take `upd`,
+    /// lane `n` takes `count`, lanes `> n` keep their original values — unlike
+    /// dav1d's asm, which clobbers tail lanes (harmless there since every CDF
+    /// array is exactly n+1, but our slices may be longer). One aligned-width
+    /// store per update also avoids the STLF hazard of splitting the write
+    /// into a tmp buffer + variable-length copy.
+    #[archmage::rite(v1)]
+    fn merge_cdf(upd: __m128i, cdfv: __m128i, n: i32, count: u16) -> __m128i {
+        let idx = _mm_setr_epi16(0, 1, 2, 3, 4, 5, 6, 7);
+        // n < 0 preserves the whole vector (no lane is below or equal) —
+        // used for adapt16's hi half when the count lands in the lo half.
+        let nv = _mm_set1_epi16(n as i16);
+        let below_n = _mm_cmpgt_epi16(nv, idx);
+        let eq_n = _mm_cmpeq_epi16(idx, nv);
+        let countv = _mm_set1_epi16(count as i16);
+        _mm_or_si128(
+            _mm_and_si128(below_n, upd),
+            _mm_andnot_si128(
+                below_n,
+                _mm_or_si128(_mm_and_si128(eq_n, countv), _mm_andnot_si128(eq_n, cdfv)),
+            ),
+        )
+    }
+
+    #[inline(always)]
+    fn rate_for(count: u16, n: usize) -> i32 {
+        4 + i32::from(count >> 4) + (n > 2) as i32
+    }
+
+    #[archmage::arcane]
+    pub(super) fn adapt8_v1(
+        _token: X64V1Token,
+        s: &mut MsacContext,
+        cdf: &mut [u16],
+        n_symbols: u8,
+    ) -> u8 {
+        let n = n_symbols as usize;
+        if cdf.len() < 8 {
+            return rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols);
+        }
+        let cdfv = loadu_128!(&cdf[..8], [u16; 8]);
+        let r_hi = _mm_set1_epi16((s.rng & 0xff00) as i16);
+        let cv = _mm_set1_epi16((s.dif >> (EC_WIN_SIZE - 16)) as i16);
+        let mprob = loadu_128!(&MIN_PROB[15 - n..23 - n], [u16; 8]);
+        let eq = v_eq(cdfv, r_hi, mprob, cv);
+        let val = (_mm_movemask_epi8(eq) as u32).trailing_zeros() as usize >> 1;
+
+        // See adapt4_v1: `u`/`vf` recomputed in u32 — SIMD v saturates.
+        let r = s.rng >> 8;
+        let u = if val == 0 {
+            s.rng
+        } else {
+            (r * u32::from(cdf[val - 1] >> 6) >> 1) + 4 * (n + 1 - val) as u32
+        };
+        let vf = (r * u32::from(cdf[val] >> 6) >> 1) + 4 * (n - val) as u32;
+        ctx_norm(
+            s,
+            s.dif.wrapping_sub((vf as EcWin) << (EC_WIN_SIZE - 16)),
+            u - vf,
+        );
+
+        if s.allow_update_cdf() {
+            let count = cdf[n];
+            let upd = cdf_update(cdfv, eq, rate_for(count, n));
+            let merged = merge_cdf(upd, cdfv, n as i32, count + (count < 32) as u16);
+            storeu_128!(&mut cdf[..8], [u16; 8], merged);
+        }
+        val as u8
+    }
+
+    #[archmage::arcane]
+    pub(super) fn adapt16_v1(
+        _token: X64V1Token,
+        s: &mut MsacContext,
+        cdf: &mut [u16],
+        n_symbols: u8,
+    ) -> u8 {
+        let n = n_symbols as usize;
+        if cdf.len() < 16 {
+            return rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols);
+        }
+        let cdfv_lo = loadu_128!(&cdf[..8], [u16; 8]);
+        let cdfv_hi = loadu_128!(&cdf[8..16], [u16; 8]);
+        let r_hi = _mm_set1_epi16((s.rng & 0xff00) as i16);
+        let cv = _mm_set1_epi16((s.dif >> (EC_WIN_SIZE - 16)) as i16);
+        let mprob_lo = loadu_128!(&MIN_PROB[15 - n..23 - n], [u16; 8]);
+        let mprob_hi = _mm_sub_epi16(mprob_lo, _mm_set1_epi16(32));
+        let eq_lo = v_eq(cdfv_lo, r_hi, mprob_lo, cv);
+        let eq_hi = v_eq(cdfv_hi, r_hi, mprob_hi, cv);
+        let eq16 = _mm_packs_epi16(eq_lo, eq_hi);
+        let val = (_mm_movemask_epi8(eq16) as u32).trailing_zeros() as usize;
+
+        // See adapt4_v1: `u`/`vf` recomputed in u32 — SIMD v saturates.
+        let r = s.rng >> 8;
+        let u = if val == 0 {
+            s.rng
+        } else {
+            (r * u32::from(cdf[val - 1] >> 6) >> 1) + 4 * (n + 1 - val) as u32
+        };
+        let vf = (r * u32::from(cdf[val] >> 6) >> 1) + 4 * (n - val) as u32;
+        ctx_norm(
+            s,
+            s.dif.wrapping_sub((vf as EcWin) << (EC_WIN_SIZE - 16)),
+            u - vf,
+        );
+
+        if s.allow_update_cdf() {
+            let count = cdf[n];
+            let rate = rate_for(count, n);
+            let count_inc = count + (count < 32) as u16;
+            let upd_lo = cdf_update(cdfv_lo, eq_lo, rate);
+            let upd_hi = cdf_update(cdfv_hi, eq_hi, rate);
+            let merged_lo = merge_cdf(upd_lo, cdfv_lo, n.min(8) as i32, count_inc);
+            // hi-half lane index is n-8; for n<8 the negative index preserves
+            // the half whole (no lane is below or equal).
+            let merged_hi = merge_cdf(upd_hi, cdfv_hi, n as i32 - 8, count_inc);
+            storeu_128!(&mut cdf[..8], [u16; 8], merged_lo);
+            storeu_128!(&mut cdf[8..16], [u16; 8], merged_hi);
+        }
+        val as u8
+    }
+
+    /// `_default` fallbacks — tokenless variants `incant!` calls when the v1
+    /// token is unavailable (non-x86 targets, token-permutation tests).
+    pub(super) fn adapt8_default(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+        rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols) as u8
+    }
+
+    pub(super) fn adapt16_default(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+        // Serial loop is faster than branchless for adapt16: typical AV1
+        // distributions exit early (3-5 iterations), while branchless always
+        // computes all n_symbols values.
+        rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols) as u8
+    }
+}
+
 /// Return value is in the range `0..=n_symbols`.
 ///
 /// `n_symbols` is in the range `0..4`.
@@ -827,6 +1065,11 @@ pub fn rav1d_msac_decode_symbol_adapt4(s: &mut MsacContext, cdf: &mut [u16], n_s
                 dav1d_msac_decode_symbol_adapt4_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
         } else if #[cfg(not(asm_msac))] {
+            // Scalar branchless beats SSE2 here: at n<=3 three independent
+            // multiplies have a shorter serial latency than the vector
+            // splat→pmulhuw→pmovmskb→tzcnt→index chain, and this loop is
+            // latency-bound, not throughput-bound (measured -3ms/iter on the
+            // 4K AVIF bench). adapt8/16 below invert the trade.
             ret = rav1d_msac_decode_symbol_adapt4_branchless(s, cdf, n_symbols);
         } else {
             ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols);
@@ -854,6 +1097,11 @@ pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_s
             ret = unsafe {
                 dav1d_msac_decode_symbol_adapt8_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
+        } else if #[cfg(all(not(asm_msac), target_arch = "x86_64"))] {
+            ret = c_uint::from(archmage::incant!(
+                simd::adapt8(Token, s, cdf, n_symbols),
+                [v1, default]
+            ));
         } else if #[cfg(not(asm_msac))] {
             ret = rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols);
         } else {
@@ -888,6 +1136,11 @@ pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_
             ret = unsafe {
                 dav1d_msac_decode_symbol_adapt16_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
+        } else if #[cfg(all(not(asm_msac), target_arch = "x86_64"))] {
+            ret = c_uint::from(archmage::incant!(
+                simd::adapt16(Token, s, cdf, n_symbols),
+                [v1, default]
+            ));
         } else if #[cfg(not(asm_msac))] {
             // Serial loop is faster than branchless for adapt16: typical AV1 distributions
             // exit early (3-5 iterations), while branchless always computes all n_symbols values.

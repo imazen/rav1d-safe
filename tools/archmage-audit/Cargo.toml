@@ -1,0 +1,16 @@
+[package]
+name = "archmage-audit"
+version = "0.1.0"
+edition = "2021"
+description = "Static analysis of archmage dispatch topology: call trees, feature-context boundaries, and idiom violations"
+
+# Member of the parent workspace so `cargo install --git <repo> archmage-audit`
+# (or `cargo install --path tools/archmage-audit` after cloning) can build it
+# on any machine that fetches the repo.
+
+[dependencies]
+syn = { version = "2", features = ["full", "visit", "parsing"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+quote = "1"
+walkdir = "2"
+serde_json = "1"

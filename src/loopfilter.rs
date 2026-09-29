@@ -2393,3 +2393,52 @@ pub(crate) fn loop_filter_scalar_for_test(
         loop_filter(&mut taps, e, i, h, width as c_int, BitDepth8::new(()));
     }
 }
+
+/// 16bpc sibling of [`loop_filter_scalar_for_test`]: same production scalar
+/// `loop_filter` oracle over a `u16` buffer, for the SIMD 16bpc parity tests.
+#[cfg(all(test, target_arch = "x86_64", feature = "bitdepth_16"))]
+pub(crate) fn loop_filter_scalar_for_test_u16(
+    buf: &mut [u16],
+    base: usize,
+    strides: [isize; 2],
+    lanes: usize,
+    levels: [u8; 3],
+    width: usize,
+    bitdepth_max: u16,
+) {
+    use crate::include::common::bitdepth::BitDepth16;
+
+    struct Taps<'a> {
+        buf: &'a mut [u16],
+        base: usize,
+        strides: [isize; 2],
+    }
+    impl Taps<'_> {
+        fn at(&self, lane: isize, tap: isize) -> usize {
+            self.base
+                .checked_add_signed(lane * self.strides[0] + tap * self.strides[1])
+                .unwrap()
+        }
+    }
+    impl LfTaps<BitDepth16> for Taps<'_> {
+        fn get(&self, lane: isize, tap: isize) -> i32 {
+            i32::from(self.buf[self.at(lane, tap)])
+        }
+        fn set(&mut self, lane: isize, tap: isize, value: u16) {
+            let at = self.at(lane, tap);
+            self.buf[at] = value;
+        }
+    }
+
+    assert_eq!(lanes % 4, 0);
+    let [e, i, h] = levels;
+    let bd = BitDepth16::new(bitdepth_max);
+    for lane in (0..lanes).step_by(4) {
+        let mut taps = Taps {
+            buf,
+            base: base.checked_add_signed(lane as isize * strides[0]).unwrap(),
+            strides,
+        };
+        loop_filter(&mut taps, e, i, h, width as c_int, bd);
+    }
+}

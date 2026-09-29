@@ -2519,6 +2519,16 @@ mod pic_buf {
             &self.buf[self.align_offset..self.align_offset + self.usable_len]
         }
 
+        /// Mutable access to the usable byte region.
+        ///
+        /// Lets callers fill an owned scratch buffer *in place* before it is
+        /// borrowed as a component source — the whole point of adopting the
+        /// Vec via [`Self::from_vec_aligned`] instead of copying via
+        /// [`Self::from_slice_copy`].
+        pub fn as_usable_bytes_mut(&mut self) -> &mut [u8] {
+            &mut self.buf[self.align_offset..self.align_offset + self.usable_len]
+        }
+
         /// Take the owned Vec out of this buffer.
         ///
         /// After this call, the buffer is left in a default (empty) state.
@@ -2531,6 +2541,35 @@ mod pic_buf {
                 self.align_offset = 0;
                 Some(core::mem::take(&mut self.buf))
             }
+        }
+
+        /// Length of the backing allocation, including alignment headroom.
+        ///
+        /// This is the capacity bound for [`Self::set_usable_len`]: a pooled
+        /// scratch buffer can be re-purposed for any region up to this size.
+        pub fn storage_len(&self) -> usize {
+            self.buf.len()
+        }
+
+        /// Move the usable-region boundary within the existing allocation.
+        ///
+        /// Scratch pooling needs the *component* to be reusable across
+        /// differently-sized requests: re-creating a `DisjointMut` per scratch
+        /// buffer zero-initializes a ~64KB `BorrowTracker` each time, which
+        /// dominated a 10-bit decode profile. This keeps the tracker (and Vec)
+        /// alive while only the logical length moves.
+        ///
+        /// # Panics
+        ///
+        /// `align_offset + usable_len` must not exceed [`Self::storage_len`].
+        pub fn set_usable_len(&mut self, usable_len: usize) {
+            assert!(
+                self.align_offset + usable_len <= self.buf.len(),
+                "PicBuf: usable_len {usable_len} + align {} exceeds storage {}",
+                self.align_offset,
+                self.buf.len()
+            );
+            self.usable_len = usable_len;
         }
     }
 

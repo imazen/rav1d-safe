@@ -43,7 +43,7 @@ fn inv_txfm_add_dct_dct_16x32_8bpc_avx2_inner(
 
     // Column transform: SIMD across 16 columns, 32 rows
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        dct32_cols_avx512(t512, &mut tmp, 16, 32, col_clip_min, col_clip_max);
+        dct32_cols_v4(t512, &mut tmp, 16, 32, col_clip_min, col_clip_max);
     } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
@@ -2295,7 +2295,7 @@ fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
 
     // Column transform: SIMD across 32 columns, 16 rows
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        dct16_cols_avx512(t512, &mut tmp, 32, 16, col_clip_min, col_clip_max);
+        dct16_cols_v4(t512, &mut tmp, 32, 16, col_clip_min, col_clip_max);
     } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
@@ -2315,7 +2315,7 @@ fn inv_txfm_add_dct_dct_32x16_8bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 16, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 32, 32, 16, bitdepth_max);
         coeff[..512].fill(0);
         return;
     }
@@ -2612,7 +2612,7 @@ fn inv_txfm_add_identity_identity_32x16_8bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 16, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 32, 32, 16, bitdepth_max);
         coeff[..512].fill(0);
         return;
     }
@@ -2724,7 +2724,7 @@ fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 64, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 32, 32, 64, bitdepth_max);
         coeff[..1024].fill(0);
         return;
     }
@@ -2867,7 +2867,7 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
 
     // Column transform: SIMD across 64 columns, 32 rows
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        dct32_cols_avx512(t512, &mut tmp, 64, 32, col_clip_min, col_clip_max);
+        dct32_cols_v4(t512, &mut tmp, 64, 32, col_clip_min, col_clip_max);
     } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
@@ -2887,7 +2887,7 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 64, 64, 32, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 64, 64, 32, bitdepth_max);
         coeff[..1024].fill(0);
         return;
     }
@@ -3252,23 +3252,44 @@ macro_rules! impl_4x16_transform {
             let col_clip_max = i16::MAX as i32;
             let mut tmp = [0i32; 4 * 16];
 
-            // Row transform (4 elements each, 16 rows), shift=1 for 4x16
-            let rnd = 1;
-            let shift = 1;
-            for y in 0..16 {
-                let mut scratch = [0i32; 4];
-                for x in 0..4 {
-                    scratch[x] = coeff[y + x * 16] as i32;
-                }
-                $row_fn(&mut scratch[..4], 1, row_clip_min, row_clip_max);
-                for x in 0..4 {
-                    tmp[y * 4 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
+            // Row transform: 4-pt, 16 rows in two batches (no rect2, rnd=1, shift=1).
+            {
+                let coeff_slice = coeff.as_slice();
+                for y_base in [0usize, 8] {
+                    $row_fn(
+                        _token,
+                        coeff_slice,
+                        16,
+                        y_base,
+                        false,
+                        1,
+                        1,
+                        &mut tmp[..],
+                        row_clip_min,
+                        row_clip_max,
+                        col_clip_min,
+                        col_clip_max,
+                    );
                 }
             }
 
-            // Column transform (16 elements each, 4 columns)
-            for x in 0..4 {
-                $col_fn(&mut tmp[x..], 4, col_clip_min, col_clip_max);
+            // Column transform: 16-pt across the 4 columns (lanes 4..7 stay 0).
+            {
+                let min_v = _mm256_set1_epi32(col_clip_min);
+                let max_v = _mm256_set1_epi32(col_clip_max);
+                let mut v = [_mm256_setzero_si256(); 16];
+                for i in 0..16 {
+                    let arr: &[i32; 4] = (&tmp[i * 4..i * 4 + 4]).try_into().unwrap();
+                    v[i] = _mm256_set_m128i(_mm_setzero_si128(), loadu_128!(arr));
+                }
+                $col_fn(_token, &mut v, min_v, max_v);
+                for i in 0..16 {
+                    storeu_128!(
+                        &mut tmp[i * 4..i * 4 + 4],
+                        [i32; 4],
+                        _mm256_castsi256_si128(v[i])
+                    );
+                }
             }
 
             // Add to destination
@@ -3312,24 +3333,39 @@ macro_rules! impl_16x4_transform {
             let col_clip_max = i16::MAX as i32;
             let mut tmp = [0i32; 16 * 4];
 
-            // Row transform (16 elements each, 4 rows), shift=1 for 16x4
-            let rnd = 1;
-            let shift = 1;
-            for y in 0..4 {
-                let mut scratch = [0i32; 16];
-                for x in 0..16 {
-                    scratch[x] = coeff[y + x * 4] as i32;
-                }
-                $row_fn(&mut scratch[..16], 1, row_clip_min, row_clip_max);
-                for x in 0..16 {
-                    tmp[y * 16 + x] =
-                        iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
-                }
+            // Row transform: 16-pt, 4 rows at once (no rect2, rnd=1, shift=1).
+            {
+                let coeff_slice = coeff.as_slice();
+                $row_fn(
+                    _token,
+                    coeff_slice,
+                    4,
+                    0,
+                    false,
+                    1,
+                    1,
+                    &mut tmp[..],
+                    row_clip_min,
+                    row_clip_max,
+                    col_clip_min,
+                    col_clip_max,
+                );
             }
 
-            // Column transform (4 elements each, 16 columns)
-            for x in 0..16 {
-                $col_fn(&mut tmp[x..], 16, col_clip_min, col_clip_max);
+            // Column transform: 4-pt, 16 columns in two 8-column chunks.
+            {
+                let min_v = _mm256_set1_epi32(col_clip_min);
+                let max_v = _mm256_set1_epi32(col_clip_max);
+                for cx in [0usize, 8] {
+                    let mut v = [_mm256_setzero_si256(); 4];
+                    for i in 0..4 {
+                        v[i] = loadu_256!(&tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8]);
+                    }
+                    $col_fn(_token, &mut v, min_v, max_v);
+                    for i in 0..4 {
+                        storeu_256!(&mut tmp[i * 16 + cx..i * 16 + cx + 8], [i32; 8], v[i]);
+                    }
+                }
             }
 
             // Add to destination
@@ -3391,86 +3427,54 @@ macro_rules! impl_16x4_transform {
 // Generate 4x16 ADST inner functions
 impl_4x16_transform!(
     inv_txfm_add_adst_dct_4x16_8bpc_avx2_inner,
-    adst4_1d,
-    dct16_1d
-);
+    simd_row_adst4_8bpc_8rows,dct16_1d_cols8);
 impl_4x16_transform!(
     inv_txfm_add_dct_adst_4x16_8bpc_avx2_inner,
-    dct4_1d,
-    adst16_1d
-);
+    simd_row_dct4_8bpc_8rows,adst16_1d_cols8);
 impl_4x16_transform!(
     inv_txfm_add_adst_adst_4x16_8bpc_avx2_inner,
-    adst4_1d,
-    adst16_1d
-);
+    simd_row_adst4_8bpc_8rows,adst16_1d_cols8);
 impl_4x16_transform!(
     inv_txfm_add_flipadst_dct_4x16_8bpc_avx2_inner,
-    flipadst4_1d,
-    dct16_1d
-);
+    simd_row_flipadst4_8bpc_8rows,dct16_1d_cols8);
 impl_4x16_transform!(
     inv_txfm_add_dct_flipadst_4x16_8bpc_avx2_inner,
-    dct4_1d,
-    flipadst16_1d
-);
+    simd_row_dct4_8bpc_8rows,flipadst16_1d_cols8);
 impl_4x16_transform!(
     inv_txfm_add_flipadst_flipadst_4x16_8bpc_avx2_inner,
-    flipadst4_1d,
-    flipadst16_1d
-);
+    simd_row_flipadst4_8bpc_8rows,flipadst16_1d_cols8);
 impl_4x16_transform!(
     inv_txfm_add_adst_flipadst_4x16_8bpc_avx2_inner,
-    adst4_1d,
-    flipadst16_1d
-);
+    simd_row_adst4_8bpc_8rows,flipadst16_1d_cols8);
 impl_4x16_transform!(
     inv_txfm_add_flipadst_adst_4x16_8bpc_avx2_inner,
-    flipadst4_1d,
-    adst16_1d
-);
+    simd_row_flipadst4_8bpc_8rows,adst16_1d_cols8);
 
 // Generate 16x4 ADST inner functions
 impl_16x4_transform!(
     inv_txfm_add_adst_dct_16x4_8bpc_avx2_inner,
-    adst16_1d,
-    dct4_1d
-);
+    simd_row_adst16_8bpc_4rows,dct4_1d_cols8);
 impl_16x4_transform!(
     inv_txfm_add_dct_adst_16x4_8bpc_avx2_inner,
-    dct16_1d,
-    adst4_1d
-);
+    simd_row_dct16_8bpc_4rows,adst4_1d_cols8);
 impl_16x4_transform!(
     inv_txfm_add_adst_adst_16x4_8bpc_avx2_inner,
-    adst16_1d,
-    adst4_1d
-);
+    simd_row_adst16_8bpc_4rows,adst4_1d_cols8);
 impl_16x4_transform!(
     inv_txfm_add_flipadst_dct_16x4_8bpc_avx2_inner,
-    flipadst16_1d,
-    dct4_1d
-);
+    simd_row_flipadst16_8bpc_4rows,dct4_1d_cols8);
 impl_16x4_transform!(
     inv_txfm_add_dct_flipadst_16x4_8bpc_avx2_inner,
-    dct16_1d,
-    flipadst4_1d
-);
+    simd_row_dct16_8bpc_4rows,flipadst4_1d_cols8);
 impl_16x4_transform!(
     inv_txfm_add_flipadst_flipadst_16x4_8bpc_avx2_inner,
-    flipadst16_1d,
-    flipadst4_1d
-);
+    simd_row_flipadst16_8bpc_4rows,flipadst4_1d_cols8);
 impl_16x4_transform!(
     inv_txfm_add_adst_flipadst_16x4_8bpc_avx2_inner,
-    adst16_1d,
-    flipadst4_1d
-);
+    simd_row_adst16_8bpc_4rows,flipadst4_1d_cols8);
 impl_16x4_transform!(
     inv_txfm_add_flipadst_adst_16x4_8bpc_avx2_inner,
-    flipadst16_1d,
-    adst4_1d
-);
+    simd_row_flipadst16_8bpc_4rows,adst4_1d_cols8);
 
 /// FFI wrapper macro for 4x16 transforms
 macro_rules! impl_4x16_ffi_wrapper {
@@ -3613,14 +3617,10 @@ impl_16x4_ffi_wrapper!(
 // IDTX for 4x16 and 16x4
 impl_4x16_transform!(
     inv_txfm_add_identity_identity_4x16_8bpc_avx2_inner,
-    identity4_1d,
-    identity16_1d
-);
+    simd_row_identity4_8bpc_8rows,identity16_1d_cols8);
 impl_16x4_transform!(
     inv_txfm_add_identity_identity_16x4_8bpc_avx2_inner,
-    identity16_1d,
-    identity4_1d
-);
+    simd_row_identity16_8bpc_4rows,identity4_1d_cols8);
 impl_4x16_ffi_wrapper!(
     inv_txfm_add_identity_identity_4x16_8bpc_v3,
     inv_txfm_add_identity_identity_4x16_8bpc_avx2_inner
@@ -3633,14 +3633,10 @@ impl_16x4_ffi_wrapper!(
 // H_DCT and V_DCT for 4x16
 impl_4x16_transform!(
     inv_txfm_add_identity_dct_4x16_8bpc_avx2_inner,
-    identity4_1d,
-    dct16_1d
-);
+    simd_row_identity4_8bpc_8rows,dct16_1d_cols8);
 impl_4x16_transform!(
     inv_txfm_add_dct_identity_4x16_8bpc_avx2_inner,
-    dct4_1d,
-    identity16_1d
-);
+    simd_row_dct4_8bpc_8rows,identity16_1d_cols8);
 impl_4x16_ffi_wrapper!(
     inv_txfm_add_identity_dct_4x16_8bpc_v3,
     inv_txfm_add_identity_dct_4x16_8bpc_avx2_inner
@@ -3653,14 +3649,10 @@ impl_4x16_ffi_wrapper!(
 // H_DCT and V_DCT for 16x4
 impl_16x4_transform!(
     inv_txfm_add_identity_dct_16x4_8bpc_avx2_inner,
-    identity16_1d,
-    dct4_1d
-);
+    simd_row_identity16_8bpc_4rows,dct4_1d_cols8);
 impl_16x4_transform!(
     inv_txfm_add_dct_identity_16x4_8bpc_avx2_inner,
-    dct16_1d,
-    identity4_1d
-);
+    simd_row_dct16_8bpc_4rows,identity4_1d_cols8);
 impl_16x4_ffi_wrapper!(
     inv_txfm_add_identity_dct_16x4_8bpc_v3,
     inv_txfm_add_identity_dct_16x4_8bpc_avx2_inner
@@ -3673,24 +3665,16 @@ impl_16x4_ffi_wrapper!(
 // H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 4x16
 impl_4x16_transform!(
     inv_txfm_add_identity_adst_4x16_8bpc_avx2_inner,
-    identity4_1d,
-    adst16_1d
-);
+    simd_row_identity4_8bpc_8rows,adst16_1d_cols8);
 impl_4x16_transform!(
     inv_txfm_add_adst_identity_4x16_8bpc_avx2_inner,
-    adst4_1d,
-    identity16_1d
-);
+    simd_row_adst4_8bpc_8rows,identity16_1d_cols8);
 impl_4x16_transform!(
     inv_txfm_add_identity_flipadst_4x16_8bpc_avx2_inner,
-    identity4_1d,
-    flipadst16_1d
-);
+    simd_row_identity4_8bpc_8rows,flipadst16_1d_cols8);
 impl_4x16_transform!(
     inv_txfm_add_flipadst_identity_4x16_8bpc_avx2_inner,
-    flipadst4_1d,
-    identity16_1d
-);
+    simd_row_flipadst4_8bpc_8rows,identity16_1d_cols8);
 impl_4x16_ffi_wrapper!(
     inv_txfm_add_identity_adst_4x16_8bpc_v3,
     inv_txfm_add_identity_adst_4x16_8bpc_avx2_inner
@@ -3711,24 +3695,16 @@ impl_4x16_ffi_wrapper!(
 // H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 16x4
 impl_16x4_transform!(
     inv_txfm_add_identity_adst_16x4_8bpc_avx2_inner,
-    identity16_1d,
-    adst4_1d
-);
+    simd_row_identity16_8bpc_4rows,adst4_1d_cols8);
 impl_16x4_transform!(
     inv_txfm_add_adst_identity_16x4_8bpc_avx2_inner,
-    adst16_1d,
-    identity4_1d
-);
+    simd_row_adst16_8bpc_4rows,identity4_1d_cols8);
 impl_16x4_transform!(
     inv_txfm_add_identity_flipadst_16x4_8bpc_avx2_inner,
-    identity16_1d,
-    flipadst4_1d
-);
+    simd_row_identity16_8bpc_4rows,flipadst4_1d_cols8);
 impl_16x4_transform!(
     inv_txfm_add_flipadst_identity_16x4_8bpc_avx2_inner,
-    flipadst16_1d,
-    identity4_1d
-);
+    simd_row_flipadst16_8bpc_4rows,identity4_1d_cols8);
 impl_16x4_ffi_wrapper!(
     inv_txfm_add_identity_adst_16x4_8bpc_v3,
     inv_txfm_add_identity_adst_16x4_8bpc_avx2_inner
@@ -3913,7 +3889,7 @@ fn inv_txfm_add_dct_dct_32x8_8bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 8, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 32, 32, 8, bitdepth_max);
         coeff[..256].fill(0);
         return;
     }
@@ -4156,7 +4132,7 @@ fn inv_txfm_add_identity_identity_32x8_8bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 32, 32, 8, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 32, 32, 8, bitdepth_max);
         coeff[..256].fill(0);
         return;
     }
@@ -4396,7 +4372,7 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
 
     // Column transform: SIMD across 64 columns, 16 rows
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        dct16_cols_avx512(t512, &mut tmp, 64, 16, col_clip_min, col_clip_max);
+        dct16_cols_v4(t512, &mut tmp, 64, 16, col_clip_min, col_clip_max);
     } else {
         let min_v = _mm256_set1_epi32(col_clip_min);
         let max_v = _mm256_set1_epi32(col_clip_max);
@@ -4416,7 +4392,7 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
     // Add to destination
     #[cfg(target_arch = "x86_64")]
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_avx512(t512, &mut *dst, dst_stride, &tmp, 64, 64, 16, bitdepth_max);
+        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 64, 64, 16, bitdepth_max);
         coeff[..512].fill(0);
         return;
     }
@@ -4515,3 +4491,392 @@ pub unsafe extern "C" fn inv_txfm_add_dct_dct_64x16_8bpc_v3(
         bitdepth_max,
     );
 }
+
+// ============================================================================
+// Row-pass helpers for small rectangular transforms (4x8, 8x4, 4x16, 16x4)
+// ============================================================================
+//
+// `simd_row_*_8bpc_{4,8}rows` apply an N-point 1D transform to `$rows` block
+// rows simultaneously, with the row index in SIMD lanes: `cols[x]` lane y is
+// coefficient `(row y, col x)` read from column-major `coeff` (stride
+// `coeff_h`). Output rows go to `tmp` row-major with stride `$s` = block width.
+// `rows=4` loads keep only lanes 0..3 (upper lanes stay zero through the
+// linear transforms and are never stored back).
+
+macro_rules! impl_simd_row_rect_8bpc {
+    ($name:ident, $xform:ident, $n:literal, $rows:literal, $s:literal) => {
+        #[cfg(target_arch = "x86_64")]
+        #[rite]
+        #[inline(always)]
+        #[allow(clippy::too_many_arguments)]
+        fn $name(
+            token: Desktop64,
+            coeff: &[i16],
+            coeff_h: usize,
+            y_base: usize,
+            apply_rect2: bool,
+            rnd: i32,
+            shift: i32,
+            tmp: &mut [i32],
+            row_min: i32,
+            row_max: i32,
+            col_min: i32,
+            col_max: i32,
+        ) {
+            let row_min_v = _mm256_set1_epi32(row_min);
+            let row_max_v = _mm256_set1_epi32(row_max);
+            let col_min_v = _mm256_set1_epi32(col_min);
+            let col_max_v = _mm256_set1_epi32(col_max);
+            let rect2_v = _mm256_set1_epi32(181);
+            let bias_v = _mm256_set1_epi32(128);
+            let rnd_v = _mm256_set1_epi32(rnd);
+            let mut cols = [_mm256_setzero_si256(); $n];
+            for x in 0..$n {
+                let off = y_base + x * coeff_h;
+                let v32 = if $rows == 4 {
+                    let arr: &[i16; 4] = (&coeff[off..off + 4]).try_into().unwrap();
+                    _mm256_cvtepi16_epi32(crate::src::safe_simd::partial_simd::mm_loadl_epi64(arr))
+                } else {
+                    let arr: &[i16; 8] = (&coeff[off..off + 8]).try_into().unwrap();
+                    _mm256_cvtepi16_epi32(loadu_128!(arr))
+                };
+                cols[x] = if apply_rect2 {
+                    _mm256_srai_epi32::<8>(_mm256_add_epi32(
+                        _mm256_mullo_epi32(v32, rect2_v),
+                        bias_v,
+                    ))
+                } else {
+                    v32
+                };
+            }
+            $xform(token, &mut cols, row_min_v, row_max_v);
+            for x in 0..$n {
+                let rounded = match shift {
+                    0 => _mm256_add_epi32(cols[x], rnd_v),
+                    1 => _mm256_srai_epi32::<1>(_mm256_add_epi32(cols[x], rnd_v)),
+                    _ => _mm256_srai_epi32::<2>(_mm256_add_epi32(cols[x], rnd_v)),
+                };
+                cols[x] = _mm256_max_epi32(_mm256_min_epi32(rounded, col_max_v), col_min_v);
+            }
+            // Transpose 8-column chunks back to rows, store $s-wide segments.
+            for b in (0..$n).step_by(8.min($n)) {
+                let hi = (b + 8).min($n);
+                let chunk: [__m256i; 8] = if hi - b == 8 {
+                    cols[b..hi].try_into().unwrap()
+                } else {
+                    let mut z = [_mm256_setzero_si256(); 8];
+                    z[..hi - b].copy_from_slice(&cols[b..hi]);
+                    z
+                };
+                let rows = transpose_8x8_i32!(chunk);
+                for y in 0..$rows {
+                    let o = (y_base + y) * $s + b;
+                    if $s == 4 {
+                        storeu_128!(
+                            &mut tmp[o..o + 4],
+                            [i32; 4],
+                            _mm256_castsi256_si128(rows[y])
+                        );
+                    } else {
+                        storeu_256!(&mut tmp[o..o + 8], [i32; 8], rows[y]);
+                    }
+                }
+            }
+        }
+    };
+}
+
+// 4-point rows: W=4 blocks (4x8, 4x16) — 8 rows per call, tmp stride 4.
+impl_simd_row_rect_8bpc!(simd_row_dct4_8bpc_8rows, dct4_1d_cols8, 4, 8, 4);
+impl_simd_row_rect_8bpc!(simd_row_adst4_8bpc_8rows, adst4_1d_cols8, 4, 8, 4);
+impl_simd_row_rect_8bpc!(
+    simd_row_flipadst4_8bpc_8rows,
+    flipadst4_1d_cols8,
+    4,
+    8,
+    4
+);
+impl_simd_row_rect_8bpc!(
+    simd_row_identity4_8bpc_8rows,
+    identity4_1d_cols8,
+    4,
+    8,
+    4
+);
+
+// 8-point rows: W=8, H=4 (8x4) — 4 rows per call, tmp stride 8.
+impl_simd_row_rect_8bpc!(simd_row_dct8_8bpc_4rows, dct8_1d_cols8, 8, 4, 8);
+impl_simd_row_rect_8bpc!(simd_row_adst8_8bpc_4rows, adst8_1d_cols8, 8, 4, 8);
+impl_simd_row_rect_8bpc!(
+    simd_row_flipadst8_8bpc_4rows,
+    flipadst8_1d_cols8,
+    8,
+    4,
+    8
+);
+impl_simd_row_rect_8bpc!(
+    simd_row_identity8_8bpc_4rows,
+    identity8_1d_cols8,
+    8,
+    4,
+    8
+);
+
+// 16-point rows: W=16, H=4 (16x4) — 4 rows per call, tmp stride 16.
+impl_simd_row_rect_8bpc!(simd_row_dct16_8bpc_4rows, dct16_1d_cols8, 16, 4, 16);
+impl_simd_row_rect_8bpc!(
+    simd_row_adst16_8bpc_4rows,
+    adst16_1d_cols8,
+    16,
+    4,
+    16
+);
+impl_simd_row_rect_8bpc!(
+    simd_row_flipadst16_8bpc_4rows,
+    flipadst16_1d_cols8,
+    16,
+    4,
+    16
+);
+impl_simd_row_rect_8bpc!(
+    simd_row_identity16_8bpc_4rows,
+    identity16_1d_cols8,
+    16,
+    4,
+    16
+);
+
+// Identity rows for 8x16/16x8 (8 rows per call); the dct/adst 8-row variants
+// already exist as `simd_row_{dct,adst}{8,16}_8bpc_8rows`.
+impl_simd_row_rect_8bpc!(
+    simd_row_identity8_8bpc_8rows,
+    identity8_1d_cols8,
+    8,
+    8,
+    8
+);
+impl_simd_row_rect_8bpc!(
+    simd_row_identity16_8bpc_8rows,
+    identity16_1d_cols8,
+    16,
+    8,
+    16
+);
+
+// ============================================================================
+// Row-pass helpers for 16bpc rectangular transforms
+// ============================================================================
+//
+// Same lane layout as `simd_row_*_8bpc_*rows` but the coefficient buffer is
+// `&[i32]` (one coefficient per i32 element for 10/12-bit, matching
+// `BitDepth16::Coef`), so each row-column load is a direct i32 vector — no
+// widening needed. Clip bounds are runtime `i32` params (16bpc uses
+// `(!bitdepth_max) << 7` / `<< 5`, not the i16 range).
+
+macro_rules! impl_simd_row_rect_16bpc {
+    ($name:ident, $xform:ident, $n:literal, $rows:literal, $s:literal) => {
+        #[cfg(target_arch = "x86_64")]
+        #[rite]
+        #[inline(always)]
+        #[allow(clippy::too_many_arguments)]
+        fn $name(
+            token: Desktop64,
+            coeff: &[i32],
+            coeff_h: usize,
+            y_base: usize,
+            apply_rect2: bool,
+            rnd: i32,
+            shift: i32,
+            tmp: &mut [i32],
+            row_min: i32,
+            row_max: i32,
+            col_min: i32,
+            col_max: i32,
+        ) {
+            let row_min_v = _mm256_set1_epi32(row_min);
+            let row_max_v = _mm256_set1_epi32(row_max);
+            let col_min_v = _mm256_set1_epi32(col_min);
+            let col_max_v = _mm256_set1_epi32(col_max);
+            let rect2_v = _mm256_set1_epi32(181);
+            let bias_v = _mm256_set1_epi32(128);
+            let rnd_v = _mm256_set1_epi32(rnd);
+            let mut cols = [_mm256_setzero_si256(); $n];
+            for x in 0..$n {
+                let off = y_base + x * coeff_h;
+                let v32 = if $rows == 4 {
+                    let arr: &[i32; 4] = (&coeff[off..off + 4]).try_into().unwrap();
+                    _mm256_set_m128i(_mm_setzero_si128(), loadu_128!(arr))
+                } else {
+                    loadu_256!(&coeff[off..off + 8], [i32; 8])
+                };
+                cols[x] = if apply_rect2 {
+                    _mm256_srai_epi32::<8>(_mm256_add_epi32(
+                        _mm256_mullo_epi32(v32, rect2_v),
+                        bias_v,
+                    ))
+                } else {
+                    v32
+                };
+            }
+            $xform(token, &mut cols, row_min_v, row_max_v);
+            for x in 0..$n {
+                let rounded = match shift {
+                    0 => _mm256_add_epi32(cols[x], rnd_v),
+                    1 => _mm256_srai_epi32::<1>(_mm256_add_epi32(cols[x], rnd_v)),
+                    _ => _mm256_srai_epi32::<2>(_mm256_add_epi32(cols[x], rnd_v)),
+                };
+                cols[x] = _mm256_max_epi32(_mm256_min_epi32(rounded, col_max_v), col_min_v);
+            }
+            // Transpose 8-column chunks back to rows, store $s-wide segments.
+            for b in (0..$n).step_by(8.min($n)) {
+                let hi = (b + 8).min($n);
+                let chunk: [__m256i; 8] = if hi - b == 8 {
+                    cols[b..hi].try_into().unwrap()
+                } else {
+                    let mut z = [_mm256_setzero_si256(); 8];
+                    z[..hi - b].copy_from_slice(&cols[b..hi]);
+                    z
+                };
+                let rows = transpose_8x8_i32!(chunk);
+                for y in 0..$rows {
+                    let o = (y_base + y) * $s + b;
+                    if $s == 4 {
+                        storeu_128!(
+                            &mut tmp[o..o + 4],
+                            [i32; 4],
+                            _mm256_castsi256_si128(rows[y])
+                        );
+                    } else {
+                        storeu_256!(&mut tmp[o..o + 8], [i32; 8], rows[y]);
+                    }
+                }
+            }
+        }
+    };
+}
+
+// 4-point rows: 4x4 (4 rows per call) and W=4 blocks (4x8, 4x16, 8 rows).
+impl_simd_row_rect_16bpc!(simd_row_dct4_16bpc_4rows, dct4_1d_cols8, 4, 4, 4);
+impl_simd_row_rect_16bpc!(simd_row_adst4_16bpc_4rows, adst4_1d_cols8, 4, 4, 4);
+impl_simd_row_rect_16bpc!(
+    simd_row_flipadst4_16bpc_4rows,
+    flipadst4_1d_cols8,
+    4,
+    4,
+    4
+);
+impl_simd_row_rect_16bpc!(
+    simd_row_identity4_16bpc_4rows,
+    identity4_1d_cols8,
+    4,
+    4,
+    4
+);
+impl_simd_row_rect_16bpc!(simd_row_dct4_16bpc_8rows, dct4_1d_cols8, 4, 8, 4);
+impl_simd_row_rect_16bpc!(simd_row_adst4_16bpc_8rows, adst4_1d_cols8, 4, 8, 4);
+impl_simd_row_rect_16bpc!(
+    simd_row_flipadst4_16bpc_8rows,
+    flipadst4_1d_cols8,
+    4,
+    8,
+    4
+);
+impl_simd_row_rect_16bpc!(
+    simd_row_identity4_16bpc_8rows,
+    identity4_1d_cols8,
+    4,
+    8,
+    4
+);
+
+// 8-point rows: 8x4 (4 rows) and 8x16 (8 rows), tmp stride 8.
+impl_simd_row_rect_16bpc!(simd_row_dct8_16bpc_4rows, dct8_1d_cols8, 8, 4, 8);
+impl_simd_row_rect_16bpc!(simd_row_adst8_16bpc_4rows, adst8_1d_cols8, 8, 4, 8);
+impl_simd_row_rect_16bpc!(
+    simd_row_flipadst8_16bpc_4rows,
+    flipadst8_1d_cols8,
+    8,
+    4,
+    8
+);
+impl_simd_row_rect_16bpc!(
+    simd_row_identity8_16bpc_4rows,
+    identity8_1d_cols8,
+    8,
+    4,
+    8
+);
+impl_simd_row_rect_16bpc!(simd_row_dct8_16bpc_8rows, dct8_1d_cols8, 8, 8, 8);
+impl_simd_row_rect_16bpc!(simd_row_adst8_16bpc_8rows, adst8_1d_cols8, 8, 8, 8);
+impl_simd_row_rect_16bpc!(
+    simd_row_flipadst8_16bpc_8rows,
+    flipadst8_1d_cols8,
+    8,
+    8,
+    8
+);
+impl_simd_row_rect_16bpc!(
+    simd_row_identity8_16bpc_8rows,
+    identity8_1d_cols8,
+    8,
+    8,
+    8
+);
+
+// 16-point rows: 16x4 (4 rows) and 16x8 (8 rows), tmp stride 16.
+impl_simd_row_rect_16bpc!(
+    simd_row_dct16_16bpc_4rows,
+    dct16_1d_cols8,
+    16,
+    4,
+    16
+);
+impl_simd_row_rect_16bpc!(
+    simd_row_adst16_16bpc_4rows,
+    adst16_1d_cols8,
+    16,
+    4,
+    16
+);
+impl_simd_row_rect_16bpc!(
+    simd_row_flipadst16_16bpc_4rows,
+    flipadst16_1d_cols8,
+    16,
+    4,
+    16
+);
+impl_simd_row_rect_16bpc!(
+    simd_row_identity16_16bpc_4rows,
+    identity16_1d_cols8,
+    16,
+    4,
+    16
+);
+impl_simd_row_rect_16bpc!(
+    simd_row_dct16_16bpc_8rows,
+    dct16_1d_cols8,
+    16,
+    8,
+    16
+);
+impl_simd_row_rect_16bpc!(
+    simd_row_adst16_16bpc_8rows,
+    adst16_1d_cols8,
+    16,
+    8,
+    16
+);
+impl_simd_row_rect_16bpc!(
+    simd_row_flipadst16_16bpc_8rows,
+    flipadst16_1d_cols8,
+    16,
+    8,
+    16
+);
+impl_simd_row_rect_16bpc!(
+    simd_row_identity16_16bpc_8rows,
+    identity16_1d_cols8,
+    16,
+    8,
+    16
+);

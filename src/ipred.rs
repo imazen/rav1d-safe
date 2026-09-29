@@ -95,6 +95,23 @@ wrap_fn_ptr!(pub unsafe extern "C" fn angular_ipred(
     _dst: *const FFISafe<PicOffset>,
 ) -> ());
 
+/// Debug bisect gate (feature `__bisect`): `IPRED_SCALAR=1` forces scalar
+/// intra prediction. Env read once per process — per-call cost is one
+/// atomic load.
+#[cfg(all(feature = "__bisect", target_arch = "x86_64"))]
+#[inline]
+fn ipred_scalar_forced() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("IPRED_SCALAR").is_some())
+}
+
+/// Default build: no env read, no atomic — the gate folds away entirely.
+#[cfg(all(not(feature = "__bisect"), target_arch = "x86_64"))]
+#[inline(always)]
+fn ipred_scalar_forced() -> bool {
+    false
+}
+
 /// Direct dispatch for intra prediction - bypasses function pointer table.
 /// Selects optimal SIMD implementation at runtime based on CPU features.
 /// `mode`: prediction mode index (0-13)
@@ -112,18 +129,20 @@ fn intra_pred_direct<BD: BitDepth>(
     bd: BD,
 ) {
     #[cfg(target_arch = "x86_64")]
-    if crate::src::safe_simd::ipred::intra_pred_dispatch::<BD>(
-        mode,
-        dst,
-        topleft,
-        topleft_off,
-        width,
-        height,
-        angle,
-        max_width,
-        max_height,
-        bd,
-    ) {
+    if !ipred_scalar_forced()
+        && crate::src::safe_simd::ipred::intra_pred_dispatch::<BD>(
+            mode,
+            dst,
+            topleft,
+            topleft_off,
+            width,
+            height,
+            angle,
+            max_width,
+            max_height,
+            bd,
+        )
+    {
         return;
     }
 
