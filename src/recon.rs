@@ -1089,7 +1089,11 @@ fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
         TxClass::TwoD => {
             let is_rect = tx.is_rect() as usize;
             lo_ctx_offsets = Some(&dav1d_lo_ctx_offsets[is_rect + (tx as usize & is_rect)]);
-            scan = dav1d_scans[tx as usize];
+            // Truncate to `eob + 1` once: the prologue reads `scan[eob]` and
+            // the ac loop iterates `i < eob`, so LLVM then proves the
+            // in-bounds accesses and drops per-coefficient bounds checks. An
+            // invalid `eob` still panics here exactly where `scan[..]` would.
+            scan = &dav1d_scans[tx as usize][..eob as usize + 1];
             stride = 4 * sh;
         }
         TxClass::H | TxClass::V => {

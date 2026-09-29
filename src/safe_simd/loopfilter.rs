@@ -587,6 +587,14 @@ fn loop_filter_4_8bpc_wd8_simd_v(
         _mm_and_si128(_mm_and_si128(m_p2p1, m_q2q1), _mm_and_si128(m_p3p2, m_q3q2)),
     );
 
+    // Early-out: an all-false filter mask selects the original
+    // pixels at every lane — the flat-mask, filter arithmetic,
+    // blends and stores below are all dead work (~85%/64% of
+    // calls on the 4K-t8 census). Skipping them is bit-identical.
+    if _mm_movemask_epi8(fm_mask) == 0 {
+        return;
+    }
+
     // flat8in = abs(p2-p0)<=f && abs(p1-p0)<=f && abs(q1-q0)<=f && abs(q2-q0)<=f
     //          && abs(p3-p0)<=f && abs(q3-q0)<=f
     let abs_p2p0 = abs(p2_v, p0_v);
@@ -808,6 +816,14 @@ fn loop_filter_4_8bpc_wd8_simd_v_x8(
             _mm256_and_si256(m_p3p2, m_q3q2),
         ),
     );
+
+    // Early-out: an all-false filter mask selects the original
+    // pixels at every lane — the flat-mask, filter arithmetic,
+    // blends and stores below are all dead work (~85%/64% of
+    // calls on the 4K-t8 census). Skipping them is bit-identical.
+    if _mm256_movemask_epi8(fm_mask) == 0 {
+        return;
+    }
 
     let abs_p2p0 = abs(p2_v, p0_v);
     let abs_q2q0 = abs(q2_v, q0_v);
@@ -2496,6 +2512,14 @@ fn loop_filter_4_8bpc_wd8_simd_h(
         _mm_and_si128(_mm_and_si128(m_p2p1, m_q2q1), _mm_and_si128(m_p3p2, m_q3q2)),
     );
 
+    // Early-out: an all-false filter mask selects the original
+    // pixels at every lane — the flat-mask, filter arithmetic,
+    // blends and stores below are all dead work (~85%/64% of
+    // calls on the 4K-t8 census). Skipping them is bit-identical.
+    if _mm_movemask_epi8(fm_mask) == 0 {
+        return;
+    }
+
     let abs_p2p0 = abs(p2_v, p0_v);
     let abs_q2q0 = abs(q2_v, q0_v);
     let abs_p3p0 = abs(p3_v, p0_v);
@@ -2782,6 +2806,14 @@ fn loop_filter_4_8bpc_wd8_simd_h_x8(
             _mm256_and_si256(m_p3p2, m_q3q2),
         ),
     );
+
+    // Early-out: an all-false filter mask selects the original
+    // pixels at every lane — the flat-mask, filter arithmetic,
+    // blends and stores below are all dead work (~85%/64% of
+    // calls on the 4K-t8 census). Skipping them is bit-identical.
+    if _mm256_movemask_epi8(fm_mask) == 0 {
+        return;
+    }
 
     let abs_p2p0 = abs(p2_v, p0_v);
     let abs_q2q0 = abs(q2_v, q0_v);
