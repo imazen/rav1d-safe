@@ -4201,7 +4201,13 @@ fn prep_8tap_8bpc_avx2_impl_inner(
                 for i in 0..8 {
                     let src_row =
                         &src[(sb + (y as isize + i as isize - 3) * src_stride) as usize..];
-                    widen_row_u8_shl_8bpc(_token, &mut mid[i], src_row, w, intermediate_bits as i32);
+                    widen_row_u8_shl_8bpc(
+                        _token,
+                        &mut mid[i],
+                        src_row,
+                        w,
+                        intermediate_bits as i32,
+                    );
                 }
 
                 v_filter_8tap_to_i16_avx2_inner(_token, &mid, &mut tmp[out_row..], w, fv, 6);

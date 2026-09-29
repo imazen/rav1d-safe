@@ -1348,6 +1348,30 @@ fn ipred_smooth_8bpc_inner(
             x += 8;
         }
 
+        // 4-wide lane for w=4 blocks and remainders.
+        if x + 4 <= width {
+            let top_bytes = loadi32!(&topleft[tl_off + 1 + x..tl_off + 1 + x + 4]);
+            let top = _mm_cvtepu8_epi32(top_bytes);
+            let w_h_bytes = loadi32!(&weights_hor[x..x + 4]);
+            let w_h = _mm_cvtepu8_epi32(w_h_bytes);
+            let w_h_inv = _mm_sub_epi32(_mm_set1_epi32(256), w_h);
+            let vert = _mm_add_epi32(
+                _mm_mullo_epi32(_mm256_castsi256_si128(w_v_vec), top),
+                _mm_mullo_epi32(_mm256_castsi256_si128(w_v_inv), _mm_set1_epi32(bottom_val)),
+            );
+            let hor = _mm_add_epi32(
+                _mm_mullo_epi32(w_h, _mm_set1_epi32(left_val)),
+                _mm_mullo_epi32(w_h_inv, _mm_set1_epi32(right_val)),
+            );
+            let result =
+                _mm_srai_epi32::<9>(_mm_add_epi32(_mm_add_epi32(vert, hor), _mm_set1_epi32(256)));
+            let packed = _mm_packus_epi32(result, result);
+            let packed8 = _mm_packus_epi16(packed, packed);
+            dst[row_off + x..row_off + x + 4]
+                .copy_from_slice(&(_mm_cvtsi128_si32(packed8) as u32).to_ne_bytes());
+            x += 4;
+        }
+
         // Scalar fallback
         let row = &mut dst[row_off..][..width];
         while x < width {
@@ -1463,6 +1487,20 @@ fn ipred_smooth_v_8bpc_inner(
             x += 8;
         }
 
+        if x + 4 <= width {
+            let top_bytes = loadi32!(&topleft[tl_off + 1 + x..tl_off + 1 + x + 4]);
+            let top = _mm_cvtepu8_epi32(top_bytes);
+            let pred = _mm_add_epi32(
+                _mm_mullo_epi32(_mm256_castsi256_si128(w_v_vec), top),
+                _mm_mullo_epi32(_mm256_castsi256_si128(w_v_inv), _mm_set1_epi32(bottom_val)),
+            );
+            let result = _mm_srai_epi32::<8>(_mm_add_epi32(pred, _mm_set1_epi32(128)));
+            let p8 = _mm_packus_epi16(_mm_packus_epi32(result, result), _mm_setzero_si128());
+            dst[row_off + x..row_off + x + 4]
+                .copy_from_slice(&(_mm_cvtsi128_si32(p8) as u32).to_ne_bytes());
+            x += 4;
+        }
+
         // Scalar fallback
         let row = &mut dst[row_off..][..width];
         while x < width {
@@ -1572,6 +1610,21 @@ fn ipred_smooth_h_8bpc_inner(
             );
 
             x += 8;
+        }
+
+        if x + 4 <= width {
+            let w_h_bytes = loadi32!(&weights_hor[x..x + 4]);
+            let w_h = _mm_cvtepu8_epi32(w_h_bytes);
+            let w_h_inv = _mm_sub_epi32(_mm_set1_epi32(256), w_h);
+            let pred = _mm_add_epi32(
+                _mm_mullo_epi32(w_h, _mm_set1_epi32(left_val)),
+                _mm_mullo_epi32(w_h_inv, _mm_set1_epi32(right_val)),
+            );
+            let result = _mm_srai_epi32::<8>(_mm_add_epi32(pred, _mm_set1_epi32(128)));
+            let p8 = _mm_packus_epi16(_mm_packus_epi32(result, result), _mm_setzero_si128());
+            dst[row_off + x..row_off + x + 4]
+                .copy_from_slice(&(_mm_cvtsi128_si32(p8) as u32).to_ne_bytes());
+            x += 4;
         }
 
         // Scalar fallback
