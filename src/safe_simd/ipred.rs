@@ -3199,6 +3199,45 @@ fn ipred_z3_8bpc_inner(
         }
         x += 8;
     }
+    // 4-column twin for w == 4 blocks and 4-column remainders.
+    while x + 4 <= width {
+        for y0 in (0..height).step_by(8) {
+            let mut cols = [_mm_setzero_si128(); 4];
+            for (j, col) in cols.iter_mut().enumerate() {
+                let xpos = dy * (x + j + 1);
+                let frac = (xpos & 0x3e) as i32;
+                let inv_frac = 64 - frac;
+                let coef = _mm_set1_epi16(((frac << 8) | inv_frac) as i16);
+                let base = (xpos >> 6) + base_inc * y0;
+                let lo = if base_inc == 1 {
+                    let t0 = loadi64!(&lbuf[base..base + 8]);
+                    let t1 = loadi64!(&lbuf[base + 1..base + 9]);
+                    _mm_unpacklo_epi8(t0, t1)
+                } else {
+                    loadu_128!((&lbuf[base..base + 16]), [u8; 16])
+                };
+                let v = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, coef),
+                    _mm_set1_epi16(32),
+                ));
+                *col = _mm_packus_epi16(v, v);
+            }
+            // Transpose 4x8 bytes: q_lo dwords = rows 0..3, q_hi = rows 4..7.
+            let p01 = _mm_unpacklo_epi8(cols[0], cols[1]);
+            let p23 = _mm_unpacklo_epi8(cols[2], cols[3]);
+            let q_lo = _mm_unpacklo_epi16(p01, p23);
+            let q_hi = _mm_unpackhi_epi16(p01, p23);
+            let mut rdw = [0u32; 8];
+            storeu_128!(&mut rdw[..4], [u32; 4], q_lo);
+            storeu_128!(&mut rdw[4..], [u32; 4], q_hi);
+            let rows_n = (height - y0).min(8);
+            for k in 0..rows_n {
+                let off = (dst_base as isize + (y0 + k) as isize * stride) as usize + x;
+                dst[off..off + 4].copy_from_slice(&rdw[k].to_ne_bytes());
+            }
+        }
+        x += 4;
+    }
     for xx in x..width {
         let ypos = dy * (xx + 1);
         let frac = (ypos & 0x3e) as i32;
