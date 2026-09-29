@@ -2509,23 +2509,17 @@ fn ipred_z2_8bpc_inner(
             needed.div_ceil(base_inc_x).min(width)
         };
 
-        // First: process pixels using left edge (x < left_count)
-        let mut x = 0usize;
-        while x + 8 <= left_count {
-            // Per-pixel y positions in SIMD; edge taps are (l1,l0) byte pairs
-            // gathered as u16 loads, blended by (frac,inv) via pmaddubsw.
-            let vx = _mm256_setr_epi32(
-                x as i32 + 1,
-                x as i32 + 2,
-                x as i32 + 3,
-                x as i32 + 4,
-                x as i32 + 5,
-                x as i32 + 6,
-                x as i32 + 7,
-                x as i32 + 8,
+        // First: process pixels using left edge (x < left_count).
+        // Per-pixel y positions in SIMD; edge taps are (l1,l0) byte pairs
+        // gathered as u16 loads, blended by (frac,inv) via pmaddubsw.
+        let ysh = 6 + upsample_left as i32;
+        let mut batch8 = |x: usize| {
+            let vx = _mm256_add_epi32(
+                _mm256_setr_epi32(1, 2, 3, 4, 5, 6, 7, 8),
+                _mm256_set1_epi32(x as i32),
             );
             let ypos = _mm256_sub_epi32(
-                _mm256_set1_epi32(y << (6 + upsample_left as i32)),
+                _mm256_set1_epi32(y << ysh),
                 _mm256_mullo_epi32(vx, _mm256_set1_epi32(dy)),
             );
             let mut by = [0i32; 8];
@@ -2555,7 +2549,31 @@ fn ipred_z2_8bpc_inner(
                 (&mut dst[row_off + x..row_off + x + 8]),
                 _mm_packus_epi16(v, v)
             );
+        };
+        let mut x = 0usize;
+        while x + 8 <= left_count {
+            batch8(x);
             x += 8;
+        }
+        if x < left_count {
+            if left_count >= 8 {
+                // Tail: a batch ending exactly at left_count recomputes a few
+                // pixels already written — same formula, identical values.
+                batch8(left_count - 8);
+                x = left_count;
+            } else if left_count >= 4 && width >= 8 && {
+                // A batch at x = 0 covers every left pixel; lanes >= lc are
+                // garbage that the top pass overwrites at x >= lc. i1 is
+                // non-decreasing in x, so bounds-check both endpoints.
+                let yp0 = (y << ysh) - dy;
+                let yp7 = (y << ysh) - dy * 8;
+                let i1_0 = left.wrapping_add_signed(-(((yp0 >> 6) + 1) as isize));
+                let i1_7 = left.wrapping_add_signed(-(((yp7 >> 6) + 1) as isize));
+                i1_0 < edge.len() - 1 && i1_7 < edge.len() - 1
+            } {
+                batch8(0);
+                x = left_count;
+            }
         }
         while x < left_count {
             let ypos = (y << (6 + upsample_left as i32)) - dy * (x as i32 + 1);
