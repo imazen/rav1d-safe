@@ -91,6 +91,9 @@ struct FnInfo {
     incants: u32,                   // incant! invocations
     local_macro_calls: Vec<String>, // arcane!(f) / scalar!(f) callees
     calls: Vec<String>,             // resolved-name candidates
+    loop_calls: Vec<String>,        // calls inside for/while/loop bodies
+    incant_tokenless: u32,          // incant! without explicit Token arg (needs context)
+    declared_tiers: Vec<String>,    // tiers listed in #[rite(..)]/#[autoversion(..)]
     token_unwraps: u32,             // unwrap/expect on a token acquisition
     allows: Vec<String>,            // `// audit:allow(<kind>)` suppressions inside this fn
 }
@@ -106,10 +109,11 @@ fn attr_tokens(attr: &syn::Attribute) -> String {
     attr.meta.to_token_stream().to_string()
 }
 
-fn classify_attrs(attrs: &[syn::Attribute]) -> (Ctx, bool, bool) {
+fn classify_attrs(attrs: &[syn::Attribute]) -> (Ctx, bool, bool, Vec<String>) {
     let mut ctx = Ctx::Vanilla;
     let mut is_entry = false;
     let mut is_test = false;
+    let mut declared: Vec<String> = Vec::new();
     for a in attrs {
         let t = attr_tokens(a);
         let compact: String = t.chars().filter(|c| !c.is_whitespace()).collect();
@@ -120,23 +124,46 @@ fn classify_attrs(attrs: &[syn::Attribute]) -> (Ctx, bool, bool) {
             // #[arcane] / #[arcane(v3)] — entry point; context = declared tier or infer from token type later
             is_entry = true;
             ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("entry".into()));
+            declared.extend(tiers_listed(&compact));
         }
         if compact.contains("rite") {
             ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("token-param".into()));
+            declared.extend(tiers_listed(&compact));
         }
         if compact.contains("autoversion") {
             is_entry = true;
             ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("autoversion".into()));
+            declared.extend(tiers_listed(&compact));
         }
         if compact.contains("magetypes") {
             is_entry = true;
             ctx = Ctx::Tier("magetypes".into());
+            declared.extend(tiers_listed(&compact));
         }
         if compact.starts_with("target_feature") || compact.contains("target_feature(enable") {
             ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("target_feature".into()));
         }
     }
-    (ctx, is_entry, is_test)
+    (ctx, is_entry, is_test, declared)
+}
+
+/// All tier names listed inside an attribute's parens, e.g. `rite(v3,neon)` → ["v3","neon"].
+fn tiers_listed(compact: &str) -> Vec<String> {
+    let Some(open) = compact.find('(') else {
+        return Vec::new();
+    };
+    let inner = &compact[open + 1..compact.rfind(')').unwrap_or(compact.len())];
+    inner
+        .split(',')
+        .filter_map(|t| {
+            let t = t.trim().trim_matches('"');
+            [
+                "v1", "v2", "v3", "v4", "neon", "wasm128", "scalar", "default",
+            ]
+            .contains(&t)
+            .then(|| t.to_string())
+        })
+        .collect()
 }
 
 fn tier_from_str(s: &str) -> Option<Ctx> {
@@ -196,9 +223,25 @@ fn summon_target_tier(call: &str) -> Option<&'static str> {
 
 struct BodyScan<'a> {
     info: &'a mut FnInfo,
+    loop_depth: u32,
 }
 
 impl<'a> Visit<'a> for BodyScan<'a> {
+    fn visit_expr_for_loop(&mut self, node: &'a syn::ExprForLoop) {
+        self.loop_depth += 1;
+        syn::visit::visit_expr_for_loop(self, node);
+        self.loop_depth -= 1;
+    }
+    fn visit_expr_while(&mut self, node: &'a syn::ExprWhile) {
+        self.loop_depth += 1;
+        syn::visit::visit_expr_while(self, node);
+        self.loop_depth -= 1;
+    }
+    fn visit_expr_loop(&mut self, node: &'a syn::ExprLoop) {
+        self.loop_depth += 1;
+        syn::visit::visit_expr_loop(self, node);
+        self.loop_depth -= 1;
+    }
     fn visit_expr_call(&mut self, node: &'a syn::ExprCall) {
         if let syn::Expr::Path(p) = &*node.func {
             let name = p
@@ -221,7 +264,10 @@ impl<'a> Visit<'a> for BodyScan<'a> {
             } else if name == "from_context" {
                 self.info.from_context += 1;
             } else if !name.is_empty() {
-                self.info.calls.push(name);
+                self.info.calls.push(name.clone());
+                if self.loop_depth > 0 {
+                    self.info.loop_calls.push(name);
+                }
             }
         }
         syn::visit::visit_expr_call(self, node);
@@ -237,7 +283,10 @@ impl<'a> Visit<'a> for BodyScan<'a> {
                 self.info.calls.push(name);
             }
         } else {
-            self.info.calls.push(name);
+            self.info.calls.push(name.clone());
+            if self.loop_depth > 0 {
+                self.info.loop_calls.push(name);
+            }
         }
         syn::visit::visit_expr_method_call(self, node);
     }
@@ -251,8 +300,8 @@ impl<'a> Visit<'a> for BodyScan<'a> {
         match mac.as_str() {
             "incant" => {
                 self.info.incants += 1;
-                // first arg = callee path
                 let src = node.tokens.to_string();
+                // first arg = callee path
                 let callee = src
                     .split(['(', ' ', ':'])
                     .next()
@@ -260,14 +309,27 @@ impl<'a> Visit<'a> for BodyScan<'a> {
                     .trim()
                     .to_string();
                 if !callee.is_empty() {
-                    self.info.calls.push(callee);
+                    self.info.calls.push(callee.clone());
+                    if self.loop_depth > 0 {
+                        self.info.loop_calls.push(callee);
+                    }
+                }
+                // explicit Token arg = legal from vanilla; tokenless needs context
+                let explicit = src
+                    .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                    .any(|w| w == "Token" || w == "token");
+                if !explicit {
+                    self.info.incant_tokenless += 1;
                 }
             }
             "arcane" | "scalar" | "rite_call" => {
                 // local dispatch macros: arcane!(f) / scalar!(f)
                 let callee = node.tokens.to_string().trim().to_string();
                 self.info.local_macro_calls.push(callee.clone());
-                self.info.calls.push(callee);
+                self.info.calls.push(callee.clone());
+                if self.loop_depth > 0 {
+                    self.info.loop_calls.push(callee);
+                }
             }
             _ => {}
         }
@@ -304,7 +366,7 @@ impl<'ast> Visit<'ast> for FnVisitor {
 
 impl FnVisitor {
     fn record_fn(&mut self, sig: &syn::Signature, attrs: &[syn::Attribute], block: &syn::Block) {
-        let (mut ctx, is_entry, mut is_test_cfg) = classify_attrs(attrs);
+        let (mut ctx, is_entry, mut is_test_cfg, declared_tiers) = classify_attrs(attrs);
         // #[test] on the fn itself, or we're inside a cfg(test) module
         is_test_cfg = is_test_cfg
             || self.in_test_mod
@@ -381,6 +443,9 @@ impl FnVisitor {
             incants: 0,
             local_macro_calls: Vec::new(),
             calls: Vec::new(),
+            loop_calls: Vec::new(),
+            incant_tokenless: 0,
+            declared_tiers,
             token_unwraps: 0,
             allows: self
                 .allows
@@ -389,7 +454,10 @@ impl FnVisitor {
                 .map(|(_, k)| k.clone())
                 .collect(),
         };
-        let mut scan = BodyScan { info: &mut info };
+        let mut scan = BodyScan {
+            info: &mut info,
+            loop_depth: 0,
+        };
         scan.visit_block(block);
         self.fns.push(info);
     }
@@ -522,6 +590,26 @@ fn main() {
         at: String,
         detail: String,
     }
+
+    /// Idiomatic-archmage remediation per lint kind.
+    fn fix_hint(kind: &str) -> &'static str {
+        match kind {
+            "tier-boundary" => "callee should be #[rite(<tier>)]/#[arcane] or inlineable; if the scalar call is intentional, annotate // audit:allow(tier-boundary)",
+            "arcane-could-be-rite" => "rename to <f>_<tier> suffix, switch to #[rite], callers switch to incant!(f(args)) — deletes the dead trampoline",
+            "suffix-not-incant-resolvable" => "rename _avx2_safe→_v3, _avx512_safe→_v4, _sse4→_v2 so incant! resolves by suffix",
+            "summon-covered-by-context" => "replace with <Tier>Token::from_context() — compile-time proof, zero runtime detection",
+            "token-unwrap" => "gate: `let Some(t) = summon() else { fallback }` — an unwrap deletes the gate and panics under token-suppression tests",
+            "incant-in-vanilla" => "tokenless incant! needs a feature context — put #[rite(tier)]/#[arcane] on the caller, or pass an explicit Token arg",
+            "manual-tier-select" => "this is a hand-rolled dispatcher — replace with #[autoversion(v4,v3,scalar)] or an #[arcane] entry that incant!s inward",
+            "missing-tier-suffix" => "incant! resolves f_<tier>; name it f_v3/f_v4/f_neon/f_scalar to be incantable",
+            "boundary-in-loop" => "a feature boundary crossed per iteration — hoist the entry call above the loop or make the loop body a #[rite] fn",
+            "no-scalar-fallback" => "add `scalar` to the tier list — under token-suppression tests there is otherwise no fallback variant",
+            "maybe-dead-variant" => "no resolved callers — dead variant, macro-only call site, or missing incant! edge",
+            "cross-isa-twin" => "same fn family across arch files — if the body is portable, one #[rite(v3,neon,wasm128)] replaces N copies",
+            _ => "",
+        }
+    }
+
     let mut violations = Vec::new();
 
     for f in &all {
@@ -604,9 +692,112 @@ fn main() {
                 }
             }
         }
+        // incant-in-vanilla: tokenless incant! from a context-free caller
+        if f.incant_tokenless > 0
+            && f.ctx == Ctx::Vanilla
+            && !f.is_extern_c
+            && !f.allows.iter().any(|a| a == "incant-in-vanilla")
+        {
+            violations.push(Violation {
+                kind: "incant-in-vanilla",
+                at: loc.clone(),
+                detail: format!(
+                    "{} tokenless incant!(…) in vanilla fn — no context to prove from",
+                    f.incant_tokenless
+                ),
+            });
+        }
+        // manual-tier-select: vanilla fn that summons AND calls context fns —
+        // a hand-rolled dispatcher; #[autoversion] or an #[arcane] entry does it
+        if f.ctx == Ctx::Vanilla
+            && f.summons > 0
+            && !f.is_extern_c
+            && !f.allows.iter().any(|a| a == "manual-tier-select")
+        {
+            let ctx_callees: Vec<&String> = f
+                .calls
+                .iter()
+                .filter(|c| {
+                    resolve_callee(f, c).is_some_and(|j| matches!(all[j].ctx, Ctx::Tier(_)))
+                })
+                .collect();
+            if !ctx_callees.is_empty() {
+                violations.push(Violation {
+                    kind: "manual-tier-select",
+                    at: loc.clone(),
+                    detail: format!(
+                        "{} summon(s) + {} ctx callee(s) — hand-rolled dispatcher",
+                        f.summons,
+                        ctx_callees.len()
+                    ),
+                });
+            }
+        }
+        // missing-tier-suffix: non-entry context fn invisible to incant!
+        if matches!(f.ctx, Ctx::Tier(_)) && !f.is_entry && !f.is_extern_c {
+            let suf = tier_suffix(&f.name);
+            let incantable = [
+                "_v4", "_v3", "_v2", "_v1", "_neon", "_wasm128", "_scalar", "_inner",
+            ];
+            if !incantable.contains(&suf) && !f.allows.iter().any(|a| a == "missing-tier-suffix") {
+                violations.push(Violation {
+                    kind: "missing-tier-suffix",
+                    at: loc.clone(),
+                    detail: format!(
+                        "{}-ctx fn '{}' has no tier suffix — incant! can't resolve it",
+                        f.ctx.label(),
+                        f.name
+                    ),
+                });
+            }
+        }
+        // boundary-in-loop: vanilla fn's loop body calls an entry or
+        // non-inlineable context fn — a trampoline/feature crossing per iter
+        if f.ctx == Ctx::Vanilla
+            && !f.is_extern_c
+            && !f.allows.iter().any(|a| a == "boundary-in-loop")
+        {
+            let mut bad: Vec<String> = Vec::new();
+            for c in &f.loop_calls {
+                if let Some(j) = resolve_callee(f, c) {
+                    let callee = &all[j];
+                    let inlineable = matches!(callee.inline, Inline::Hint | Inline::Always)
+                        || callee.body_stmts <= 4;
+                    if (callee.is_entry || matches!(callee.ctx, Ctx::Tier(_))) && !inlineable {
+                        bad.push(callee.name.clone());
+                    }
+                }
+            }
+            bad.sort();
+            bad.dedup();
+            if !bad.is_empty() {
+                violations.push(Violation {
+                    kind: "boundary-in-loop",
+                    at: loc.clone(),
+                    detail: format!("loop crosses boundary into {}", bad.join(", ")),
+                });
+            }
+        }
+        // no-scalar-fallback: autoversion/magetypes without scalar or default —
+        // no variant survives token suppression in permutation tests
+        if f.is_entry
+            && !f.declared_tiers.is_empty()
+            && !f
+                .declared_tiers
+                .iter()
+                .any(|t| t == "scalar" || t == "default")
+            && !f.allows.iter().any(|a| a == "no-scalar-fallback")
+        {
+            violations.push(Violation {
+                kind: "no-scalar-fallback",
+                at: loc.clone(),
+                detail: format!(
+                    "tiers [{}] lack a scalar/default fallback",
+                    f.declared_tiers.join(",")
+                ),
+            });
+        }
     }
-
-    // arcane-could-be-rite: an entry fn (arcane trampoline) whose resolved
     // callers are ALL inside a context — the safe wrapper is dead weight;
     // #[rite] + incant! at callers is the idiom. Needs the caller index.
     for (i, f) in all.iter().enumerate() {
@@ -628,7 +819,7 @@ fn main() {
         if !callers.is_empty() && vanilla == 0 {
             violations.push(Violation {
                 kind: "arcane-could-be-rite",
-                at: format!("{}:{}", f.file.display(), f.name),
+                at: format!("{}:{}:{}", f.file.display(), f.line, f.name),
                 detail: format!(
                     "{} callers all in-context — trampoline unused",
                     callers.len()
@@ -637,17 +828,78 @@ fn main() {
         }
     }
 
+    // maybe-dead-variant: non-entry context fn with zero resolved callers.
+    // Advisory — callee may be reached via generated code or fn pointers.
+    for (i, f) in all.iter().enumerate() {
+        if f.is_test_cfg || f.is_extern_c || f.is_entry || f.ctx == Ctx::Vanilla {
+            continue;
+        }
+        if callers_of.get(&i).is_none_or(|c| c.is_empty())
+            && !f.allows.iter().any(|a| a == "maybe-dead-variant")
+        {
+            violations.push(Violation {
+                kind: "maybe-dead-variant",
+                at: format!("{}:{}:{}", f.file.display(), f.line, f.name),
+                detail: "zero resolved callers".into(),
+            });
+        }
+    }
+
+    // cross-isa-twin: same fn family (name minus tier suffix) defined under
+    // different tier suffixes across different files — a per-ISA port that
+    // could collapse into one #[rite(v3,neon,wasm128)] if the body is portable.
+    {
+        let mut fam: BTreeMap<String, BTreeMap<(String, String), Vec<String>>> = BTreeMap::new();
+        for f in &all {
+            if f.is_test_cfg || !matches!(f.ctx, Ctx::Tier(_)) {
+                continue;
+            }
+            let base = family(&f.name).to_string();
+            if base.is_empty() {
+                continue;
+            }
+            fam.entry(base)
+                .or_default()
+                .entry((
+                    f.file.display().to_string(),
+                    tier_suffix(&f.name).to_string(),
+                ))
+                .or_default()
+                .push(f.name.clone());
+        }
+        for (base, sites) in fam {
+            let suffixes: std::collections::BTreeSet<&String> =
+                sites.keys().map(|(_, s)| s).collect();
+            let files: std::collections::BTreeSet<&String> = sites.keys().map(|(f, _)| f).collect();
+            if files.len() >= 2 && suffixes.len() >= 2 {
+                violations.push(Violation {
+                    kind: "cross-isa-twin",
+                    at: format!("{}:*", base),
+                    detail: format!(
+                        "{} files × suffixes {}",
+                        files.len(),
+                        suffixes
+                            .iter()
+                            .map(|s| s.as_str())
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    ),
+                });
+            }
+        }
+    }
+
     // suffix-convention scan: fns whose name carries a tier suffix that incant! can't resolve
     // (incant! wants _v3/_v4/_neon/_wasm128/_scalar; _avx2_safe is invisible to it)
     for f in &all {
-        if f.is_test_cfg {
+        if f.is_test_cfg || f.allows.iter().any(|a| a == "suffix-not-incant-resolvable") {
             continue;
         }
         let suf = tier_suffix(&f.name);
         if matches!(suf, "_avx2_safe" | "_avx512_safe" | "_sse4") && matches!(f.ctx, Ctx::Tier(_)) {
             violations.push(Violation {
                 kind: "suffix-not-incant-resolvable",
-                at: format!("{}:{}", f.file.display(), f.name),
+                at: format!("{}:{}:{}", f.file.display(), f.line, f.name),
                 detail: format!("suffix {suf} — incant! resolves _v3/_v4/_neon/_scalar; rename or it can't be incanted"),
             });
         }
@@ -714,14 +966,24 @@ fn main() {
         violations.len(),
         suppressed
     );
-    let mut kinds: BTreeMap<&'static str, u32> = BTreeMap::new();
+    // group by kind; each group leads with its fix hint
+    let mut grouped: BTreeMap<&'static str, Vec<&Violation>> = BTreeMap::new();
     for v in &violations {
-        *kinds.entry(v.kind).or_default() += 1;
-        println!("  [{}] {} — {}", v.kind, v.at, v.detail);
+        grouped.entry(v.kind).or_default().push(v);
+    }
+    for (kind, vs) in &grouped {
+        println!("\n[{kind}] ×{}", vs.len());
+        let hint = fix_hint(kind);
+        if !hint.is_empty() {
+            println!("  fix: {hint}");
+        }
+        for v in vs {
+            println!("  {} — {}", v.at, v.detail);
+        }
     }
     println!("\n=== score ===");
-    for (k, n) in kinds {
-        println!("  {k}: {n}");
+    for (k, vs) in &grouped {
+        println!("  {k}: {}", vs.len());
     }
     let boundary = violations
         .iter()
