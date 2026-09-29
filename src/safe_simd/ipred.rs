@@ -1855,39 +1855,62 @@ fn ipred_z1_8bpc_inner(
         let frac = (xpos & 0x3e) as i16;
         let inv_frac = (64 - frac) as i16;
 
-        let frac_vec = _mm256_set1_epi16(frac);
-        let inv_frac_vec = _mm256_set1_epi16(inv_frac);
+        // pmaddubsw coeff pair: (l0*inv_frac + l1*frac). Both <= 62 so they
+        // fit the i8 operand; products max at 255*62*2 < 32767.
+        let frac_pair = _mm256_set1_epi16(((frac as i32) << 8 | inv_frac as i32) as i16);
 
         let row_off = (dst_base as isize + y as isize * stride) as usize;
         let base0 = (xpos >> 6) as usize;
 
         let mut x = 0usize;
 
-        // SIMD path - 16 pixels at a time (non-upsampled consecutive access)
+        // SIMD path — 32 pixels at a time (non-upsampled consecutive access).
+        // unpacklo/hi_epi8 interleave the two overlapping windows into
+        // (l0,l1) byte pairs in-lane; pmaddubsw blends a pair per i16 lane,
+        // and packus_epi16's in-lane narrowing preserves pixel order
+        // (dav1d asm's pshufb+pmaddubsw structure).
         if base_inc == 1 {
+            while x + 32 <= width && base0 + x + 32 <= max_base_x {
+                let base = base0 + x;
+
+                let t0 = loadu_256!((&top[base..base + 32]), [u8; 32]);
+                let t1 = loadu_256!((&top[base + 1..base + 33]), [u8; 32]);
+
+                let lo = _mm256_unpacklo_epi8(t0, t1);
+                let hi = _mm256_unpackhi_epi8(t0, t1);
+                let r_lo = _mm256_srai_epi16::<6>(_mm256_add_epi16(
+                    _mm256_maddubs_epi16(lo, frac_pair),
+                    rounding,
+                ));
+                let r_hi = _mm256_srai_epi16::<6>(_mm256_add_epi16(
+                    _mm256_maddubs_epi16(hi, frac_pair),
+                    rounding,
+                ));
+                let packed = _mm256_packus_epi16(r_lo, r_hi);
+                storeu_256!((&mut dst[row_off + x..row_off + x + 32]), [u8; 32], packed);
+
+                x += 32;
+            }
             while x + 16 <= width && base0 + x + 16 < max_base_x {
                 let base = base0 + x;
 
                 let t0 = loadu_128!((&top[base..base + 16]), [u8; 16]);
                 let t1 = loadu_128!((&top[base + 1..base + 17]), [u8; 16]);
 
-                let t0_w = _mm256_cvtepu8_epi16(t0);
-                let t1_w = _mm256_cvtepu8_epi16(t1);
-
-                let prod0 = _mm256_mullo_epi16(t0_w, inv_frac_vec);
-                let prod1 = _mm256_mullo_epi16(t1_w, frac_vec);
-                let sum = _mm256_add_epi16(_mm256_add_epi16(prod0, prod1), rounding);
-                let result = _mm256_srai_epi16::<6>(sum);
-
-                let packed = _mm256_packus_epi16(result, result);
-                let lo = _mm256_castsi256_si128(packed);
-                let hi = _mm256_extracti128_si256::<1>(packed);
-                let combined = _mm_unpacklo_epi64(lo, hi);
-                storeu_128!(
-                    (&mut dst[row_off + x..row_off + x + 16]),
-                    [u8; 16],
-                    combined
-                );
+                let lo = _mm_unpacklo_epi8(t0, t1);
+                let hi = _mm_unpackhi_epi8(t0, t1);
+                let frac_pair128 = _mm256_castsi256_si128(frac_pair);
+                let rounding128 = _mm256_castsi256_si128(rounding);
+                let r_lo = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, frac_pair128),
+                    rounding128,
+                ));
+                let r_hi = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(hi, frac_pair128),
+                    rounding128,
+                ));
+                let packed = _mm_packus_epi16(r_lo, r_hi);
+                storeu_128!((&mut dst[row_off + x..row_off + x + 16]), [u8; 16], packed);
 
                 x += 16;
             }
@@ -2051,18 +2074,21 @@ fn ipred_z1_8bpc_v4x_inner(
     let max_idx8 = _mm512_set1_epi8((max_base_x.min(127)) as i8);
     let rounding = _mm512_set1_epi16(32);
 
-    // Per-lane offset 0..63 for the 64-lane gather.
-    let lane_off: [u8; 64] = core::array::from_fn(|i| i as u8);
-    let lane_off_v = loadu_512!((&lane_off), [u8; 64]);
-    let one8 = _mm512_set1_epi8(1);
+    // Pair-gather pattern: bytes 2p/2p+1 of the index vector select edge
+    // samples base+p and base+p+1, so ONE vpermi2b yields the (l0,l1) byte
+    // pairs pmaddubsw blends directly — halves gathers and drops the u8->i16
+    // widen + mullo pair (dav1d asm's pshufb+pmaddubsw structure).
+    let pair_pat: [u8; 64] = core::array::from_fn(|i| (i / 2 + i % 2) as u8);
+    let pair_pat_v = loadu_512!((&pair_pat), [u8; 64]);
 
     for y in 0..height_i {
         let xpos = (y + 1) * dx;
         let frac = (xpos & 0x3e) as i16;
         let inv_frac = (64 - frac) as i16;
 
-        let frac_vec = _mm512_set1_epi16(frac);
-        let inv_frac_vec = _mm512_set1_epi16(inv_frac);
+        // pmaddubsw coeff pair: low byte scales l0 by inv_frac, high byte
+        // scales l1 by frac. Both are <= 62, so they fit in i8.
+        let frac_pair = _mm512_set1_epi16(((frac as i32) << 8 | inv_frac as i32) as i16);
 
         let row_off = (dst_base as isize + y as isize * stride) as usize;
         let base0 = (xpos >> 6) as usize;
@@ -2071,22 +2097,20 @@ fn ipred_z1_8bpc_v4x_inner(
             let base0_v = _mm512_set1_epi8(base0.min(127) as i8);
             let mut x = 0usize;
             while x < width {
-                // idx0[lane] = base0 + x + lane ; idx1 = idx0 + 1, both clamped.
+                // idx_pair[2p] = clamp(base0+x+p), idx_pair[2p+1] = clamp(+1)
+                // — the same min-clamped values the two-gather path produced.
                 let xbase = _mm512_set1_epi8(x.min(127) as i8);
-                let idx0 = _mm512_adds_epu8(_mm512_adds_epu8(base0_v, xbase), lane_off_v);
-                let idx0 = _mm512_min_epu8(idx0, max_idx8);
-                let idx1 = _mm512_min_epu8(_mm512_adds_epu8(idx0, one8), max_idx8);
+                let idxp = _mm512_min_epu8(
+                    _mm512_adds_epu8(_mm512_adds_epu8(base0_v, xbase), pair_pat_v),
+                    max_idx8,
+                );
 
-                let t0 = _mm512_permutex2var_epi8(edge_lo, idx0, edge_hi);
-                let t1 = _mm512_permutex2var_epi8(edge_lo, idx1, edge_hi);
+                let pairs = _mm512_permutex2var_epi8(edge_lo, idxp, edge_hi);
 
-                // Low 32 lanes -> i16 blend (the 32 pixels for this x window).
-                let t0_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(t0));
-                let t1_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(t1));
-                let p0 = _mm512_mullo_epi16(t0_lo, inv_frac_vec);
-                let p1 = _mm512_mullo_epi16(t1_lo, frac_vec);
-                let sblend = _mm512_add_epi16(_mm512_add_epi16(p0, p1), rounding);
-                let r = _mm512_srai_epi16::<6>(sblend);
+                // maddubs: i16 lane p = l0*inv_frac + l1*frac. Max 255*62*2 =
+                // 31620 < 32767 — no saturation.
+                let sum = _mm512_add_epi16(_mm512_maddubs_epi16(pairs, frac_pair), rounding);
+                let r = _mm512_srai_epi16::<6>(sum);
                 // Saturating unsigned narrow 32xu16 -> 32xu8, lane-order preserving.
                 let out32 = _mm512_cvtusepi16_epi8(r);
 
@@ -2367,6 +2391,34 @@ fn ipred_z2_8bpc_inner(
 
         // Then: process pixels using top edge (x >= left_count, base_x >= 0)
         if base_inc_x == 1 {
+            let frac_pair = _mm256_set1_epi16(((frac_x as i32) << 8 | inv_frac_x as i32) as i16);
+            while x + 32 <= width {
+                let base_x = (base_x0 + x as i32) as usize;
+                let idx = edge_tl + base_x;
+                if idx + 33 > edge.len() {
+                    break;
+                }
+
+                let t0 = loadu_256!((&edge[idx..idx + 32]), [u8; 32]);
+                let t1 = loadu_256!((&edge[idx + 1..idx + 33]), [u8; 32]);
+
+                // In-lane byte interleave -> (l0,l1) pairs; pmaddubsw blends
+                // one pixel per i16 lane; packus preserves pixel order.
+                let lo = _mm256_unpacklo_epi8(t0, t1);
+                let hi = _mm256_unpackhi_epi8(t0, t1);
+                let r_lo = _mm256_srai_epi16::<6>(_mm256_add_epi16(
+                    _mm256_maddubs_epi16(lo, frac_pair),
+                    rounding,
+                ));
+                let r_hi = _mm256_srai_epi16::<6>(_mm256_add_epi16(
+                    _mm256_maddubs_epi16(hi, frac_pair),
+                    rounding,
+                ));
+                let packed = _mm256_packus_epi16(r_lo, r_hi);
+                storeu_256!((&mut dst[row_off + x..row_off + x + 32]), [u8; 32], packed);
+
+                x += 32;
+            }
             while x + 16 <= width {
                 let base_x = (base_x0 + x as i32) as usize;
                 let idx = edge_tl + base_x;
@@ -2377,26 +2429,20 @@ fn ipred_z2_8bpc_inner(
                 let t0 = loadu_128!((&edge[idx..idx + 16]), [u8; 16]);
                 let t1 = loadu_128!((&edge[idx + 1..idx + 17]), [u8; 16]);
 
-                let t0_w = _mm256_cvtepu8_epi16(t0);
-                let t1_w = _mm256_cvtepu8_epi16(t1);
-
-                let frac_vec = _mm256_set1_epi16(frac_x);
-                let inv_frac_vec = _mm256_set1_epi16(inv_frac_x);
-
-                let prod0 = _mm256_mullo_epi16(t0_w, inv_frac_vec);
-                let prod1 = _mm256_mullo_epi16(t1_w, frac_vec);
-                let sum = _mm256_add_epi16(_mm256_add_epi16(prod0, prod1), rounding);
-                let result = _mm256_srai_epi16::<6>(sum);
-
-                let packed = _mm256_packus_epi16(result, result);
-                let lo = _mm256_castsi256_si128(packed);
-                let hi = _mm256_extracti128_si256::<1>(packed);
-                let combined = _mm_unpacklo_epi64(lo, hi);
-                storeu_128!(
-                    (&mut dst[row_off + x..row_off + x + 16]),
-                    [u8; 16],
-                    combined
-                );
+                let lo = _mm_unpacklo_epi8(t0, t1);
+                let hi = _mm_unpackhi_epi8(t0, t1);
+                let frac_pair128 = _mm256_castsi256_si128(frac_pair);
+                let rounding128 = _mm256_castsi256_si128(rounding);
+                let r_lo = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, frac_pair128),
+                    rounding128,
+                ));
+                let r_hi = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(hi, frac_pair128),
+                    rounding128,
+                ));
+                let packed = _mm_packus_epi16(r_lo, r_hi);
+                storeu_128!((&mut dst[row_off + x..row_off + x + 16]), [u8; 16], packed);
 
                 x += 16;
             }
@@ -2552,9 +2598,10 @@ fn ipred_z2_8bpc_v4x_inner(
     }
     let top_lo = loadu_512!((&tbuf[0..64]), [u8; 64]);
     let top_hi = loadu_512!((&tbuf[64..128]), [u8; 64]);
-    let lane_off: [u8; 64] = core::array::from_fn(|i| i as u8);
-    let lane_off_v = loadu_512!((&lane_off), [u8; 64]);
-    let one8 = _mm512_set1_epi8(1);
+    // Pair-gather pattern: bytes 2p/2p+1 select edge samples base+p and
+    // base+p+1 so ONE vpermi2b yields (l0,l1) byte pairs for pmaddubsw.
+    let pair_pat: [u8; 64] = core::array::from_fn(|i| (i / 2 + i % 2) as u8);
+    let pair_pat_v = loadu_512!((&pair_pat), [u8; 64]);
     let rounding512 = _mm512_set1_epi16(32);
 
     for y in 0..height_i {
@@ -2589,10 +2636,9 @@ fn ipred_z2_8bpc_v4x_inner(
             x += 1;
         }
 
-        // Top-edge portion — 32-wide vpermi2b gather (only for base_inc_x == 1).
+        // Top-edge portion — 32-wide pair-gather (only for base_inc_x == 1).
         if base_inc_x == 1 {
-            let frac_vec = _mm512_set1_epi16(frac_x);
-            let inv_frac_vec = _mm512_set1_epi16(inv_frac_x);
+            let frac_pair = _mm512_set1_epi16(((frac_x as i32) << 8 | inv_frac_x as i32) as i16);
             // Vectorize while a full 32-lane window stays in range:
             //   idx       = edge_tl + base_x0 + x + lane         (need <= edge_len-1)
             //   idx + 1   <= edge_len-1  =>  base_x0 + x + 31 + 1 <= top_k_max
@@ -2603,18 +2649,12 @@ fn ipred_z2_8bpc_v4x_inner(
                     break;
                 }
                 let k0 = _mm512_set1_epi8((base_x as usize).min(127) as i8);
-                let idx0 = _mm512_adds_epu8(k0, lane_off_v);
-                let idx1 = _mm512_adds_epu8(idx0, one8);
+                let idxp = _mm512_adds_epu8(k0, pair_pat_v);
 
-                let t0 = _mm512_permutex2var_epi8(top_lo, idx0, top_hi);
-                let t1 = _mm512_permutex2var_epi8(top_lo, idx1, top_hi);
+                let pairs = _mm512_permutex2var_epi8(top_lo, idxp, top_hi);
 
-                let t0_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(t0));
-                let t1_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(t1));
-                let p0 = _mm512_mullo_epi16(t0_lo, inv_frac_vec);
-                let p1 = _mm512_mullo_epi16(t1_lo, frac_vec);
-                let sblend = _mm512_add_epi16(_mm512_add_epi16(p0, p1), rounding512);
-                let r = _mm512_srai_epi16::<6>(sblend);
+                let sum = _mm512_add_epi16(_mm512_maddubs_epi16(pairs, frac_pair), rounding512);
+                let r = _mm512_srai_epi16::<6>(sum);
                 let out32 = _mm512_cvtusepi16_epi8(r);
 
                 let mut tmp = [0u8; 32];
@@ -2901,37 +2941,34 @@ fn ipred_z3_8bpc_v4x_inner(
 
     let max_idx8 = _mm512_set1_epi8(last as i8);
     let rounding = _mm512_set1_epi16(32);
-    let lane_off: [u8; 64] = core::array::from_fn(|i| i as u8);
-    let lane_off_v = loadu_512!((&lane_off), [u8; 64]);
-    let one8 = _mm512_set1_epi8(1);
+    // Pair-gather pattern: bytes 2p/2p+1 select edge samples base+p and
+    // base+p+1 so ONE vpermi2b yields (l0,l1) byte pairs for pmaddubsw.
+    let pair_pat: [u8; 64] = core::array::from_fn(|i| (i / 2 + i % 2) as u8);
+    let pair_pat_v = loadu_512!((&pair_pat), [u8; 64]);
 
     if base_inc == 1 {
         for x in 0..width {
             let ypos = dy * (x + 1);
             let frac = (ypos & 0x3e) as i16;
             let inv_frac = (64 - frac) as i16;
-            let frac_vec = _mm512_set1_epi16(frac);
-            let inv_frac_vec = _mm512_set1_epi16(inv_frac);
+            let frac_pair = _mm512_set1_epi16(((frac as i32) << 8 | inv_frac as i32) as i16);
             let base0 = ypos >> 6;
             let base0_v = _mm512_set1_epi8(base0.min(127) as i8);
 
             let mut y = 0usize;
             while y < height {
-                // idx0[lane] = base0 + y + lane ; idx1 = idx0 + 1, both clamped.
+                // idx_pair[2p] = clamp(base0+y+p), [2p+1] = clamp(+1) — the
+                // same per-element clamp the two-gather path applied.
                 let ybase = _mm512_set1_epi8(y.min(127) as i8);
-                let idx0 = _mm512_adds_epu8(_mm512_adds_epu8(base0_v, ybase), lane_off_v);
-                let idx0 = _mm512_min_epu8(idx0, max_idx8);
-                let idx1 = _mm512_min_epu8(_mm512_adds_epu8(idx0, one8), max_idx8);
+                let idxp = _mm512_min_epu8(
+                    _mm512_adds_epu8(_mm512_adds_epu8(base0_v, ybase), pair_pat_v),
+                    max_idx8,
+                );
 
-                let l0 = _mm512_permutex2var_epi8(edge_lo, idx0, edge_hi);
-                let l1 = _mm512_permutex2var_epi8(edge_lo, idx1, edge_hi);
+                let pairs = _mm512_permutex2var_epi8(edge_lo, idxp, edge_hi);
 
-                let l0_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(l0));
-                let l1_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(l1));
-                let p0 = _mm512_mullo_epi16(l0_lo, inv_frac_vec);
-                let p1 = _mm512_mullo_epi16(l1_lo, frac_vec);
-                let sblend = _mm512_add_epi16(_mm512_add_epi16(p0, p1), rounding);
-                let r = _mm512_srai_epi16::<6>(sblend);
+                let sum = _mm512_add_epi16(_mm512_maddubs_epi16(pairs, frac_pair), rounding);
+                let r = _mm512_srai_epi16::<6>(sum);
                 let out32 = _mm512_cvtusepi16_epi8(r);
 
                 let n = (height - y).min(32);
