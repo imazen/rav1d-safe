@@ -85,6 +85,7 @@ struct FnInfo {
     is_entry: bool, // #[arcane]/#[autoversion]/#[magetypes] outer — callable from vanilla
     is_extern_c: bool, // unsafe extern "C" boundary
     is_test_cfg: bool,
+    is_asm_cfg: bool, // #[cfg(feature = "asm")] — FFI/table side; tokens don't cross
     generics: String,
     token_param: Option<String>, // declared token param type, if any (Desktop64, X64V3Token, …)
     token_param_name: Option<String>, // binding ident of the token param (`token`, `t`, …)
@@ -114,42 +115,114 @@ fn attr_tokens(attr: &syn::Attribute) -> String {
     attr.meta.to_token_stream().to_string()
 }
 
-fn classify_attrs(attrs: &[syn::Attribute]) -> (Ctx, bool, bool, Vec<String>) {
+/// `cfg(test)`-family detection with word boundaries — `testable_dispatch`
+/// must not classify a fn as test-only.
+fn cfg_is_test(compact: &str) -> bool {
+    cfg_mentions(compact, "test")
+}
+
+/// Does `cfg(...)`/`cfg_attr(...)` mention `feature = "<word>"`? Word-bounded —
+/// `feature = "asm_msac"` does NOT match "asm", and plain `target_feature = "avx2"`
+/// doesn't either (that's codegen features, not the cargo asm flag).
+fn cfg_mentions(compact: &str, word: &str) -> bool {
+    let inner = compact
+        .strip_prefix("cfg(")
+        .or_else(|| compact.strip_prefix("cfg_attr("))
+        .unwrap_or(compact);
+    if word == "asm" {
+        // feature = "asm" exactly — not asm_msac, not target_feature
+        let toks: Vec<&str> = inner
+            .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .filter(|t| !t.is_empty())
+            .collect();
+        return toks
+            .windows(2)
+            .any(|w| w[0] == "feature" && w[1] == "asm");
+    }
+    inner
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .any(|w| w == word)
+}
+
+fn classify_attrs(attrs: &[syn::Attribute]) -> (Ctx, bool, bool, bool, Vec<String>) {
     let mut ctx = Ctx::Vanilla;
     let mut is_entry = false;
     let mut is_test = false;
+    let mut is_asm = false;
     let mut declared: Vec<String> = Vec::new();
     for a in attrs {
+        // Match the attr's path ident — NOT token substrings. `#[doc]` text
+        // that mentions `#[rite(v1)]`/`#[arcane]` must not classify the fn
+        // (real false positive: doc comment made v_eq look like an entry).
+        let Some(last) = a.path().segments.last() else {
+            continue;
+        };
+        let ident = last.ident.to_string();
         let t = attr_tokens(a);
         let compact: String = t.chars().filter(|c| !c.is_whitespace()).collect();
-        if compact.starts_with("cfg(") && compact.contains("test") {
+        if (ident == "cfg" || ident == "cfg_attr") && cfg_is_test(&compact) {
             is_test = true;
         }
-        if compact.contains("arcane") && !compact.contains("rite") {
-            // #[arcane] / #[arcane(v3)] — entry point; context = declared tier or infer from token type later
-            is_entry = true;
-            ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("entry".into()));
-            declared.extend(tiers_listed(&compact));
+        if ident == "cfg" && cfg_mentions(&compact, "asm") {
+            is_asm = true;
         }
-        if compact.contains("rite") {
-            ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("token-param".into()));
-            declared.extend(tiers_listed(&compact));
-        }
-        if compact.contains("autoversion") {
-            is_entry = true;
-            ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("autoversion".into()));
-            declared.extend(tiers_listed(&compact));
-        }
-        if compact.contains("magetypes") {
-            is_entry = true;
-            ctx = Ctx::Tier("magetypes".into());
-            declared.extend(tiers_listed(&compact));
-        }
-        if compact.starts_with("target_feature") || compact.contains("target_feature(enable") {
-            ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("target_feature".into()));
+        // #[cfg_attr(pred, rite)] — the inner attr is applied under pred.
+        // We don't evaluate predicates (audit is target-agnostic); treat
+        // every cfg_attr'd archmage attr as applied.
+        let idents: Vec<String> = if ident == "cfg_attr" {
+            cfg_attr_inner_idents(a)
+        } else {
+            vec![ident]
+        };
+        for ident in idents {
+            match ident.as_str() {
+            "arcane" => {
+                // #[arcane] / #[arcane(v3)] — entry point; context = declared tier or infer from token type later
+                is_entry = true;
+                ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("entry".into()));
+                declared.extend(tiers_listed(&compact));
+            }
+            "rite" => {
+                ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("token-param".into()));
+                declared.extend(tiers_listed(&compact));
+            }
+            "autoversion" => {
+                is_entry = true;
+                ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("autoversion".into()));
+                declared.extend(tiers_listed(&compact));
+            }
+            "magetypes" => {
+                // Stamps `f_<tier>` suffixed variants — no dispatcher, no
+                // vanilla-callable outer, so NOT an entry. The source fn is a
+                // template (Token placeholder), not a callable variant.
+                ctx = Ctx::Tier("magetypes".into());
+                declared.extend(tiers_listed(&compact));
+            }
+            "target_feature" => {
+                ctx = tier_from_str(&compact).unwrap_or(Ctx::Tier("target_feature".into()));
+            }
+            _ => {}
+            }
         }
     }
-    (ctx, is_entry, is_test, declared)
+    (ctx, is_entry, is_test, is_asm, declared)
+}
+
+/// Inner attr idents of `#[cfg_attr(pred, attr1, attr2)]` — skips the predicate.
+fn cfg_attr_inner_idents(a: &syn::Attribute) -> Vec<String> {
+    let syn::Meta::List(list) = &a.meta else {
+        return Vec::new();
+    };
+    let puncts = list
+        .parse_args_with(
+            syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated,
+        )
+        .unwrap_or_default();
+    puncts
+        .iter()
+        .skip(1) // the cfg predicate
+        .filter_map(|m| m.path().segments.last().map(|s| s.ident.to_string()))
+        .collect()
 }
 
 /// All tier names listed inside an attribute's parens, e.g. `rite(v3,neon)` → ["v3","neon"].
@@ -363,8 +436,9 @@ impl<'ast> Visit<'ast> for FnVisitor {
                 .chars()
                 .filter(|c| !c.is_whitespace())
                 .collect();
-            // cfg(test), cfg(all(test,…)), cfg(any(test,…)), etc.
-            c.starts_with("cfg(") && c.contains("test")
+            // cfg(test), cfg(all(test,…)), cfg(any(test,…)), etc. —
+            // word-boundary so `testable_dispatch` doesn't count
+            cfg_is_test(&c)
         });
         if cfgd {
             self.in_test_mod = true;
@@ -384,7 +458,8 @@ impl<'ast> Visit<'ast> for FnVisitor {
 
 impl FnVisitor {
     fn record_fn(&mut self, sig: &syn::Signature, attrs: &[syn::Attribute], block: &syn::Block) {
-        let (mut ctx, is_entry, mut is_test_cfg, declared_tiers) = classify_attrs(attrs);
+        let (mut ctx, is_entry, mut is_test_cfg, is_asm_cfg, declared_tiers) =
+            classify_attrs(attrs);
         // #[test] on the fn itself, or we're inside a cfg(test) module
         is_test_cfg = is_test_cfg
             || self.in_test_mod
@@ -458,6 +533,7 @@ impl FnVisitor {
             is_entry,
             is_extern_c,
             is_test_cfg,
+            is_asm_cfg,
             generics: sig.generics.to_token_stream().to_string(),
             token_param,
             token_param_name,
@@ -642,7 +718,7 @@ fn main() {
     let mut violations = Vec::new();
 
     for f in &all {
-        if f.is_test_cfg {
+        if f.is_test_cfg || f.is_asm_cfg {
             continue;
         }
         let loc = format!("{}:{}:{}", f.file.display(), f.line, f.name);
@@ -706,6 +782,7 @@ fn main() {
                             && !callee.is_entry
                             && !callee.is_extern_c
                             && !callee.is_test_cfg
+                            && !callee.is_asm_cfg
                             && !inlineable
                         {
                             violations.push(Violation {
@@ -763,7 +840,12 @@ fn main() {
             }
         }
         // missing-tier-suffix: non-entry context fn invisible to incant!
-        if matches!(f.ctx, Ctx::Tier(_)) && !f.is_entry && !f.is_extern_c {
+        // (a #[magetypes] source is a template, not a callable variant)
+        if matches!(f.ctx, Ctx::Tier(_))
+            && f.ctx.label() != "magetypes"
+            && !f.is_entry
+            && !f.is_extern_c
+        {
             let suf = tier_suffix(&f.name);
             let incantable = [
                 "_v4", "_v3", "_v2", "_v1", "_neon", "_wasm128", "_scalar", "_default", "_inner",
@@ -864,6 +946,7 @@ fn main() {
     // #[rite] + incant! at callers is the idiom. Needs the caller index.
     for (i, f) in all.iter().enumerate() {
         if f.is_test_cfg
+            || f.is_asm_cfg
             || f.is_extern_c
             || !f.is_entry
             || f.allows.iter().any(|a| a == "arcane-could-be-rite")
@@ -873,12 +956,15 @@ fn main() {
         let Some(callers) = callers_of.get(&i) else {
             continue;
         };
-        let in_ctx = callers
+        // Only rite-able if every caller's context COVERS the callee's tier:
+        // a v3 caller hitting a v4 fn needs the safe outer as the upgrade
+        // trampoline (a #[rite] callee would be a hard E0133 there).
+        let covered = callers
             .iter()
-            .filter(|&&c| matches!(all[c].ctx, Ctx::Tier(_)))
+            .filter(|&&c| all[c].ctx.covers(&f.ctx))
             .count();
-        let vanilla = callers.len() - in_ctx;
-        if !callers.is_empty() && vanilla == 0 {
+        let uncovered = callers.len() - covered;
+        if !callers.is_empty() && uncovered == 0 {
             violations.push(Violation {
                 kind: "arcane-could-be-rite",
                 at: format!("{}:{}:{}", f.file.display(), f.line, f.name),
@@ -893,7 +979,7 @@ fn main() {
     // maybe-dead-variant: non-entry context fn with zero resolved callers.
     // Advisory — callee may be reached via generated code or fn pointers.
     for (i, f) in all.iter().enumerate() {
-        if f.is_test_cfg || f.is_extern_c || f.is_entry || f.ctx == Ctx::Vanilla {
+        if f.is_test_cfg || f.is_asm_cfg || f.is_extern_c || f.is_entry || f.ctx == Ctx::Vanilla {
             continue;
         }
         if callers_of.get(&i).is_none_or(|c| c.is_empty())
@@ -913,7 +999,7 @@ fn main() {
     {
         let mut fam: BTreeMap<String, BTreeMap<(String, String), Vec<String>>> = BTreeMap::new();
         for f in &all {
-            if f.is_test_cfg || !matches!(f.ctx, Ctx::Tier(_)) {
+            if f.is_test_cfg || f.is_asm_cfg || !matches!(f.ctx, Ctx::Tier(_)) {
                 continue;
             }
             let base = family(&f.name).to_string();
@@ -954,7 +1040,10 @@ fn main() {
     // suffix-convention scan: fns whose name carries a tier suffix that incant! can't resolve
     // (incant! wants _v3/_v4/_neon/_wasm128/_scalar; _avx2_safe is invisible to it)
     for f in &all {
-        if f.is_test_cfg || f.allows.iter().any(|a| a == "suffix-not-incant-resolvable") {
+        if f.is_test_cfg
+            || f.is_asm_cfg
+            || f.allows.iter().any(|a| a == "suffix-not-incant-resolvable")
+        {
             continue;
         }
         let suf = tier_suffix(&f.name);
@@ -994,6 +1083,7 @@ fn main() {
                     "body_stmts": f.body_stmts, "inline": format!("{:?}", f.inline),
                     "ctx": f.ctx.label(),
                     "entry": f.is_entry, "extern_c": f.is_extern_c, "test_cfg": f.is_test_cfg,
+                    "asm_cfg": f.is_asm_cfg,
                     "generics": f.generics, "token_param": f.token_param,
                     "token_param_used": f.token_param_used,
                     "takes_fnptr": f.takes_fnptr, "summons": f.summons,
@@ -1019,6 +1109,13 @@ fn main() {
             );
         }
         println!();
+    }
+
+    // a fn calling the same callee twice in one body emits one violation per
+    // call site — dedup identical (kind, at, detail) reports
+    {
+        let mut seen = std::collections::HashSet::new();
+        violations.retain(|v| seen.insert((v.kind, v.at.clone(), v.detail.clone())));
     }
 
     // suppressed count for visibility (allows that matched a would-be lint)
