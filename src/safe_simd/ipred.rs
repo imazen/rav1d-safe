@@ -3007,31 +3007,97 @@ fn ipred_z3_8bpc_inner(
         base_inc = 1;
     };
 
-    let left = left.flex();
+    // Reversed ascending copy of the left edge: lbuf[k] == left[left_off - k].
+    // Positions past max_base_y are padded with the fill value, which makes the
+    // `base >= max_base_y` flat-fill fall out of the blend itself (a pair of
+    // equal samples blends to that sample exactly), so no per-pixel bound is
+    // needed anywhere below.
+    //
+    // Highest index ever read: (dy*width)>>6 + base_inc*(h8-1) + 1 where
+    // h8 rounds height up to the last 8-row block (dy can be up to 1023).
+    let mut lbuf = [0u8; 1216];
+    let fill_val = left[left_off - max_base_y];
+    for k in 0..=max_base_y {
+        lbuf[k] = left[left_off - k];
+    }
+    let need = ((dy * width) >> 6) + base_inc * (((height + 7) / 8 * 8).saturating_sub(1)) + 16;
+    debug_assert!(need <= lbuf.len());
+    if need > max_base_y + 1 {
+        lbuf[max_base_y + 1..need.min(1216)].fill(fill_val);
+    }
+    let lbuf = lbuf.as_slice();
 
-    // Column-major access pattern
-    for x in 0..width {
-        let ypos = dy * (x + 1);
+    let mut x = 0usize;
+    while x + 8 <= width {
+        for y0 in (0..height).step_by(8) {
+            // Column vectors: rows y0..y0+8 of columns x..x+8.
+            let mut cols = [_mm_setzero_si128(); 8];
+            for (j, col) in cols.iter_mut().enumerate() {
+                let xpos = dy * (x + j + 1);
+                let frac = (xpos & 0x3e) as i32;
+                let inv_frac = 64 - frac;
+                // (l0,l1) = (lbuf[base], lbuf[base+1]); coef pair (inv, frac).
+                // Row lane k reads at base + base_inc*k: for base_inc==2
+                // (upsampled) a 16-byte load's u16 lanes are already the
+                // consecutive-byte pairs, no unpack needed.
+                let coef = _mm_set1_epi16(((frac << 8) | inv_frac) as i16);
+                let base = (xpos >> 6) + base_inc * y0;
+                let lo = if base_inc == 1 {
+                    let t0 = loadi64!(&lbuf[base..base + 8]);
+                    let t1 = loadi64!(&lbuf[base + 1..base + 9]);
+                    _mm_unpacklo_epi8(t0, t1)
+                } else {
+                    loadu_128!((&lbuf[base..base + 16]), [u8; 16])
+                };
+                let v = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, coef),
+                    _mm_set1_epi16(32),
+                ));
+                *col = _mm_packus_epi16(v, v);
+            }
+            // Transpose 8x8 bytes to row vectors, one storei64 per row.
+            let p01 = _mm_unpacklo_epi8(cols[0], cols[1]);
+            let p23 = _mm_unpacklo_epi8(cols[2], cols[3]);
+            let p45 = _mm_unpacklo_epi8(cols[4], cols[5]);
+            let p67 = _mm_unpacklo_epi8(cols[6], cols[7]);
+            let q0123 = _mm_unpacklo_epi16(p01, p23);
+            let q0123h = _mm_unpackhi_epi16(p01, p23);
+            let q4567 = _mm_unpacklo_epi16(p45, p67);
+            let q4567h = _mm_unpackhi_epi16(p45, p67);
+            let r02 = _mm_unpacklo_epi32(q0123, q4567);
+            let r13 = _mm_unpackhi_epi32(q0123, q4567);
+            let r46 = _mm_unpacklo_epi32(q0123h, q4567h);
+            let r57 = _mm_unpackhi_epi32(q0123h, q4567h);
+            let rows = [
+                r02,
+                _mm_srli_si128::<8>(r02),
+                r13,
+                _mm_srli_si128::<8>(r13),
+                r46,
+                _mm_srli_si128::<8>(r46),
+                r57,
+                _mm_srli_si128::<8>(r57),
+            ];
+            let rows_n = (height - y0).min(8);
+            for (k, row) in rows.iter().enumerate().take(rows_n) {
+                let off = (dst_base as isize + (y0 + k) as isize * stride) as usize + x;
+                storei64!(&mut dst[off..off + 8], *row);
+            }
+        }
+        x += 8;
+    }
+    for xx in x..width {
+        let ypos = dy * (xx + 1);
         let frac = (ypos & 0x3e) as i32;
         let inv_frac = 64 - frac;
 
         for y in 0..height_i {
             let base = (ypos >> 6) + base_inc * y as usize;
-
-            if base < max_base_y {
-                let l0 = left[left_off - base] as i32;
-                let l1 = left[left_off - base - 1] as i32;
-                let v = l0 * inv_frac + l1 * frac;
-                let pixel_off = (dst_base as isize + y as isize * stride) as usize + x;
-                dst[pixel_off] = ((v + 32) >> 6) as u8;
-            } else {
-                let fill_val = left[left_off - max_base_y];
-                for yy in y..height_i {
-                    let pixel_off = (dst_base as isize + yy as isize * stride) as usize + x;
-                    dst[pixel_off] = fill_val;
-                }
-                break;
-            }
+            let l0 = lbuf[base] as i32;
+            let l1 = lbuf[base + 1] as i32;
+            let v = l0 * inv_frac + l1 * frac;
+            let pixel_off = (dst_base as isize + y as isize * stride) as usize + xx;
+            dst[pixel_off] = ((v + 32) >> 6) as u8;
         }
     }
 }
