@@ -12993,19 +12993,12 @@ pub fn mct_scaled_dispatch<BD: BitDepth>(
 #[cfg(target_arch = "x86_64")]
 #[rite]
 fn warp_h_dot8(_t: Desktop64, src: &[u8], off: usize, filter: &[i8; 8]) -> i32 {
-    // Load 8 source bytes and zero-extend to i16
-    let src_slice = &src[off..off + 8];
-    let mut s_arr = [0u8; 16];
-    s_arr[..8].copy_from_slice(src_slice);
-    let s8 = loadu_128!(&s_arr, [u8; 16]);
+    // Load 8 source bytes (low 64 bits) and zero-extend to i16
+    let s8 = loadu_64!(<&[u8; 8]>::try_from(&src[off..off + 8]).unwrap());
     let s16 = _mm_unpacklo_epi8(s8, _mm_setzero_si128()); // zero-extend u8 → i16
 
-    // Load 8 filter coefficients and sign-extend to i16
-    let mut f_i16 = [0i16; 8];
-    for i in 0..8 {
-        f_i16[i] = filter[i] as i16;
-    }
-    let f16 = loadu_128!(&f_i16, [i16; 8]);
+    // Load 8 filter coefficients and sign-extend i8 → i16
+    let f16 = _mm_cvtepi8_epi16(loadu_64!(filter));
 
     // pmaddwd: multiply i16*i16 and add adjacent pairs → 4 i32 values (no saturation)
     let prod = _mm_madd_epi16(s16, f16);
@@ -13021,7 +13014,7 @@ fn warp_h_dot8(_t: Desktop64, src: &[u8], off: usize, filter: &[i8; 8]) -> i32 {
 #[rite]
 fn warp_h_pass_8bpc(
     _t: Desktop64,
-    mid: &mut [[i16; 8]; 15],
+    mid: &mut [[i16; 15]; 8],
     src: &[u8],
     src_base: usize,
     src_stride: isize,
@@ -13048,7 +13041,7 @@ fn warp_h_pass_8bpc(
 
             let off = row_base + x;
             let dot = warp_h_dot8(_t, src, off, filter);
-            mid[y][x] = ((dot + round_h) >> shift_h) as i16;
+            mid[x][y] = ((dot + round_h) >> shift_h) as i16;
         }
     }
 }
@@ -13060,7 +13053,7 @@ fn warp_v_pass_8bpc_put(
     _t: Desktop64,
     dst: &mut [u8],
     dst_stride: isize,
-    mid: &[[i16; 8]; 15],
+    mid: &[[i16; 15]; 8],
     gamma: i32,
     delta: i32,
     my: i32,
@@ -13080,10 +13073,11 @@ fn warp_v_pass_8bpc_put(
             tmy += gamma;
             let filter = &dav1d_mc_warp_filter[fidx];
 
-            let mut sum = 0i32;
-            for i in 0..8 {
-                sum += filter[i] as i32 * mid[y + i][x] as i32;
-            }
+            let s = loadu_128!(<&[i16; 8]>::try_from(&mid[x][y..y + 8]).unwrap());
+            let f16 = _mm_cvtepi8_epi16(loadu_64!(filter));
+            let prod = _mm_madd_epi16(s, f16);
+            let sum1 = _mm_hadd_epi32(prod, prod);
+            let sum = _mm_cvtsi128_si32(_mm_hadd_epi32(sum1, sum1));
             dst[dst_off + x] = ((sum + round_v) >> shift_v).clamp(0, 255) as u8;
         }
     }
@@ -13096,7 +13090,7 @@ fn warp_v_pass_8bpc_prep(
     _t: Desktop64,
     tmp: &mut [i16],
     tmp_stride: usize,
-    mid: &[[i16; 8]; 15],
+    mid: &[[i16; 15]; 8],
     gamma: i32,
     delta: i32,
     my: i32,
@@ -13115,10 +13109,11 @@ fn warp_v_pass_8bpc_prep(
             tmy += gamma;
             let filter = &dav1d_mc_warp_filter[fidx];
 
-            let mut sum = 0i32;
-            for i in 0..8 {
-                sum += filter[i] as i32 * mid[y + i][x] as i32;
-            }
+            let s = loadu_128!(<&[i16; 8]>::try_from(&mid[x][y..y + 8]).unwrap());
+            let f16 = _mm_cvtepi8_epi16(loadu_64!(filter));
+            let prod = _mm_madd_epi16(s, f16);
+            let sum1 = _mm_hadd_epi32(prod, prod);
+            let sum = _mm_cvtsi128_si32(_mm_hadd_epi32(sum1, sum1));
             // PREP_BIAS = 0 for 8bpc
             tmp[y * tmp_stride + x] = ((sum + round_v) >> shift_v) as i16;
         }
@@ -13139,7 +13134,7 @@ fn warp_affine_8x8_8bpc_avx2(
     mx: i32,
     my: i32,
 ) {
-    let mut mid = [[0i16; 8]; 15];
+    let mut mid = [[0i16; 15]; 8];
     warp_h_pass_8bpc(
         _t,
         &mut mid,
@@ -13175,7 +13170,7 @@ fn warp_affine_8x8t_8bpc_avx2(
     mx: i32,
     my: i32,
 ) {
-    let mut mid = [[0i16; 8]; 15];
+    let mut mid = [[0i16; 15]; 8];
     warp_h_pass_8bpc(
         _t,
         &mut mid,
@@ -13208,11 +13203,7 @@ fn warp_h_dot16(_t: Desktop64, src: &[u8], off: usize, filter: &[i8; 8]) -> i32 
     let s16 = loadu_128!(&src[off..off + 16], [u8; 16]);
 
     // Load 8 filter coefficients, sign-extend i8 → i16
-    let mut f_i16 = [0i16; 8];
-    for i in 0..8 {
-        f_i16[i] = filter[i] as i16;
-    }
-    let f16 = loadu_128!(&f_i16, [i16; 8]);
+    let f16 = _mm_cvtepi8_epi16(loadu_64!(filter));
 
     // pmaddwd: multiply i16×i16, add adjacent pairs → 4 i32 values (no saturation)
     let prod = _mm_madd_epi16(s16, f16);
@@ -13228,7 +13219,7 @@ fn warp_h_dot16(_t: Desktop64, src: &[u8], off: usize, filter: &[i8; 8]) -> i32 
 #[rite]
 fn warp_h_pass_16bpc(
     _t: Desktop64,
-    mid: &mut [[i16; 8]; 15],
+    mid: &mut [[i16; 15]; 8],
     src: &[u8],
     src_base: usize,
     src_stride: isize,
@@ -13254,7 +13245,7 @@ fn warp_h_pass_16bpc(
 
             let off = row_base + x * 2;
             let dot = warp_h_dot16(_t, src, off, filter);
-            mid[y][x] = ((dot + round_h) >> shift_h) as i16;
+            mid[x][y] = ((dot + round_h) >> shift_h) as i16;
         }
     }
 }
@@ -13266,7 +13257,7 @@ fn warp_v_pass_16bpc_put(
     _t: Desktop64,
     dst: &mut [u8],
     dst_stride: isize,
-    mid: &[[i16; 8]; 15],
+    mid: &[[i16; 15]; 8],
     gamma: i32,
     delta: i32,
     my: i32,
@@ -13287,10 +13278,11 @@ fn warp_v_pass_16bpc_put(
             tmy += gamma;
             let filter = &dav1d_mc_warp_filter[fidx];
 
-            let mut sum = 0i32;
-            for i in 0..8 {
-                sum += filter[i] as i32 * mid[y + i][x] as i32;
-            }
+            let s = loadu_128!(<&[i16; 8]>::try_from(&mid[x][y..y + 8]).unwrap());
+            let f16 = _mm_cvtepi8_epi16(loadu_64!(filter));
+            let prod = _mm_madd_epi16(s, f16);
+            let sum1 = _mm_hadd_epi32(prod, prod);
+            let sum = _mm_cvtsi128_si32(_mm_hadd_epi32(sum1, sum1));
             let val = ((sum + round_v) >> shift_v).clamp(0, bitdepth_max) as u16;
             dst[dst_off + x * 2..][..2].copy_from_slice(&val.to_le_bytes());
         }
@@ -13304,7 +13296,7 @@ fn warp_v_pass_16bpc_prep(
     _t: Desktop64,
     tmp: &mut [i16],
     tmp_stride: usize,
-    mid: &[[i16; 8]; 15],
+    mid: &[[i16; 15]; 8],
     gamma: i32,
     delta: i32,
     my: i32,
@@ -13322,10 +13314,11 @@ fn warp_v_pass_16bpc_prep(
             tmy += gamma;
             let filter = &dav1d_mc_warp_filter[fidx];
 
-            let mut sum = 0i32;
-            for i in 0..8 {
-                sum += filter[i] as i32 * mid[y + i][x] as i32;
-            }
+            let s = loadu_128!(<&[i16; 8]>::try_from(&mid[x][y..y + 8]).unwrap());
+            let f16 = _mm_cvtepi8_epi16(loadu_64!(filter));
+            let prod = _mm_madd_epi16(s, f16);
+            let sum1 = _mm_hadd_epi32(prod, prod);
+            let sum = _mm_cvtsi128_si32(_mm_hadd_epi32(sum1, sum1));
             // PREP_BIAS = 8192 for 16bpc
             tmp[y * tmp_stride + x] = (((sum + round_v) >> shift_v) - 8192) as i16;
         }
@@ -13348,7 +13341,7 @@ fn warp_affine_8x8_16bpc_avx2(
     intermediate_bits: u8,
     bitdepth_max: i32,
 ) {
-    let mut mid = [[0i16; 8]; 15];
+    let mut mid = [[0i16; 15]; 8];
     warp_h_pass_16bpc(
         _t,
         &mut mid,
@@ -13388,7 +13381,7 @@ fn warp_affine_8x8t_16bpc_avx2(
     my: i32,
     intermediate_bits: u8,
 ) {
-    let mut mid = [[0i16; 8]; 15];
+    let mut mid = [[0i16; 15]; 8];
     warp_h_pass_16bpc(
         _t,
         &mut mid,
