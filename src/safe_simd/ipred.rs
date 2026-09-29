@@ -25,7 +25,8 @@ type ptrdiff_t = isize;
 use super::partial_simd;
 #[cfg(target_arch = "x86_64")]
 use crate::src::safe_simd::pixel_access::{
-    Flex, loadi64, loadu_128, loadu_256, loadu_512, storei64, storeu_128, storeu_256, storeu_512,
+    Flex, loadi32, loadi64, loadu_64, loadu_128, loadu_256, loadu_512, storei64, storeu_128,
+    storeu_256, storeu_512,
 };
 
 use crate::include::common::bitdepth::DynPixel;
@@ -2666,6 +2667,57 @@ fn ipred_z2_8bpc_inner(
                 storei64!(&mut dst[row_off + x..row_off + x + 8], packed);
 
                 x += 8;
+            }
+            while x + 4 <= width {
+                let base_x = (base_x0 + x as i32) as usize;
+                let idx = edge_tl + base_x;
+                if idx + 5 > edge.len() {
+                    break;
+                }
+                let t0 = loadi32!(&edge[idx..idx + 4]);
+                let t1 = loadi32!(&edge[idx + 1..idx + 5]);
+                let lo = _mm_unpacklo_epi8(t0, t1);
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, _mm256_castsi256_si128(frac_pair)),
+                    _mm256_castsi256_si128(rounding),
+                ));
+                let packed = _mm_packus_epi16(r, r);
+                dst[row_off + x..row_off + x + 4]
+                    .copy_from_slice(&(_mm_cvtsi128_si32(packed) as u32).to_ne_bytes());
+                x += 4;
+            }
+        } else {
+            // Upsampled above (base_inc_x == 2): each pixel's (t0,t1) tap pair
+            // sits at edge[idx + 2k] — already the contiguous u16 layout
+            // maddubs consumes, so a plain load builds all pairs at once.
+            let frac_pair = _mm_set1_epi16(((frac_x as i32) << 8 | inv_frac_x as i32) as i16);
+            let rnd = _mm_set1_epi16(32);
+            while x + 8 <= width {
+                let base_x = (base_x0 + (base_inc_x * x) as i32) as usize;
+                let idx = edge_tl + base_x;
+                if idx + 16 > edge.len() {
+                    break;
+                }
+                let dat = loadu_128!(&edge[idx..idx + 16], [u8; 16]);
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(_mm_maddubs_epi16(dat, frac_pair), rnd));
+                storei64!(
+                    &mut dst[row_off + x..row_off + x + 8],
+                    _mm_packus_epi16(r, r)
+                );
+                x += 8;
+            }
+            while x + 4 <= width {
+                let base_x = (base_x0 + (base_inc_x * x) as i32) as usize;
+                let idx = edge_tl + base_x;
+                if idx + 8 > edge.len() {
+                    break;
+                }
+                let dat = loadu_64!(<&[u8; 8]>::try_from(&edge[idx..idx + 8]).unwrap());
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(_mm_maddubs_epi16(dat, frac_pair), rnd));
+                let packed = _mm_packus_epi16(r, r);
+                dst[row_off + x..row_off + x + 4]
+                    .copy_from_slice(&(_mm_cvtsi128_si32(packed) as u32).to_ne_bytes());
+                x += 4;
             }
         }
 
