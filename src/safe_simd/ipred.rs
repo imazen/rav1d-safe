@@ -25,7 +25,7 @@ type ptrdiff_t = isize;
 use super::partial_simd;
 #[cfg(target_arch = "x86_64")]
 use crate::src::safe_simd::pixel_access::{
-    Flex, loadu_128, loadu_256, loadu_512, storeu_128, storeu_256, storeu_512,
+    Flex, loadi64, loadu_128, loadu_256, loadu_512, storei64, storeu_128, storeu_256, storeu_512,
 };
 
 use crate::include::common::bitdepth::DynPixel;
@@ -1914,6 +1914,22 @@ fn ipred_z1_8bpc_inner(
 
                 x += 16;
             }
+            while x + 8 <= width && base0 + x + 8 < max_base_x {
+                let base = base0 + x;
+
+                let t0 = loadi64!(&top[base..base + 8]);
+                let t1 = loadi64!(&top[base + 1..base + 9]);
+
+                let lo = _mm_unpacklo_epi8(t0, t1);
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, _mm256_castsi256_si128(frac_pair)),
+                    _mm256_castsi256_si128(rounding),
+                ));
+                let packed = _mm_packus_epi16(r, r);
+                storei64!(&mut dst[row_off + x..row_off + x + 8], packed);
+
+                x += 8;
+            }
         }
 
         // Scalar remainder (also handles upsampled stride-2 access)
@@ -2186,7 +2202,7 @@ fn get_filter_strength_simple(wh: i32, angle: i32, is_sm: bool) -> i32 {
 /// Unlike Z1 (top only) and Z3 (left only), Z2 blends between edges:
 /// - When base_x >= 0: interpolate from top edge
 /// - When base_x < 0: interpolate from left edge
-#[inline]
+#[archmage::rite(v3)]
 fn filter_edge_8bpc(
     out: &mut [u8],
     sz: i32,
@@ -2199,41 +2215,162 @@ fn filter_edge_8bpc(
     strength: i32,
 ) {
     static KERNEL: [[u8; 5]; 3] = [[0, 4, 8, 4, 0], [0, 5, 6, 5, 0], [2, 4, 4, 4, 2]];
-    let mut i = 0;
-    while i < std::cmp::min(sz, lim_from) {
-        out[i as usize] = inp[in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize)];
-        i += 1;
-    }
-    while i < std::cmp::min(lim_to, sz) {
+    let kernel = KERNEL[(strength - 1) as usize];
+    let copy_px = |i: i32| inp[in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize)];
+    let filt_px = |i: i32| {
         let mut s = 0i32;
         for j in 0..5i32 {
             s += inp[in_off.wrapping_add_signed((i - 2 + j).clamp(from, to - 1) as isize)] as i32
-                * KERNEL[(strength - 1) as usize][j as usize] as i32;
+                * kernel[j as usize] as i32;
         }
-        out[i as usize] = ((s + 8) >> 4) as u8;
+        ((s + 8) >> 4) as u8
+    };
+    let mut i = 0;
+    while i < std::cmp::min(sz, lim_from) {
+        out[i as usize] = copy_px(i);
+        i += 1;
+    }
+    let filt_end = std::cmp::min(lim_to, sz);
+    // Taps span [i-2, i+2] clamped to [from, to-1]; the clamp can only fire
+    // within two pixels of either bound, so the interior run is a plain
+    // unclamped 5-tap stencil.
+    let mid_lo = i.max(from + 2);
+    let mid_hi = filt_end.min(to - 2);
+    while i < filt_end.min(mid_lo) {
+        out[i as usize] = filt_px(i);
+        i += 1;
+    }
+    if i < mid_hi {
+        // Unclamped run: contiguous reads, fixed kernels.
+        let win_base = in_off.wrapping_add_signed((i - 2) as isize);
+        let win = &inp[win_base..in_off.wrapping_add_signed((mid_hi + 2) as isize)];
+        // win[j] == inp[in_off + i_start - 2 + j]; tap i-2+k is win[i - i_start + k].
+        let win_off = i;
+        #[cfg(target_arch = "x86_64")]
+        {
+            while i + 16 <= mid_hi {
+                let c = (i - win_off) as usize;
+                let m = |k: usize| {
+                    _mm256_cvtepu8_epi16(loadu_128!((&win[c + k..c + k + 16]), [u8; 16]))
+                };
+                let s = _mm256_add_epi16(
+                    _mm256_add_epi16(
+                        _mm256_mullo_epi16(m(0), _mm256_set1_epi16(kernel[0] as i16)),
+                        _mm256_mullo_epi16(m(1), _mm256_set1_epi16(kernel[1] as i16)),
+                    ),
+                    _mm256_add_epi16(
+                        _mm256_add_epi16(
+                            _mm256_mullo_epi16(m(2), _mm256_set1_epi16(kernel[2] as i16)),
+                            _mm256_mullo_epi16(m(3), _mm256_set1_epi16(kernel[3] as i16)),
+                        ),
+                        _mm256_mullo_epi16(m(4), _mm256_set1_epi16(kernel[4] as i16)),
+                    ),
+                );
+                let r = _mm256_srai_epi16::<4>(_mm256_add_epi16(s, _mm256_set1_epi16(8)));
+                let r = _mm256_packus_epi16(r, r);
+                storeu_128!(
+                    (&mut out[i as usize..i as usize + 16]),
+                    [u8; 16],
+                    _mm256_castsi256_si128(_mm256_permute4x64_epi64::<0b11011000>(r))
+                );
+                i += 16;
+            }
+        }
+        while i < mid_hi {
+            let c = (i - win_off) as usize;
+            let p = |k: usize| win[c + k] as i32;
+            let s = p(0) * kernel[0] as i32
+                + p(1) * kernel[1] as i32
+                + p(2) * kernel[2] as i32
+                + p(3) * kernel[3] as i32
+                + p(4) * kernel[4] as i32;
+            out[i as usize] = ((s + 8) >> 4) as u8;
+            i += 1;
+        }
+    }
+    while i < filt_end {
+        out[i as usize] = filt_px(i);
         i += 1;
     }
     while i < sz {
-        out[i as usize] = inp[in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize)];
+        out[i as usize] = copy_px(i);
         i += 1;
     }
 }
 
 /// Upsample edge pixels for Z2 prediction (8bpc version of upsample_edge from ipred.rs).
-#[inline]
+#[archmage::rite(v3)]
 fn upsample_edge_8bpc(out: &mut [u8], hsz: i32, inp: &[u8], in_off: usize, from: i32, to: i32) {
     let kernel: [i8; 4] = [-1, 9, 9, -1];
-    for i in 0..hsz - 1 {
-        out[(i * 2) as usize] = inp[in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize)];
+    let copy_px = |i: i32| inp[in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize)];
+    let filt_px = |i: i32| {
         let mut s = 0i32;
         for j in 0..4i32 {
             s += inp[in_off.wrapping_add_signed((i + j - 1).clamp(from, to - 1) as isize)] as i32
                 * kernel[j as usize] as i32;
         }
-        out[(i * 2 + 1) as usize] = ((s + 8) >> 4).clamp(0, 255) as u8;
+        ((s + 8) >> 4).clamp(0, 255) as u8
+    };
+    // Taps span [i-1, i+2] clamped to [from, to-1]: unclamped interior is
+    // from+1 <= i <= to-3.
+    let mid_lo = 0i32.max(from + 1);
+    let mid_hi = (hsz - 1).min(to - 2);
+    let mut i = 0i32;
+    while i < mid_lo.min(hsz - 1) {
+        out[(i * 2) as usize] = copy_px(i);
+        out[(i * 2 + 1) as usize] = filt_px(i);
+        i += 1;
+    }
+    if i < mid_hi {
+        let win_base = in_off.wrapping_add_signed((i - 1) as isize);
+        let win = &inp[win_base..in_off.wrapping_add_signed((mid_hi + 2) as isize)];
+        // win[j] == inp[in_off + i_start - 1 + j]; tap i-1+k is win[i - i_start + k].
+        let win_off = i;
+        #[cfg(target_arch = "x86_64")]
+        {
+            while i + 8 <= mid_hi && (i - win_off) as usize + 19 <= win.len() {
+                let c = (i - win_off) as usize;
+                let a = _mm_cvtepu8_epi16(loadu_128!((&win[c..c + 16]), [u8; 16]));
+                let b = _mm_cvtepu8_epi16(loadu_128!((&win[c + 1..c + 17]), [u8; 16]));
+                let d = _mm_cvtepu8_epi16(loadu_128!((&win[c + 2..c + 18]), [u8; 16]));
+                let e = _mm_cvtepu8_epi16(loadu_128!((&win[c + 3..c + 19]), [u8; 16]));
+                let bd = _mm_add_epi16(b, d);
+                let s = _mm_sub_epi16(
+                    _mm_add_epi16(_mm_slli_epi16::<3>(bd), bd),
+                    _mm_add_epi16(a, e),
+                );
+                let f =
+                    _mm_packus_epi16(_mm_srai_epi16::<4>(_mm_add_epi16(s, _mm_set1_epi16(8))), s);
+                // src pixel copies interleave with filtered pixels.
+                let src = _mm_packus_epi16(b, b);
+                let inter = _mm_unpacklo_epi8(src, f);
+                storeu_128!(
+                    (&mut out[(i * 2) as usize..(i * 2) as usize + 16]),
+                    [u8; 16],
+                    inter
+                );
+                i += 8;
+            }
+        }
+        while i < mid_hi {
+            let c = (i - win_off) as usize;
+            let p = |k: usize| win[c + k] as i32;
+            let s = p(0) * kernel[0] as i32
+                + p(1) * kernel[1] as i32
+                + p(2) * kernel[2] as i32
+                + p(3) * kernel[3] as i32;
+            out[(i * 2) as usize] = win[c + 1];
+            out[(i * 2 + 1) as usize] = ((s + 8) >> 4).clamp(0, 255) as u8;
+            i += 1;
+        }
+    }
+    while i < hsz - 1 {
+        out[(i * 2) as usize] = copy_px(i);
+        out[(i * 2 + 1) as usize] = filt_px(i);
+        i += 1;
     }
     let i = hsz - 1;
-    out[(i * 2) as usize] = inp[in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize)];
+    out[(i * 2) as usize] = copy_px(i);
 }
 
 /// Z2 intra prediction SIMD inner for 8bpc.
@@ -2374,6 +2511,52 @@ fn ipred_z2_8bpc_inner(
 
         // First: process pixels using left edge (x < left_count)
         let mut x = 0usize;
+        while x + 8 <= left_count {
+            // Per-pixel y positions in SIMD; edge taps are (l1,l0) byte pairs
+            // gathered as u16 loads, blended by (frac,inv) via pmaddubsw.
+            let vx = _mm256_setr_epi32(
+                x as i32 + 1,
+                x as i32 + 2,
+                x as i32 + 3,
+                x as i32 + 4,
+                x as i32 + 5,
+                x as i32 + 6,
+                x as i32 + 7,
+                x as i32 + 8,
+            );
+            let ypos = _mm256_sub_epi32(
+                _mm256_set1_epi32(y << (6 + upsample_left as i32)),
+                _mm256_mullo_epi32(vx, _mm256_set1_epi32(dy)),
+            );
+            let mut by = [0i32; 8];
+            storeu_256!(&mut by, _mm256_srai_epi32::<6>(ypos));
+            let mut pairs = [0u16; 8];
+            for (k, by_k) in by.iter().enumerate() {
+                let i1 = left.wrapping_add_signed(-(by_k + 1) as isize);
+                pairs[k] = u16::from_le_bytes(edge[i1..i1 + 2].try_into().unwrap());
+            }
+            let frac = _mm256_and_si256(ypos, _mm256_set1_epi32(0x3e));
+            let frac16 = _mm_packs_epi32(
+                _mm256_castsi256_si128(frac),
+                _mm256_extracti128_si256::<1>(frac),
+            );
+            let frac8 = _mm_packus_epi16(frac16, frac16);
+            let inv8 = _mm_packus_epi16(
+                _mm_sub_epi16(_mm_set1_epi16(64), frac16),
+                _mm_sub_epi16(_mm_set1_epi16(64), frac16),
+            );
+            let coef = _mm_unpacklo_epi8(frac8, inv8);
+            let dat = loadu_128!(&pairs);
+            let v = _mm_srai_epi16::<6>(_mm_add_epi16(
+                _mm_maddubs_epi16(dat, coef),
+                _mm_set1_epi16(32),
+            ));
+            storei64!(
+                (&mut dst[row_off + x..row_off + x + 8]),
+                _mm_packus_epi16(v, v)
+            );
+            x += 8;
+        }
         while x < left_count {
             let ypos = (y << (6 + upsample_left as i32)) - dy * (x as i32 + 1);
             let base_y = ypos >> 6;
@@ -2445,6 +2628,26 @@ fn ipred_z2_8bpc_inner(
                 storeu_128!((&mut dst[row_off + x..row_off + x + 16]), [u8; 16], packed);
 
                 x += 16;
+            }
+            while x + 8 <= width {
+                let base_x = (base_x0 + x as i32) as usize;
+                let idx = edge_tl + base_x;
+                if idx + 9 > edge.len() {
+                    break;
+                }
+
+                let t0 = loadi64!(&edge[idx..idx + 8]);
+                let t1 = loadi64!(&edge[idx + 1..idx + 9]);
+
+                let lo = _mm_unpacklo_epi8(t0, t1);
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, _mm256_castsi256_si128(frac_pair)),
+                    _mm256_castsi256_si128(rounding),
+                ));
+                let packed = _mm_packus_epi16(r, r);
+                storei64!(&mut dst[row_off + x..row_off + x + 8], packed);
+
+                x += 8;
             }
         }
 
