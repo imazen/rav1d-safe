@@ -16,6 +16,7 @@
 use quote::ToTokens;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use syn::spanned::Spanned;
 use syn::visit::Visit;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -61,31 +62,44 @@ impl Ctx {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Inline {
+    None,
+    Hint,   // #[inline]
+    Always, // #[inline(always)]
+    Never,  // #[inline(never)]
+}
+
 #[derive(Debug)]
 struct FnInfo {
     name: String,
     file: PathBuf,
     line: usize,
+    end_line: usize,
+    body_stmts: usize,
+    inline: Inline,
     ctx: Ctx,
-    is_entry: bool,      // #[arcane]/#[autoversion]/#[magetypes] outer — callable from vanilla
-    is_extern_c: bool,   // unsafe extern "C" boundary
+    is_entry: bool, // #[arcane]/#[autoversion]/#[magetypes] outer — callable from vanilla
+    is_extern_c: bool, // unsafe extern "C" boundary
     is_test_cfg: bool,
     generics: String,
     token_param: Option<String>, // declared token param type, if any (Desktop64, X64V3Token, …)
-    takes_fnptr: bool,   // any `fn(…)` fn-pointer parameter (DSP-table style)
-    summons: u32,        // Token::summon() / summon_*() call sites in body
+    takes_fnptr: bool,           // any `fn(…)` fn-pointer parameter (DSP-table style)
+    summons: u32,                // Token::summon() / summon_*() call sites in body
     summon_targets: Vec<String>, // tiers each summon targets (best-effort)
     from_context: u32,
-    incants: u32,        // incant! invocations
+    incants: u32,                   // incant! invocations
     local_macro_calls: Vec<String>, // arcane!(f) / scalar!(f) callees
-    calls: Vec<String>,  // resolved-name candidates
-    token_unwraps: u32,  // unwrap/expect on a token acquisition
+    calls: Vec<String>,             // resolved-name candidates
+    token_unwraps: u32,             // unwrap/expect on a token acquisition
+    allows: Vec<String>,            // `// audit:allow(<kind>)` suppressions inside this fn
 }
 
 #[derive(Debug, Default)]
 struct FnVisitor {
     fns: Vec<FnInfo>,
     in_test_mod: bool,
+    allows: Vec<(usize, String)>, // (line, lint-kind) from `// audit:allow(<kind>)`
 }
 
 fn attr_tokens(attr: &syn::Attribute) -> String {
@@ -127,7 +141,12 @@ fn classify_attrs(attrs: &[syn::Attribute]) -> (Ctx, bool, bool) {
 
 fn tier_from_str(s: &str) -> Option<Ctx> {
     for t in ["v4", "v3", "v2", "v1", "neon", "wasm128", "scalar"] {
-        if s.contains(&format!("\"{t}\"")) || s.contains(&format!("({t})")) || s.contains(&format!("({t},")) || s.contains(&format!(",{t}")) || s.contains(&format!("({t},")) {
+        if s.contains(&format!("\"{t}\""))
+            || s.contains(&format!("({t})"))
+            || s.contains(&format!("({t},"))
+            || s.contains(&format!(",{t}"))
+            || s.contains(&format!("({t},"))
+        {
             return Some(Ctx::Tier(t.into()));
         }
     }
@@ -182,7 +201,12 @@ struct BodyScan<'a> {
 impl<'a> Visit<'a> for BodyScan<'a> {
     fn visit_expr_call(&mut self, node: &'a syn::ExprCall) {
         if let syn::Expr::Path(p) = &*node.func {
-            let name = p.path.segments.last().map(|s| s.ident.to_string()).unwrap_or_default();
+            let name = p
+                .path
+                .segments
+                .last()
+                .map(|s| s.ident.to_string())
+                .unwrap_or_default();
             if name == "summon" || name.starts_with("summon_") {
                 self.info.summons += 1;
                 if let Some(t) = summon_target_tier(&name) {
@@ -218,13 +242,23 @@ impl<'a> Visit<'a> for BodyScan<'a> {
         syn::visit::visit_expr_method_call(self, node);
     }
     fn visit_macro(&mut self, node: &'a syn::Macro) {
-        let mac = node.path.segments.last().map(|s| s.ident.to_string()).unwrap_or_default();
+        let mac = node
+            .path
+            .segments
+            .last()
+            .map(|s| s.ident.to_string())
+            .unwrap_or_default();
         match mac.as_str() {
             "incant" => {
                 self.info.incants += 1;
                 // first arg = callee path
                 let src = node.tokens.to_string();
-                let callee = src.split(['(', ' ', ':']).next().unwrap_or("").trim().to_string();
+                let callee = src
+                    .split(['(', ' ', ':'])
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
                 if !callee.is_empty() {
                     self.info.calls.push(callee);
                 }
@@ -245,7 +279,10 @@ impl<'ast> Visit<'ast> for FnVisitor {
     fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
         let was = self.in_test_mod;
         let cfgd = node.attrs.iter().any(|a| {
-            let c: String = attr_tokens(a).chars().filter(|c| !c.is_whitespace()).collect();
+            let c: String = attr_tokens(a)
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
             // cfg(test), cfg(all(test,…)), cfg(any(test,…)), etc.
             c.starts_with("cfg(") && c.contains("test")
         });
@@ -286,7 +323,11 @@ impl FnVisitor {
                 }
                 // fn-ptr types: `fn (…)`, `unsafe fn`, `extern "C" fn`, or
                 // *_fn_t typedef names used by the DSP tables
-                if ts.contains("fn (") || ts.contains("fn(") || ts.contains("unsafe fn") || ts.ends_with("_fn_t") {
+                if ts.contains("fn (")
+                    || ts.contains("fn(")
+                    || ts.contains("unsafe fn")
+                    || ts.ends_with("_fn_t")
+                {
                     takes_fnptr = true;
                 }
             }
@@ -299,11 +340,34 @@ impl FnVisitor {
                 }
             }
         }
-        let is_extern_c = sig.abi.as_ref().is_some_and(|a| a.name.as_ref().is_some_and(|n| n.value() == "C"));
+        let is_extern_c = sig
+            .abi
+            .as_ref()
+            .is_some_and(|a| a.name.as_ref().is_some_and(|n| n.value() == "C"));
+        let inline = attrs.iter().fold(Inline::None, |acc, a| {
+            let c: String = attr_tokens(a)
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
+            if c.contains("inline(always)") {
+                Inline::Always
+            } else if c.contains("inline(never)") {
+                Inline::Never
+            } else if c.contains("inline") && acc == Inline::None {
+                Inline::Hint
+            } else {
+                acc
+            }
+        });
+        let start = sig.ident.span().start().line;
+        let end = block.span().end().line;
         let mut info = FnInfo {
             name: sig.ident.to_string(),
             file: PathBuf::new(),
-            line: 0,
+            line: start,
+            end_line: end,
+            body_stmts: block.stmts.len(),
+            inline,
             ctx,
             is_entry,
             is_extern_c,
@@ -318,6 +382,12 @@ impl FnVisitor {
             local_macro_calls: Vec::new(),
             calls: Vec::new(),
             token_unwraps: 0,
+            allows: self
+                .allows
+                .iter()
+                .filter(|(l, _)| *l >= start.saturating_sub(1) && *l <= end + 1)
+                .map(|(_, k)| k.clone())
+                .collect(),
         };
         let mut scan = BodyScan { info: &mut info };
         scan.visit_block(block);
@@ -327,8 +397,21 @@ impl FnVisitor {
 
 fn tier_suffix(name: &str) -> &'static str {
     for suf in [
-        "_avx512_safe", "_avx512_inner", "_avx512", "_avx2_safe", "_avx2_inner", "_avx2",
-        "_sse4", "_v4", "_v3", "_v2", "_v1", "_neon", "_wasm128", "_scalar", "_inner",
+        "_avx512_safe",
+        "_avx512_inner",
+        "_avx512",
+        "_avx2_safe",
+        "_avx2_inner",
+        "_avx2",
+        "_sse4",
+        "_v4",
+        "_v3",
+        "_v2",
+        "_v1",
+        "_neon",
+        "_wasm128",
+        "_scalar",
+        "_inner",
     ] {
         if name.ends_with(suf) {
             return suf;
@@ -339,19 +422,34 @@ fn tier_suffix(name: &str) -> &'static str {
 
 fn family(name: &str) -> &str {
     let suf = tier_suffix(name);
-    if suf.is_empty() { name } else { &name[..name.len() - suf.len()] }
+    if suf.is_empty() {
+        name
+    } else {
+        &name[..name.len() - suf.len()]
+    }
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let json = args.iter().any(|a| a == "--json");
     let lint_only = args.iter().any(|a| a == "--lint");
-    let tree_at = args.iter().position(|a| a == "--tree").and_then(|i| args.get(i + 1)).cloned();
-    let roots: Vec<PathBuf> = args.iter().filter(|a| !a.starts_with('-') && Some(*a) != tree_at.as_ref()).map(PathBuf::from).collect();
+    let tree_at = args
+        .iter()
+        .position(|a| a == "--tree")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
+    let roots: Vec<PathBuf> = args
+        .iter()
+        .filter(|a| !a.starts_with('-') && Some(*a) != tree_at.as_ref())
+        .map(PathBuf::from)
+        .collect();
 
     let mut files = Vec::new();
     for root in &roots {
-        for e in walkdir::WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
+        for e in walkdir::WalkDir::new(root)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
             if e.path().extension().is_some_and(|x| x == "rs") {
                 files.push(e.path().to_path_buf());
             }
@@ -369,10 +467,22 @@ fn main() {
             Err(_) => continue,
         };
         let mut v = FnVisitor::default();
+        // `// audit:allow(<kind>)` — suppression pragmas, line-scoped to the fn
+        for (i, line) in src.lines().enumerate() {
+            if let Some(pos) = line.find("audit:allow(") {
+                let rest = &line[pos + 12..];
+                let kind: String = rest
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '-')
+                    .collect();
+                if !kind.is_empty() {
+                    v.allows.push((i + 1, kind));
+                }
+            }
+        }
         v.visit_file(&parsed);
         for info in &mut v.fns {
             info.file = f.clone();
-            info.line = src[..src.find(&info.name).unwrap_or(0)].lines().count(); // approx
         }
         all.extend(v.fns);
     }
@@ -382,6 +492,27 @@ fn main() {
     for (i, f) in all.iter().enumerate() {
         by_name.entry(f.name.clone()).or_default().push(i);
         // also index family base for suffix-variant resolution
+    }
+
+    // callee resolution: same-file def wins; else a globally unique name
+    let resolve_callee = |caller: &FnInfo, name: &str| -> Option<usize> {
+        let idxs = by_name.get(name)?;
+        if let Some(&i) = idxs.iter().find(|&&i| all[i].file == caller.file) {
+            return Some(i);
+        }
+        (idxs.len() == 1).then_some(idxs[0])
+    };
+
+    // caller index (for arcane-could-be-rite)
+    let mut callers_of: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for (i, f) in all.iter().enumerate() {
+        for c in &f.calls {
+            if let Some(j) = resolve_callee(f, c) {
+                if j != i {
+                    callers_of.entry(j).or_default().push(i);
+                }
+            }
+        }
     }
 
     // ---- violations ----
@@ -397,7 +528,7 @@ fn main() {
         if f.is_test_cfg {
             continue;
         }
-        let loc = format!("{}:{}", f.file.display(), f.name);
+        let loc = format!("{}:{}:{}", f.file.display(), f.line, f.name);
         // summon() targeting a tier the context already covers = redundant
         // runtime detection. Summoning a HIGHER tier (v3 ctx → summon_avx512)
         // is legitimate escalation, not a violation.
@@ -424,7 +555,9 @@ fn main() {
                     violations.push(Violation {
                         kind: "summon-in-unknown-context",
                         at: loc.clone(),
-                        detail: format!("{escalations} summon(s); ctx tier unknown (check manually)"),
+                        detail: format!(
+                            "{escalations} summon(s); ctx tier unknown (check manually)"
+                        ),
                     });
                 }
             }
@@ -434,7 +567,72 @@ fn main() {
             violations.push(Violation {
                 kind: "token-unwrap",
                 at: loc.clone(),
-                detail: format!("{} token unwrap/expect — gate, don't assert", f.token_unwraps),
+                detail: format!(
+                    "{} token unwrap/expect — gate, don't assert",
+                    f.token_unwraps
+                ),
+            });
+        }
+        // tier-boundary: a context fn calling a non-inlineable vanilla fn —
+        // the callee runs scalar-compiled and can't inline into this context.
+        // Inlineable helpers (#[inline]/small bodies) inherit the caller's
+        // features and are fine; extern "C" and entry wrappers are exempt.
+        if let Ctx::Tier(t) = &f.ctx {
+            let allowed = f.allows.iter().any(|a| a == "tier-boundary");
+            if !allowed && !f.is_extern_c {
+                for c in &f.calls {
+                    if let Some(j) = resolve_callee(f, c) {
+                        let callee = &all[j];
+                        let inlineable = matches!(callee.inline, Inline::Hint | Inline::Always)
+                            || callee.body_stmts <= 4;
+                        if callee.ctx == Ctx::Vanilla
+                            && !callee.is_entry
+                            && !callee.is_extern_c
+                            && !callee.is_test_cfg
+                            && !inlineable
+                        {
+                            violations.push(Violation {
+                                kind: "tier-boundary",
+                                at: loc.clone(),
+                                detail: format!(
+                                    "{t}-ctx calls vanilla {} ({} stmts, no inline) — scalar island; allow with // audit:allow(tier-boundary)",
+                                    callee.name, callee.body_stmts,
+                                ),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // arcane-could-be-rite: an entry fn (arcane trampoline) whose resolved
+    // callers are ALL inside a context — the safe wrapper is dead weight;
+    // #[rite] + incant! at callers is the idiom. Needs the caller index.
+    for (i, f) in all.iter().enumerate() {
+        if f.is_test_cfg
+            || f.is_extern_c
+            || !f.is_entry
+            || f.allows.iter().any(|a| a == "arcane-could-be-rite")
+        {
+            continue;
+        }
+        let Some(callers) = callers_of.get(&i) else {
+            continue;
+        };
+        let in_ctx = callers
+            .iter()
+            .filter(|&&c| matches!(all[c].ctx, Ctx::Tier(_)))
+            .count();
+        let vanilla = callers.len() - in_ctx;
+        if !callers.is_empty() && vanilla == 0 {
+            violations.push(Violation {
+                kind: "arcane-could-be-rite",
+                at: format!("{}:{}", f.file.display(), f.name),
+                detail: format!(
+                    "{} callers all in-context — trampoline unused",
+                    callers.len()
+                ),
             });
         }
     }
@@ -478,7 +676,9 @@ fn main() {
             .iter()
             .map(|f| {
                 serde_json::json!({
-                    "name": f.name, "file": f.file, "ctx": f.ctx.label(),
+                    "name": f.name, "file": f.file, "line": f.line, "end_line": f.end_line,
+                    "body_stmts": f.body_stmts, "inline": format!("{:?}", f.inline),
+                    "ctx": f.ctx.label(),
                     "entry": f.is_entry, "extern_c": f.is_extern_c, "test_cfg": f.is_test_cfg,
                     "generics": f.generics, "token_param": f.token_param,
                     "takes_fnptr": f.takes_fnptr, "summons": f.summons,
@@ -493,32 +693,68 @@ fn main() {
     }
 
     if !lint_only {
-        println!("{:<52} {:>6} {:>7} {:>6} {:>7} {:>7} {:>6}", "file", "entry", "ctx-fn", "plain", "summon", "incant", "mac!");
+        println!(
+            "{:<52} {:>6} {:>7} {:>6} {:>7} {:>7} {:>6}",
+            "file", "entry", "ctx-fn", "plain", "summon", "incant", "mac!"
+        );
         for (file, (entries, ctxs, plains, summons, incants, macros)) in &per_file {
-            println!("{:<52} {:>6} {:>7} {:>6} {:>7} {:>7} {:>6}", file, entries, ctxs, plains, summons, incants, macros);
+            println!(
+                "{:<52} {:>6} {:>7} {:>6} {:>7} {:>7} {:>6}",
+                file, entries, ctxs, plains, summons, incants, macros
+            );
         }
         println!();
     }
 
-    println!("=== violations ({} total) ===", violations.len());
+    // suppressed count for visibility (allows that matched a would-be lint)
+    let suppressed: usize = all.iter().map(|f| f.allows.len()).sum();
+
+    println!(
+        "=== violations ({} total, {} pragma suppressions in tree) ===",
+        violations.len(),
+        suppressed
+    );
     let mut kinds: BTreeMap<&'static str, u32> = BTreeMap::new();
     for v in &violations {
         *kinds.entry(v.kind).or_default() += 1;
         println!("  [{}] {} — {}", v.kind, v.at, v.detail);
     }
+    println!("\n=== score ===");
     for (k, n) in kinds {
         println!("  {k}: {n}");
     }
+    let boundary = violations
+        .iter()
+        .filter(|v| v.kind == "tier-boundary")
+        .count();
+    let tramp = violations
+        .iter()
+        .filter(|v| v.kind == "arcane-could-be-rite")
+        .count();
+    println!("  tier-boundary score: {boundary} (scalar islands; lower is better)");
+    println!("  unused trampolines: {tramp}");
 
     // ---- call tree for a root fn ----
     if let Some(root) = tree_at {
         println!("\n=== call tree from {root} ===");
-        fn resolve<'a>(by: &'a BTreeMap<String, Vec<usize>>, all: &'a [FnInfo], name: &str) -> Option<&'a FnInfo> {
+        fn resolve<'a>(
+            by: &'a BTreeMap<String, Vec<usize>>,
+            all: &'a [FnInfo],
+            name: &str,
+        ) -> Option<&'a FnInfo> {
             // try exact, then family+tier candidates
             if let Some(idxs) = by.get(name) {
                 return idxs.first().map(|&i| &all[i]);
             }
-            for suf in ["_v4", "_v3", "_avx512_safe", "_avx2_safe", "_scalar", "_inner", "_avx2"] {
+            for suf in [
+                "_v4",
+                "_v3",
+                "_avx512_safe",
+                "_avx2_safe",
+                "_scalar",
+                "_inner",
+                "_avx2",
+            ] {
                 if let Some(idxs) = by.get(&format!("{name}{suf}")) {
                     return idxs.first().map(|&i| &all[i]);
                 }
@@ -538,9 +774,26 @@ fn main() {
                         Ctx::Tier(t) => format!(" [{t}]"),
                     };
                     let entry = if f.is_entry { " ⇐TRAMPOLINE" } else { "" };
-                    let sum = if f.summons > 0 { &format!(" ⇐{}×summon", f.summons) } else { "" };
-                    let tp = f.token_param.as_deref().map(|t| format!(" <{t}>")).unwrap_or_default();
-                    println!("{}{}{}{}{}{}  {}", "  ".repeat(depth), f.name, tag, entry, sum, tp, f.file.display());
+                    let sum = if f.summons > 0 {
+                        &format!(" ⇐{}×summon", f.summons)
+                    } else {
+                        ""
+                    };
+                    let tp = f
+                        .token_param
+                        .as_deref()
+                        .map(|t| format!(" <{t}>"))
+                        .unwrap_or_default();
+                    println!(
+                        "{}{}{}{}{}{}  {}",
+                        "  ".repeat(depth),
+                        f.name,
+                        tag,
+                        entry,
+                        sum,
+                        tp,
+                        f.file.display()
+                    );
                     for c in f.calls.iter().rev() {
                         stack.push((c.clone(), depth + 1));
                     }
