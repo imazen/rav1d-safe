@@ -390,7 +390,7 @@ fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
     // SIMD row transform via i16-packed pmaddwd DCT-16.
     {
         let coeff_arr: &[i16; 256] = coeff.as_slice()[..256].try_into().unwrap();
-        let raw = dct16_row_pass_i16_simd(_token, *coeff_arr);
+        let raw = dct16_row_pass_i16_simd(_token, coeff_arr);
 
         // Apply rnd=2, shift=2, col_clip (same post-processing as
         // simd_row_dct16_8bpc_8rows with shift=2, rnd=2).

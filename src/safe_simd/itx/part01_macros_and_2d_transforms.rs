@@ -1486,7 +1486,7 @@ fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
     // i16-packed pmaddwd row pass (T-5 #5: bit-exact proven against scalar reference).
     {
         let coeff_arr: &[i16; 64] = coeff.as_slice()[..64].try_into().unwrap();
-        let raw = dct8_row_pass_i16_simd(_token, *coeff_arr);
+        let raw = dct8_row_pass_i16_simd(_token, coeff_arr);
         // Apply intermediate shift (rnd=1, shift=1 for 8x8) + clip to col range.
         let rnd_v = _mm256_set1_epi32(1);
         let col_min_v = _mm256_set1_epi32(col_clip_min);

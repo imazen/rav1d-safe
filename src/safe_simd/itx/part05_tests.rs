@@ -450,7 +450,7 @@ mod tests {
         for &seed in seeds {
             let input: [i16; 64] = seeded_i16_block(seed);
             let scalar_out = run_scalar_dct8_per_row(&input, row_min, row_max);
-            let simd_out = dct8_row_pass_i16_simd(token, input);
+            let simd_out = dct8_row_pass_i16_simd(token, &input);
             if simd_out != scalar_out {
                 let mut mism = 0u32;
                 for i in 0..64 {
@@ -610,7 +610,7 @@ mod tests {
         let col_max = i16::MAX as i32;
 
         // 1. SIMD row pass
-        let simd_row_out = dct16_row_pass_i16_simd(_token, input);
+        let simd_row_out = dct16_row_pass_i16_simd(_token, &input);
 
         // 2. Intermediate shift+clip (shift=2, rnd=2 for 16x16)
         let mut simd_tmp = [0i32; 256];
@@ -857,7 +857,7 @@ mod tests {
         for &seed in seeds {
             let input: [i16; 256] = seeded_i16_block(seed);
             let scalar_out = run_scalar_dct16_per_row(&input, row_min, row_max);
-            let simd_out = dct16_row_pass_i16_simd(token, input);
+            let simd_out = dct16_row_pass_i16_simd(token, &input);
             if simd_out != scalar_out {
                 let mut mism = 0u32;
                 for i in 0..256 {
@@ -896,7 +896,7 @@ mod tests {
                 }
             }
             let scalar_out = run_scalar_dct16_per_row(&input, row_min, row_max);
-            let simd_out = dct16_row_pass_i16_simd(token, input);
+            let simd_out = dct16_row_pass_i16_simd(token, &input);
             assert_eq!(
                 simd_out, scalar_out,
                 "dct16_row_pass_i16_simd sparse ({nonzero_batches} batches) diverged from scalar"
@@ -932,7 +932,7 @@ mod tests {
         for &seed in seeds {
             let input: [i16; 1024] = seeded_i16_block(seed);
             let scalar_out = run_scalar_dct32_per_row(&input, row_min, row_max);
-            let simd_out = dct32_row_pass_i16_simd(token, input);
+            let simd_out = dct32_row_pass_i16_simd(token, &input);
             if simd_out != scalar_out {
                 let mut mism = 0u32;
                 for i in 0..1024 {
@@ -983,7 +983,7 @@ mod tests {
                 }
             }
             let scalar_out = run_scalar_dct32_per_row(&input, row_min, row_max);
-            let simd_out = dct32_row_pass_i16_simd(token, input);
+            let simd_out = dct32_row_pass_i16_simd(token, &input);
             assert_eq!(
                 simd_out, scalar_out,
                 "dct32_row_pass_i16_simd sparse ({nonzero_batches} batches) diverged from scalar"

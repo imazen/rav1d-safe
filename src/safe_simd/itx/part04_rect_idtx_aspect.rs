@@ -393,7 +393,7 @@ fn dct8_row_coef_pack(_token: Desktop64, c_lo: i16, c_hi: i16) -> __m256i {
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct8_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 64]) -> [i32; 64] {
+fn dct8_row_pass_i16_simd(_token: Desktop64, coeff_col_major: &[i16; 64]) -> [i32; 64] {
     // Layout: coeff_col_major[y + x*8] = element x of row y.
     // We process all 8 rows in parallel — ymm lane K corresponds to row K.
     //
@@ -1027,7 +1027,7 @@ fn dct16_col_pass_i16(_token: Desktop64, tmp_row_major: &[i32; 256]) -> [i32; 25
 /// The odd half uses 4 pmaddwd pairs for stage 1, then i32 mullo for stage 2.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 256]) -> [i32; 256] {
+fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: &[i16; 256]) -> [i32; 256] {
     let mut out = [0i32; 256];
 
     let row_min = i16::MIN as i32;
@@ -1338,7 +1338,7 @@ fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 256]) -> [i
 /// `row_min = i16::MIN as i32`, `row_max = i16::MAX as i32`.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct32_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 1024]) -> [i32; 1024] {
+fn dct32_row_pass_i16_simd(_token: Desktop64, coeff_col_major: &[i16; 1024]) -> [i32; 1024] {
     let mut out = [0i32; 1024];
     let build_pair = dct8_row_build_pair;
     let coef_pack = dct8_row_coef_pack;

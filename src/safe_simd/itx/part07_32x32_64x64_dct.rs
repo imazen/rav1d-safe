@@ -492,12 +492,7 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
     // SIMD row transform via pmaddwd-based dct32_row_pass_i16_simd.
     // No rect2 for 32x32. Row clips handled internally.
     // Post-process: round+shift+clip to col range (shift=2, rnd=2).
-    let raw_coeff: [i16; 1024] = {
-        let s = coeff.as_slice();
-        let mut arr = [0i16; 1024];
-        arr.copy_from_slice(&s[..1024]);
-        arr
-    };
+    let raw_coeff: &[i16; 1024] = coeff.as_slice()[..1024].try_into().unwrap();
     let mut tmp = dct32_row_pass_i16_simd(_token, raw_coeff);
     {
         let rnd_v = _mm256_set1_epi32(2);
