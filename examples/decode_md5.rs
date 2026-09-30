@@ -132,7 +132,11 @@ fn process_frame(
     frame_count: &mut u32,
     verbose: bool,
     per_frame: bool,
+    limit: Option<u32>,
 ) {
+    if limit.is_some_and(|l| *frame_count >= l) {
+        return;
+    }
     if per_frame {
         let mut frame_hasher = md5::Context::new();
         hash_frame(frame, &mut frame_hasher, false);
@@ -153,10 +157,11 @@ fn decode_frames(
     frame_count: &mut u32,
     verbose: bool,
     per_frame: bool,
+    limit: Option<u32>,
 ) {
     match decoder.decode(data) {
         Ok(Some(frame)) => {
-            process_frame(&frame, hasher, frame_count, verbose, per_frame);
+            process_frame(&frame, hasher, frame_count, verbose, per_frame, limit);
         }
         Ok(None) => {}
         Err(e) => {
@@ -168,7 +173,7 @@ fn decode_frames(
     loop {
         match decoder.get_frame() {
             Ok(Some(frame)) => {
-                process_frame(&frame, hasher, frame_count, verbose, per_frame);
+                process_frame(&frame, hasher, frame_count, verbose, per_frame, limit);
             }
             Ok(None) => break,
             Err(e) => {
@@ -193,9 +198,19 @@ fn main() {
     // size sweep, a forced-tile grid) are not in the corpus that
     // `md5_inventory --threads` covers.
     let mut threads: u32 = 1;
-    let mut positional = Vec::new();
+    let mut limit: Option<u32> = None;
+    // dav1d-test-data standalone test() args — see tests/decode_cpu_levels.rs
+    // for the same mapping applied via Settings.
+    let mut operating_point: Option<u8> = None;
+    let mut all_layers: Option<bool> = None;
+    let mut decode_frame_type: Option<rav1d_safe::src::managed::DecodeFrameType> = None;
+    let mut positional: Vec<String> = Vec::new();
 
-    let mut it = args[1..].iter();
+    // meson/dav1d args use both `--flag value` and `--flag=value` forms.
+    let mut it = args[1..].iter().flat_map(|a| match a.split_once('=') {
+        Some((k, v)) if k.starts_with("--") => vec![k.to_string(), v.to_string()],
+        _ => vec![a.clone()],
+    });
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--filmgrain" => filmgrain = true,
@@ -207,7 +222,7 @@ fn main() {
             }
             "--level" => {
                 use rav1d_safe::src::managed::CpuLevel as L;
-                level = Some(match it.next().map(|s| s.as_str()) {
+                level = Some(match it.next().as_deref() {
                     Some("scalar") => L::Scalar,
                     Some("v2") => L::X86V2,
                     Some("v3") => L::X86V3,
@@ -227,20 +242,49 @@ fn main() {
                     .and_then(|v| v.parse().ok())
                     .expect("--threads needs a number");
             }
-            _ => positional.push(arg.as_str()),
+            "--limit" => {
+                limit = Some(
+                    it.next()
+                        .and_then(|v| v.parse().ok())
+                        .expect("--limit needs a frame count"),
+                );
+            }
+            "--oppoint" => {
+                operating_point = Some(
+                    it.next()
+                        .and_then(|v| v.parse().ok())
+                        .expect("--oppoint needs a number"),
+                );
+            }
+            "--alllayers" => {
+                all_layers = Some(it.next().as_deref() != Some("0"));
+            }
+            "--decodeframetype" => {
+                use rav1d_safe::src::managed::DecodeFrameType as FT;
+                decode_frame_type = Some(match it.next().as_deref() {
+                    Some("all") => FT::All,
+                    Some("reference") => FT::Reference,
+                    Some("intra") => FT::Intra,
+                    Some("key") => FT::Key,
+                    other => {
+                        panic!("--decodeframetype needs all|reference|intra|key, got {other:?}")
+                    }
+                });
+            }
+            _ => positional.push(arg),
         }
     }
 
     if positional.is_empty() {
         eprintln!(
-            "Usage: {} [--filmgrain] [-q] [--per-frame] [--threads N] <input> [expected_md5]",
+            "Usage: {} [--filmgrain] [-q] [--per-frame] [--threads N] [--limit N] [--oppoint N] [--alllayers 0|1] [--decodeframetype all|reference|intra|key] <input> [expected_md5]",
             args[0]
         );
         std::process::exit(1);
     }
 
-    let input_path = positional[0];
-    let expected_md5 = positional.get(1).copied();
+    let input_path = &positional[0];
+    let expected_md5 = positional.get(1).map(String::as_str);
     let data = fs::read(input_path).expect("Failed to read input");
     let verbose = !quiet;
 
@@ -252,6 +296,15 @@ fn main() {
     }
     if let Some(s) = settings_strictness {
         settings.strictness = s;
+    }
+    if let Some(op) = operating_point {
+        settings.operating_point = op;
+    }
+    if let Some(al) = all_layers {
+        settings.all_layers = al;
+    }
+    if let Some(ft) = decode_frame_type {
+        settings.decode_frame_type = ft;
     }
     let mut decoder = Decoder::with_settings(settings).expect("decoder creation failed");
     let mut hasher = md5::Context::new();
@@ -269,6 +322,7 @@ fn main() {
                     &mut frame_count,
                     verbose,
                     per_frame,
+                    limit,
                 );
             }
         }
@@ -288,6 +342,7 @@ fn main() {
                         &mut frame_count,
                         verbose,
                         per_frame,
+                        limit,
                     );
                 }
             }
@@ -303,6 +358,7 @@ fn main() {
                 &mut frame_count,
                 verbose,
                 per_frame,
+                limit,
             );
         }
     }
@@ -311,7 +367,14 @@ fn main() {
     match decoder.flush() {
         Ok(remaining) => {
             for frame in &remaining {
-                process_frame(frame, &mut hasher, &mut frame_count, verbose, per_frame);
+                process_frame(
+                    frame,
+                    &mut hasher,
+                    &mut frame_count,
+                    verbose,
+                    per_frame,
+                    limit,
+                );
             }
         }
         Err(e) => {

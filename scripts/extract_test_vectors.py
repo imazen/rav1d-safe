@@ -129,7 +129,21 @@ def find_standalone_tests(text):
         # Check for filmgrain
         filmgrain = 1 if "'--filmgrain'" in block else 0
 
-        results.append((name, filepath_rel, md5, filmgrain))
+        # Capture dav1d flag overrides that change what is decoded:
+        # '--oppoint'/'--alllayers' (SVC operating points), '--decodeframetype'
+        # (vq_suite key/intra/reference-only decodes), '--limit=N' (sframe).
+        # Both '--flag value' and '--flag=value' meson forms exist.
+        extra_args = []
+        for fm in re.finditer(
+            r"'--(oppoint|alllayers|decodeframetype|limit)(?:=([^']+))?'(?:\s*,\s*'([^']+)')?",
+            block,
+        ):
+            flag = fm.group(1)
+            value = fm.group(2) if fm.group(2) is not None else fm.group(3)
+            if value is not None:
+                extra_args.append(f"--{flag}={value}")
+
+        results.append((name, filepath_rel, md5, filmgrain, " ".join(extra_args)))
         pos = i
 
     return results
@@ -234,6 +248,7 @@ def parse_oss_fuzz(meson_path):
             os.path.abspath(filepath),
             "",
             0,
+            "",
         ))
         pos = i
 
@@ -266,13 +281,13 @@ def process_subdir_meson(meson_path):
     for var_name, name, filepath_rel, md5 in var_entries:
         filepath = os.path.abspath(os.path.join(meson_dir, filepath_rel))
         filmgrain = 1 if var_name == "fg_tests" else 0
-        results.append((bitdepth, category, name, filepath, md5, filmgrain))
+        results.append((bitdepth, category, name, filepath, md5, filmgrain, ""))
 
     # Parse standalone test() calls
     standalone = find_standalone_tests(text)
-    for name, filepath_rel, md5, filmgrain in standalone:
+    for name, filepath_rel, md5, filmgrain, extra_args in standalone:
         filepath = os.path.abspath(os.path.join(meson_dir, filepath_rel))
-        results.append((bitdepth, category, name, filepath, md5, filmgrain))
+        results.append((bitdepth, category, name, filepath, md5, filmgrain, extra_args))
 
     return results
 
@@ -288,12 +303,12 @@ def process_bitdepth_meson(meson_path):
 
     # Parse standalone test() calls
     standalone = find_standalone_tests(text)
-    for name, filepath_rel, md5, filmgrain in standalone:
+    for name, filepath_rel, md5, filmgrain, extra_args in standalone:
         filepath = os.path.abspath(os.path.join(meson_dir, filepath_rel))
         # Derive category from relative file path
         rel_parts = filepath_rel.split("/")
         category = rel_parts[0] if len(rel_parts) > 1 else "standalone"
-        results.append((bitdepth, category, name, filepath, md5, filmgrain))
+        results.append((bitdepth, category, name, filepath, md5, filmgrain, extra_args))
 
     return results
 
@@ -327,11 +342,11 @@ def main():
         all_results.extend(process_subdir_meson(meson_path))
 
     # Print header
-    print("bitdepth\tcategory\ttest_name\tfile_path\texpected_md5\tfilmgrain")
+    print("bitdepth\tcategory\ttest_name\tfile_path\texpected_md5\tfilmgrain\textra_args")
 
     # Sort and print
     for row in sorted(all_results, key=lambda r: (r[0], r[1], r[2])):
-        print(f"{row[0]}\t{row[1]}\t{row[2]}\t{row[3]}\t{row[4]}\t{row[5]}")
+        print(f"{row[0]}\t{row[1]}\t{row[2]}\t{row[3]}\t{row[4]}\t{row[5]}\t{row[6]}")
 
     print(f"# Total: {len(all_results)} test vectors", file=sys.stderr)
 

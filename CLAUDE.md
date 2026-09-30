@@ -26,8 +26,10 @@ Completed modules (AVX2 + NEON, 8bpc + 16bpc):
 
 ## Conformance
 
-784/803 dav1d test vectors pass at all bit depths and all CPU levels (scalar, SSE4, AVX2).
-19 failures are infrastructure (1 sframe, 6 SVC operating points, 12 vq_suite decode modes).
+803/803 dav1d test vectors pass at all bit depths and all CPU levels (scalar, SSE4, AVX2).
+(SVC operating points, sframe `--limit`, and vq_suite decode modes all pass
+once `decode_md5` learned `--oppoint`/`--alllayers`/`--decodeframetype`/`--limit`;
+the earlier 19 "failures" were harness flag-loss, not decoder bugs.)
 
 ### After writing or touching any kernel — verify before commit
 
