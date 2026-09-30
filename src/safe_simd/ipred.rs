@@ -7033,6 +7033,24 @@ fn cfl_ac_420_8bpc_inner(
             );
             x += 8;
         }
+        // 4-chroma-pixel SIMD chunk (8 luma bytes per row).
+        while x + 4 <= active_w {
+            let lx = 2 * x;
+            let r1 =
+                loadu_64!(<&[u8; 8]>::try_from(&src_bytes[row1_off + lx..row1_off + lx + 8]).unwrap());
+            let r2 =
+                loadu_64!(<&[u8; 8]>::try_from(&src_bytes[row2_off + lx..row2_off + lx + 8]).unwrap());
+            let ones128 = _mm_set1_epi8(1);
+            let sum = _mm_add_epi16(
+                _mm_maddubs_epi16(r1, ones128),
+                _mm_maddubs_epi16(r2, ones128),
+            );
+            crate::src::safe_simd::partial_simd::mm_storel_epi64::<[i16; 4]>(
+                <&mut [i16; 4]>::try_from(&mut ac[aci + x..aci + x + 4]).unwrap(),
+                _mm_slli_epi16::<1>(sum),
+            );
+            x += 4;
+        }
         // Scalar tail for narrow widths (active_w == 4 with no leftover).
         while x < active_w {
             let lx = 2 * x;
@@ -7070,17 +7088,22 @@ fn cfl_ac_420_8bpc_inner(
     let mut sum_i32 = 1i32 << log2sz >> 1; // round bias
     {
         // SIMD accumulator over the whole ac buffer.
+        let ones16 = _mm256_set1_epi16(1);
         let mut acc = _mm256_setzero_si256();
         let mut i = 0;
         while i + 16 <= n {
             let v = loadu_256!(<&[i16; 16]>::try_from(&ac[i..i + 16]).unwrap());
-            // Widen i16 -> i32 in two halves, accumulate.
-            let lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(v));
-            let hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256::<1>(v));
-            acc = _mm256_add_epi32(acc, lo);
-            acc = _mm256_add_epi32(acc, hi);
+            // Pairwise i16→i32 sums; lanes merge in the horizontal reduce.
+            acc = _mm256_add_epi32(acc, _mm256_madd_epi16(v, ones16));
             i += 16;
         }
+        let mut acc128 = _mm_setzero_si128();
+        while i + 8 <= n {
+            let v = loadu_128!(<&[i16; 8]>::try_from(&ac[i..i + 8]).unwrap());
+            acc128 = _mm_add_epi32(acc128, _mm_madd_epi16(v, _mm_set1_epi16(1)));
+            i += 8;
+        }
+        let acc = _mm256_inserti128_si256::<1>(acc, acc128);
         // Horizontal reduce acc (8 i32).
         let acc_lo = _mm256_castsi256_si128(acc);
         let acc_hi = _mm256_extracti128_si256::<1>(acc);
@@ -7105,6 +7128,15 @@ fn cfl_ac_420_8bpc_inner(
             let r = _mm256_sub_epi16(v, mean_v);
             storeu_256!(<&mut [i16; 16]>::try_from(&mut ac[i..i + 16]).unwrap(), r);
             i += 16;
+        }
+        let mean_v128 = _mm_set1_epi16(mean);
+        while i + 8 <= n {
+            let v = loadu_128!(<&[i16; 8]>::try_from(&ac[i..i + 8]).unwrap());
+            storeu_128!(
+                <&mut [i16; 8]>::try_from(&mut ac[i..i + 8]).unwrap(),
+                _mm_sub_epi16(v, mean_v128)
+            );
+            i += 8;
         }
         // Scalar tail.
         while i < n {
@@ -7165,6 +7197,17 @@ fn cfl_ac_422_8bpc_inner(
             );
             x += 8;
         }
+        while x + 4 <= active_w {
+            let lx = 2 * x;
+            let r1 =
+                loadu_64!(<&[u8; 8]>::try_from(&src_bytes[row_off + lx..row_off + lx + 8]).unwrap());
+            let ones128 = _mm_set1_epi8(1);
+            crate::src::safe_simd::partial_simd::mm_storel_epi64::<[i16; 4]>(
+                <&mut [i16; 4]>::try_from(&mut ac[aci + x..aci + x + 4]).unwrap(),
+                _mm_slli_epi16::<2>(_mm_maddubs_epi16(r1, ones128)),
+            );
+            x += 4;
+        }
         while x < active_w {
             let lx = 2 * x;
             let a = src_bytes[row_off + lx] as i32;
@@ -7194,16 +7237,21 @@ fn cfl_ac_422_8bpc_inner(
     let log2sz = (width.trailing_zeros() + height.trailing_zeros()) as i32;
     let mut sum_i32 = 1i32 << log2sz >> 1;
     {
+        let ones16 = _mm256_set1_epi16(1);
         let mut acc = _mm256_setzero_si256();
         let mut i = 0;
         while i + 16 <= n {
             let v = loadu_256!(<&[i16; 16]>::try_from(&ac[i..i + 16]).unwrap());
-            let lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(v));
-            let hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256::<1>(v));
-            acc = _mm256_add_epi32(acc, lo);
-            acc = _mm256_add_epi32(acc, hi);
+            acc = _mm256_add_epi32(acc, _mm256_madd_epi16(v, ones16));
             i += 16;
         }
+        let mut acc128 = _mm_setzero_si128();
+        while i + 8 <= n {
+            let v = loadu_128!(<&[i16; 8]>::try_from(&ac[i..i + 8]).unwrap());
+            acc128 = _mm_add_epi32(acc128, _mm_madd_epi16(v, _mm_set1_epi16(1)));
+            i += 8;
+        }
+        let acc = _mm256_inserti128_si256::<1>(acc, acc128);
         let acc_lo = _mm256_castsi256_si128(acc);
         let acc_hi = _mm256_extracti128_si256::<1>(acc);
         let s128 = _mm_add_epi32(acc_lo, acc_hi);
@@ -7225,6 +7273,15 @@ fn cfl_ac_422_8bpc_inner(
             let r = _mm256_sub_epi16(v, mean_v);
             storeu_256!(<&mut [i16; 16]>::try_from(&mut ac[i..i + 16]).unwrap(), r);
             i += 16;
+        }
+        let mean_v128 = _mm_set1_epi16(mean);
+        while i + 8 <= n {
+            let v = loadu_128!(<&[i16; 8]>::try_from(&ac[i..i + 8]).unwrap());
+            storeu_128!(
+                <&mut [i16; 8]>::try_from(&mut ac[i..i + 8]).unwrap(),
+                _mm_sub_epi16(v, mean_v128)
+            );
+            i += 8;
         }
         while i < n {
             ac[i] = ac[i].wrapping_sub(mean);
@@ -7268,14 +7325,8 @@ fn cfl_ac_444_8bpc_inner(
             x += 16;
         }
         while x + 8 <= active_w {
-            // Load 8 u8, widen to 8 i16, shift.
-            let arr: &[u8; 8] = (&src_bytes[row_off + x..row_off + x + 8])
-                .try_into()
-                .unwrap();
-            // Use a stack-padded 16-byte load.
-            let mut buf = [0u8; 16];
-            buf[..8].copy_from_slice(arr);
-            let r1 = loadu_128!(&buf);
+            let r1 =
+                loadu_64!(<&[u8; 8]>::try_from(&src_bytes[row_off + x..row_off + x + 8]).unwrap());
             let widened = _mm_cvtepu8_epi16(r1);
             let shifted = _mm_slli_epi16::<3>(widened);
             storeu_128!(
@@ -7283,6 +7334,16 @@ fn cfl_ac_444_8bpc_inner(
                 shifted
             );
             x += 8;
+        }
+        while x + 4 <= active_w {
+            let r1 =
+                loadi32!(&src_bytes[row_off + x..row_off + x + 4]);
+            let widened = _mm_cvtepu8_epi16(r1);
+            crate::src::safe_simd::partial_simd::mm_storel_epi64::<[i16; 4]>(
+                <&mut [i16; 4]>::try_from(&mut ac[aci + x..aci + x + 4]).unwrap(),
+                _mm_slli_epi16::<3>(widened),
+            );
+            x += 4;
         }
         while x < active_w {
             ac[aci + x] = (src_bytes[row_off + x] as i16) << 3;
@@ -7309,16 +7370,21 @@ fn cfl_ac_444_8bpc_inner(
     let log2sz = (width.trailing_zeros() + height.trailing_zeros()) as i32;
     let mut sum_i32 = 1i32 << log2sz >> 1;
     {
+        let ones16 = _mm256_set1_epi16(1);
         let mut acc = _mm256_setzero_si256();
         let mut i = 0;
         while i + 16 <= n {
             let v = loadu_256!(<&[i16; 16]>::try_from(&ac[i..i + 16]).unwrap());
-            let lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(v));
-            let hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256::<1>(v));
-            acc = _mm256_add_epi32(acc, lo);
-            acc = _mm256_add_epi32(acc, hi);
+            acc = _mm256_add_epi32(acc, _mm256_madd_epi16(v, ones16));
             i += 16;
         }
+        let mut acc128 = _mm_setzero_si128();
+        while i + 8 <= n {
+            let v = loadu_128!(<&[i16; 8]>::try_from(&ac[i..i + 8]).unwrap());
+            acc128 = _mm_add_epi32(acc128, _mm_madd_epi16(v, _mm_set1_epi16(1)));
+            i += 8;
+        }
+        let acc = _mm256_inserti128_si256::<1>(acc, acc128);
         let acc_lo = _mm256_castsi256_si128(acc);
         let acc_hi = _mm256_extracti128_si256::<1>(acc);
         let s128 = _mm_add_epi32(acc_lo, acc_hi);
@@ -7340,6 +7406,15 @@ fn cfl_ac_444_8bpc_inner(
             let r = _mm256_sub_epi16(v, mean_v);
             storeu_256!(<&mut [i16; 16]>::try_from(&mut ac[i..i + 16]).unwrap(), r);
             i += 16;
+        }
+        let mean_v128 = _mm_set1_epi16(mean);
+        while i + 8 <= n {
+            let v = loadu_128!(<&[i16; 8]>::try_from(&ac[i..i + 8]).unwrap());
+            storeu_128!(
+                <&mut [i16; 8]>::try_from(&mut ac[i..i + 8]).unwrap(),
+                _mm_sub_epi16(v, mean_v128)
+            );
+            i += 8;
         }
         while i < n {
             ac[i] = ac[i].wrapping_sub(mean);
