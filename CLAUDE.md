@@ -71,6 +71,11 @@ fired on the AVX-512 tier.
 6. **Cross-arch compile** — `cargo check --target aarch64-unknown-linux-gnu`
    and `--target wasm32-unknown-unknown` after touching shared kernels.
 
+`docs/PERF_SOURCE_PATTERNS.md` is the running ledger of which source-level
+shapes have measurably helped (bounds-check elimination, const-length
+copies, transposed intermediates, archmage tiering, dead-work early-outs)
+plus the measured dead ends — check it before writing a new kernel.
+
 The full Argon matrix (7 ISA legs × 6 shards: x86 scalar/v3/v4/native +
 aarch64 scalar/neon/native) runs monthly in CI via
 `.github/workflows/test-vectors.yml`; trigger manually with
