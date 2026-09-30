@@ -207,3 +207,21 @@ Some fixes are *also* free or faster:
 The CLAUDE.md checklist is the short form. For codegen review specifically:
 `cargo asm` the new inner and grep for `slice_index_fail`, `movzbl`,
 `vpinsrb`, `memcpy` in the loop body — if they're there, one of §1–3 applies.
+
+## §11 — 2026-09-30: DC-prediction edge sums + a falsified gather-table
+
+**Win — `edge_sum_u8_v3`/`edge_sum_u16_v3` (commit `b5ffc078`).** All twelve
+`ipred_dc{,_top,_left}_{8,16}bpc` inners summed edge pixels one element at a
+time (u8 indexing; u16 via per-element `from_ne_bytes`). Replaced with
+`_mm256_sad_epu8`-vs-zero / `_mm256_madd_epi16`-by-ones reductions chunked
+32/16/8/4 bytes. `ipred_dc_8bpc_inner` self Ir 392.0M → 117.7M (−70%) on 32
+4K-intra decodes; total −0.62%.
+
+**Dead end — `edge_pairs` gather table for `ipred_z2` (not committed).**
+Idea: precompute `(edge[i], edge[i+1])` u16/u32 pairs once per call so the
+per-lane left-edge gather becomes a single indexed load. Measured +86M Ir
+net on the same stream — LLVM already compiles `u16::from_le_bytes(
+fixed_array[i..i+2].try_into().unwrap())` to one unaligned load + bounds
+check, so the table's 128-entry fill is pure overhead. Lesson: check what a
+`try_into()` pair-load on a *fixed-size* array actually emits before
+"optimizing" the gather; the cheap version is already there.
