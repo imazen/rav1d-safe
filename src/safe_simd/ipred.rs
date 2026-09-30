@@ -1163,10 +1163,8 @@ fn ipred_paeth_8bpc_inner(
             );
             // packus_epi16 interleaves the two 128-bit halves; undo with a
             // qword permute — the 16 outputs land in the low xmm.
-            let packed = _mm256_permute4x64_epi64::<0b11011000>(_mm256_packus_epi16(
-                result,
-                result,
-            ));
+            let packed =
+                _mm256_permute4x64_epi64::<0b11011000>(_mm256_packus_epi16(result, result));
             storeu_128!(
                 &mut dst[row_off + x..row_off + x + 16],
                 [u8; 16],
@@ -1184,10 +1182,8 @@ fn ipred_paeth_8bpc_inner(
             let ldiff = _mm_abs_epi16(_mm_sub_epi16(left8, base));
             let tdiff = _mm_abs_epi16(_mm_sub_epi16(top, base));
             let tldiff = _mm_abs_epi16(_mm_sub_epi16(tl8, base));
-            let ld_le_td = _mm_or_si128(
-                _mm_cmpgt_epi16(tdiff, ldiff),
-                _mm_cmpeq_epi16(ldiff, tdiff),
-            );
+            let ld_le_td =
+                _mm_or_si128(_mm_cmpgt_epi16(tdiff, ldiff), _mm_cmpeq_epi16(ldiff, tdiff));
             let ld_le_tld = _mm_or_si128(
                 _mm_cmpgt_epi16(tldiff, ldiff),
                 _mm_cmpeq_epi16(ldiff, tldiff),
@@ -1211,10 +1207,8 @@ fn ipred_paeth_8bpc_inner(
             let ldiff = _mm_abs_epi16(_mm_sub_epi16(left8, base));
             let tdiff = _mm_abs_epi16(_mm_sub_epi16(top, base));
             let tldiff = _mm_abs_epi16(_mm_sub_epi16(tl8, base));
-            let ld_le_td = _mm_or_si128(
-                _mm_cmpgt_epi16(tdiff, ldiff),
-                _mm_cmpeq_epi16(ldiff, tdiff),
-            );
+            let ld_le_td =
+                _mm_or_si128(_mm_cmpgt_epi16(tdiff, ldiff), _mm_cmpeq_epi16(ldiff, tdiff));
             let ld_le_tld = _mm_or_si128(
                 _mm_cmpgt_epi16(tldiff, ldiff),
                 _mm_cmpeq_epi16(ldiff, tldiff),
@@ -7036,10 +7030,12 @@ fn cfl_ac_420_8bpc_inner(
         // 4-chroma-pixel SIMD chunk (8 luma bytes per row).
         while x + 4 <= active_w {
             let lx = 2 * x;
-            let r1 =
-                loadu_64!(<&[u8; 8]>::try_from(&src_bytes[row1_off + lx..row1_off + lx + 8]).unwrap());
-            let r2 =
-                loadu_64!(<&[u8; 8]>::try_from(&src_bytes[row2_off + lx..row2_off + lx + 8]).unwrap());
+            let r1 = loadu_64!(
+                <&[u8; 8]>::try_from(&src_bytes[row1_off + lx..row1_off + lx + 8]).unwrap()
+            );
+            let r2 = loadu_64!(
+                <&[u8; 8]>::try_from(&src_bytes[row2_off + lx..row2_off + lx + 8]).unwrap()
+            );
             let ones128 = _mm_set1_epi8(1);
             let sum = _mm_add_epi16(
                 _mm_maddubs_epi16(r1, ones128),
@@ -7103,11 +7099,10 @@ fn cfl_ac_420_8bpc_inner(
             acc128 = _mm_add_epi32(acc128, _mm_madd_epi16(v, _mm_set1_epi16(1)));
             i += 8;
         }
-        let acc = _mm256_inserti128_si256::<1>(acc, acc128);
-        // Horizontal reduce acc (8 i32).
+        // Horizontal reduce acc (8 i32) plus the xmm tail accumulator.
         let acc_lo = _mm256_castsi256_si128(acc);
         let acc_hi = _mm256_extracti128_si256::<1>(acc);
-        let s128 = _mm_add_epi32(acc_lo, acc_hi);
+        let s128 = _mm_add_epi32(_mm_add_epi32(acc_lo, acc_hi), acc128);
         let s64 = _mm_add_epi32(s128, _mm_shuffle_epi32::<0b_01_00_11_10>(s128));
         let s32 = _mm_add_epi32(s64, _mm_shuffle_epi32::<0b_00_00_00_01>(s64));
         sum_i32 = sum_i32.wrapping_add(_mm_cvtsi128_si32(s32));
@@ -7199,8 +7194,9 @@ fn cfl_ac_422_8bpc_inner(
         }
         while x + 4 <= active_w {
             let lx = 2 * x;
-            let r1 =
-                loadu_64!(<&[u8; 8]>::try_from(&src_bytes[row_off + lx..row_off + lx + 8]).unwrap());
+            let r1 = loadu_64!(
+                <&[u8; 8]>::try_from(&src_bytes[row_off + lx..row_off + lx + 8]).unwrap()
+            );
             let ones128 = _mm_set1_epi8(1);
             crate::src::safe_simd::partial_simd::mm_storel_epi64::<[i16; 4]>(
                 <&mut [i16; 4]>::try_from(&mut ac[aci + x..aci + x + 4]).unwrap(),
@@ -7251,10 +7247,9 @@ fn cfl_ac_422_8bpc_inner(
             acc128 = _mm_add_epi32(acc128, _mm_madd_epi16(v, _mm_set1_epi16(1)));
             i += 8;
         }
-        let acc = _mm256_inserti128_si256::<1>(acc, acc128);
         let acc_lo = _mm256_castsi256_si128(acc);
         let acc_hi = _mm256_extracti128_si256::<1>(acc);
-        let s128 = _mm_add_epi32(acc_lo, acc_hi);
+        let s128 = _mm_add_epi32(_mm_add_epi32(acc_lo, acc_hi), acc128);
         let s64 = _mm_add_epi32(s128, _mm_shuffle_epi32::<0b_01_00_11_10>(s128));
         let s32 = _mm_add_epi32(s64, _mm_shuffle_epi32::<0b_00_00_00_01>(s64));
         sum_i32 = sum_i32.wrapping_add(_mm_cvtsi128_si32(s32));
@@ -7336,8 +7331,7 @@ fn cfl_ac_444_8bpc_inner(
             x += 8;
         }
         while x + 4 <= active_w {
-            let r1 =
-                loadi32!(&src_bytes[row_off + x..row_off + x + 4]);
+            let r1 = loadi32!(&src_bytes[row_off + x..row_off + x + 4]);
             let widened = _mm_cvtepu8_epi16(r1);
             crate::src::safe_simd::partial_simd::mm_storel_epi64::<[i16; 4]>(
                 <&mut [i16; 4]>::try_from(&mut ac[aci + x..aci + x + 4]).unwrap(),
@@ -7384,10 +7378,9 @@ fn cfl_ac_444_8bpc_inner(
             acc128 = _mm_add_epi32(acc128, _mm_madd_epi16(v, _mm_set1_epi16(1)));
             i += 8;
         }
-        let acc = _mm256_inserti128_si256::<1>(acc, acc128);
         let acc_lo = _mm256_castsi256_si128(acc);
         let acc_hi = _mm256_extracti128_si256::<1>(acc);
-        let s128 = _mm_add_epi32(acc_lo, acc_hi);
+        let s128 = _mm_add_epi32(_mm_add_epi32(acc_lo, acc_hi), acc128);
         let s64 = _mm_add_epi32(s128, _mm_shuffle_epi32::<0b_01_00_11_10>(s128));
         let s32 = _mm_add_epi32(s64, _mm_shuffle_epi32::<0b_00_00_00_01>(s64));
         sum_i32 = sum_i32.wrapping_add(_mm_cvtsi128_si32(s32));
@@ -7756,5 +7749,132 @@ mod v4x_dir_tests {
             compared >= 100,
             "z2 test compared too few configs: {compared}"
         );
+    }
+
+    /// Scalar oracle for `cfl_ac_*_8bpc_inner`, mirroring `src/ipred.rs::cfl_ac_rust`
+    /// on a flat luma buffer (src_base/stride addressing like the SIMD inners use).
+    fn cfl_ac_scalar_ref(
+        ac: &mut [i16],
+        width: usize,
+        height: usize,
+        active_w: usize,
+        active_h: usize,
+        src: &[u8],
+        src_base: usize,
+        src_stride: isize,
+        ss_hor: bool,
+        ss_ver: bool,
+    ) {
+        for y in 0..active_h {
+            let aci = y * width;
+            let row_off =
+                (src_base as isize + (y << ss_ver as usize) as isize * src_stride) as usize;
+            for x in 0..active_w {
+                let sx = x << ss_hor as usize;
+                let mut sum = src[row_off + sx] as i32;
+                if ss_hor {
+                    sum += src[row_off + sx + 1] as i32;
+                }
+                if ss_ver {
+                    let below = (src_base as isize + ((y << 1) as isize + 1) * src_stride) as usize;
+                    sum += src[below + sx] as i32;
+                    if ss_hor {
+                        sum += src[below + sx + 1] as i32;
+                    }
+                }
+                ac[aci + x] = (sum << (1 + !ss_ver as u8 + !ss_hor as u8)) as i16;
+            }
+            for x in active_w..width {
+                ac[aci + x] = ac[aci + x - 1];
+            }
+        }
+        for y in active_h..height {
+            let aci = y * width;
+            let (src_a, dst_a) = ac.split_at_mut(aci);
+            dst_a[..width].copy_from_slice(&src_a[src_a.len() - width..]);
+        }
+        let log2sz = (width.trailing_zeros() + height.trailing_zeros()) as i32;
+        let mut sum = (1i32 << log2sz) >> 1;
+        for &v in ac[..width * height].iter() {
+            sum = sum.wrapping_add(v as i32);
+        }
+        let mean = (sum >> log2sz) as i16;
+        for v in ac[..width * height].iter_mut() {
+            *v = v.wrapping_sub(mean);
+        }
+    }
+
+    #[test]
+    fn cfl_ac_simd_matches_scalar() {
+        let _tok_lock = archmage::testing::lock_token_testing();
+        let Some(t3) = crate::src::cpu::summon_avx2() else {
+            eprintln!("cfl_ac_simd_matches_scalar: no AVX2 token, skipping");
+            return;
+        };
+        // Flat luma buffer, deterministic pseudo-random.
+        let mut src = vec![0u8; 160 * 160];
+        let mut st: u32 = 0xabcd_ef01;
+        for b in src.iter_mut() {
+            st ^= st << 13;
+            st ^= st >> 17;
+            st ^= st << 5;
+            *b = (st >> 5) as u8;
+        }
+        let dims = [
+            (4usize, 4usize),
+            (4, 8),
+            (8, 4),
+            (8, 8),
+            (8, 16),
+            (16, 8),
+            (16, 16),
+            (32, 16),
+            (32, 32),
+            (16, 32),
+            (4, 16),
+            (16, 4),
+            (12, 12),
+            (24, 8),
+            (8, 24),
+            (6, 6),
+        ];
+        for &(w, h) in &dims {
+            for &(aw, ah) in &[(w, h), (w / 2, h), (w, h / 2), (w / 2.max(1), h / 2.max(1))] {
+                if aw == 0 || ah == 0 {
+                    continue;
+                }
+                for &(hor, ver) in &[(true, true), (true, false), (false, false)] {
+                    let stride = 128isize;
+                    // src must hold active rows*ver at stride, cols = aw<<hor.
+                    let need = (src.len() as isize / stride) as usize;
+                    if (ah << ver as usize) > need || (aw << hor as usize) > 128 {
+                        continue;
+                    }
+                    let mut a = vec![0i16; w * h];
+                    let mut b = vec![0i16; w * h];
+                    cfl_ac_scalar_ref(&mut a, w, h, aw, ah, &src, 0, stride, hor, ver);
+                    match (hor, ver) {
+                        (true, true) => {
+                            cfl_ac_420_8bpc_inner(t3, &mut b, w, h, aw, ah, &src, 0, stride)
+                        }
+                        (true, false) => {
+                            cfl_ac_422_8bpc_inner(t3, &mut b, w, h, aw, ah, &src, 0, stride)
+                        }
+                        _ => cfl_ac_444_8bpc_inner(t3, &mut b, w, h, aw, ah, &src, 0, stride),
+                    }
+                    for i in 0..w * h {
+                        assert_eq!(
+                            a[i],
+                            b[i],
+                            "cfl_ac {w}x{h} aw={aw} ah={ah} hor={hor} ver={ver}: idx {i} (x={},y={}) scalar={} simd={}\n scalar={a:?}\n simd={b:?}",
+                            i % w,
+                            i / w,
+                            a[i],
+                            b[i]
+                        );
+                    }
+                }
+            }
+        }
     }
 }
