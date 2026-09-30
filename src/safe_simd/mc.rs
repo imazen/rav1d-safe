@@ -152,9 +152,13 @@ fn avg_8bpc_avx2_safe(
             let t2_lo = loadu_256!(&tmp2_row[col..col + 16], [i16; 16]);
             let t2_hi = loadu_256!(&tmp2_row[col + 16..col + 32], [i16; 16]);
 
-            // Add: tmp1 + tmp2
-            let sum_lo = _mm256_add_epi16(t1_lo, t2_lo);
-            let sum_hi = _mm256_add_epi16(t1_hi, t2_hi);
+            // Add: tmp1 + tmp2. Saturating, not wrapping: the scalar
+            // reference sums in i32 (|sum| <= 65534), and a wrapped i16 sum
+            // flips sign at +-32768. Saturation is bit-exact here because
+            // whenever the true sum exceeds +-32767 the shifted result lands
+            // in the [0, 255]-clamped region either way.
+            let sum_lo = _mm256_adds_epi16(t1_lo, t2_lo);
+            let sum_hi = _mm256_adds_epi16(t1_hi, t2_hi);
 
             // Multiply and round shift: (sum * 1024 + 16384) >> 15
             let avg_lo = _mm256_mulhrs_epi16(sum_lo, round);
@@ -176,7 +180,7 @@ fn avg_8bpc_avx2_safe(
             let t1 = loadu_256!(&tmp1_row[col..col + 16], [i16; 16]);
             let t2 = loadu_256!(&tmp2_row[col..col + 16], [i16; 16]);
 
-            let sum = _mm256_add_epi16(t1, t2);
+            let sum = _mm256_adds_epi16(t1, t2);
             let avg = _mm256_mulhrs_epi16(sum, round);
 
             // Pack within lanes and extract lower 128 bits
@@ -190,10 +194,11 @@ fn avg_8bpc_avx2_safe(
             col += 16;
         }
 
-        // Scalar fallback for remaining pixels
+        // Scalar fallback for remaining pixels — i32 sum, matching avg_rust
+        // (warp_affine mids can reach +-32767 where an i16 add wraps).
         while col < w {
-            let sum = tmp1_row[col].wrapping_add(tmp2_row[col]);
-            let avg = ((sum as i32 * 1024 + 16384) >> 15).clamp(0, 255) as u8;
+            let sum = tmp1_row[col] as i32 + tmp2_row[col] as i32;
+            let avg = ((sum * 1024 + 16384) >> 15).clamp(0, 255) as u8;
             dst_row[col] = avg;
             col += 1;
         }
@@ -254,7 +259,7 @@ fn avg_8bpc_avx512_safe(
             // First 32 i16 values
             let t1_lo = loadu_512!(&tmp1_row[col..col + 32], [i16; 32]);
             let t2_lo = loadu_512!(&tmp2_row[col..col + 32], [i16; 32]);
-            let sum_lo = _mm512_add_epi16(t1_lo, t2_lo);
+            let sum_lo = _mm512_adds_epi16(t1_lo, t2_lo);
             let avg_lo = _mm512_mulhrs_epi16(sum_lo, round);
             let avg_lo = _mm512_max_epi16(avg_lo, zero); // clamp negatives for unsigned sat
             let result_lo: __m256i = _mm512_cvtusepi16_epi8(avg_lo);
@@ -262,7 +267,7 @@ fn avg_8bpc_avx512_safe(
             // Second 32 i16 values
             let t1_hi = loadu_512!(&tmp1_row[col + 32..col + 64], [i16; 32]);
             let t2_hi = loadu_512!(&tmp2_row[col + 32..col + 64], [i16; 32]);
-            let sum_hi = _mm512_add_epi16(t1_hi, t2_hi);
+            let sum_hi = _mm512_adds_epi16(t1_hi, t2_hi);
             let avg_hi = _mm512_mulhrs_epi16(sum_hi, round);
             let avg_hi = _mm512_max_epi16(avg_hi, zero);
             let result_hi: __m256i = _mm512_cvtusepi16_epi8(avg_hi);
@@ -278,7 +283,7 @@ fn avg_8bpc_avx512_safe(
         while col + 32 <= w {
             let t1 = loadu_512!(&tmp1_row[col..col + 32], [i16; 32]);
             let t2 = loadu_512!(&tmp2_row[col..col + 32], [i16; 32]);
-            let sum = _mm512_add_epi16(t1, t2);
+            let sum = _mm512_adds_epi16(t1, t2);
             let avg = _mm512_mulhrs_epi16(sum, round);
             let avg = _mm512_max_epi16(avg, zero);
             let result: __m256i = _mm512_cvtusepi16_epi8(avg);
@@ -292,7 +297,7 @@ fn avg_8bpc_avx512_safe(
         while col + 16 <= w {
             let t1 = loadu_256!(&tmp1_row[col..col + 16], [i16; 16]);
             let t2 = loadu_256!(&tmp2_row[col..col + 16], [i16; 16]);
-            let sum = _mm256_add_epi16(t1, t2);
+            let sum = _mm256_adds_epi16(t1, t2);
             let avg = _mm256_mulhrs_epi16(sum, round_256);
             let packed = _mm256_packus_epi16(avg, avg);
             let lo = _mm256_castsi256_si128(packed);
@@ -302,10 +307,10 @@ fn avg_8bpc_avx512_safe(
             col += 16;
         }
 
-        // Scalar tail
+        // Scalar tail — i32 sum like avg_rust (warp_affine mids reach +-32767)
         while col < w {
-            let sum = tmp1_row[col].wrapping_add(tmp2_row[col]);
-            let avg = ((sum as i32 * 1024 + 16384) >> 15).clamp(0, 255) as u8;
+            let sum = tmp1_row[col] as i32 + tmp2_row[col] as i32;
+            let avg = ((sum * 1024 + 16384) >> 15).clamp(0, 255) as u8;
             dst_row[col] = avg;
             col += 1;
         }
@@ -599,8 +604,8 @@ pub unsafe extern "C" fn avg_scalar(
             unsafe { std::slice::from_raw_parts_mut(dst.offset(row as isize * dst_stride), w) };
 
         for col in 0..w {
-            let sum = tmp1_row[col].wrapping_add(tmp2_row[col]);
-            let avg = ((sum as i32 * 1024 + 16384) >> 15).clamp(0, 255) as u8;
+            let sum = tmp1_row[col] as i32 + tmp2_row[col] as i32;
+            let avg = ((sum * 1024 + 16384) >> 15).clamp(0, 255) as u8;
             dst_row[col] = avg;
         }
     }
@@ -14054,6 +14059,7 @@ mod tests {
 
     #[test]
     fn test_avg_8bpc_avx2_matches_scalar() {
+        let _tok_lock = archmage::testing::lock_token_testing();
         let Some(token) = crate::src::cpu::summon_avx2() else {
             eprintln!("Skipping AVX2 test - CPU doesn't support it or tokens disabled");
             return;
@@ -14097,7 +14103,12 @@ mod tests {
                 dst_avx2.fill(0);
                 dst_scalar.fill(0);
 
-                avg_8bpc_avx2_safe(token, &mut dst_scalar, w as usize, &tmp1, &tmp2, w, h);
+                // Scalar oracle: avg_rust at 8bpc computes
+                // (t1 + t2 + 16) >> 5 in i32, clipped to [0, 255].
+                for (i, d) in dst_scalar.iter_mut().enumerate() {
+                    let sum = tmp1[i] as i32 + tmp2[i] as i32;
+                    *d = ((sum + (1 << 4)) >> 5).clamp(0, 255) as u8;
+                }
 
                 avg_8bpc_avx2_safe(token, &mut dst_avx2, w as usize, &tmp1, &tmp2, w, h);
 
@@ -14110,6 +14121,12 @@ mod tests {
                     &dst_avx2[..8],
                     &dst_scalar[..8]
                 );
+
+                if let Some(t512) = crate::src::cpu::summon_avx512() {
+                    let mut dst_avx512 = vec![0u8; (w * h) as usize];
+                    avg_8bpc_avx512_safe(t512, &mut dst_avx512, w as usize, &tmp1, &tmp2, w, h);
+                    assert_eq!(dst_avx512, dst_scalar, "avx512 mismatch v1={v1} v2={v2}");
+                }
             }
         }
     }
