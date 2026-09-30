@@ -17,8 +17,8 @@ use core::arch::x86_64::*;
 use crate::src::safe_simd::pixel_access::Flex;
 #[cfg(target_arch = "x86_64")]
 use crate::src::safe_simd::pixel_access::{
-    loadi32, loadi64, loadu_64, loadu_128, loadu_256, loadu_512, storei64, storeu_128,
-    storeu_256, storeu_512,
+    loadi32, loadi64, loadu_64, loadu_128, loadu_256, loadu_512, storei64, storeu_128, storeu_256,
+    storeu_512,
 };
 #[cfg(target_arch = "x86_64")]
 use archmage::{Desktop64, Server64, arcane, rite};
@@ -1173,8 +1173,7 @@ fn mask_8bpc_avx2_safe(
             let sum_lo = _mm_add_epi32(_mm_madd_epi16(mm_lo, tt_lo), rndx);
             let res16 = _mm_packs_epi32(_mm_srai_epi32::<10>(sum_lo), _mm_setzero_si128());
             let res8 = _mm_packus_epi16(res16, res16);
-            dst_row[col..col + 4]
-                .copy_from_slice(&(_mm_cvtsi128_si32(res8) as u32).to_ne_bytes());
+            dst_row[col..col + 4].copy_from_slice(&(_mm_cvtsi128_si32(res8) as u32).to_ne_bytes());
             col += 4;
         }
 
@@ -1904,10 +1903,7 @@ fn blend_v_8bpc_avx2_safe(
             let cof = _mm_unpacklo_epi8(inv8, m8);
             let sum = _mm_add_epi16(_mm_maddubs_epi16(dat, cof), _mm_set1_epi16(32));
             let res = _mm_srli_epi16::<6>(sum);
-            storei64!(
-                &mut dst_row[col..col + 8],
-                _mm_packus_epi16(res, res)
-            );
+            storei64!(&mut dst_row[col..col + 8], _mm_packus_epi16(res, res));
             col += 8;
         }
         if col + 4 <= w_eff {
@@ -1920,8 +1916,7 @@ fn blend_v_8bpc_avx2_safe(
             let sum = _mm_add_epi16(_mm_maddubs_epi16(dat, cof), _mm_set1_epi16(32));
             let res = _mm_srli_epi16::<6>(sum);
             let p8 = _mm_packus_epi16(res, res);
-            dst_row[col..col + 4]
-                .copy_from_slice(&(_mm_cvtsi128_si32(p8) as u32).to_ne_bytes());
+            dst_row[col..col + 4].copy_from_slice(&(_mm_cvtsi128_si32(p8) as u32).to_ne_bytes());
             col += 4;
         }
 
@@ -2034,8 +2029,7 @@ fn blend_h_8bpc_avx2_safe(
             let sum = _mm_add_epi16(_mm_maddubs_epi16(dat, cof), _mm_set1_epi16(32));
             let res = _mm_srli_epi16::<6>(sum);
             let p8 = _mm_packus_epi16(res, res);
-            dst_row[col..col + 4]
-                .copy_from_slice(&(_mm_cvtsi128_si32(p8) as u32).to_ne_bytes());
+            dst_row[col..col + 4].copy_from_slice(&(_mm_cvtsi128_si32(p8) as u32).to_ne_bytes());
             col += 4;
         }
 
@@ -4227,11 +4221,7 @@ fn widen_row_u16_shl_bias_16bpc(
         let hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256::<1>(v));
         let lo = _mm256_sub_epi32(_mm256_sll_epi32(lo, cnt), bias_v);
         let hi = _mm256_sub_epi32(_mm256_sll_epi32(hi, cnt), bias_v);
-        storeu_256!(
-            &mut dst[x..x + 16],
-            [i16; 16],
-            _mm256_packs_epi32(lo, hi)
-        );
+        storeu_256!(&mut dst[x..x + 16], [i16; 16], _mm256_packs_epi32(lo, hi));
         x += 16;
     }
     let bias_x = _mm_set1_epi32(bias);
@@ -10074,7 +10064,10 @@ fn w_mask_8bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
             // m = min(38 + (|t1-t2| + mask_rnd) >> mask_sh, 64)
             let diff = _mm256_abs_epi16(_mm256_sub_epi16(t1, t2));
             let mv = _mm256_min_epi16(
-                _mm256_add_epi16(c38, _mm256_srl_epi16(_mm256_add_epi16(diff, mask_rnd_v), mask_shv)),
+                _mm256_add_epi16(
+                    c38,
+                    _mm256_srl_epi16(_mm256_add_epi16(diff, mask_rnd_v), mask_shv),
+                ),
                 c64_16,
             );
             // mvmv pairs per pixel: interleave m with (64-m)
@@ -10101,8 +10094,7 @@ fn w_mask_8bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
                 let m8 = _mm256_packus_epi16(mv, mv);
                 let m8 = _mm256_permute4x64_epi64(m8, 0b11011000);
                 storeu_128!(
-                    <&mut [u8; 16]>::try_from(&mut mask[mask_off + x..mask_off + x + 16])
-                        .unwrap(),
+                    <&mut [u8; 16]>::try_from(&mut mask[mask_off + x..mask_off + x + 16]).unwrap(),
                     _mm256_castsi256_si128(m8)
                 );
             } else {
@@ -10110,8 +10102,7 @@ fn w_mask_8bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
                 // ymm lanes {0-3,8-11}; a qword permute orders them into the
                 // low xmm as eight i16.
                 let mn = _mm256_hadd_epi16(mv, mv);
-                let mn8 =
-                    _mm256_castsi256_si128(_mm256_permute4x64_epi64(mn, 0b11011000));
+                let mn8 = _mm256_castsi256_si128(_mm256_permute4x64_epi64(mn, 0b11011000));
                 if SS_VER && (row_h & 1 != 0) {
                     // odd row: ((m+n+2-sign)+prev)>>2 against stored sums
                     let prev = _mm_cvtepu8_epi16(loadu_64!(
@@ -10123,19 +10114,26 @@ fn w_mask_8bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
                         prev,
                     ));
                     let out8 = _mm_packus_epi16(out, out);
-                    storei64!(&mut mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8], out8);
+                    storei64!(
+                        &mut mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8],
+                        out8
+                    );
                 } else if SS_VER {
                     // even row: store m+n sums (u8)
                     let out8 = _mm_packus_epi16(mn8, mn8);
-                    storei64!(&mut mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8], out8);
+                    storei64!(
+                        &mut mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8],
+                        out8
+                    );
                 } else {
                     // 422: (m+n+1-sign)>>1
-                    let out = _mm_srli_epi16::<1>(_mm_add_epi16(
-                        mn8,
-                        _mm_set1_epi16(1 - sign as i16),
-                    ));
+                    let out =
+                        _mm_srli_epi16::<1>(_mm_add_epi16(mn8, _mm_set1_epi16(1 - sign as i16)));
                     let out8 = _mm_packus_epi16(out, out);
-                    storei64!(&mut mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8], out8);
+                    storei64!(
+                        &mut mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8],
+                        out8
+                    );
                 }
             }
             x += 16;
@@ -10149,7 +10147,10 @@ fn w_mask_8bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
             let mv = _mm_min_epi16(
                 _mm_add_epi16(
                     _mm_set1_epi16(38),
-                    _mm_srl_epi16(_mm_add_epi16(diff, _mm256_castsi256_si128(mask_rnd_v)), mask_shv),
+                    _mm_srl_epi16(
+                        _mm_add_epi16(diff, _mm256_castsi256_si128(mask_rnd_v)),
+                        mask_shv,
+                    ),
                 ),
                 _mm_set1_epi16(64),
             );
@@ -10189,10 +10190,8 @@ fn w_mask_8bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
                     mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 4]
                         .copy_from_slice(&(_mm_cvtsi128_si32(out8) as u32).to_ne_bytes());
                 } else {
-                    let out = _mm_srli_epi16::<1>(_mm_add_epi16(
-                        mn,
-                        _mm_set1_epi16(1 - sign as i16),
-                    ));
+                    let out =
+                        _mm_srli_epi16::<1>(_mm_add_epi16(mn, _mm_set1_epi16(1 - sign as i16)));
                     let out8 = _mm_packus_epi16(out, out);
                     mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 4]
                         .copy_from_slice(&(_mm_cvtsi128_si32(out8) as u32).to_ne_bytes());
@@ -10266,7 +10265,9 @@ fn w_mask_444_8bpc_avx2_safe(
     sign: i32,
 ) {
     let mut dst = dst.flex_mut();
-    w_mask_8bpc_avx2_safe_impl::<false, false>(_token, &mut *dst, dst_stride, tmp1, tmp2, w, h, mask, sign);
+    w_mask_8bpc_avx2_safe_impl::<false, false>(
+        _token, &mut *dst, dst_stride, tmp1, tmp2, w, h, mask, sign,
+    );
 }
 
 /// w_mask 422 8bpc (horizontal subsampling only)
@@ -10284,7 +10285,9 @@ fn w_mask_422_8bpc_avx2_safe(
     sign: i32,
 ) {
     let mut dst = dst.flex_mut();
-    w_mask_8bpc_avx2_safe_impl::<true, false>(_token, &mut *dst, dst_stride, tmp1, tmp2, w, h, mask, sign);
+    w_mask_8bpc_avx2_safe_impl::<true, false>(
+        _token, &mut *dst, dst_stride, tmp1, tmp2, w, h, mask, sign,
+    );
 }
 
 /// w_mask 420 8bpc (horizontal and vertical subsampling)
@@ -10302,7 +10305,9 @@ fn w_mask_420_8bpc_avx2_safe(
     sign: i32,
 ) {
     let mut dst = dst.flex_mut();
-    w_mask_8bpc_avx2_safe_impl::<true, true>(_token, &mut *dst, dst_stride, tmp1, tmp2, w, h, mask, sign);
+    w_mask_8bpc_avx2_safe_impl::<true, true>(
+        _token, &mut *dst, dst_stride, tmp1, tmp2, w, h, mask, sign,
+    );
 }
 
 /// w_mask for 4:4:4 (no subsampling)
@@ -10489,14 +10494,12 @@ fn w_mask_16bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
                 let m8 = _mm256_packus_epi16(mv, mv);
                 let m8 = _mm256_permute4x64_epi64(m8, 0b11011000);
                 storeu_128!(
-                    <&mut [u8; 16]>::try_from(&mut mask[mask_off + x..mask_off + x + 16])
-                        .unwrap(),
+                    <&mut [u8; 16]>::try_from(&mut mask[mask_off + x..mask_off + x + 16]).unwrap(),
                     _mm256_castsi256_si128(m8)
                 );
             } else {
                 let mn = _mm256_hadd_epi16(mv, mv);
-                let mn8 =
-                    _mm256_castsi256_si128(_mm256_permute4x64_epi64(mn, 0b11011000));
+                let mn8 = _mm256_castsi256_si128(_mm256_permute4x64_epi64(mn, 0b11011000));
                 if SS_VER && (row_h & 1 != 0) {
                     let prev = _mm_cvtepu8_epi16(loadu_64!(
                         <&[u8; 8]>::try_from(&mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8])
@@ -10507,17 +10510,24 @@ fn w_mask_16bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
                         prev,
                     ));
                     let out8 = _mm_packus_epi16(out, out);
-                    storei64!(&mut mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8], out8);
+                    storei64!(
+                        &mut mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8],
+                        out8
+                    );
                 } else if SS_VER {
                     let out8 = _mm_packus_epi16(mn8, mn8);
-                    storei64!(&mut mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8], out8);
+                    storei64!(
+                        &mut mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8],
+                        out8
+                    );
                 } else {
-                    let out = _mm_srli_epi16::<1>(_mm_add_epi16(
-                        mn8,
-                        _mm_set1_epi16(1 - sign as i16),
-                    ));
+                    let out =
+                        _mm_srli_epi16::<1>(_mm_add_epi16(mn8, _mm_set1_epi16(1 - sign as i16)));
                     let out8 = _mm_packus_epi16(out, out);
-                    storei64!(&mut mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8], out8);
+                    storei64!(
+                        &mut mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8],
+                        out8
+                    );
                 }
             }
             x += 16;
@@ -10530,7 +10540,10 @@ fn w_mask_16bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
             let mv = _mm_min_epi16(
                 _mm_add_epi16(
                     _mm_set1_epi16(38),
-                    _mm_srl_epi16(_mm_add_epi16(diff, _mm256_castsi256_si128(mask_rnd_v)), mask_shv),
+                    _mm_srl_epi16(
+                        _mm_add_epi16(diff, _mm256_castsi256_si128(mask_rnd_v)),
+                        mask_shv,
+                    ),
                 ),
                 _mm_set1_epi16(64),
             );
@@ -10576,10 +10589,8 @@ fn w_mask_16bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
                     mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 4]
                         .copy_from_slice(&(_mm_cvtsi128_si32(out8) as u32).to_ne_bytes());
                 } else {
-                    let out = _mm_srli_epi16::<1>(_mm_add_epi16(
-                        mn,
-                        _mm_set1_epi16(1 - sign as i16),
-                    ));
+                    let out =
+                        _mm_srli_epi16::<1>(_mm_add_epi16(mn, _mm_set1_epi16(1 - sign as i16)));
                     let out8 = _mm_packus_epi16(out, out);
                     mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 4]
                         .copy_from_slice(&(_mm_cvtsi128_si32(out8) as u32).to_ne_bytes());
