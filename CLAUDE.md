@@ -26,8 +26,62 @@ Completed modules (AVX2 + NEON, 8bpc + 16bpc):
 
 ## Conformance
 
-784/803 dav1d test vectors pass at all bit depths and all CPU levels (scalar, SSE4, AVX2).
-19 failures are infrastructure (1 sframe, 6 SVC operating points, 12 vq_suite decode modes).
+803/803 dav1d test vectors pass at all bit depths and all CPU levels (scalar, SSE4, AVX2).
+(SVC operating points, sframe `--limit`, and vq_suite decode modes all pass
+once `decode_md5` learned `--oppoint`/`--alllayers`/`--decodeframetype`/`--limit`;
+the earlier 19 "failures" were harness flag-loss, not decoder bugs.)
+
+### After writing or touching any kernel — verify before commit
+
+SIMD kernels must be bit-exact vs scalar on the FULL input domain, not just
+the happy path. Bugs that escaped this gate in the past: wrapped `i16`
+subtract in compound kernels (warp_affine mids reach ±32767, far outside the
+prep range the tests covered) and a dropped `max_epi16` clamp that only
+fired on the AVX-512 tier.
+
+1. **Scalar-parity unit test** — add/extend a test in the module's test
+   block comparing the SIMD inner against a scalar oracle. Cover full-range
+   inputs (e.g. `i16::MIN/MAX` for tmp/mid buffers), odd widths, and the
+   largest block sizes — not just 4x4/8x8.
+2. **Cross-tier MD5 identity** — same vector must md5-match at every level:
+   ```bash
+   for l in scalar v2 v3 v4 native; do
+     ./target/release/examples/decode_md5 --level $l -q stream.obu "$(cut -d' ' -f1 < ref.md5)"
+   done
+   ```
+   Any tier divergence = a SIMD bug, not "floating point noise".
+3. **Token permutations** — `cargo nextest run --release --test decode_permutations`
+   (holds `token_test_lock` internally). Catches dispatchers that bypass the
+   token gate.
+4. **Argon spot check** — `bash scripts/argon_md5_check.sh <argon_root> \
+   ./target/release/examples/decode_md5 [max_streams]` per `ARGON_LEVEL=…`.
+   For a broad sweep without downloading the full suite:
+   `cargo nextest run --release --test argon_cover` decodes a
+   greedy-minimal 57-stream set (covers every testPoint in the official
+   coverage reports — `scripts/argon_cover_select.py` regenerates the
+   manifest) at every CPU level, grain + no-grain, pinned to the suite's
+   own sidecar MD5s. Streams lazy-fetch into `test-vectors/argon_subset/`
+   (range-requests from the release zip, or a local extract / mirror).
+5. **Owned generated corpus** — `cargo nextest run --release --test gen_cover`
+   decodes 28 committed streams (sub-second) at every CPU level × grain
+   passes, pinned to ASM-build MD5s. The streams are ours: zenav1-svt's
+   `gen_cover` example encodes a fixed matrix (8/10-bit, 420/444/mono,
+   tiles, superres, film grain, sb64/128, preset/qp extremes, intra +
+   flat low-delay P sequences). Regenerate with `scripts/gen_vectors.sh`
+   (`ZENAV1_SVT=/path/to/checkout`); commit streams + manifest together.
+   Unlike Argon this gate needs no fetch and is safe to run every commit.
+6. **Cross-arch compile** — `cargo check --target aarch64-unknown-linux-gnu`
+   and `--target wasm32-unknown-unknown` after touching shared kernels.
+
+`docs/PERF_SOURCE_PATTERNS.md` is the running ledger of which source-level
+shapes have measurably helped (bounds-check elimination, const-length
+copies, transposed intermediates, archmage tiering, dead-work early-outs)
+plus the measured dead ends — check it before writing a new kernel.
+
+The full Argon matrix (7 ISA legs × 6 shards: x86 scalar/v3/v4/native +
+aarch64 scalar/neon/native) runs monthly in CI via
+`.github/workflows/test-vectors.yml`; trigger manually with
+Actions → Test Vectors → `argon-only`.
 
 ## Benchmarks (2026-05-24 after SIMD row 1D transforms for dct8/16/32 + adst16)
 
@@ -168,6 +222,10 @@ just build-asm      # ASM build
 just test           # Run tests (cargo-nextest + doctests)
 just profile        # Benchmark all 3 modes (asm, checked, unchecked)
 just profile-quick  # Same but 100 iterations
+
+# Dev iteration: `--profile release-thin` gives release codegen with thin LTO —
+# ~13s rebuilds vs ~25s under fat LTO, decode speed parity (measured 429ms vs
+# 427ms on test22.obu, within noise). Shipped artifacts stay on release's fat LTO.
 ```
 
 **Tests run under `cargo-nextest`** (process-per-test). Use `cargo nextest run
@@ -564,16 +622,16 @@ bash scripts/download-all-test-vectors.sh
 
 This downloads:
 - **dav1d-test-data**: ~160,000+ files, 109MB
-- **Argon conformance suite**: ~2,763 files, 5.1GB
+- **Argon conformance suite**: ~3,586 streams, ~7GB (official v2.1.1 release)
 - **Fluster AV1 vectors**: ~312 IVF files, 17MB
-- **Total**: ~5.2GB
+- **Total**: ~7.5GB
 
 ### Test Vector Sources
 
 | Source | Location | Files | Size | Description |
 |--------|----------|-------|------|-------------|
 | **dav1d-test-data** | `test-vectors/dav1d-test-data/` | ~160k | 109MB | VideoLAN test suite (8/10/12-bit, film grain, HDR, argon, oss-fuzz) |
-| **Argon Suite** | `test-vectors/argon/argon/` | 2,763 | 5.1GB | Formal verification conformance suite (exercises every AV1 spec equation) |
+| **Argon Suite** | `test-vectors/argon/argon_coveragetool_*/` | 3,586 | ~7GB | Formal verification conformance suite (exercises every AV1 spec equation) |
 | **AV1-TEST-VECTORS** | `test-vectors/fluster/resources/test_vectors/av1/AV1-TEST-VECTORS/` | 240 | 7.5MB | Google Cloud Storage test vectors |
 | **Chromium 8-bit** | `test-vectors/fluster/resources/test_vectors/av1/CHROMIUM-8bit-AV1-TEST-VECTORS/` | 36 | 2.4MB | Chromium 8-bit test vectors |
 | **Chromium 10-bit** | `test-vectors/fluster/resources/test_vectors/av1/CHROMIUM-10bit-AV1-TEST-VECTORS/` | 36 | 2.0MB | Chromium 10-bit test vectors |
@@ -582,7 +640,7 @@ This downloads:
 
 **Primary Sources:**
 - dav1d: `https://code.videolan.org/videolan/dav1d-test-data.git`
-- Argon: `https://streams.videolan.org/argon/argon.tar.zst`
+- Argon: `https://aom-cwg-av1-argon-streams-public.s3.us-east-1.amazonaws.com/argon_coveragetool_av1_base_and_extended_profiles_v2.1.1.zip` (source repo: `gitlab.com/AOMediaCodec/argon-streams`; override with `ARGON_URL`, e.g. an R2 mirror)
 - AOM: `https://storage.googleapis.com/aom-test-data/`
 - Chromium: `https://storage.googleapis.com/chromiumos-test-assets-public/tast/cros/video/test_vectors/av1/`
 
@@ -601,8 +659,15 @@ just test-integration
 cd test-vectors/fluster
 ./fluster.py run -d rav1d-safe AV1-TEST-VECTORS
 
-# Run against Argon suite
-# TODO: Create argon test runner
+# Run against Argon suite (grain + no-grain MD5 sidecars, parallel)
+cargo build --release --example decode_md5 --no-default-features \
+    --features "bitdepth_8,bitdepth_16"
+bash scripts/argon_md5_check.sh \
+    test-vectors/argon/argon_coveragetool_av1_base_and_extended_profiles_v2.1 \
+    ./target/release/examples/decode_md5
+# Subset for a quick spot check: append a stream-count cap, e.g. `... 200`
+# Force an ISA tier: ARGON_LEVEL=v3 (scalar|v2|v3|v4|neon|native)
+# CI shard run:   ARGON_SHARD=0 ARGON_SHARDS=6
 ```
 
 ## TODO: CI & Parity Testing

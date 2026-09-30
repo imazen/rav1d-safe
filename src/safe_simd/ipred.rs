@@ -25,7 +25,8 @@ type ptrdiff_t = isize;
 use super::partial_simd;
 #[cfg(target_arch = "x86_64")]
 use crate::src::safe_simd::pixel_access::{
-    Flex, loadu_128, loadu_256, loadu_512, storeu_128, storeu_256, storeu_512,
+    Flex, loadi32, loadi64, loadu_64, loadu_128, loadu_256, loadu_512, storei64, storeu_128,
+    storeu_256, storeu_512,
 };
 
 use crate::include::common::bitdepth::DynPixel;
@@ -1122,80 +1123,107 @@ fn ipred_paeth_8bpc_inner(
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
     let topleft_val = topleft[tl_off] as i32;
-    let topleft_vec = _mm256_set1_epi32(topleft_val);
+    let topleft_vec = _mm256_set1_epi16(topleft_val as i16);
 
     for y in 0..height {
         let row_off = (dst_base as isize + y as isize * stride) as usize;
         let left_val = topleft[tl_off - y - 1] as i32;
-        let left_vec = _mm256_set1_epi32(left_val);
+        let left_vec = _mm256_set1_epi16(left_val as i16);
 
-        // Process 8 pixels at a time with AVX2
+        // All intermediate values fit i16: base in [-255, 510], diffs <= 510.
+        // cmpgt_epi16 masks are FFFF per lane, so blendv_epi8 selects whole
+        // i16 lanes; results are u8-range and packus clamps safely.
         let mut x = 0;
-        while x + 8 <= width {
-            // Load 8 top pixels and zero-extend to 32-bit
-            let top_bytes = partial_simd::mm_loadl_epi64::<[u8; 8]>(
-                (&topleft[tl_off + 1 + x..tl_off + 1 + x + 8])
-                    .try_into()
-                    .unwrap(),
-            );
-            let top_lo = _mm256_cvtepu8_epi32(top_bytes);
-
-            // base = left + top - topleft
-            let base = _mm256_sub_epi32(_mm256_add_epi32(left_vec, top_lo), topleft_vec);
-
-            // ldiff = |left - base|
-            let ldiff = _mm256_abs_epi32(_mm256_sub_epi32(left_vec, base));
-            // tdiff = |top - base|
-            let tdiff = _mm256_abs_epi32(_mm256_sub_epi32(top_lo, base));
-            // tldiff = |topleft - base|
-            let tldiff = _mm256_abs_epi32(_mm256_sub_epi32(topleft_vec, base));
-
-            // Comparison: ldiff <= tdiff
+        while x + 16 <= width {
+            let top = _mm256_cvtepu8_epi16(loadu_128!(
+                <&[u8; 16]>::try_from(&topleft[tl_off + 1 + x..tl_off + 1 + x + 16]).unwrap()
+            ));
+            let base = _mm256_sub_epi16(_mm256_add_epi16(left_vec, top), topleft_vec);
+            let ldiff = _mm256_abs_epi16(_mm256_sub_epi16(left_vec, base));
+            let tdiff = _mm256_abs_epi16(_mm256_sub_epi16(top, base));
+            let tldiff = _mm256_abs_epi16(_mm256_sub_epi16(topleft_vec, base));
             let ld_le_td = _mm256_or_si256(
-                _mm256_cmpgt_epi32(tdiff, ldiff),
-                _mm256_cmpeq_epi32(ldiff, tdiff),
+                _mm256_cmpgt_epi16(tdiff, ldiff),
+                _mm256_cmpeq_epi16(ldiff, tdiff),
             );
-            // Comparison: ldiff <= tldiff
             let ld_le_tld = _mm256_or_si256(
-                _mm256_cmpgt_epi32(tldiff, ldiff),
-                _mm256_cmpeq_epi32(ldiff, tldiff),
+                _mm256_cmpgt_epi16(tldiff, ldiff),
+                _mm256_cmpeq_epi16(ldiff, tldiff),
             );
-            // Comparison: tdiff <= tldiff
             let td_le_tld = _mm256_or_si256(
-                _mm256_cmpgt_epi32(tldiff, tdiff),
-                _mm256_cmpeq_epi32(tdiff, tldiff),
+                _mm256_cmpgt_epi16(tldiff, tdiff),
+                _mm256_cmpeq_epi16(tdiff, tldiff),
             );
-
-            // if ldiff <= tdiff && ldiff <= tldiff: left
-            // else if tdiff <= tldiff: top
-            // else: topleft
             let use_left = _mm256_and_si256(ld_le_td, ld_le_tld);
             let use_top = _mm256_andnot_si256(use_left, td_le_tld);
-
-            // Select: start with topleft, blend top if use_top, blend left if use_left
             let result = _mm256_blendv_epi8(
-                _mm256_blendv_epi8(topleft_vec, top_lo, use_top),
+                _mm256_blendv_epi8(topleft_vec, top, use_top),
                 left_vec,
                 use_left,
             );
-
-            // Pack 32-bit to 8-bit
-            let packed = _mm256_shuffle_epi8(
-                result,
-                _mm256_setr_epi8(
-                    0, 4, 8, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, 4, 8, 12, -1,
-                    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-                ),
+            // packus_epi16 interleaves the two 128-bit halves; undo with a
+            // qword permute — the 16 outputs land in the low xmm.
+            let packed =
+                _mm256_permute4x64_epi64::<0b11011000>(_mm256_packus_epi16(result, result));
+            storeu_128!(
+                &mut dst[row_off + x..row_off + x + 16],
+                [u8; 16],
+                _mm256_castsi256_si128(packed)
             );
-            let lo = _mm256_castsi256_si128(packed);
-            let hi = _mm256_extracti128_si256::<1>(packed);
-            let combined = _mm_unpacklo_epi32(lo, hi);
-            partial_simd::mm_storel_epi64::<[u8; 8]>(
-                (&mut dst[row_off + x..row_off + x + 8]).try_into().unwrap(),
-                combined,
+            x += 16;
+        }
+        while x + 8 <= width {
+            let top = _mm_cvtepu8_epi16(loadu_64!(
+                <&[u8; 8]>::try_from(&topleft[tl_off + 1 + x..tl_off + 1 + x + 8]).unwrap()
+            ));
+            let left8 = _mm256_castsi256_si128(left_vec);
+            let tl8 = _mm256_castsi256_si128(topleft_vec);
+            let base = _mm_sub_epi16(_mm_add_epi16(left8, top), tl8);
+            let ldiff = _mm_abs_epi16(_mm_sub_epi16(left8, base));
+            let tdiff = _mm_abs_epi16(_mm_sub_epi16(top, base));
+            let tldiff = _mm_abs_epi16(_mm_sub_epi16(tl8, base));
+            let ld_le_td =
+                _mm_or_si128(_mm_cmpgt_epi16(tdiff, ldiff), _mm_cmpeq_epi16(ldiff, tdiff));
+            let ld_le_tld = _mm_or_si128(
+                _mm_cmpgt_epi16(tldiff, ldiff),
+                _mm_cmpeq_epi16(ldiff, tldiff),
             );
-
+            let td_le_tld = _mm_or_si128(
+                _mm_cmpgt_epi16(tldiff, tdiff),
+                _mm_cmpeq_epi16(tdiff, tldiff),
+            );
+            let use_left = _mm_and_si128(ld_le_td, ld_le_tld);
+            let use_top = _mm_andnot_si128(use_left, td_le_tld);
+            let result = _mm_blendv_epi8(_mm_blendv_epi8(tl8, top, use_top), left8, use_left);
+            let packed = _mm_packus_epi16(result, result);
+            storei64!(&mut dst[row_off + x..row_off + x + 8], packed);
             x += 8;
+        }
+        if x + 4 <= width {
+            let top = _mm_cvtepu8_epi16(loadi32!(&topleft[tl_off + 1 + x..tl_off + 1 + x + 4]));
+            let left8 = _mm256_castsi256_si128(left_vec);
+            let tl8 = _mm256_castsi256_si128(topleft_vec);
+            let base = _mm_sub_epi16(_mm_add_epi16(left8, top), tl8);
+            let ldiff = _mm_abs_epi16(_mm_sub_epi16(left8, base));
+            let tdiff = _mm_abs_epi16(_mm_sub_epi16(top, base));
+            let tldiff = _mm_abs_epi16(_mm_sub_epi16(tl8, base));
+            let ld_le_td =
+                _mm_or_si128(_mm_cmpgt_epi16(tdiff, ldiff), _mm_cmpeq_epi16(ldiff, tdiff));
+            let ld_le_tld = _mm_or_si128(
+                _mm_cmpgt_epi16(tldiff, ldiff),
+                _mm_cmpeq_epi16(ldiff, tldiff),
+            );
+            let td_le_tld = _mm_or_si128(
+                _mm_cmpgt_epi16(tldiff, tdiff),
+                _mm_cmpeq_epi16(tdiff, tldiff),
+            );
+            let use_left = _mm_and_si128(ld_le_td, ld_le_tld);
+            let use_top = _mm_andnot_si128(use_left, td_le_tld);
+            let result = _mm_blendv_epi8(_mm_blendv_epi8(tl8, top, use_top), left8, use_left);
+            let packed = _mm_packus_epi16(result, result);
+            dst[row_off + x..row_off + x + 4]
+                .copy_from_slice(&(_mm_cvtsi128_si32(packed) as u32).to_ne_bytes());
+            x += 4;
         }
 
         // Scalar fallback for remaining pixels
@@ -1347,6 +1375,30 @@ fn ipred_smooth_8bpc_inner(
             x += 8;
         }
 
+        // 4-wide lane for w=4 blocks and remainders.
+        if x + 4 <= width {
+            let top_bytes = loadi32!(&topleft[tl_off + 1 + x..tl_off + 1 + x + 4]);
+            let top = _mm_cvtepu8_epi32(top_bytes);
+            let w_h_bytes = loadi32!(&weights_hor[x..x + 4]);
+            let w_h = _mm_cvtepu8_epi32(w_h_bytes);
+            let w_h_inv = _mm_sub_epi32(_mm_set1_epi32(256), w_h);
+            let vert = _mm_add_epi32(
+                _mm_mullo_epi32(_mm256_castsi256_si128(w_v_vec), top),
+                _mm_mullo_epi32(_mm256_castsi256_si128(w_v_inv), _mm_set1_epi32(bottom_val)),
+            );
+            let hor = _mm_add_epi32(
+                _mm_mullo_epi32(w_h, _mm_set1_epi32(left_val)),
+                _mm_mullo_epi32(w_h_inv, _mm_set1_epi32(right_val)),
+            );
+            let result =
+                _mm_srai_epi32::<9>(_mm_add_epi32(_mm_add_epi32(vert, hor), _mm_set1_epi32(256)));
+            let packed = _mm_packus_epi32(result, result);
+            let packed8 = _mm_packus_epi16(packed, packed);
+            dst[row_off + x..row_off + x + 4]
+                .copy_from_slice(&(_mm_cvtsi128_si32(packed8) as u32).to_ne_bytes());
+            x += 4;
+        }
+
         // Scalar fallback
         let row = &mut dst[row_off..][..width];
         while x < width {
@@ -1462,6 +1514,20 @@ fn ipred_smooth_v_8bpc_inner(
             x += 8;
         }
 
+        if x + 4 <= width {
+            let top_bytes = loadi32!(&topleft[tl_off + 1 + x..tl_off + 1 + x + 4]);
+            let top = _mm_cvtepu8_epi32(top_bytes);
+            let pred = _mm_add_epi32(
+                _mm_mullo_epi32(_mm256_castsi256_si128(w_v_vec), top),
+                _mm_mullo_epi32(_mm256_castsi256_si128(w_v_inv), _mm_set1_epi32(bottom_val)),
+            );
+            let result = _mm_srai_epi32::<8>(_mm_add_epi32(pred, _mm_set1_epi32(128)));
+            let p8 = _mm_packus_epi16(_mm_packus_epi32(result, result), _mm_setzero_si128());
+            dst[row_off + x..row_off + x + 4]
+                .copy_from_slice(&(_mm_cvtsi128_si32(p8) as u32).to_ne_bytes());
+            x += 4;
+        }
+
         // Scalar fallback
         let row = &mut dst[row_off..][..width];
         while x < width {
@@ -1571,6 +1637,21 @@ fn ipred_smooth_h_8bpc_inner(
             );
 
             x += 8;
+        }
+
+        if x + 4 <= width {
+            let w_h_bytes = loadi32!(&weights_hor[x..x + 4]);
+            let w_h = _mm_cvtepu8_epi32(w_h_bytes);
+            let w_h_inv = _mm_sub_epi32(_mm_set1_epi32(256), w_h);
+            let pred = _mm_add_epi32(
+                _mm_mullo_epi32(w_h, _mm_set1_epi32(left_val)),
+                _mm_mullo_epi32(w_h_inv, _mm_set1_epi32(right_val)),
+            );
+            let result = _mm_srai_epi32::<8>(_mm_add_epi32(pred, _mm_set1_epi32(128)));
+            let p8 = _mm_packus_epi16(_mm_packus_epi32(result, result), _mm_setzero_si128());
+            dst[row_off + x..row_off + x + 4]
+                .copy_from_slice(&(_mm_cvtsi128_si32(p8) as u32).to_ne_bytes());
+            x += 4;
         }
 
         // Scalar fallback
@@ -1696,27 +1777,36 @@ fn ipred_filter_8bpc_inner(
             };
 
             let p0 = tl_pixel;
-            let p = [p0, p1, p2, p3, p4, p5, p6];
 
-            // Process 4x2 = 8 output pixels using filter taps
+            // All 8 outputs are 7-tap dots on the same p vector. The taps
+            // table is pre-arranged for pmaddwd: xmm row k holds each
+            // output's tap pair in its i16 lanes, so one ymm madd per row
+            // produces all 8 outputs' partial sums (i32 lanes).
+            let p01 = _mm256_set1_epi32((p0 as u32 | ((p1 as u32) << 16)) as i32);
+            let p23 = _mm256_set1_epi32((p2 as u32 | ((p3 as u32) << 16)) as i32);
+            let p45 = _mm256_set1_epi32((p4 as u32 | ((p5 as u32) << 16)) as i32);
+            let p60 = _mm256_set1_epi32(p6);
             let flt = filter.as_slice();
-            let mut flt_offset = 0;
-
-            // Row 0 (4 pixels)
-            for xx in 0..4 {
-                let acc = filter_fn(&flt[flt_offset..], p);
-                let val = ((acc + 8) >> 4).clamp(0, 255) as u8;
-                dst[row0_off + x + xx] = val;
-                flt_offset += FLT_INCR;
-            }
-
-            // Row 1 (4 pixels)
-            for xx in 0..4 {
-                let acc = filter_fn(&flt[flt_offset..], p);
-                let val = ((acc + 8) >> 4).clamp(0, 255) as u8;
-                dst[row1_off + x + xx] = val;
-                flt_offset += FLT_INCR;
-            }
+            let t0 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[0..16]).unwrap()));
+            let t1 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[16..32]).unwrap()));
+            let t2 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[32..48]).unwrap()));
+            // Row 3 bytes 48+2o+1 are never written by gen_filters (stay 0),
+            // so the (f6, 0) pairs multiply cleanly.
+            let t3 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[48..64]).unwrap()));
+            let acc = _mm256_add_epi32(
+                _mm256_add_epi32(_mm256_madd_epi16(p01, t0), _mm256_madd_epi16(p23, t1)),
+                _mm256_add_epi32(_mm256_madd_epi16(p45, t2), _mm256_madd_epi16(p60, t3)),
+            );
+            let res = _mm256_srai_epi32::<4>(_mm256_add_epi32(acc, _mm256_set1_epi32(8)));
+            let res16 = _mm_packs_epi32(
+                _mm256_castsi256_si128(res),
+                _mm256_extracti128_si256::<1>(res),
+            );
+            let res8 = _mm_packus_epi16(res16, res16);
+            dst[row0_off + x..row0_off + x + 4]
+                .copy_from_slice(&(_mm_cvtsi128_si32(res8) as u32).to_ne_bytes());
+            dst[row1_off + x..row1_off + x + 4]
+                .copy_from_slice(&(_mm_extract_epi32::<1>(res8) as u32).to_ne_bytes());
 
             // Update topleft for next 4x2 block (8bpc)
             tl_pixel = p4;
@@ -1855,41 +1945,126 @@ fn ipred_z1_8bpc_inner(
         let frac = (xpos & 0x3e) as i16;
         let inv_frac = (64 - frac) as i16;
 
-        let frac_vec = _mm256_set1_epi16(frac);
-        let inv_frac_vec = _mm256_set1_epi16(inv_frac);
+        // pmaddubsw coeff pair: (l0*inv_frac + l1*frac). Both <= 62 so they
+        // fit the i8 operand; products max at 255*62*2 < 32767.
+        let frac_pair = _mm256_set1_epi16(((frac as i32) << 8 | inv_frac as i32) as i16);
 
         let row_off = (dst_base as isize + y as isize * stride) as usize;
         let base0 = (xpos >> 6) as usize;
 
         let mut x = 0usize;
 
-        // SIMD path - 16 pixels at a time (non-upsampled consecutive access)
+        // SIMD path — 32 pixels at a time (non-upsampled consecutive access).
+        // unpacklo/hi_epi8 interleave the two overlapping windows into
+        // (l0,l1) byte pairs in-lane; pmaddubsw blends a pair per i16 lane,
+        // and packus_epi16's in-lane narrowing preserves pixel order
+        // (dav1d asm's pshufb+pmaddubsw structure).
         if base_inc == 1 {
+            while x + 32 <= width && base0 + x + 32 <= max_base_x {
+                let base = base0 + x;
+
+                let t0 = loadu_256!((&top[base..base + 32]), [u8; 32]);
+                let t1 = loadu_256!((&top[base + 1..base + 33]), [u8; 32]);
+
+                let lo = _mm256_unpacklo_epi8(t0, t1);
+                let hi = _mm256_unpackhi_epi8(t0, t1);
+                let r_lo = _mm256_srai_epi16::<6>(_mm256_add_epi16(
+                    _mm256_maddubs_epi16(lo, frac_pair),
+                    rounding,
+                ));
+                let r_hi = _mm256_srai_epi16::<6>(_mm256_add_epi16(
+                    _mm256_maddubs_epi16(hi, frac_pair),
+                    rounding,
+                ));
+                let packed = _mm256_packus_epi16(r_lo, r_hi);
+                storeu_256!((&mut dst[row_off + x..row_off + x + 32]), [u8; 32], packed);
+
+                x += 32;
+            }
             while x + 16 <= width && base0 + x + 16 < max_base_x {
                 let base = base0 + x;
 
                 let t0 = loadu_128!((&top[base..base + 16]), [u8; 16]);
                 let t1 = loadu_128!((&top[base + 1..base + 17]), [u8; 16]);
 
-                let t0_w = _mm256_cvtepu8_epi16(t0);
-                let t1_w = _mm256_cvtepu8_epi16(t1);
-
-                let prod0 = _mm256_mullo_epi16(t0_w, inv_frac_vec);
-                let prod1 = _mm256_mullo_epi16(t1_w, frac_vec);
-                let sum = _mm256_add_epi16(_mm256_add_epi16(prod0, prod1), rounding);
-                let result = _mm256_srai_epi16::<6>(sum);
-
-                let packed = _mm256_packus_epi16(result, result);
-                let lo = _mm256_castsi256_si128(packed);
-                let hi = _mm256_extracti128_si256::<1>(packed);
-                let combined = _mm_unpacklo_epi64(lo, hi);
-                storeu_128!(
-                    (&mut dst[row_off + x..row_off + x + 16]),
-                    [u8; 16],
-                    combined
-                );
+                let lo = _mm_unpacklo_epi8(t0, t1);
+                let hi = _mm_unpackhi_epi8(t0, t1);
+                let frac_pair128 = _mm256_castsi256_si128(frac_pair);
+                let rounding128 = _mm256_castsi256_si128(rounding);
+                let r_lo = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, frac_pair128),
+                    rounding128,
+                ));
+                let r_hi = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(hi, frac_pair128),
+                    rounding128,
+                ));
+                let packed = _mm_packus_epi16(r_lo, r_hi);
+                storeu_128!((&mut dst[row_off + x..row_off + x + 16]), [u8; 16], packed);
 
                 x += 16;
+            }
+            while x + 8 <= width && base0 + x + 8 < max_base_x {
+                let base = base0 + x;
+
+                let t0 = loadi64!(&top[base..base + 8]);
+                let t1 = loadi64!(&top[base + 1..base + 9]);
+
+                let lo = _mm_unpacklo_epi8(t0, t1);
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, _mm256_castsi256_si128(frac_pair)),
+                    _mm256_castsi256_si128(rounding),
+                ));
+                let packed = _mm_packus_epi16(r, r);
+                storei64!(&mut dst[row_off + x..row_off + x + 8], packed);
+
+                x += 8;
+            }
+            while x + 4 <= width && base0 + x + 5 <= max_base_x {
+                let base = base0 + x;
+
+                let t0 = loadi32!(&top[base..base + 4]);
+                let t1 = loadi32!(&top[base + 1..base + 5]);
+                let lo = _mm_unpacklo_epi8(t0, t1);
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, _mm256_castsi256_si128(frac_pair)),
+                    _mm256_castsi256_si128(rounding),
+                ));
+                let packed = _mm_packus_epi16(r, r);
+                dst[row_off + x..row_off + x + 4]
+                    .copy_from_slice(&(_mm_cvtsi128_si32(packed) as u32).to_ne_bytes());
+
+                x += 4;
+            }
+        } else {
+            // Upsampled (base_inc == 2): each pixel's (t0,t1) pair is a
+            // contiguous u16 — a plain load builds all maddubs pairs at once.
+            let frac_pair128 = _mm256_castsi256_si128(frac_pair);
+            let rnd128 = _mm256_castsi256_si128(rounding);
+            while x + 8 <= width && base0 + 2 * x + 16 <= max_base_x + 1 {
+                let base = base0 + 2 * x;
+                let dat = loadu_128!((&top[base..base + 16]), [u8; 16]);
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(dat, frac_pair128),
+                    rnd128,
+                ));
+                storei64!(
+                    &mut dst[row_off + x..row_off + x + 8],
+                    _mm_packus_epi16(r, r)
+                );
+                x += 8;
+            }
+            while x + 4 <= width && base0 + 2 * x + 8 <= max_base_x + 1 {
+                let base = base0 + 2 * x;
+                let dat = loadu_64!(<&[u8; 8]>::try_from(&top[base..base + 8]).unwrap());
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(dat, frac_pair128),
+                    rnd128,
+                ));
+                let packed = _mm_packus_epi16(r, r);
+                dst[row_off + x..row_off + x + 4]
+                    .copy_from_slice(&(_mm_cvtsi128_si32(packed) as u32).to_ne_bytes());
+                x += 4;
             }
         }
 
@@ -1902,10 +2077,7 @@ fn ipred_z1_8bpc_inner(
                 let v = t0 * inv_frac as i32 + t1 * frac as i32;
                 dst[row_off + x] = ((v + 32) >> 6) as u8;
             } else {
-                let fill_val = top[max_base_x];
-                for xx in x..width {
-                    dst[row_off + xx] = fill_val;
-                }
+                dst[row_off + x..row_off + width].fill(top[max_base_x]);
                 break;
             }
             x += 1;
@@ -2051,18 +2223,21 @@ fn ipred_z1_8bpc_v4x_inner(
     let max_idx8 = _mm512_set1_epi8((max_base_x.min(127)) as i8);
     let rounding = _mm512_set1_epi16(32);
 
-    // Per-lane offset 0..63 for the 64-lane gather.
-    let lane_off: [u8; 64] = core::array::from_fn(|i| i as u8);
-    let lane_off_v = loadu_512!((&lane_off), [u8; 64]);
-    let one8 = _mm512_set1_epi8(1);
+    // Pair-gather pattern: bytes 2p/2p+1 of the index vector select edge
+    // samples base+p and base+p+1, so ONE vpermi2b yields the (l0,l1) byte
+    // pairs pmaddubsw blends directly — halves gathers and drops the u8->i16
+    // widen + mullo pair (dav1d asm's pshufb+pmaddubsw structure).
+    let pair_pat: [u8; 64] = core::array::from_fn(|i| (i / 2 + i % 2) as u8);
+    let pair_pat_v = loadu_512!((&pair_pat), [u8; 64]);
 
     for y in 0..height_i {
         let xpos = (y + 1) * dx;
         let frac = (xpos & 0x3e) as i16;
         let inv_frac = (64 - frac) as i16;
 
-        let frac_vec = _mm512_set1_epi16(frac);
-        let inv_frac_vec = _mm512_set1_epi16(inv_frac);
+        // pmaddubsw coeff pair: low byte scales l0 by inv_frac, high byte
+        // scales l1 by frac. Both are <= 62, so they fit in i8.
+        let frac_pair = _mm512_set1_epi16(((frac as i32) << 8 | inv_frac as i32) as i16);
 
         let row_off = (dst_base as isize + y as isize * stride) as usize;
         let base0 = (xpos >> 6) as usize;
@@ -2071,22 +2246,20 @@ fn ipred_z1_8bpc_v4x_inner(
             let base0_v = _mm512_set1_epi8(base0.min(127) as i8);
             let mut x = 0usize;
             while x < width {
-                // idx0[lane] = base0 + x + lane ; idx1 = idx0 + 1, both clamped.
+                // idx_pair[2p] = clamp(base0+x+p), idx_pair[2p+1] = clamp(+1)
+                // — the same min-clamped values the two-gather path produced.
                 let xbase = _mm512_set1_epi8(x.min(127) as i8);
-                let idx0 = _mm512_adds_epu8(_mm512_adds_epu8(base0_v, xbase), lane_off_v);
-                let idx0 = _mm512_min_epu8(idx0, max_idx8);
-                let idx1 = _mm512_min_epu8(_mm512_adds_epu8(idx0, one8), max_idx8);
+                let idxp = _mm512_min_epu8(
+                    _mm512_adds_epu8(_mm512_adds_epu8(base0_v, xbase), pair_pat_v),
+                    max_idx8,
+                );
 
-                let t0 = _mm512_permutex2var_epi8(edge_lo, idx0, edge_hi);
-                let t1 = _mm512_permutex2var_epi8(edge_lo, idx1, edge_hi);
+                let pairs = _mm512_permutex2var_epi8(edge_lo, idxp, edge_hi);
 
-                // Low 32 lanes -> i16 blend (the 32 pixels for this x window).
-                let t0_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(t0));
-                let t1_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(t1));
-                let p0 = _mm512_mullo_epi16(t0_lo, inv_frac_vec);
-                let p1 = _mm512_mullo_epi16(t1_lo, frac_vec);
-                let sblend = _mm512_add_epi16(_mm512_add_epi16(p0, p1), rounding);
-                let r = _mm512_srai_epi16::<6>(sblend);
+                // maddubs: i16 lane p = l0*inv_frac + l1*frac. Max 255*62*2 =
+                // 31620 < 32767 — no saturation.
+                let sum = _mm512_add_epi16(_mm512_maddubs_epi16(pairs, frac_pair), rounding);
+                let r = _mm512_srai_epi16::<6>(sum);
                 // Saturating unsigned narrow 32xu16 -> 32xu8, lane-order preserving.
                 let out32 = _mm512_cvtusepi16_epi8(r);
 
@@ -2162,7 +2335,7 @@ fn get_filter_strength_simple(wh: i32, angle: i32, is_sm: bool) -> i32 {
 /// Unlike Z1 (top only) and Z3 (left only), Z2 blends between edges:
 /// - When base_x >= 0: interpolate from top edge
 /// - When base_x < 0: interpolate from left edge
-#[inline]
+#[archmage::rite(v3)]
 fn filter_edge_8bpc(
     out: &mut [u8],
     sz: i32,
@@ -2175,41 +2348,210 @@ fn filter_edge_8bpc(
     strength: i32,
 ) {
     static KERNEL: [[u8; 5]; 3] = [[0, 4, 8, 4, 0], [0, 5, 6, 5, 0], [2, 4, 4, 4, 2]];
-    let mut i = 0;
-    while i < std::cmp::min(sz, lim_from) {
-        out[i as usize] = inp[in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize)];
-        i += 1;
-    }
-    while i < std::cmp::min(lim_to, sz) {
+    let kernel = KERNEL[(strength - 1) as usize];
+    let copy_px = |i: i32| inp[in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize)];
+    let filt_px = |i: i32| {
         let mut s = 0i32;
         for j in 0..5i32 {
             s += inp[in_off.wrapping_add_signed((i - 2 + j).clamp(from, to - 1) as isize)] as i32
-                * KERNEL[(strength - 1) as usize][j as usize] as i32;
+                * kernel[j as usize] as i32;
         }
-        out[i as usize] = ((s + 8) >> 4) as u8;
+        ((s + 8) >> 4) as u8
+    };
+    let mut i = 0;
+    while i < std::cmp::min(sz, lim_from) {
+        out[i as usize] = copy_px(i);
+        i += 1;
+    }
+    let filt_end = std::cmp::min(lim_to, sz);
+    // Taps span [i-2, i+2] clamped to [from, to-1]; the clamp can only fire
+    // within two pixels of either bound, so the interior run is a plain
+    // unclamped 5-tap stencil.
+    let mid_lo = i.max(from + 2);
+    let mid_hi = filt_end.min(to - 2);
+    while i < filt_end.min(mid_lo) {
+        out[i as usize] = filt_px(i);
+        i += 1;
+    }
+    if i < mid_hi {
+        // Unclamped run: contiguous reads, fixed kernels.
+        let win_base = in_off.wrapping_add_signed((i - 2) as isize);
+        let win = &inp[win_base..in_off.wrapping_add_signed((mid_hi + 2) as isize)];
+        // win[j] == inp[in_off + i_start - 2 + j]; tap i-2+k is win[i - i_start + k].
+        let win_off = i;
+        #[cfg(target_arch = "x86_64")]
+        {
+            while i + 16 <= mid_hi {
+                let c = (i - win_off) as usize;
+                let m = |k: usize| {
+                    _mm256_cvtepu8_epi16(loadu_128!((&win[c + k..c + k + 16]), [u8; 16]))
+                };
+                let s = _mm256_add_epi16(
+                    _mm256_add_epi16(
+                        _mm256_mullo_epi16(m(0), _mm256_set1_epi16(kernel[0] as i16)),
+                        _mm256_mullo_epi16(m(1), _mm256_set1_epi16(kernel[1] as i16)),
+                    ),
+                    _mm256_add_epi16(
+                        _mm256_add_epi16(
+                            _mm256_mullo_epi16(m(2), _mm256_set1_epi16(kernel[2] as i16)),
+                            _mm256_mullo_epi16(m(3), _mm256_set1_epi16(kernel[3] as i16)),
+                        ),
+                        _mm256_mullo_epi16(m(4), _mm256_set1_epi16(kernel[4] as i16)),
+                    ),
+                );
+                let r = _mm256_srai_epi16::<4>(_mm256_add_epi16(s, _mm256_set1_epi16(8)));
+                let r = _mm256_packus_epi16(r, r);
+                storeu_128!(
+                    (&mut out[i as usize..i as usize + 16]),
+                    [u8; 16],
+                    _mm256_castsi256_si128(_mm256_permute4x64_epi64::<0b11011000>(r))
+                );
+                i += 16;
+            }
+            while i + 8 <= mid_hi {
+                let c = (i - win_off) as usize;
+                let m = |k: usize| {
+                    _mm_cvtepu8_epi16(loadu_64!(
+                        <&[u8; 8]>::try_from(&win[c + k..c + k + 8]).unwrap()
+                    ))
+                };
+                let s = _mm_add_epi16(
+                    _mm_add_epi16(
+                        _mm_mullo_epi16(m(0), _mm_set1_epi16(kernel[0] as i16)),
+                        _mm_mullo_epi16(m(1), _mm_set1_epi16(kernel[1] as i16)),
+                    ),
+                    _mm_add_epi16(
+                        _mm_add_epi16(
+                            _mm_mullo_epi16(m(2), _mm_set1_epi16(kernel[2] as i16)),
+                            _mm_mullo_epi16(m(3), _mm_set1_epi16(kernel[3] as i16)),
+                        ),
+                        _mm_mullo_epi16(m(4), _mm_set1_epi16(kernel[4] as i16)),
+                    ),
+                );
+                let r = _mm_srai_epi16::<4>(_mm_add_epi16(s, _mm_set1_epi16(8)));
+                let r = _mm_packus_epi16(r, r);
+                storei64!(&mut out[i as usize..i as usize + 8], r);
+                i += 8;
+            }
+        }
+        while i < mid_hi {
+            let c = (i - win_off) as usize;
+            let p = |k: usize| win[c + k] as i32;
+            let s = p(0) * kernel[0] as i32
+                + p(1) * kernel[1] as i32
+                + p(2) * kernel[2] as i32
+                + p(3) * kernel[3] as i32
+                + p(4) * kernel[4] as i32;
+            out[i as usize] = ((s + 8) >> 4) as u8;
+            i += 1;
+        }
+    }
+    while i < filt_end {
+        out[i as usize] = filt_px(i);
         i += 1;
     }
     while i < sz {
-        out[i as usize] = inp[in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize)];
+        out[i as usize] = copy_px(i);
         i += 1;
     }
 }
 
 /// Upsample edge pixels for Z2 prediction (8bpc version of upsample_edge from ipred.rs).
-#[inline]
+#[archmage::rite(v3)]
 fn upsample_edge_8bpc(out: &mut [u8], hsz: i32, inp: &[u8], in_off: usize, from: i32, to: i32) {
     let kernel: [i8; 4] = [-1, 9, 9, -1];
-    for i in 0..hsz - 1 {
-        out[(i * 2) as usize] = inp[in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize)];
+    let copy_px = |i: i32| inp[in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize)];
+    let filt_px = |i: i32| {
         let mut s = 0i32;
         for j in 0..4i32 {
             s += inp[in_off.wrapping_add_signed((i + j - 1).clamp(from, to - 1) as isize)] as i32
                 * kernel[j as usize] as i32;
         }
-        out[(i * 2 + 1) as usize] = ((s + 8) >> 4).clamp(0, 255) as u8;
+        ((s + 8) >> 4).clamp(0, 255) as u8
+    };
+    // Taps span [i-1, i+2] clamped to [from, to-1]: unclamped interior is
+    // from+1 <= i <= to-3.
+    let mid_lo = 0i32.max(from + 1);
+    let mid_hi = (hsz - 1).min(to - 2);
+    let mut i = 0i32;
+    while i < mid_lo.min(hsz - 1) {
+        out[(i * 2) as usize] = copy_px(i);
+        out[(i * 2 + 1) as usize] = filt_px(i);
+        i += 1;
+    }
+    if i < mid_hi {
+        let win_base = in_off.wrapping_add_signed((i - 1) as isize);
+        let win = &inp[win_base..in_off.wrapping_add_signed((mid_hi + 2) as isize)];
+        // win[j] == inp[in_off + i_start - 1 + j]; tap i-1+k is win[i - i_start + k].
+        let win_off = i;
+        #[cfg(target_arch = "x86_64")]
+        {
+            while i + 8 <= mid_hi && (i - win_off) as usize + 19 <= win.len() {
+                let c = (i - win_off) as usize;
+                let a = _mm_cvtepu8_epi16(loadu_128!((&win[c..c + 16]), [u8; 16]));
+                let b = _mm_cvtepu8_epi16(loadu_128!((&win[c + 1..c + 17]), [u8; 16]));
+                let d = _mm_cvtepu8_epi16(loadu_128!((&win[c + 2..c + 18]), [u8; 16]));
+                let e = _mm_cvtepu8_epi16(loadu_128!((&win[c + 3..c + 19]), [u8; 16]));
+                let bd = _mm_add_epi16(b, d);
+                let s = _mm_sub_epi16(
+                    _mm_add_epi16(_mm_slli_epi16::<3>(bd), bd),
+                    _mm_add_epi16(a, e),
+                );
+                let f =
+                    _mm_packus_epi16(_mm_srai_epi16::<4>(_mm_add_epi16(s, _mm_set1_epi16(8))), s);
+                // src pixel copies interleave with filtered pixels.
+                let src = _mm_packus_epi16(b, b);
+                let inter = _mm_unpacklo_epi8(src, f);
+                storeu_128!(
+                    (&mut out[(i * 2) as usize..(i * 2) as usize + 16]),
+                    [u8; 16],
+                    inter
+                );
+                i += 8;
+            }
+            while i + 4 <= mid_hi && (i - win_off) as usize + 11 <= win.len() {
+                let c = (i - win_off) as usize;
+                let l = |k: usize| {
+                    _mm_cvtepu8_epi16(loadu_64!(
+                        <&[u8; 8]>::try_from(&win[c + k..c + k + 8]).unwrap()
+                    ))
+                };
+                let a = l(0);
+                let b = l(1);
+                let d = l(2);
+                let e = l(3);
+                let bd = _mm_add_epi16(b, d);
+                let s = _mm_sub_epi16(
+                    _mm_add_epi16(_mm_slli_epi16::<3>(bd), bd),
+                    _mm_add_epi16(a, e),
+                );
+                let f =
+                    _mm_packus_epi16(_mm_srai_epi16::<4>(_mm_add_epi16(s, _mm_set1_epi16(8))), s);
+                let src = _mm_packus_epi16(b, b);
+                let inter = _mm_unpacklo_epi8(src, f);
+                storei64!(&mut out[(i * 2) as usize..(i * 2) as usize + 8], inter);
+                i += 4;
+            }
+        }
+        while i < mid_hi {
+            let c = (i - win_off) as usize;
+            let p = |k: usize| win[c + k] as i32;
+            let s = p(0) * kernel[0] as i32
+                + p(1) * kernel[1] as i32
+                + p(2) * kernel[2] as i32
+                + p(3) * kernel[3] as i32;
+            out[(i * 2) as usize] = win[c + 1];
+            out[(i * 2 + 1) as usize] = ((s + 8) >> 4).clamp(0, 255) as u8;
+            i += 1;
+        }
+    }
+    while i < hsz - 1 {
+        out[(i * 2) as usize] = copy_px(i);
+        out[(i * 2 + 1) as usize] = filt_px(i);
+        i += 1;
     }
     let i = hsz - 1;
-    out[(i * 2) as usize] = inp[in_off.wrapping_add_signed(i.clamp(from, to - 1) as isize)];
+    out[(i * 2) as usize] = copy_px(i);
 }
 
 /// Z2 intra prediction SIMD inner for 8bpc.
@@ -2348,8 +2690,72 @@ fn ipred_z2_8bpc_inner(
             needed.div_ceil(base_inc_x).min(width)
         };
 
-        // First: process pixels using left edge (x < left_count)
+        // First: process pixels using left edge (x < left_count).
+        // Per-pixel y positions in SIMD; edge taps are (l1,l0) byte pairs
+        // gathered as u16 loads, blended by (frac,inv) via pmaddubsw.
+        let ysh = 6 + upsample_left as i32;
+        let mut batch8 = |x: usize| {
+            let vx = _mm256_add_epi32(
+                _mm256_setr_epi32(1, 2, 3, 4, 5, 6, 7, 8),
+                _mm256_set1_epi32(x as i32),
+            );
+            let ypos = _mm256_sub_epi32(
+                _mm256_set1_epi32(y << ysh),
+                _mm256_mullo_epi32(vx, _mm256_set1_epi32(dy)),
+            );
+            let mut by = [0i32; 8];
+            storeu_256!(&mut by, _mm256_srai_epi32::<6>(ypos));
+            let mut pairs = [0u16; 8];
+            for (k, by_k) in by.iter().enumerate() {
+                let i1 = left.wrapping_add_signed(-(by_k + 1) as isize);
+                pairs[k] = u16::from_le_bytes(edge[i1..i1 + 2].try_into().unwrap());
+            }
+            let frac = _mm256_and_si256(ypos, _mm256_set1_epi32(0x3e));
+            let frac16 = _mm_packs_epi32(
+                _mm256_castsi256_si128(frac),
+                _mm256_extracti128_si256::<1>(frac),
+            );
+            let frac8 = _mm_packus_epi16(frac16, frac16);
+            let inv8 = _mm_packus_epi16(
+                _mm_sub_epi16(_mm_set1_epi16(64), frac16),
+                _mm_sub_epi16(_mm_set1_epi16(64), frac16),
+            );
+            let coef = _mm_unpacklo_epi8(frac8, inv8);
+            let dat = loadu_128!(&pairs);
+            let v = _mm_srai_epi16::<6>(_mm_add_epi16(
+                _mm_maddubs_epi16(dat, coef),
+                _mm_set1_epi16(32),
+            ));
+            storei64!(
+                (&mut dst[row_off + x..row_off + x + 8]),
+                _mm_packus_epi16(v, v)
+            );
+        };
         let mut x = 0usize;
+        while x + 8 <= left_count {
+            batch8(x);
+            x += 8;
+        }
+        if x < left_count {
+            if left_count >= 8 {
+                // Tail: a batch ending exactly at left_count recomputes a few
+                // pixels already written — same formula, identical values.
+                batch8(left_count - 8);
+                x = left_count;
+            } else if left_count >= 4 && width >= 8 && {
+                // A batch at x = 0 covers every left pixel; lanes >= lc are
+                // garbage that the top pass overwrites at x >= lc. i1 is
+                // non-decreasing in x, so bounds-check both endpoints.
+                let yp0 = (y << ysh) - dy;
+                let yp7 = (y << ysh) - dy * 8;
+                let i1_0 = left.wrapping_add_signed(-(((yp0 >> 6) + 1) as isize));
+                let i1_7 = left.wrapping_add_signed(-(((yp7 >> 6) + 1) as isize));
+                i1_0 < edge.len() - 1 && i1_7 < edge.len() - 1
+            } {
+                batch8(0);
+                x = left_count;
+            }
+        }
         while x < left_count {
             let ypos = (y << (6 + upsample_left as i32)) - dy * (x as i32 + 1);
             let base_y = ypos >> 6;
@@ -2367,6 +2773,34 @@ fn ipred_z2_8bpc_inner(
 
         // Then: process pixels using top edge (x >= left_count, base_x >= 0)
         if base_inc_x == 1 {
+            let frac_pair = _mm256_set1_epi16(((frac_x as i32) << 8 | inv_frac_x as i32) as i16);
+            while x + 32 <= width {
+                let base_x = (base_x0 + x as i32) as usize;
+                let idx = edge_tl + base_x;
+                if idx + 33 > edge.len() {
+                    break;
+                }
+
+                let t0 = loadu_256!((&edge[idx..idx + 32]), [u8; 32]);
+                let t1 = loadu_256!((&edge[idx + 1..idx + 33]), [u8; 32]);
+
+                // In-lane byte interleave -> (l0,l1) pairs; pmaddubsw blends
+                // one pixel per i16 lane; packus preserves pixel order.
+                let lo = _mm256_unpacklo_epi8(t0, t1);
+                let hi = _mm256_unpackhi_epi8(t0, t1);
+                let r_lo = _mm256_srai_epi16::<6>(_mm256_add_epi16(
+                    _mm256_maddubs_epi16(lo, frac_pair),
+                    rounding,
+                ));
+                let r_hi = _mm256_srai_epi16::<6>(_mm256_add_epi16(
+                    _mm256_maddubs_epi16(hi, frac_pair),
+                    rounding,
+                ));
+                let packed = _mm256_packus_epi16(r_lo, r_hi);
+                storeu_256!((&mut dst[row_off + x..row_off + x + 32]), [u8; 32], packed);
+
+                x += 32;
+            }
             while x + 16 <= width {
                 let base_x = (base_x0 + x as i32) as usize;
                 let idx = edge_tl + base_x;
@@ -2377,28 +2811,93 @@ fn ipred_z2_8bpc_inner(
                 let t0 = loadu_128!((&edge[idx..idx + 16]), [u8; 16]);
                 let t1 = loadu_128!((&edge[idx + 1..idx + 17]), [u8; 16]);
 
-                let t0_w = _mm256_cvtepu8_epi16(t0);
-                let t1_w = _mm256_cvtepu8_epi16(t1);
-
-                let frac_vec = _mm256_set1_epi16(frac_x);
-                let inv_frac_vec = _mm256_set1_epi16(inv_frac_x);
-
-                let prod0 = _mm256_mullo_epi16(t0_w, inv_frac_vec);
-                let prod1 = _mm256_mullo_epi16(t1_w, frac_vec);
-                let sum = _mm256_add_epi16(_mm256_add_epi16(prod0, prod1), rounding);
-                let result = _mm256_srai_epi16::<6>(sum);
-
-                let packed = _mm256_packus_epi16(result, result);
-                let lo = _mm256_castsi256_si128(packed);
-                let hi = _mm256_extracti128_si256::<1>(packed);
-                let combined = _mm_unpacklo_epi64(lo, hi);
-                storeu_128!(
-                    (&mut dst[row_off + x..row_off + x + 16]),
-                    [u8; 16],
-                    combined
-                );
+                let lo = _mm_unpacklo_epi8(t0, t1);
+                let hi = _mm_unpackhi_epi8(t0, t1);
+                let frac_pair128 = _mm256_castsi256_si128(frac_pair);
+                let rounding128 = _mm256_castsi256_si128(rounding);
+                let r_lo = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, frac_pair128),
+                    rounding128,
+                ));
+                let r_hi = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(hi, frac_pair128),
+                    rounding128,
+                ));
+                let packed = _mm_packus_epi16(r_lo, r_hi);
+                storeu_128!((&mut dst[row_off + x..row_off + x + 16]), [u8; 16], packed);
 
                 x += 16;
+            }
+            while x + 8 <= width {
+                let base_x = (base_x0 + x as i32) as usize;
+                let idx = edge_tl + base_x;
+                if idx + 9 > edge.len() {
+                    break;
+                }
+
+                let t0 = loadi64!(&edge[idx..idx + 8]);
+                let t1 = loadi64!(&edge[idx + 1..idx + 9]);
+
+                let lo = _mm_unpacklo_epi8(t0, t1);
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, _mm256_castsi256_si128(frac_pair)),
+                    _mm256_castsi256_si128(rounding),
+                ));
+                let packed = _mm_packus_epi16(r, r);
+                storei64!(&mut dst[row_off + x..row_off + x + 8], packed);
+
+                x += 8;
+            }
+            while x + 4 <= width {
+                let base_x = (base_x0 + x as i32) as usize;
+                let idx = edge_tl + base_x;
+                if idx + 5 > edge.len() {
+                    break;
+                }
+                let t0 = loadi32!(&edge[idx..idx + 4]);
+                let t1 = loadi32!(&edge[idx + 1..idx + 5]);
+                let lo = _mm_unpacklo_epi8(t0, t1);
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, _mm256_castsi256_si128(frac_pair)),
+                    _mm256_castsi256_si128(rounding),
+                ));
+                let packed = _mm_packus_epi16(r, r);
+                dst[row_off + x..row_off + x + 4]
+                    .copy_from_slice(&(_mm_cvtsi128_si32(packed) as u32).to_ne_bytes());
+                x += 4;
+            }
+        } else {
+            // Upsampled above (base_inc_x == 2): each pixel's (t0,t1) tap pair
+            // sits at edge[idx + 2k] — already the contiguous u16 layout
+            // maddubs consumes, so a plain load builds all pairs at once.
+            let frac_pair = _mm_set1_epi16(((frac_x as i32) << 8 | inv_frac_x as i32) as i16);
+            let rnd = _mm_set1_epi16(32);
+            while x + 8 <= width {
+                let base_x = (base_x0 + (base_inc_x * x) as i32) as usize;
+                let idx = edge_tl + base_x;
+                if idx + 16 > edge.len() {
+                    break;
+                }
+                let dat = loadu_128!(&edge[idx..idx + 16], [u8; 16]);
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(_mm_maddubs_epi16(dat, frac_pair), rnd));
+                storei64!(
+                    &mut dst[row_off + x..row_off + x + 8],
+                    _mm_packus_epi16(r, r)
+                );
+                x += 8;
+            }
+            while x + 4 <= width {
+                let base_x = (base_x0 + (base_inc_x * x) as i32) as usize;
+                let idx = edge_tl + base_x;
+                if idx + 8 > edge.len() {
+                    break;
+                }
+                let dat = loadu_64!(<&[u8; 8]>::try_from(&edge[idx..idx + 8]).unwrap());
+                let r = _mm_srai_epi16::<6>(_mm_add_epi16(_mm_maddubs_epi16(dat, frac_pair), rnd));
+                let packed = _mm_packus_epi16(r, r);
+                dst[row_off + x..row_off + x + 4]
+                    .copy_from_slice(&(_mm_cvtsi128_si32(packed) as u32).to_ne_bytes());
+                x += 4;
             }
         }
 
@@ -2552,9 +3051,10 @@ fn ipred_z2_8bpc_v4x_inner(
     }
     let top_lo = loadu_512!((&tbuf[0..64]), [u8; 64]);
     let top_hi = loadu_512!((&tbuf[64..128]), [u8; 64]);
-    let lane_off: [u8; 64] = core::array::from_fn(|i| i as u8);
-    let lane_off_v = loadu_512!((&lane_off), [u8; 64]);
-    let one8 = _mm512_set1_epi8(1);
+    // Pair-gather pattern: bytes 2p/2p+1 select edge samples base+p and
+    // base+p+1 so ONE vpermi2b yields (l0,l1) byte pairs for pmaddubsw.
+    let pair_pat: [u8; 64] = core::array::from_fn(|i| (i / 2 + i % 2) as u8);
+    let pair_pat_v = loadu_512!((&pair_pat), [u8; 64]);
     let rounding512 = _mm512_set1_epi16(32);
 
     for y in 0..height_i {
@@ -2589,10 +3089,9 @@ fn ipred_z2_8bpc_v4x_inner(
             x += 1;
         }
 
-        // Top-edge portion — 32-wide vpermi2b gather (only for base_inc_x == 1).
+        // Top-edge portion — 32-wide pair-gather (only for base_inc_x == 1).
         if base_inc_x == 1 {
-            let frac_vec = _mm512_set1_epi16(frac_x);
-            let inv_frac_vec = _mm512_set1_epi16(inv_frac_x);
+            let frac_pair = _mm512_set1_epi16(((frac_x as i32) << 8 | inv_frac_x as i32) as i16);
             // Vectorize while a full 32-lane window stays in range:
             //   idx       = edge_tl + base_x0 + x + lane         (need <= edge_len-1)
             //   idx + 1   <= edge_len-1  =>  base_x0 + x + 31 + 1 <= top_k_max
@@ -2603,18 +3102,12 @@ fn ipred_z2_8bpc_v4x_inner(
                     break;
                 }
                 let k0 = _mm512_set1_epi8((base_x as usize).min(127) as i8);
-                let idx0 = _mm512_adds_epu8(k0, lane_off_v);
-                let idx1 = _mm512_adds_epu8(idx0, one8);
+                let idxp = _mm512_adds_epu8(k0, pair_pat_v);
 
-                let t0 = _mm512_permutex2var_epi8(top_lo, idx0, top_hi);
-                let t1 = _mm512_permutex2var_epi8(top_lo, idx1, top_hi);
+                let pairs = _mm512_permutex2var_epi8(top_lo, idxp, top_hi);
 
-                let t0_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(t0));
-                let t1_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(t1));
-                let p0 = _mm512_mullo_epi16(t0_lo, inv_frac_vec);
-                let p1 = _mm512_mullo_epi16(t1_lo, frac_vec);
-                let sblend = _mm512_add_epi16(_mm512_add_epi16(p0, p1), rounding512);
-                let r = _mm512_srai_epi16::<6>(sblend);
+                let sum = _mm512_add_epi16(_mm512_maddubs_epi16(pairs, frac_pair), rounding512);
+                let r = _mm512_srai_epi16::<6>(sum);
                 let out32 = _mm512_cvtusepi16_epi8(r);
 
                 let mut tmp = [0u8; 32];
@@ -2764,31 +3257,136 @@ fn ipred_z3_8bpc_inner(
         base_inc = 1;
     };
 
-    let left = left.flex();
+    // Reversed ascending copy of the left edge: lbuf[k] == left[left_off - k].
+    // Positions past max_base_y are padded with the fill value, which makes the
+    // `base >= max_base_y` flat-fill fall out of the blend itself (a pair of
+    // equal samples blends to that sample exactly), so no per-pixel bound is
+    // needed anywhere below.
+    //
+    // Highest index ever read: (dy*width)>>6 + base_inc*(h8-1) + 1 where
+    // h8 rounds height up to the last 8-row block (dy can be up to 1023).
+    let mut lbuf = [0u8; 1216];
+    let fill_val = left[left_off - max_base_y];
+    for k in 0..=max_base_y {
+        lbuf[k] = left[left_off - k];
+    }
+    let need = ((dy * width) >> 6) + base_inc * (((height + 7) / 8 * 8).saturating_sub(1)) + 16;
+    debug_assert!(need <= lbuf.len());
+    if need > max_base_y + 1 {
+        lbuf[max_base_y + 1..need.min(1216)].fill(fill_val);
+    }
+    let lbuf = lbuf.as_slice();
 
-    // Column-major access pattern
-    for x in 0..width {
-        let ypos = dy * (x + 1);
+    let mut x = 0usize;
+    while x + 8 <= width {
+        for y0 in (0..height).step_by(8) {
+            // Column vectors: rows y0..y0+8 of columns x..x+8.
+            let mut cols = [_mm_setzero_si128(); 8];
+            for (j, col) in cols.iter_mut().enumerate() {
+                let xpos = dy * (x + j + 1);
+                let frac = (xpos & 0x3e) as i32;
+                let inv_frac = 64 - frac;
+                // (l0,l1) = (lbuf[base], lbuf[base+1]); coef pair (inv, frac).
+                // Row lane k reads at base + base_inc*k: for base_inc==2
+                // (upsampled) a 16-byte load's u16 lanes are already the
+                // consecutive-byte pairs, no unpack needed.
+                let coef = _mm_set1_epi16(((frac << 8) | inv_frac) as i16);
+                let base = (xpos >> 6) + base_inc * y0;
+                let lo = if base_inc == 1 {
+                    let t0 = loadi64!(&lbuf[base..base + 8]);
+                    let t1 = loadi64!(&lbuf[base + 1..base + 9]);
+                    _mm_unpacklo_epi8(t0, t1)
+                } else {
+                    loadu_128!((&lbuf[base..base + 16]), [u8; 16])
+                };
+                let v = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, coef),
+                    _mm_set1_epi16(32),
+                ));
+                *col = _mm_packus_epi16(v, v);
+            }
+            // Transpose 8x8 bytes to row vectors, one storei64 per row.
+            let p01 = _mm_unpacklo_epi8(cols[0], cols[1]);
+            let p23 = _mm_unpacklo_epi8(cols[2], cols[3]);
+            let p45 = _mm_unpacklo_epi8(cols[4], cols[5]);
+            let p67 = _mm_unpacklo_epi8(cols[6], cols[7]);
+            let q0123 = _mm_unpacklo_epi16(p01, p23);
+            let q0123h = _mm_unpackhi_epi16(p01, p23);
+            let q4567 = _mm_unpacklo_epi16(p45, p67);
+            let q4567h = _mm_unpackhi_epi16(p45, p67);
+            let r02 = _mm_unpacklo_epi32(q0123, q4567);
+            let r13 = _mm_unpackhi_epi32(q0123, q4567);
+            let r46 = _mm_unpacklo_epi32(q0123h, q4567h);
+            let r57 = _mm_unpackhi_epi32(q0123h, q4567h);
+            let rows = [
+                r02,
+                _mm_srli_si128::<8>(r02),
+                r13,
+                _mm_srli_si128::<8>(r13),
+                r46,
+                _mm_srli_si128::<8>(r46),
+                r57,
+                _mm_srli_si128::<8>(r57),
+            ];
+            let rows_n = (height - y0).min(8);
+            for (k, row) in rows.iter().enumerate().take(rows_n) {
+                let off = (dst_base as isize + (y0 + k) as isize * stride) as usize + x;
+                storei64!(&mut dst[off..off + 8], *row);
+            }
+        }
+        x += 8;
+    }
+    // 4-column twin for w == 4 blocks and 4-column remainders.
+    while x + 4 <= width {
+        for y0 in (0..height).step_by(8) {
+            let mut cols = [_mm_setzero_si128(); 4];
+            for (j, col) in cols.iter_mut().enumerate() {
+                let xpos = dy * (x + j + 1);
+                let frac = (xpos & 0x3e) as i32;
+                let inv_frac = 64 - frac;
+                let coef = _mm_set1_epi16(((frac << 8) | inv_frac) as i16);
+                let base = (xpos >> 6) + base_inc * y0;
+                let lo = if base_inc == 1 {
+                    let t0 = loadi64!(&lbuf[base..base + 8]);
+                    let t1 = loadi64!(&lbuf[base + 1..base + 9]);
+                    _mm_unpacklo_epi8(t0, t1)
+                } else {
+                    loadu_128!((&lbuf[base..base + 16]), [u8; 16])
+                };
+                let v = _mm_srai_epi16::<6>(_mm_add_epi16(
+                    _mm_maddubs_epi16(lo, coef),
+                    _mm_set1_epi16(32),
+                ));
+                *col = _mm_packus_epi16(v, v);
+            }
+            // Transpose 4x8 bytes: q_lo dwords = rows 0..3, q_hi = rows 4..7.
+            let p01 = _mm_unpacklo_epi8(cols[0], cols[1]);
+            let p23 = _mm_unpacklo_epi8(cols[2], cols[3]);
+            let q_lo = _mm_unpacklo_epi16(p01, p23);
+            let q_hi = _mm_unpackhi_epi16(p01, p23);
+            let mut rdw = [0u32; 8];
+            storeu_128!(&mut rdw[..4], [u32; 4], q_lo);
+            storeu_128!(&mut rdw[4..], [u32; 4], q_hi);
+            let rows_n = (height - y0).min(8);
+            for k in 0..rows_n {
+                let off = (dst_base as isize + (y0 + k) as isize * stride) as usize + x;
+                dst[off..off + 4].copy_from_slice(&rdw[k].to_ne_bytes());
+            }
+        }
+        x += 4;
+    }
+    for xx in x..width {
+        let ypos = dy * (xx + 1);
         let frac = (ypos & 0x3e) as i32;
         let inv_frac = 64 - frac;
 
         for y in 0..height_i {
             let base = (ypos >> 6) + base_inc * y as usize;
-
-            if base < max_base_y {
-                let l0 = left[left_off - base] as i32;
-                let l1 = left[left_off - base - 1] as i32;
-                let v = l0 * inv_frac + l1 * frac;
-                let pixel_off = (dst_base as isize + y as isize * stride) as usize + x;
-                dst[pixel_off] = ((v + 32) >> 6) as u8;
-            } else {
-                let fill_val = left[left_off - max_base_y];
-                for yy in y..height_i {
-                    let pixel_off = (dst_base as isize + yy as isize * stride) as usize + x;
-                    dst[pixel_off] = fill_val;
-                }
-                break;
-            }
+            let l0 = lbuf[base] as i32;
+            let l1 = lbuf[base + 1] as i32;
+            let v = l0 * inv_frac + l1 * frac;
+            let pixel_off = (dst_base as isize + y as isize * stride) as usize + xx;
+            dst[pixel_off] = ((v + 32) >> 6) as u8;
         }
     }
 }
@@ -2901,37 +3499,34 @@ fn ipred_z3_8bpc_v4x_inner(
 
     let max_idx8 = _mm512_set1_epi8(last as i8);
     let rounding = _mm512_set1_epi16(32);
-    let lane_off: [u8; 64] = core::array::from_fn(|i| i as u8);
-    let lane_off_v = loadu_512!((&lane_off), [u8; 64]);
-    let one8 = _mm512_set1_epi8(1);
+    // Pair-gather pattern: bytes 2p/2p+1 select edge samples base+p and
+    // base+p+1 so ONE vpermi2b yields (l0,l1) byte pairs for pmaddubsw.
+    let pair_pat: [u8; 64] = core::array::from_fn(|i| (i / 2 + i % 2) as u8);
+    let pair_pat_v = loadu_512!((&pair_pat), [u8; 64]);
 
     if base_inc == 1 {
         for x in 0..width {
             let ypos = dy * (x + 1);
             let frac = (ypos & 0x3e) as i16;
             let inv_frac = (64 - frac) as i16;
-            let frac_vec = _mm512_set1_epi16(frac);
-            let inv_frac_vec = _mm512_set1_epi16(inv_frac);
+            let frac_pair = _mm512_set1_epi16(((frac as i32) << 8 | inv_frac as i32) as i16);
             let base0 = ypos >> 6;
             let base0_v = _mm512_set1_epi8(base0.min(127) as i8);
 
             let mut y = 0usize;
             while y < height {
-                // idx0[lane] = base0 + y + lane ; idx1 = idx0 + 1, both clamped.
+                // idx_pair[2p] = clamp(base0+y+p), [2p+1] = clamp(+1) — the
+                // same per-element clamp the two-gather path applied.
                 let ybase = _mm512_set1_epi8(y.min(127) as i8);
-                let idx0 = _mm512_adds_epu8(_mm512_adds_epu8(base0_v, ybase), lane_off_v);
-                let idx0 = _mm512_min_epu8(idx0, max_idx8);
-                let idx1 = _mm512_min_epu8(_mm512_adds_epu8(idx0, one8), max_idx8);
+                let idxp = _mm512_min_epu8(
+                    _mm512_adds_epu8(_mm512_adds_epu8(base0_v, ybase), pair_pat_v),
+                    max_idx8,
+                );
 
-                let l0 = _mm512_permutex2var_epi8(edge_lo, idx0, edge_hi);
-                let l1 = _mm512_permutex2var_epi8(edge_lo, idx1, edge_hi);
+                let pairs = _mm512_permutex2var_epi8(edge_lo, idxp, edge_hi);
 
-                let l0_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(l0));
-                let l1_lo = _mm512_cvtepu8_epi16(_mm512_castsi512_si256(l1));
-                let p0 = _mm512_mullo_epi16(l0_lo, inv_frac_vec);
-                let p1 = _mm512_mullo_epi16(l1_lo, frac_vec);
-                let sblend = _mm512_add_epi16(_mm512_add_epi16(p0, p1), rounding);
-                let r = _mm512_srai_epi16::<6>(sblend);
+                let sum = _mm512_add_epi16(_mm512_maddubs_epi16(pairs, frac_pair), rounding);
+                let r = _mm512_srai_epi16::<6>(sum);
                 let out32 = _mm512_cvtusepi16_epi8(r);
 
                 let n = (height - y).min(32);
@@ -5328,29 +5923,37 @@ fn ipred_filter_16bpc_inner(
             };
 
             let p0 = tl_pixel;
-            let p = [p0, p1, p2, p3, p4, p5, p6];
 
-            // Process 4x2 = 8 output pixels using filter taps
+            // Same pmaddwd layout as the 8bpc kernel — p fits i16 (<= 4095)
+            // and i32 lanes accumulate all 8 outputs at once.
+            let p01 = _mm256_set1_epi32((p0 as u32 | ((p1 as u32) << 16)) as i32);
+            let p23 = _mm256_set1_epi32((p2 as u32 | ((p3 as u32) << 16)) as i32);
+            let p45 = _mm256_set1_epi32((p4 as u32 | ((p5 as u32) << 16)) as i32);
+            let p60 = _mm256_set1_epi32(p6);
             let flt = filter.as_slice();
-            let mut flt_offset = 0;
-
-            // Row 0 (4 pixels)
-            for xx in 0..4 {
-                let acc = filter_fn(&flt[flt_offset..], p);
-                let val = ((acc + 8) >> 4).clamp(0, bitdepth_max as i32) as u16;
-                let off = row0_off + (x + xx) * 2;
-                dst[off..off + 2].copy_from_slice(&val.to_ne_bytes());
-                flt_offset += FLT_INCR;
-            }
-
-            // Row 1 (4 pixels)
-            for xx in 0..4 {
-                let acc = filter_fn(&flt[flt_offset..], p);
-                let val = ((acc + 8) >> 4).clamp(0, bitdepth_max as i32) as u16;
-                let off = row1_off + (x + xx) * 2;
-                dst[off..off + 2].copy_from_slice(&val.to_ne_bytes());
-                flt_offset += FLT_INCR;
-            }
+            let t0 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[0..16]).unwrap()));
+            let t1 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[16..32]).unwrap()));
+            let t2 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[32..48]).unwrap()));
+            let t3 = _mm256_cvtepi8_epi16(loadu_128!(<&[i8; 16]>::try_from(&flt[48..64]).unwrap()));
+            let acc = _mm256_add_epi32(
+                _mm256_add_epi32(_mm256_madd_epi16(p01, t0), _mm256_madd_epi16(p23, t1)),
+                _mm256_add_epi32(_mm256_madd_epi16(p45, t2), _mm256_madd_epi16(p60, t3)),
+            );
+            let res = _mm256_srai_epi32::<4>(_mm256_add_epi32(acc, _mm256_set1_epi32(8)));
+            // packs saturation can only push results above bitdepth_max
+            // further upward; min/max restore the exact clamp.
+            let res16 = _mm_packs_epi32(
+                _mm256_castsi256_si128(res),
+                _mm256_extracti128_si256::<1>(res),
+            );
+            let clamped = _mm_max_epi16(
+                _mm_min_epi16(res16, _mm_set1_epi16(bitdepth_max as i16)),
+                _mm_setzero_si128(),
+            );
+            dst[row0_off + x * 2..row0_off + x * 2 + 8]
+                .copy_from_slice(&(_mm_cvtsi128_si64(clamped) as u64).to_ne_bytes());
+            dst[row1_off + x * 2..row1_off + x * 2 + 8]
+                .copy_from_slice(&(_mm_extract_epi64::<1>(clamped) as u64).to_ne_bytes());
 
             // Update topleft for next 4x2 block (16bpc)
             tl_pixel = p4;
@@ -6424,6 +7027,26 @@ fn cfl_ac_420_8bpc_inner(
             );
             x += 8;
         }
+        // 4-chroma-pixel SIMD chunk (8 luma bytes per row).
+        while x + 4 <= active_w {
+            let lx = 2 * x;
+            let r1 = loadu_64!(
+                <&[u8; 8]>::try_from(&src_bytes[row1_off + lx..row1_off + lx + 8]).unwrap()
+            );
+            let r2 = loadu_64!(
+                <&[u8; 8]>::try_from(&src_bytes[row2_off + lx..row2_off + lx + 8]).unwrap()
+            );
+            let ones128 = _mm_set1_epi8(1);
+            let sum = _mm_add_epi16(
+                _mm_maddubs_epi16(r1, ones128),
+                _mm_maddubs_epi16(r2, ones128),
+            );
+            crate::src::safe_simd::partial_simd::mm_storel_epi64::<[i16; 4]>(
+                <&mut [i16; 4]>::try_from(&mut ac[aci + x..aci + x + 4]).unwrap(),
+                _mm_slli_epi16::<1>(sum),
+            );
+            x += 4;
+        }
         // Scalar tail for narrow widths (active_w == 4 with no leftover).
         while x < active_w {
             let lx = 2 * x;
@@ -6461,21 +7084,25 @@ fn cfl_ac_420_8bpc_inner(
     let mut sum_i32 = 1i32 << log2sz >> 1; // round bias
     {
         // SIMD accumulator over the whole ac buffer.
+        let ones16 = _mm256_set1_epi16(1);
         let mut acc = _mm256_setzero_si256();
         let mut i = 0;
         while i + 16 <= n {
             let v = loadu_256!(<&[i16; 16]>::try_from(&ac[i..i + 16]).unwrap());
-            // Widen i16 -> i32 in two halves, accumulate.
-            let lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(v));
-            let hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256::<1>(v));
-            acc = _mm256_add_epi32(acc, lo);
-            acc = _mm256_add_epi32(acc, hi);
+            // Pairwise i16→i32 sums; lanes merge in the horizontal reduce.
+            acc = _mm256_add_epi32(acc, _mm256_madd_epi16(v, ones16));
             i += 16;
         }
-        // Horizontal reduce acc (8 i32).
+        let mut acc128 = _mm_setzero_si128();
+        while i + 8 <= n {
+            let v = loadu_128!(<&[i16; 8]>::try_from(&ac[i..i + 8]).unwrap());
+            acc128 = _mm_add_epi32(acc128, _mm_madd_epi16(v, _mm_set1_epi16(1)));
+            i += 8;
+        }
+        // Horizontal reduce acc (8 i32) plus the xmm tail accumulator.
         let acc_lo = _mm256_castsi256_si128(acc);
         let acc_hi = _mm256_extracti128_si256::<1>(acc);
-        let s128 = _mm_add_epi32(acc_lo, acc_hi);
+        let s128 = _mm_add_epi32(_mm_add_epi32(acc_lo, acc_hi), acc128);
         let s64 = _mm_add_epi32(s128, _mm_shuffle_epi32::<0b_01_00_11_10>(s128));
         let s32 = _mm_add_epi32(s64, _mm_shuffle_epi32::<0b_00_00_00_01>(s64));
         sum_i32 = sum_i32.wrapping_add(_mm_cvtsi128_si32(s32));
@@ -6496,6 +7123,15 @@ fn cfl_ac_420_8bpc_inner(
             let r = _mm256_sub_epi16(v, mean_v);
             storeu_256!(<&mut [i16; 16]>::try_from(&mut ac[i..i + 16]).unwrap(), r);
             i += 16;
+        }
+        let mean_v128 = _mm_set1_epi16(mean);
+        while i + 8 <= n {
+            let v = loadu_128!(<&[i16; 8]>::try_from(&ac[i..i + 8]).unwrap());
+            storeu_128!(
+                <&mut [i16; 8]>::try_from(&mut ac[i..i + 8]).unwrap(),
+                _mm_sub_epi16(v, mean_v128)
+            );
+            i += 8;
         }
         // Scalar tail.
         while i < n {
@@ -6556,6 +7192,18 @@ fn cfl_ac_422_8bpc_inner(
             );
             x += 8;
         }
+        while x + 4 <= active_w {
+            let lx = 2 * x;
+            let r1 = loadu_64!(
+                <&[u8; 8]>::try_from(&src_bytes[row_off + lx..row_off + lx + 8]).unwrap()
+            );
+            let ones128 = _mm_set1_epi8(1);
+            crate::src::safe_simd::partial_simd::mm_storel_epi64::<[i16; 4]>(
+                <&mut [i16; 4]>::try_from(&mut ac[aci + x..aci + x + 4]).unwrap(),
+                _mm_slli_epi16::<2>(_mm_maddubs_epi16(r1, ones128)),
+            );
+            x += 4;
+        }
         while x < active_w {
             let lx = 2 * x;
             let a = src_bytes[row_off + lx] as i32;
@@ -6585,19 +7233,23 @@ fn cfl_ac_422_8bpc_inner(
     let log2sz = (width.trailing_zeros() + height.trailing_zeros()) as i32;
     let mut sum_i32 = 1i32 << log2sz >> 1;
     {
+        let ones16 = _mm256_set1_epi16(1);
         let mut acc = _mm256_setzero_si256();
         let mut i = 0;
         while i + 16 <= n {
             let v = loadu_256!(<&[i16; 16]>::try_from(&ac[i..i + 16]).unwrap());
-            let lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(v));
-            let hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256::<1>(v));
-            acc = _mm256_add_epi32(acc, lo);
-            acc = _mm256_add_epi32(acc, hi);
+            acc = _mm256_add_epi32(acc, _mm256_madd_epi16(v, ones16));
             i += 16;
+        }
+        let mut acc128 = _mm_setzero_si128();
+        while i + 8 <= n {
+            let v = loadu_128!(<&[i16; 8]>::try_from(&ac[i..i + 8]).unwrap());
+            acc128 = _mm_add_epi32(acc128, _mm_madd_epi16(v, _mm_set1_epi16(1)));
+            i += 8;
         }
         let acc_lo = _mm256_castsi256_si128(acc);
         let acc_hi = _mm256_extracti128_si256::<1>(acc);
-        let s128 = _mm_add_epi32(acc_lo, acc_hi);
+        let s128 = _mm_add_epi32(_mm_add_epi32(acc_lo, acc_hi), acc128);
         let s64 = _mm_add_epi32(s128, _mm_shuffle_epi32::<0b_01_00_11_10>(s128));
         let s32 = _mm_add_epi32(s64, _mm_shuffle_epi32::<0b_00_00_00_01>(s64));
         sum_i32 = sum_i32.wrapping_add(_mm_cvtsi128_si32(s32));
@@ -6616,6 +7268,15 @@ fn cfl_ac_422_8bpc_inner(
             let r = _mm256_sub_epi16(v, mean_v);
             storeu_256!(<&mut [i16; 16]>::try_from(&mut ac[i..i + 16]).unwrap(), r);
             i += 16;
+        }
+        let mean_v128 = _mm_set1_epi16(mean);
+        while i + 8 <= n {
+            let v = loadu_128!(<&[i16; 8]>::try_from(&ac[i..i + 8]).unwrap());
+            storeu_128!(
+                <&mut [i16; 8]>::try_from(&mut ac[i..i + 8]).unwrap(),
+                _mm_sub_epi16(v, mean_v128)
+            );
+            i += 8;
         }
         while i < n {
             ac[i] = ac[i].wrapping_sub(mean);
@@ -6659,14 +7320,8 @@ fn cfl_ac_444_8bpc_inner(
             x += 16;
         }
         while x + 8 <= active_w {
-            // Load 8 u8, widen to 8 i16, shift.
-            let arr: &[u8; 8] = (&src_bytes[row_off + x..row_off + x + 8])
-                .try_into()
-                .unwrap();
-            // Use a stack-padded 16-byte load.
-            let mut buf = [0u8; 16];
-            buf[..8].copy_from_slice(arr);
-            let r1 = loadu_128!(&buf);
+            let r1 =
+                loadu_64!(<&[u8; 8]>::try_from(&src_bytes[row_off + x..row_off + x + 8]).unwrap());
             let widened = _mm_cvtepu8_epi16(r1);
             let shifted = _mm_slli_epi16::<3>(widened);
             storeu_128!(
@@ -6674,6 +7329,15 @@ fn cfl_ac_444_8bpc_inner(
                 shifted
             );
             x += 8;
+        }
+        while x + 4 <= active_w {
+            let r1 = loadi32!(&src_bytes[row_off + x..row_off + x + 4]);
+            let widened = _mm_cvtepu8_epi16(r1);
+            crate::src::safe_simd::partial_simd::mm_storel_epi64::<[i16; 4]>(
+                <&mut [i16; 4]>::try_from(&mut ac[aci + x..aci + x + 4]).unwrap(),
+                _mm_slli_epi16::<3>(widened),
+            );
+            x += 4;
         }
         while x < active_w {
             ac[aci + x] = (src_bytes[row_off + x] as i16) << 3;
@@ -6700,19 +7364,23 @@ fn cfl_ac_444_8bpc_inner(
     let log2sz = (width.trailing_zeros() + height.trailing_zeros()) as i32;
     let mut sum_i32 = 1i32 << log2sz >> 1;
     {
+        let ones16 = _mm256_set1_epi16(1);
         let mut acc = _mm256_setzero_si256();
         let mut i = 0;
         while i + 16 <= n {
             let v = loadu_256!(<&[i16; 16]>::try_from(&ac[i..i + 16]).unwrap());
-            let lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(v));
-            let hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256::<1>(v));
-            acc = _mm256_add_epi32(acc, lo);
-            acc = _mm256_add_epi32(acc, hi);
+            acc = _mm256_add_epi32(acc, _mm256_madd_epi16(v, ones16));
             i += 16;
+        }
+        let mut acc128 = _mm_setzero_si128();
+        while i + 8 <= n {
+            let v = loadu_128!(<&[i16; 8]>::try_from(&ac[i..i + 8]).unwrap());
+            acc128 = _mm_add_epi32(acc128, _mm_madd_epi16(v, _mm_set1_epi16(1)));
+            i += 8;
         }
         let acc_lo = _mm256_castsi256_si128(acc);
         let acc_hi = _mm256_extracti128_si256::<1>(acc);
-        let s128 = _mm_add_epi32(acc_lo, acc_hi);
+        let s128 = _mm_add_epi32(_mm_add_epi32(acc_lo, acc_hi), acc128);
         let s64 = _mm_add_epi32(s128, _mm_shuffle_epi32::<0b_01_00_11_10>(s128));
         let s32 = _mm_add_epi32(s64, _mm_shuffle_epi32::<0b_00_00_00_01>(s64));
         sum_i32 = sum_i32.wrapping_add(_mm_cvtsi128_si32(s32));
@@ -6731,6 +7399,15 @@ fn cfl_ac_444_8bpc_inner(
             let r = _mm256_sub_epi16(v, mean_v);
             storeu_256!(<&mut [i16; 16]>::try_from(&mut ac[i..i + 16]).unwrap(), r);
             i += 16;
+        }
+        let mean_v128 = _mm_set1_epi16(mean);
+        while i + 8 <= n {
+            let v = loadu_128!(<&[i16; 8]>::try_from(&ac[i..i + 8]).unwrap());
+            storeu_128!(
+                <&mut [i16; 8]>::try_from(&mut ac[i..i + 8]).unwrap(),
+                _mm_sub_epi16(v, mean_v128)
+            );
+            i += 8;
         }
         while i < n {
             ac[i] = ac[i].wrapping_sub(mean);
@@ -7072,5 +7749,132 @@ mod v4x_dir_tests {
             compared >= 100,
             "z2 test compared too few configs: {compared}"
         );
+    }
+
+    /// Scalar oracle for `cfl_ac_*_8bpc_inner`, mirroring `src/ipred.rs::cfl_ac_rust`
+    /// on a flat luma buffer (src_base/stride addressing like the SIMD inners use).
+    fn cfl_ac_scalar_ref(
+        ac: &mut [i16],
+        width: usize,
+        height: usize,
+        active_w: usize,
+        active_h: usize,
+        src: &[u8],
+        src_base: usize,
+        src_stride: isize,
+        ss_hor: bool,
+        ss_ver: bool,
+    ) {
+        for y in 0..active_h {
+            let aci = y * width;
+            let row_off =
+                (src_base as isize + (y << ss_ver as usize) as isize * src_stride) as usize;
+            for x in 0..active_w {
+                let sx = x << ss_hor as usize;
+                let mut sum = src[row_off + sx] as i32;
+                if ss_hor {
+                    sum += src[row_off + sx + 1] as i32;
+                }
+                if ss_ver {
+                    let below = (src_base as isize + ((y << 1) as isize + 1) * src_stride) as usize;
+                    sum += src[below + sx] as i32;
+                    if ss_hor {
+                        sum += src[below + sx + 1] as i32;
+                    }
+                }
+                ac[aci + x] = (sum << (1 + !ss_ver as u8 + !ss_hor as u8)) as i16;
+            }
+            for x in active_w..width {
+                ac[aci + x] = ac[aci + x - 1];
+            }
+        }
+        for y in active_h..height {
+            let aci = y * width;
+            let (src_a, dst_a) = ac.split_at_mut(aci);
+            dst_a[..width].copy_from_slice(&src_a[src_a.len() - width..]);
+        }
+        let log2sz = (width.trailing_zeros() + height.trailing_zeros()) as i32;
+        let mut sum = (1i32 << log2sz) >> 1;
+        for &v in ac[..width * height].iter() {
+            sum = sum.wrapping_add(v as i32);
+        }
+        let mean = (sum >> log2sz) as i16;
+        for v in ac[..width * height].iter_mut() {
+            *v = v.wrapping_sub(mean);
+        }
+    }
+
+    #[test]
+    fn cfl_ac_simd_matches_scalar() {
+        let _tok_lock = archmage::testing::lock_token_testing();
+        let Some(t3) = crate::src::cpu::summon_avx2() else {
+            eprintln!("cfl_ac_simd_matches_scalar: no AVX2 token, skipping");
+            return;
+        };
+        // Flat luma buffer, deterministic pseudo-random.
+        let mut src = vec![0u8; 160 * 160];
+        let mut st: u32 = 0xabcd_ef01;
+        for b in src.iter_mut() {
+            st ^= st << 13;
+            st ^= st >> 17;
+            st ^= st << 5;
+            *b = (st >> 5) as u8;
+        }
+        let dims = [
+            (4usize, 4usize),
+            (4, 8),
+            (8, 4),
+            (8, 8),
+            (8, 16),
+            (16, 8),
+            (16, 16),
+            (32, 16),
+            (32, 32),
+            (16, 32),
+            (4, 16),
+            (16, 4),
+            (12, 12),
+            (24, 8),
+            (8, 24),
+            (6, 6),
+        ];
+        for &(w, h) in &dims {
+            for &(aw, ah) in &[(w, h), (w / 2, h), (w, h / 2), (w / 2.max(1), h / 2.max(1))] {
+                if aw == 0 || ah == 0 {
+                    continue;
+                }
+                for &(hor, ver) in &[(true, true), (true, false), (false, false)] {
+                    let stride = 128isize;
+                    // src must hold active rows*ver at stride, cols = aw<<hor.
+                    let need = (src.len() as isize / stride) as usize;
+                    if (ah << ver as usize) > need || (aw << hor as usize) > 128 {
+                        continue;
+                    }
+                    let mut a = vec![0i16; w * h];
+                    let mut b = vec![0i16; w * h];
+                    cfl_ac_scalar_ref(&mut a, w, h, aw, ah, &src, 0, stride, hor, ver);
+                    match (hor, ver) {
+                        (true, true) => {
+                            cfl_ac_420_8bpc_inner(t3, &mut b, w, h, aw, ah, &src, 0, stride)
+                        }
+                        (true, false) => {
+                            cfl_ac_422_8bpc_inner(t3, &mut b, w, h, aw, ah, &src, 0, stride)
+                        }
+                        _ => cfl_ac_444_8bpc_inner(t3, &mut b, w, h, aw, ah, &src, 0, stride),
+                    }
+                    for i in 0..w * h {
+                        assert_eq!(
+                            a[i],
+                            b[i],
+                            "cfl_ac {w}x{h} aw={aw} ah={ah} hor={hor} ver={ver}: idx {i} (x={},y={}) scalar={} simd={}\n scalar={a:?}\n simd={b:?}",
+                            i % w,
+                            i / w,
+                            a[i],
+                            b[i]
+                        );
+                    }
+                }
+            }
+        }
     }
 }

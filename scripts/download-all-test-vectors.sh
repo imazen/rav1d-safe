@@ -21,25 +21,8 @@ else
     echo "✓ dav1d-test-data cloned"
 fi
 
-# 2. Argon conformance suite
-if [ -f "$TEST_VECTORS_DIR/argon/argon.tar.zst" ]; then
-    echo "✓ Argon suite already downloaded"
-else
-    echo "→ Downloading Argon suite (2.5GB)..."
-    wget -q --show-progress \
-        https://streams.videolan.org/argon/argon.tar.zst \
-        -O "$TEST_VECTORS_DIR/argon/argon.tar.zst"
-    echo "✓ Argon suite downloaded"
-fi
-
-if [ -d "$TEST_VECTORS_DIR/argon/argon" ]; then
-    echo "✓ Argon suite already extracted"
-else
-    echo "→ Extracting Argon suite..."
-    cd "$TEST_VECTORS_DIR/argon"
-    tar --use-compress-program=unzstd -xf argon.tar.zst
-    echo "✓ Argon suite extracted"
-fi
+# 2. Argon conformance suite (delegates format/URL handling to download-argon.sh)
+bash "$SCRIPT_DIR/download-argon.sh" "$TEST_VECTORS_DIR/argon"
 
 # 3. Fluster framework and test vectors
 if [ -d "$TEST_VECTORS_DIR/fluster/.git" ]; then

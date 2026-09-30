@@ -661,6 +661,30 @@ fn findoddzero(buf: &[u8]) -> bool {
         .is_some()
 }
 
+/// ORDER_TAIL[m][k] = the k-th smallest palette index whose bit is not set in
+/// `m`. Lets `order_palette` fill the tail of each 8-entry order permutation
+/// with one fixed-size copy instead of an 8-iteration bit scan.
+static ORDER_TAIL: [[u8; 8]; 256] = {
+    let mut t = [[0u8; 8]; 256];
+    let mut m = 0usize;
+    while m < 256 {
+        let mut k = 0usize;
+        let mut b = 0u8;
+        loop {
+            if m & (1 << b) == 0 {
+                t[m][k] = b;
+                k += 1;
+            }
+            if b == 7 {
+                break;
+            }
+            b += 1;
+        }
+        m += 1;
+    }
+    t
+};
+
 fn order_palette(
     pal_idx: &[u8],
     stride: usize,
@@ -725,13 +749,8 @@ fn order_palette(
                 add(tl);
             }
         }
-        for bit in 0..u8::BITS as u8 {
-            if mask & (1 << bit) == 0 {
-                order[o_idx] = bit;
-                o_idx += 1;
-            }
-        }
-        assert!(o_idx == u8::BITS as usize);
+        let o_idx = mask.count_ones() as usize;
+        order[o_idx..].copy_from_slice(&ORDER_TAIL[mask as usize][..8 - o_idx]);
         have_top = true;
         offset += stride - 1;
     }

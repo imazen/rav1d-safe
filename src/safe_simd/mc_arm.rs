@@ -73,9 +73,12 @@ fn avg_8bpc_inner(
             let t2_lo = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
             let t2_hi = safe_simd::vld1q_s16(tmp2_row[col + 8..][..8].try_into().unwrap());
 
-            // Add: tmp1 + tmp2 (safe in #[arcane])
-            let sum_lo = vaddq_s16(t1_lo, t2_lo);
-            let sum_hi = vaddq_s16(t1_hi, t2_hi);
+            // Add: tmp1 + tmp2 — saturating. The reference sums in i32
+            // (|sum| <= 65534); an i16 wrap flips sign at +-32768, while
+            // saturation stays bit-exact because the shifted result then
+            // lands in the [0, 255]-clamped region either way.
+            let sum_lo = vqaddq_s16(t1_lo, t2_lo);
+            let sum_hi = vqaddq_s16(t1_hi, t2_hi);
 
             // `avg_rust` at 8bpc: `(t1 + t2 + (1 << intermediate_bits)) >> (intermediate_bits + 1)`
             // = `(sum + 16) >> 5`, with `PREP_BIAS = 0`.
@@ -102,7 +105,7 @@ fn avg_8bpc_inner(
         while col + 8 <= w {
             let t1 = safe_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
             let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
-            let sum = vaddq_s16(t1, t2);
+            let sum = vqaddq_s16(t1, t2);
             // See the 16-wide path: 1024 is `(sum + 16) >> 5`.
             let avg = vqrdmulhq_n_s16(sum, 1024);
             let packed = vqmovun_s16(avg);
@@ -323,15 +326,15 @@ fn w_avg_8bpc_inner(
             let t1 = safe_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
             let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
 
-            // diff = tmp1 - tmp2. The 8bpc prep interval is [-5132, 9212], so
-            // the difference needs 15 bits and cannot wrap an i16.
-            let diff = vsubq_s16(t1, t2);
-
-            // Widen; everything below is one exact i32 expression.
-            let diff_lo = vmovl_s16(vget_low_s16(diff));
-            let diff_hi = vmovl_s16(vget_high_s16(diff));
+            // diff = tmp1 - tmp2 in i32. An i16 subtract wraps when
+            // |t1 - t2| > 32767 — warp_affine mids can reach +-32767,
+            // beyond the [-5132, 9212] prep interval.
+            let t1_lo = vmovl_s16(vget_low_s16(t1));
+            let t1_hi = vmovl_s16(vget_high_s16(t1));
             let t2_lo = vmovl_s16(vget_low_s16(t2));
             let t2_hi = vmovl_s16(vget_high_s16(t2));
+            let diff_lo = vsubq_s32(t1_lo, t2_lo);
+            let diff_hi = vsubq_s32(t1_hi, t2_hi);
             let weight_vec = vdupq_n_s32(weight);
             let rnd = vdupq_n_s32(RND);
 
@@ -561,11 +564,10 @@ fn mask_8bpc_inner(
             // Widen mask to 16-bit (0..=64, so the sign reinterpret is a no-op)
             let m16 = vreinterpretq_s16_u16(vmovl_u8(m));
 
-            // diff = tmp1 - tmp2; 8bpc prep is [-5132, 9212], no i16 wrap.
-            let diff = vsubq_s16(t1, t2);
-
-            let diff_lo = vmovl_s16(vget_low_s16(diff));
-            let diff_hi = vmovl_s16(vget_high_s16(diff));
+            // diff = tmp1 - tmp2 in i32 — i16 sub wraps for |d| > 32767
+            // (warp_affine mids exceed the [-5132, 9212] prep interval).
+            let diff_lo = vsubq_s32(vmovl_s16(vget_low_s16(t1)), vmovl_s16(vget_low_s16(t2)));
+            let diff_hi = vsubq_s32(vmovl_s16(vget_high_s16(t1)), vmovl_s16(vget_high_s16(t2)));
             let m_lo = vmovl_s16(vget_low_s16(m16));
             let m_hi = vmovl_s16(vget_high_s16(m16));
             let t2_lo = vmovl_s16(vget_low_s16(t2));
@@ -1655,27 +1657,26 @@ fn w_mask_8bpc_inner(
             let t1 = safe_simd::vld1q_s16(tmp1_row[col..][..8].try_into().unwrap());
             let t2 = safe_simd::vld1q_s16(tmp2_row[col..][..8].try_into().unwrap());
 
-            // abs_diff = |tmp1 - tmp2|; the 8bpc prep interval is
-            // [-5132, 9212], so neither the subtract nor the abs can wrap.
-            let diff = vsubq_s16(t1, t2);
-            let abs_diff = vabsq_s16(diff);
+            // abs_diff = |tmp1 - tmp2| as u16. Warp_affine mids can reach
+            // +-32767, where an i16 sub wraps and vabsq_s16(-32768) stays
+            // negative — matching scalar `u16::abs_diff` needs max - min.
+            let abs_diff = vsubq_u16(
+                vreinterpretq_u16_s16(vmaxq_s16(t1, t2)),
+                vreinterpretq_u16_s16(vminq_s16(t1, t2)),
+            );
 
-            // m = min(38 + ((abs_diff + mask_rnd) >> mask_sh), 64)
-            let abs_32_lo = vmovl_s16(vget_low_s16(abs_diff));
-            let abs_32_hi = vmovl_s16(vget_high_s16(abs_diff));
+            // m = min(38 + ((abs_diff + mask_rnd) >> mask_sh), 64) — stay
+            // in u16 lanes; saturating add matches `u16::saturating_add`.
+            let m_u16 = vminq_u16(
+                vaddq_u16(
+                    vshrq_n_u16::<8>(vqaddq_u16(abs_diff, vdupq_n_u16(MASK_RND))),
+                    vdupq_n_u16(38),
+                ),
+                vdupq_n_u16(64),
+            );
 
-            let mask_rnd_vec = vdupq_n_s32(MASK_RND as i32);
-            let m_lo = vaddq_s32(abs_32_lo, mask_rnd_vec);
-            let m_hi = vaddq_s32(abs_32_hi, mask_rnd_vec);
-
-            let m_shifted_lo = vshrq_n_s32::<8>(m_lo);
-            let m_shifted_hi = vshrq_n_s32::<8>(m_hi);
-
-            let m_lo = vminq_s32(vaddq_s32(m_shifted_lo, vdupq_n_s32(38)), vdupq_n_s32(64));
-            let m_hi = vminq_s32(vaddq_s32(m_shifted_hi, vdupq_n_s32(38)), vdupq_n_s32(64));
-
-            // Narrow to 16-bit for blending
-            let m_16 = vcombine_s16(vmovn_s32(m_lo), vmovn_s32(m_hi));
+            // Narrow to i16 for blending (values <= 64, reinterpret is exact)
+            let m_16 = vreinterpretq_s16_u16(m_u16);
 
             // The blend uses `m` itself. `sign` does NOT enter here — in
             // `w_mask_rust` it only reaches the SEGMENTATION MASK store below.
@@ -6661,13 +6662,17 @@ mod compound_parity {
             if w * h > COMPINTER_LEN {
                 continue;
             }
+            // Alternate between the legal prep interval (keeps a wrong `>>`
+            // visible) and the full i16 range (warp_affine mids can reach
+            // +-32767 — an i16 tmp1-tmp2 wraps there).
+            let (lo, hi) = if (w * h) % 2 == 0 {
+                (T8_LO, T8_HI)
+            } else {
+                (i16::MIN as i32, i16::MAX as i32)
+            };
             let mut rng = Rng(0x1234_5678_9ABC_DEF0 ^ ((w * h) as u64));
-            let t1: Vec<i16> = (0..w * h)
-                .map(|_| rng.in_range(T8_LO, T8_HI) as i16)
-                .collect();
-            let t2: Vec<i16> = (0..w * h)
-                .map(|_| rng.in_range(T8_LO, T8_HI) as i16)
-                .collect();
+            let t1: Vec<i16> = (0..w * h).map(|_| rng.in_range(lo, hi) as i16).collect();
+            let t2: Vec<i16> = (0..w * h).map(|_| rng.in_range(lo, hi) as i16).collect();
             // Wedge masks are 0..=64 inclusive; both ends are reachable.
             let m: Vec<u8> = (0..w * h).map(|_| rng.in_range(0, 64) as u8).collect();
             let stride = w + 7;

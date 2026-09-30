@@ -393,7 +393,7 @@ fn dct8_row_coef_pack(_token: Desktop64, c_lo: i16, c_hi: i16) -> __m256i {
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct8_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 64]) -> [i32; 64] {
+fn dct8_row_pass_i16_simd(_token: Desktop64, coeff_col_major: &[i16; 64]) -> [i32; 64] {
     // Layout: coeff_col_major[y + x*8] = element x of row y.
     // We process all 8 rows in parallel — ymm lane K corresponds to row K.
     //
@@ -1027,7 +1027,7 @@ fn dct16_col_pass_i16(_token: Desktop64, tmp_row_major: &[i32; 256]) -> [i32; 25
 /// The odd half uses 4 pmaddwd pairs for stage 1, then i32 mullo for stage 2.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 256]) -> [i32; 256] {
+fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: &[i16; 256]) -> [i32; 256] {
     let mut out = [0i32; 256];
 
     let row_min = i16::MIN as i32;
@@ -1338,7 +1338,7 @@ fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 256]) -> [i
 /// `row_min = i16::MIN as i32`, `row_max = i16::MAX as i32`.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct32_row_pass_i16_simd(_token: Desktop64, coeff_col_major: [i16; 1024]) -> [i32; 1024] {
+fn dct32_row_pass_i16_simd(_token: Desktop64, coeff_col_major: &[i16; 1024]) -> [i32; 1024] {
     let mut out = [0i32; 1024];
     let build_pair = dct8_row_build_pair;
     let coef_pack = dct8_row_coef_pack;
@@ -2717,9 +2717,7 @@ fn inv_txfm_add_dct_dct_32x64_8bpc_avx2_inner(
     }
 
     // Column transform (64 elements each, 32 columns)
-    for x in 0..32 {
-        dct64_1d(&mut tmp[x..], 32, col_clip_min, col_clip_max);
-    }
+    simd_col_dct64_8bpc(_token, &mut tmp, 32, col_clip_min, col_clip_max);
 
     // Add to destination
     #[cfg(target_arch = "x86_64")]
@@ -2844,24 +2842,25 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_avx2_inner(
     let col_clip_max = i16::MAX as i32;
     let mut tmp = [0i32; 64 * 32];
 
-    // is_rect2 = true for 64x32
-    let rect2_scale = |v: i32| (v * 181 + 128) >> 8;
-
-    // Row transform (64 elements each, 32 rows)
-    // But only first 32 columns have coefficients for 64-pt transforms
-    let rnd = 1;
-    let shift = 1;
-    for y in 0..32 {
-        let mut scratch = [0i32; 64];
-        for x in 0..32 {
-            scratch[x] = rect2_scale(coeff[y + x * 32] as i32);
-        }
-        for x in 32..64 {
-            scratch[x] = 0;
-        }
-        dct64_1d(&mut scratch[..64], 1, row_clip_min, row_clip_max);
-        for x in 0..64 {
-            tmp[y * 64 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
+    // Row transform (64 elements each, 32 rows) — 8 rows per SIMD batch.
+    // is_rect2 = true for 64x32; only first 32 columns have coefficients.
+    {
+        let coeff_slice = coeff.as_slice();
+        for y_base in [0usize, 8, 16, 24] {
+            simd_row_dct64_8bpc_8rows(
+                _token,
+                coeff_slice,
+                32,
+                y_base,
+                true,
+                1,
+                1,
+                &mut tmp,
+                row_clip_min,
+                row_clip_max,
+                col_clip_min,
+                col_clip_max,
+            );
         }
     }
 
@@ -3427,54 +3426,86 @@ macro_rules! impl_16x4_transform {
 // Generate 4x16 ADST inner functions
 impl_4x16_transform!(
     inv_txfm_add_adst_dct_4x16_8bpc_avx2_inner,
-    simd_row_adst4_8bpc_8rows,dct16_1d_cols8);
+    simd_row_adst4_8bpc_8rows,
+    dct16_1d_cols8
+);
 impl_4x16_transform!(
     inv_txfm_add_dct_adst_4x16_8bpc_avx2_inner,
-    simd_row_dct4_8bpc_8rows,adst16_1d_cols8);
+    simd_row_dct4_8bpc_8rows,
+    adst16_1d_cols8
+);
 impl_4x16_transform!(
     inv_txfm_add_adst_adst_4x16_8bpc_avx2_inner,
-    simd_row_adst4_8bpc_8rows,adst16_1d_cols8);
+    simd_row_adst4_8bpc_8rows,
+    adst16_1d_cols8
+);
 impl_4x16_transform!(
     inv_txfm_add_flipadst_dct_4x16_8bpc_avx2_inner,
-    simd_row_flipadst4_8bpc_8rows,dct16_1d_cols8);
+    simd_row_flipadst4_8bpc_8rows,
+    dct16_1d_cols8
+);
 impl_4x16_transform!(
     inv_txfm_add_dct_flipadst_4x16_8bpc_avx2_inner,
-    simd_row_dct4_8bpc_8rows,flipadst16_1d_cols8);
+    simd_row_dct4_8bpc_8rows,
+    flipadst16_1d_cols8
+);
 impl_4x16_transform!(
     inv_txfm_add_flipadst_flipadst_4x16_8bpc_avx2_inner,
-    simd_row_flipadst4_8bpc_8rows,flipadst16_1d_cols8);
+    simd_row_flipadst4_8bpc_8rows,
+    flipadst16_1d_cols8
+);
 impl_4x16_transform!(
     inv_txfm_add_adst_flipadst_4x16_8bpc_avx2_inner,
-    simd_row_adst4_8bpc_8rows,flipadst16_1d_cols8);
+    simd_row_adst4_8bpc_8rows,
+    flipadst16_1d_cols8
+);
 impl_4x16_transform!(
     inv_txfm_add_flipadst_adst_4x16_8bpc_avx2_inner,
-    simd_row_flipadst4_8bpc_8rows,adst16_1d_cols8);
+    simd_row_flipadst4_8bpc_8rows,
+    adst16_1d_cols8
+);
 
 // Generate 16x4 ADST inner functions
 impl_16x4_transform!(
     inv_txfm_add_adst_dct_16x4_8bpc_avx2_inner,
-    simd_row_adst16_8bpc_4rows,dct4_1d_cols8);
+    simd_row_adst16_8bpc_4rows,
+    dct4_1d_cols8
+);
 impl_16x4_transform!(
     inv_txfm_add_dct_adst_16x4_8bpc_avx2_inner,
-    simd_row_dct16_8bpc_4rows,adst4_1d_cols8);
+    simd_row_dct16_8bpc_4rows,
+    adst4_1d_cols8
+);
 impl_16x4_transform!(
     inv_txfm_add_adst_adst_16x4_8bpc_avx2_inner,
-    simd_row_adst16_8bpc_4rows,adst4_1d_cols8);
+    simd_row_adst16_8bpc_4rows,
+    adst4_1d_cols8
+);
 impl_16x4_transform!(
     inv_txfm_add_flipadst_dct_16x4_8bpc_avx2_inner,
-    simd_row_flipadst16_8bpc_4rows,dct4_1d_cols8);
+    simd_row_flipadst16_8bpc_4rows,
+    dct4_1d_cols8
+);
 impl_16x4_transform!(
     inv_txfm_add_dct_flipadst_16x4_8bpc_avx2_inner,
-    simd_row_dct16_8bpc_4rows,flipadst4_1d_cols8);
+    simd_row_dct16_8bpc_4rows,
+    flipadst4_1d_cols8
+);
 impl_16x4_transform!(
     inv_txfm_add_flipadst_flipadst_16x4_8bpc_avx2_inner,
-    simd_row_flipadst16_8bpc_4rows,flipadst4_1d_cols8);
+    simd_row_flipadst16_8bpc_4rows,
+    flipadst4_1d_cols8
+);
 impl_16x4_transform!(
     inv_txfm_add_adst_flipadst_16x4_8bpc_avx2_inner,
-    simd_row_adst16_8bpc_4rows,flipadst4_1d_cols8);
+    simd_row_adst16_8bpc_4rows,
+    flipadst4_1d_cols8
+);
 impl_16x4_transform!(
     inv_txfm_add_flipadst_adst_16x4_8bpc_avx2_inner,
-    simd_row_flipadst16_8bpc_4rows,adst4_1d_cols8);
+    simd_row_flipadst16_8bpc_4rows,
+    adst4_1d_cols8
+);
 
 /// FFI wrapper macro for 4x16 transforms
 macro_rules! impl_4x16_ffi_wrapper {
@@ -3617,10 +3648,14 @@ impl_16x4_ffi_wrapper!(
 // IDTX for 4x16 and 16x4
 impl_4x16_transform!(
     inv_txfm_add_identity_identity_4x16_8bpc_avx2_inner,
-    simd_row_identity4_8bpc_8rows,identity16_1d_cols8);
+    simd_row_identity4_8bpc_8rows,
+    identity16_1d_cols8
+);
 impl_16x4_transform!(
     inv_txfm_add_identity_identity_16x4_8bpc_avx2_inner,
-    simd_row_identity16_8bpc_4rows,identity4_1d_cols8);
+    simd_row_identity16_8bpc_4rows,
+    identity4_1d_cols8
+);
 impl_4x16_ffi_wrapper!(
     inv_txfm_add_identity_identity_4x16_8bpc_v3,
     inv_txfm_add_identity_identity_4x16_8bpc_avx2_inner
@@ -3633,10 +3668,14 @@ impl_16x4_ffi_wrapper!(
 // H_DCT and V_DCT for 4x16
 impl_4x16_transform!(
     inv_txfm_add_identity_dct_4x16_8bpc_avx2_inner,
-    simd_row_identity4_8bpc_8rows,dct16_1d_cols8);
+    simd_row_identity4_8bpc_8rows,
+    dct16_1d_cols8
+);
 impl_4x16_transform!(
     inv_txfm_add_dct_identity_4x16_8bpc_avx2_inner,
-    simd_row_dct4_8bpc_8rows,identity16_1d_cols8);
+    simd_row_dct4_8bpc_8rows,
+    identity16_1d_cols8
+);
 impl_4x16_ffi_wrapper!(
     inv_txfm_add_identity_dct_4x16_8bpc_v3,
     inv_txfm_add_identity_dct_4x16_8bpc_avx2_inner
@@ -3649,10 +3688,14 @@ impl_4x16_ffi_wrapper!(
 // H_DCT and V_DCT for 16x4
 impl_16x4_transform!(
     inv_txfm_add_identity_dct_16x4_8bpc_avx2_inner,
-    simd_row_identity16_8bpc_4rows,dct4_1d_cols8);
+    simd_row_identity16_8bpc_4rows,
+    dct4_1d_cols8
+);
 impl_16x4_transform!(
     inv_txfm_add_dct_identity_16x4_8bpc_avx2_inner,
-    simd_row_dct16_8bpc_4rows,identity4_1d_cols8);
+    simd_row_dct16_8bpc_4rows,
+    identity4_1d_cols8
+);
 impl_16x4_ffi_wrapper!(
     inv_txfm_add_identity_dct_16x4_8bpc_v3,
     inv_txfm_add_identity_dct_16x4_8bpc_avx2_inner
@@ -3665,16 +3708,24 @@ impl_16x4_ffi_wrapper!(
 // H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 4x16
 impl_4x16_transform!(
     inv_txfm_add_identity_adst_4x16_8bpc_avx2_inner,
-    simd_row_identity4_8bpc_8rows,adst16_1d_cols8);
+    simd_row_identity4_8bpc_8rows,
+    adst16_1d_cols8
+);
 impl_4x16_transform!(
     inv_txfm_add_adst_identity_4x16_8bpc_avx2_inner,
-    simd_row_adst4_8bpc_8rows,identity16_1d_cols8);
+    simd_row_adst4_8bpc_8rows,
+    identity16_1d_cols8
+);
 impl_4x16_transform!(
     inv_txfm_add_identity_flipadst_4x16_8bpc_avx2_inner,
-    simd_row_identity4_8bpc_8rows,flipadst16_1d_cols8);
+    simd_row_identity4_8bpc_8rows,
+    flipadst16_1d_cols8
+);
 impl_4x16_transform!(
     inv_txfm_add_flipadst_identity_4x16_8bpc_avx2_inner,
-    simd_row_flipadst4_8bpc_8rows,identity16_1d_cols8);
+    simd_row_flipadst4_8bpc_8rows,
+    identity16_1d_cols8
+);
 impl_4x16_ffi_wrapper!(
     inv_txfm_add_identity_adst_4x16_8bpc_v3,
     inv_txfm_add_identity_adst_4x16_8bpc_avx2_inner
@@ -3695,16 +3746,24 @@ impl_4x16_ffi_wrapper!(
 // H_ADST, V_ADST, H_FLIPADST, V_FLIPADST for 16x4
 impl_16x4_transform!(
     inv_txfm_add_identity_adst_16x4_8bpc_avx2_inner,
-    simd_row_identity16_8bpc_4rows,adst4_1d_cols8);
+    simd_row_identity16_8bpc_4rows,
+    adst4_1d_cols8
+);
 impl_16x4_transform!(
     inv_txfm_add_adst_identity_16x4_8bpc_avx2_inner,
-    simd_row_adst16_8bpc_4rows,identity4_1d_cols8);
+    simd_row_adst16_8bpc_4rows,
+    identity4_1d_cols8
+);
 impl_16x4_transform!(
     inv_txfm_add_identity_flipadst_16x4_8bpc_avx2_inner,
-    simd_row_identity16_8bpc_4rows,flipadst4_1d_cols8);
+    simd_row_identity16_8bpc_4rows,
+    flipadst4_1d_cols8
+);
 impl_16x4_transform!(
     inv_txfm_add_flipadst_identity_16x4_8bpc_avx2_inner,
-    simd_row_flipadst16_8bpc_4rows,identity4_1d_cols8);
+    simd_row_flipadst16_8bpc_4rows,
+    identity4_1d_cols8
+);
 impl_16x4_ffi_wrapper!(
     inv_txfm_add_identity_adst_16x4_8bpc_v3,
     inv_txfm_add_identity_adst_16x4_8bpc_avx2_inner
@@ -4239,9 +4298,7 @@ fn inv_txfm_add_dct_dct_16x64_8bpc_avx2_inner(
     }
 
     // Column transform (64 elements each, 16 columns)
-    for x in 0..16 {
-        dct64_1d(&mut tmp[x..], 16, col_clip_min, col_clip_max);
-    }
+    simd_col_dct64_8bpc(_token, &mut tmp, 16, col_clip_min, col_clip_max);
 
     // Add to destination
     let zero = _mm256_setzero_si256();
@@ -4352,21 +4409,25 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_avx2_inner(
     let col_clip_max = i16::MAX as i32;
     let mut tmp = [0i32; 64 * 16];
 
-    // rect4 scaling
-    // Row transform (64 elements each, 16 rows) - only first 32 columns have coefficients
-    let rnd = 2;
-    let shift = 2;
-    for y in 0..16 {
-        let mut scratch = [0i32; 64];
-        for x in 0..32 {
-            scratch[x] = coeff[y + x * 16] as i32;
-        }
-        for x in 32..64 {
-            scratch[x] = 0;
-        }
-        dct64_1d(&mut scratch[..64], 1, row_clip_min, row_clip_max);
-        for x in 0..64 {
-            tmp[y * 64 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
+    // Row transform (64 elements each, 16 rows) — 8 rows per SIMD batch.
+    // rect4 class (no rect2 scaling); only first 32 columns have coefficients.
+    {
+        let coeff_slice = coeff.as_slice();
+        for y_base in [0usize, 8] {
+            simd_row_dct64_8bpc_8rows(
+                _token,
+                coeff_slice,
+                16,
+                y_base,
+                false,
+                2,
+                2,
+                &mut tmp,
+                row_clip_min,
+                row_clip_max,
+                col_clip_min,
+                col_clip_max,
+            );
         }
     }
 
@@ -4589,48 +4650,18 @@ macro_rules! impl_simd_row_rect_8bpc {
 // 4-point rows: W=4 blocks (4x8, 4x16) — 8 rows per call, tmp stride 4.
 impl_simd_row_rect_8bpc!(simd_row_dct4_8bpc_8rows, dct4_1d_cols8, 4, 8, 4);
 impl_simd_row_rect_8bpc!(simd_row_adst4_8bpc_8rows, adst4_1d_cols8, 4, 8, 4);
-impl_simd_row_rect_8bpc!(
-    simd_row_flipadst4_8bpc_8rows,
-    flipadst4_1d_cols8,
-    4,
-    8,
-    4
-);
-impl_simd_row_rect_8bpc!(
-    simd_row_identity4_8bpc_8rows,
-    identity4_1d_cols8,
-    4,
-    8,
-    4
-);
+impl_simd_row_rect_8bpc!(simd_row_flipadst4_8bpc_8rows, flipadst4_1d_cols8, 4, 8, 4);
+impl_simd_row_rect_8bpc!(simd_row_identity4_8bpc_8rows, identity4_1d_cols8, 4, 8, 4);
 
 // 8-point rows: W=8, H=4 (8x4) — 4 rows per call, tmp stride 8.
 impl_simd_row_rect_8bpc!(simd_row_dct8_8bpc_4rows, dct8_1d_cols8, 8, 4, 8);
 impl_simd_row_rect_8bpc!(simd_row_adst8_8bpc_4rows, adst8_1d_cols8, 8, 4, 8);
-impl_simd_row_rect_8bpc!(
-    simd_row_flipadst8_8bpc_4rows,
-    flipadst8_1d_cols8,
-    8,
-    4,
-    8
-);
-impl_simd_row_rect_8bpc!(
-    simd_row_identity8_8bpc_4rows,
-    identity8_1d_cols8,
-    8,
-    4,
-    8
-);
+impl_simd_row_rect_8bpc!(simd_row_flipadst8_8bpc_4rows, flipadst8_1d_cols8, 8, 4, 8);
+impl_simd_row_rect_8bpc!(simd_row_identity8_8bpc_4rows, identity8_1d_cols8, 8, 4, 8);
 
 // 16-point rows: W=16, H=4 (16x4) — 4 rows per call, tmp stride 16.
 impl_simd_row_rect_8bpc!(simd_row_dct16_8bpc_4rows, dct16_1d_cols8, 16, 4, 16);
-impl_simd_row_rect_8bpc!(
-    simd_row_adst16_8bpc_4rows,
-    adst16_1d_cols8,
-    16,
-    4,
-    16
-);
+impl_simd_row_rect_8bpc!(simd_row_adst16_8bpc_4rows, adst16_1d_cols8, 16, 4, 16);
 impl_simd_row_rect_8bpc!(
     simd_row_flipadst16_8bpc_4rows,
     flipadst16_1d_cols8,
@@ -4648,13 +4679,7 @@ impl_simd_row_rect_8bpc!(
 
 // Identity rows for 8x16/16x8 (8 rows per call); the dct/adst 8-row variants
 // already exist as `simd_row_{dct,adst}{8,16}_8bpc_8rows`.
-impl_simd_row_rect_8bpc!(
-    simd_row_identity8_8bpc_8rows,
-    identity8_1d_cols8,
-    8,
-    8,
-    8
-);
+impl_simd_row_rect_8bpc!(simd_row_identity8_8bpc_8rows, identity8_1d_cols8, 8, 8, 8);
 impl_simd_row_rect_8bpc!(
     simd_row_identity16_8bpc_8rows,
     identity16_1d_cols8,
@@ -4758,86 +4783,26 @@ macro_rules! impl_simd_row_rect_16bpc {
 // 4-point rows: 4x4 (4 rows per call) and W=4 blocks (4x8, 4x16, 8 rows).
 impl_simd_row_rect_16bpc!(simd_row_dct4_16bpc_4rows, dct4_1d_cols8, 4, 4, 4);
 impl_simd_row_rect_16bpc!(simd_row_adst4_16bpc_4rows, adst4_1d_cols8, 4, 4, 4);
-impl_simd_row_rect_16bpc!(
-    simd_row_flipadst4_16bpc_4rows,
-    flipadst4_1d_cols8,
-    4,
-    4,
-    4
-);
-impl_simd_row_rect_16bpc!(
-    simd_row_identity4_16bpc_4rows,
-    identity4_1d_cols8,
-    4,
-    4,
-    4
-);
+impl_simd_row_rect_16bpc!(simd_row_flipadst4_16bpc_4rows, flipadst4_1d_cols8, 4, 4, 4);
+impl_simd_row_rect_16bpc!(simd_row_identity4_16bpc_4rows, identity4_1d_cols8, 4, 4, 4);
 impl_simd_row_rect_16bpc!(simd_row_dct4_16bpc_8rows, dct4_1d_cols8, 4, 8, 4);
 impl_simd_row_rect_16bpc!(simd_row_adst4_16bpc_8rows, adst4_1d_cols8, 4, 8, 4);
-impl_simd_row_rect_16bpc!(
-    simd_row_flipadst4_16bpc_8rows,
-    flipadst4_1d_cols8,
-    4,
-    8,
-    4
-);
-impl_simd_row_rect_16bpc!(
-    simd_row_identity4_16bpc_8rows,
-    identity4_1d_cols8,
-    4,
-    8,
-    4
-);
+impl_simd_row_rect_16bpc!(simd_row_flipadst4_16bpc_8rows, flipadst4_1d_cols8, 4, 8, 4);
+impl_simd_row_rect_16bpc!(simd_row_identity4_16bpc_8rows, identity4_1d_cols8, 4, 8, 4);
 
 // 8-point rows: 8x4 (4 rows) and 8x16 (8 rows), tmp stride 8.
 impl_simd_row_rect_16bpc!(simd_row_dct8_16bpc_4rows, dct8_1d_cols8, 8, 4, 8);
 impl_simd_row_rect_16bpc!(simd_row_adst8_16bpc_4rows, adst8_1d_cols8, 8, 4, 8);
-impl_simd_row_rect_16bpc!(
-    simd_row_flipadst8_16bpc_4rows,
-    flipadst8_1d_cols8,
-    8,
-    4,
-    8
-);
-impl_simd_row_rect_16bpc!(
-    simd_row_identity8_16bpc_4rows,
-    identity8_1d_cols8,
-    8,
-    4,
-    8
-);
+impl_simd_row_rect_16bpc!(simd_row_flipadst8_16bpc_4rows, flipadst8_1d_cols8, 8, 4, 8);
+impl_simd_row_rect_16bpc!(simd_row_identity8_16bpc_4rows, identity8_1d_cols8, 8, 4, 8);
 impl_simd_row_rect_16bpc!(simd_row_dct8_16bpc_8rows, dct8_1d_cols8, 8, 8, 8);
 impl_simd_row_rect_16bpc!(simd_row_adst8_16bpc_8rows, adst8_1d_cols8, 8, 8, 8);
-impl_simd_row_rect_16bpc!(
-    simd_row_flipadst8_16bpc_8rows,
-    flipadst8_1d_cols8,
-    8,
-    8,
-    8
-);
-impl_simd_row_rect_16bpc!(
-    simd_row_identity8_16bpc_8rows,
-    identity8_1d_cols8,
-    8,
-    8,
-    8
-);
+impl_simd_row_rect_16bpc!(simd_row_flipadst8_16bpc_8rows, flipadst8_1d_cols8, 8, 8, 8);
+impl_simd_row_rect_16bpc!(simd_row_identity8_16bpc_8rows, identity8_1d_cols8, 8, 8, 8);
 
 // 16-point rows: 16x4 (4 rows) and 16x8 (8 rows), tmp stride 16.
-impl_simd_row_rect_16bpc!(
-    simd_row_dct16_16bpc_4rows,
-    dct16_1d_cols8,
-    16,
-    4,
-    16
-);
-impl_simd_row_rect_16bpc!(
-    simd_row_adst16_16bpc_4rows,
-    adst16_1d_cols8,
-    16,
-    4,
-    16
-);
+impl_simd_row_rect_16bpc!(simd_row_dct16_16bpc_4rows, dct16_1d_cols8, 16, 4, 16);
+impl_simd_row_rect_16bpc!(simd_row_adst16_16bpc_4rows, adst16_1d_cols8, 16, 4, 16);
 impl_simd_row_rect_16bpc!(
     simd_row_flipadst16_16bpc_4rows,
     flipadst16_1d_cols8,
@@ -4852,20 +4817,8 @@ impl_simd_row_rect_16bpc!(
     4,
     16
 );
-impl_simd_row_rect_16bpc!(
-    simd_row_dct16_16bpc_8rows,
-    dct16_1d_cols8,
-    16,
-    8,
-    16
-);
-impl_simd_row_rect_16bpc!(
-    simd_row_adst16_16bpc_8rows,
-    adst16_1d_cols8,
-    16,
-    8,
-    16
-);
+impl_simd_row_rect_16bpc!(simd_row_dct16_16bpc_8rows, dct16_1d_cols8, 16, 8, 16);
+impl_simd_row_rect_16bpc!(simd_row_adst16_16bpc_8rows, adst16_1d_cols8, 16, 8, 16);
 impl_simd_row_rect_16bpc!(
     simd_row_flipadst16_16bpc_8rows,
     flipadst16_1d_cols8,

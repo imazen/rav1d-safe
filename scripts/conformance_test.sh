@@ -98,7 +98,7 @@ run_tests() {
     echo "Binary: $binary"
     echo ""
 
-    while IFS=$'\t' read -r bitdepth category test_name file_path expected_md5 filmgrain; do
+    while IFS=$'\t' read -r bitdepth category test_name file_path expected_md5 filmgrain extra_args; do
         # Skip header
         [[ "$bitdepth" == "bitdepth" ]] && continue
 
@@ -123,11 +123,18 @@ run_tests() {
             continue
         fi
 
-        # Build args
-        local args=("-q" "$file_path" "$expected_md5")
+        # Build args. extra_args carries dav1d decode-mode flags from the
+        # meson test() call (--oppoint/--alllayers/--decodeframetype/--limit)
+        # that decode_md5 now understands.
+        local args=("-q")
         if [[ "$filmgrain" == "1" ]]; then
-            args=("-q" "--filmgrain" "$file_path" "$expected_md5")
+            args+=("--filmgrain")
         fi
+        if [[ -n "$extra_args" ]]; then
+            # shellcheck disable=SC2206 # deliberate word-split of flags
+            args+=($extra_args)
+        fi
+        args+=("$file_path" "$expected_md5")
 
         # Run decode_md5
         if output=$("$binary" "${args[@]}" 2>&1); then

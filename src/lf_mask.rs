@@ -212,57 +212,84 @@ fn mask_edges_inter_inner(
     // * `txa[0][1][0..h4][x]` where `x` is the start of a block edge
     // * `txa[1][1][y][0..w4]` where `y` is the start of a block edge
 
-    // left block edge
-    for y in 0..h4 {
-        let mask = 1u32 << (by4 + y);
-        let sidx = (mask >= 0x10000) as usize;
-        let smask = mask >> (sidx << 4);
-        let txa_y = txa[0][0][y][0];
-        masks[0][bx4][cmp::min(txa_y, l[y]) as usize][sidx].update(|it| it | smask as u16);
+    // left block edge — accumulate per-row OR bits in registers keyed by the
+    // (level, sidx) cell, then flush each cell with one atomic update.
+    {
+        let col = &masks[0][bx4];
+        let l = &l[..h4];
+        let mut acc = [[0u16; 2]; 3];
+        for y in 0..h4 {
+            let mask = 1u32 << (by4 + y);
+            let sidx = (mask >= 0x10000) as usize;
+            acc[cmp::min(txa[0][0][y][0], l[y]) as usize][sidx] |=
+                (mask >> (sidx << 4)) as u16;
+        }
+        for (lvl, pair) in acc.iter().enumerate() {
+            for (sidx, m) in pair.iter().enumerate() {
+                if *m != 0 {
+                    col[lvl][sidx].update(|it| it | m);
+                }
+            }
+        }
     }
 
     // top block edge
-    for x in 0..w4 {
-        let mask = 1u32 << (bx4 + x);
-        let sidx = (mask >= 0x10000) as usize;
-        let smask = mask >> (sidx << 4);
-        let txa_x = txa[1][0][0][x];
-        masks[1][by4][cmp::min(txa_x, a[x]) as usize][sidx].update(|it| it | smask as u16);
+    {
+        let row = &masks[1][by4];
+        let a = &a[..w4];
+        let mut acc = [[0u16; 2]; 3];
+        for x in 0..w4 {
+            let mask = 1u32 << (bx4 + x);
+            let sidx = (mask >= 0x10000) as usize;
+            acc[cmp::min(txa[1][0][0][x], a[x]) as usize][sidx] |=
+                (mask >> (sidx << 4)) as u16;
+        }
+        for (lvl, pair) in acc.iter().enumerate() {
+            for (sidx, m) in pair.iter().enumerate() {
+                if *m != 0 {
+                    row[lvl][sidx].update(|it| it | m);
+                }
+            }
+        }
     }
     if !skip {
         // inner (tx) left|right edges
+        let row_span = &masks[0][bx4..bx4 + w4];
         for y in 0..h4 {
             let mask = 1u32 << (by4 + y);
             let sidx = (mask >= 0x10000) as usize;
             let smask = mask >> (sidx << 4);
+            // Row slices make every inner `txa[...][y][x]` index check fold:
+            // `x < w4` is the while condition and the rows are `w4` long.
+            let txa_row = &txa[0][0][y][..w4];
+            let txa_step = &txa[0][1][y][..w4];
             let mut ltx = txa[0][0][y][0];
-            let step = txa[0][1][y][0] as usize;
-            let mut x = step;
+            let mut x = txa[0][1][y][0] as usize;
             while x < w4 {
-                let rtx = txa[0][0][y][x];
-                masks[0][bx4 + x][cmp::min(rtx, ltx) as usize][sidx].update(|it| it | smask as u16);
+                let rtx = txa_row[x];
+                row_span[x][cmp::min(rtx, ltx) as usize][sidx].update(|it| it | smask as u16);
                 ltx = rtx;
-                let step = txa[0][1][y][x] as usize;
-                x += step;
+                x += txa_step[x] as usize;
             }
         }
 
         //            top
         // inner (tx) --- edges
         //           bottom
+        let col_span = &masks[1][by4..by4 + h4];
+        let txa_rows = &txa[1][0][..h4];
+        let txa_steps = &txa[1][1][..h4];
         for x in 0..w4 {
             let mask = 1u32 << (bx4 + x);
             let sidx = (mask >= 0x10000) as usize;
             let smask = mask >> (sidx << 4);
             let mut ttx = txa[1][0][0][x];
-            let step = txa[1][1][0][x] as usize;
-            let mut y = step;
+            let mut y = txa[1][1][0][x] as usize;
             while y < h4 {
-                let btx = txa[1][0][y][x];
-                masks[1][by4 + y][cmp::min(ttx, btx) as usize][sidx].update(|it| it | smask as u16);
+                let btx = txa_rows[y][x];
+                col_span[y][cmp::min(ttx, btx) as usize][sidx].update(|it| it | smask as u16);
                 ttx = btx;
-                let step = txa[1][1][y][x] as usize;
-                y += step;
+                y += txa_steps[y][x] as usize;
             }
         }
     }
@@ -290,22 +317,43 @@ fn mask_edges_intra(
     let twl4c = cmp::min(2, twl4);
     let thl4c = cmp::min(2, thl4);
 
-    // left block edge
-    for y in 0..h4 {
-        let mask = 1u32 << (by4 + y);
-        let sidx = (mask >= 0x10000) as usize;
-        let smask = mask >> (sidx << 4);
-        masks[0][bx4][cmp::min(twl4c, l[y]) as usize][sidx].update(|it| it | smask as u16);
+    // left block edge — accumulate per-row OR bits in registers keyed by the
+    // (level, sidx) cell, then flush each cell with one atomic update.
+    {
+        let col = &masks[0][bx4];
+        let l = &l[..h4];
+        let mut acc = [[0u16; 2]; 3];
+        for y in 0..h4 {
+            let mask = 1u32 << (by4 + y);
+            let sidx = (mask >= 0x10000) as usize;
+            acc[cmp::min(twl4c, l[y]) as usize][sidx] |= (mask >> (sidx << 4)) as u16;
+        }
+        for (lvl, pair) in acc.iter().enumerate() {
+            for (sidx, m) in pair.iter().enumerate() {
+                if *m != 0 {
+                    col[lvl][sidx].update(|it| it | m);
+                }
+            }
+        }
     }
 
     // top block edge
-    for x in 0..w4 {
-        let mask = 1u32 << (bx4 + x);
-        let sidx = (mask >= 0x10000) as usize;
-        let smask = mask >> (sidx << 4);
-        // SAFETY: No other mutable references to this sub-slice exist on other
-        // threads.
-        masks[1][by4][cmp::min(thl4c, a[x]) as usize][sidx].update(|it| it | smask as u16);
+    {
+        let row = &masks[1][by4];
+        let a = &a[..w4];
+        let mut acc = [[0u16; 2]; 3];
+        for x in 0..w4 {
+            let mask = 1u32 << (bx4 + x);
+            let sidx = (mask >= 0x10000) as usize;
+            acc[cmp::min(thl4c, a[x]) as usize][sidx] |= (mask >> (sidx << 4)) as u16;
+        }
+        for (lvl, pair) in acc.iter().enumerate() {
+            for (sidx, m) in pair.iter().enumerate() {
+                if *m != 0 {
+                    row[lvl][sidx].update(|it| it | m);
+                }
+            }
+        }
     }
 
     // inner (tx) left|right edges
@@ -313,14 +361,16 @@ fn mask_edges_intra(
     let t = 1u32 << by4;
     let inner = (((t as u64) << h4) - (t as u64)) as u32;
     let inner = [inner as u16, (inner >> 16) as u16];
+    let row_span = &masks[0][bx4..bx4 + w4];
     for x in (hstep..w4).step_by(hstep) {
         // SAFETY: No other mutable references to this sub-slice exist on other
         // threads.
+        let cell = &row_span[x][twl4c as usize];
         if inner[0] != 0 {
-            masks[0][bx4 + x][twl4c as usize][0].update(|it| it | inner[0]);
+            cell[0].update(|it| it | inner[0]);
         }
         if inner[1] != 0 {
-            masks[0][bx4 + x][twl4c as usize][1].update(|it| it | inner[1]);
+            cell[1].update(|it| it | inner[1]);
         }
     }
 
@@ -331,12 +381,14 @@ fn mask_edges_intra(
     let t = 1u32 << bx4;
     let inner = (((t as u64) << w4) - (t as u64)) as u32;
     let inner = [inner as u16, (inner >> 16) as u16];
+    let row_span = &masks[1][by4..by4 + h4];
     for y in (vstep..h4).step_by(vstep) {
+        let cell = &row_span[y][thl4c as usize];
         if inner[0] != 0 {
-            masks[1][by4 + y][thl4c as usize][0].update(|it| it | inner[0]);
+            cell[0].update(|it| it | inner[0]);
         }
         if inner[1] != 0 {
-            masks[1][by4 + y][thl4c as usize][1].update(|it| it | inner[1]);
+            cell[1].update(|it| it | inner[1]);
         }
     }
 
@@ -464,12 +516,14 @@ pub(crate) fn rav1d_create_lf_mask_intra(
 
     if bw4 != 0 && bh4 != 0 {
         let mut level_cache_off = by * b4_stride + bx;
+        let lv0 = filter_level[0][0][0];
+        let lv1 = filter_level[1][0][0];
         for _y in 0..bh4 {
-            for x in 0..bw4 {
-                let idx = 4 * (level_cache_off + x);
-                // `idx+0, idx+1` is for Y
-                level_cache[idx + 0].store(filter_level[0][0][0], Relaxed);
-                level_cache[idx + 1].store(filter_level[1][0][0], Relaxed);
+            let row = &level_cache[4 * level_cache_off..4 * (level_cache_off + bw4)];
+            for ch in row.chunks_exact(4) {
+                // `ch[0], ch[1]` is for Y
+                ch[0].store(lv0, Relaxed);
+                ch[1].store(lv1, Relaxed);
             }
             level_cache_off += b4_stride;
         }
@@ -501,12 +555,14 @@ pub(crate) fn rav1d_create_lf_mask_intra(
     let cby4 = by4 >> ss_ver;
 
     let mut level_cache_off = (by >> ss_ver) * b4_stride + (bx >> ss_hor);
+    let lv2 = filter_level[2][0][0];
+    let lv3 = filter_level[3][0][0];
     for _y in 0..cbh4 {
-        for x in 0..cbw4 {
-            let idx = 4 * (level_cache_off + x);
-            // `idx+2, idx+3` is for UV
-            level_cache[idx + 2].store(filter_level[2][0][0], Relaxed);
-            level_cache[idx + 3].store(filter_level[3][0][0], Relaxed);
+        let row = &level_cache[4 * level_cache_off..4 * (level_cache_off + cbw4)];
+        for ch in row.chunks_exact(4) {
+            // `ch[2], ch[3]` is for UV
+            ch[2].store(lv2, Relaxed);
+            ch[3].store(lv3, Relaxed);
         }
         level_cache_off += b4_stride;
     }
@@ -560,12 +616,14 @@ pub(crate) fn rav1d_create_lf_mask_inter(
 
     if bw4 != 0 && bh4 != 0 {
         let mut level_cache_off = by * b4_stride + bx;
+        let lv0 = filter_level[0][r#ref][is_gmv];
+        let lv1 = filter_level[1][r#ref][is_gmv];
         for _y in 0..bh4 {
-            for x in 0..bw4 {
-                let idx = 4 * (level_cache_off + x);
-                // `idx+0, idx+1` is for Y
-                level_cache[idx + 0].store(filter_level[0][r#ref][is_gmv], Relaxed);
-                level_cache[idx + 1].store(filter_level[1][r#ref][is_gmv], Relaxed);
+            let row = &level_cache[4 * level_cache_off..4 * (level_cache_off + bw4)];
+            for ch in row.chunks_exact(4) {
+                // `ch[0], ch[1]` is for Y
+                ch[0].store(lv0, Relaxed);
+                ch[1].store(lv1, Relaxed);
             }
             level_cache_off += b4_stride;
         }
@@ -608,12 +666,14 @@ pub(crate) fn rav1d_create_lf_mask_inter(
     let cby4 = by4 >> ss_ver;
 
     let mut level_cache_off = (by >> ss_ver) * b4_stride + (bx >> ss_hor);
+    let lv2 = filter_level[2][r#ref][is_gmv];
+    let lv3 = filter_level[3][r#ref][is_gmv];
     for _y in 0..cbh4 {
-        for x in 0..cbw4 {
-            let idx = 4 * (level_cache_off + x);
-            // `idx+2, idx+3` is for UV
-            level_cache[idx + 2].store(filter_level[2][r#ref][is_gmv], Relaxed);
-            level_cache[idx + 3].store(filter_level[3][r#ref][is_gmv], Relaxed);
+        let row = &level_cache[4 * level_cache_off..4 * (level_cache_off + cbw4)];
+        for ch in row.chunks_exact(4) {
+            // `ch[2], ch[3]` is for UV
+            ch[2].store(lv2, Relaxed);
+            ch[3].store(lv3, Relaxed);
         }
         level_cache_off += b4_stride;
     }

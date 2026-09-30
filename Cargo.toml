@@ -76,6 +76,7 @@ divan = "0.1.21"
 md5 = "0.8.1"
 zenbench = "0.1.9"
 zenavif-parse = { version = "0.6.2", features = ["eager"] }
+miniz_oxide = "0.8"
 
 # tango-bench uses native shared memory and process APIs unavailable on wasm32
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
@@ -337,6 +338,15 @@ debug = "line-tables-only"
 [profile.release-with-debug]
 inherits = "release"
 debug = "line-tables-only"
+
+# Dev-iteration profile: identical codegen to `release` but thin LTO, which
+# cuts the example/test link from ~17s (fat) to ~3s while decoding at
+# effectively the same speed. Use `--profile release-thin` for benchmark and
+# conformance binaries during development; shipped artifacts stay on
+# `release`'s fat LTO.
+[profile.release-thin]
+inherits = "release"
+lto = "thin"
 
 [profile.checked-release]
 inherits = "dev"
