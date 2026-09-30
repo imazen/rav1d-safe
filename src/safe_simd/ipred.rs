@@ -2414,6 +2414,31 @@ fn filter_edge_8bpc(
                 );
                 i += 16;
             }
+            while i + 8 <= mid_hi {
+                let c = (i - win_off) as usize;
+                let m = |k: usize| {
+                    _mm_cvtepu8_epi16(loadu_64!(
+                        <&[u8; 8]>::try_from(&win[c + k..c + k + 8]).unwrap()
+                    ))
+                };
+                let s = _mm_add_epi16(
+                    _mm_add_epi16(
+                        _mm_mullo_epi16(m(0), _mm_set1_epi16(kernel[0] as i16)),
+                        _mm_mullo_epi16(m(1), _mm_set1_epi16(kernel[1] as i16)),
+                    ),
+                    _mm_add_epi16(
+                        _mm_add_epi16(
+                            _mm_mullo_epi16(m(2), _mm_set1_epi16(kernel[2] as i16)),
+                            _mm_mullo_epi16(m(3), _mm_set1_epi16(kernel[3] as i16)),
+                        ),
+                        _mm_mullo_epi16(m(4), _mm_set1_epi16(kernel[4] as i16)),
+                    ),
+                );
+                let r = _mm_srai_epi16::<4>(_mm_add_epi16(s, _mm_set1_epi16(8)));
+                let r = _mm_packus_epi16(r, r);
+                storei64!(&mut out[i as usize..i as usize + 8], r);
+                i += 8;
+            }
         }
         while i < mid_hi {
             let c = (i - win_off) as usize;
@@ -2489,6 +2514,29 @@ fn upsample_edge_8bpc(out: &mut [u8], hsz: i32, inp: &[u8], in_off: usize, from:
                     inter
                 );
                 i += 8;
+            }
+            while i + 4 <= mid_hi && (i - win_off) as usize + 11 <= win.len() {
+                let c = (i - win_off) as usize;
+                let l = |k: usize| {
+                    _mm_cvtepu8_epi16(loadu_64!(
+                        <&[u8; 8]>::try_from(&win[c + k..c + k + 8]).unwrap()
+                    ))
+                };
+                let a = l(0);
+                let b = l(1);
+                let d = l(2);
+                let e = l(3);
+                let bd = _mm_add_epi16(b, d);
+                let s = _mm_sub_epi16(
+                    _mm_add_epi16(_mm_slli_epi16::<3>(bd), bd),
+                    _mm_add_epi16(a, e),
+                );
+                let f =
+                    _mm_packus_epi16(_mm_srai_epi16::<4>(_mm_add_epi16(s, _mm_set1_epi16(8))), s);
+                let src = _mm_packus_epi16(b, b);
+                let inter = _mm_unpacklo_epi8(src, f);
+                storei64!(&mut out[(i * 2) as usize..(i * 2) as usize + 8], inter);
+                i += 4;
             }
         }
         while i < mid_hi {
