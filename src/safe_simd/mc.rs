@@ -1137,6 +1137,47 @@ fn mask_8bpc_avx2_safe(
             col += 16;
         }
 
+        // w=4/8 lanes: pmaddwd on (m,64)x(diff,t2) pairs = m*(t1-t2)+64*t2,
+        // identical to the scalar (a*m + b*(64-m) + 512) >> 10.
+        let c64x = _mm_set1_epi16(64);
+        let rndx = _mm_set1_epi32(512);
+        while col + 8 <= w {
+            let t1 = loadu_128!(<&[i16; 8]>::try_from(&tmp1_row[col..col + 8]).unwrap());
+            let t2 = loadu_128!(<&[i16; 8]>::try_from(&tmp2_row[col..col + 8]).unwrap());
+            let mv = _mm_cvtepu8_epi16(loadu_64!(
+                <&[u8; 8]>::try_from(&mask_row[col..col + 8]).unwrap()
+            ));
+            let diff = _mm_sub_epi16(t1, t2);
+            let mm_lo = _mm_unpacklo_epi16(mv, c64x);
+            let mm_hi = _mm_unpackhi_epi16(mv, c64x);
+            let tt_lo = _mm_unpacklo_epi16(diff, t2);
+            let tt_hi = _mm_unpackhi_epi16(diff, t2);
+            let sum_lo = _mm_add_epi32(_mm_madd_epi16(mm_lo, tt_lo), rndx);
+            let sum_hi = _mm_add_epi32(_mm_madd_epi16(mm_hi, tt_hi), rndx);
+            let res16 = _mm_packs_epi32(_mm_srai_epi32::<10>(sum_lo), _mm_srai_epi32::<10>(sum_hi));
+            let res8 = _mm_packus_epi16(res16, res16);
+            storei64!(&mut dst_row[col..col + 8], res8);
+            col += 8;
+        }
+        if col + 4 <= w {
+            let t1 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+                <&[i16; 4]>::try_from(&tmp1_row[col..col + 4]).unwrap(),
+            );
+            let t2 = crate::src::safe_simd::partial_simd::mm_loadl_epi64::<[i16; 4]>(
+                <&[i16; 4]>::try_from(&tmp2_row[col..col + 4]).unwrap(),
+            );
+            let mv = _mm_cvtepu8_epi16(loadi32!(&mask_row[col..col + 4]));
+            let diff = _mm_sub_epi16(t1, t2);
+            let mm_lo = _mm_unpacklo_epi16(mv, c64x);
+            let tt_lo = _mm_unpacklo_epi16(diff, t2);
+            let sum_lo = _mm_add_epi32(_mm_madd_epi16(mm_lo, tt_lo), rndx);
+            let res16 = _mm_packs_epi32(_mm_srai_epi32::<10>(sum_lo), _mm_setzero_si128());
+            let res8 = _mm_packus_epi16(res16, res16);
+            dst_row[col..col + 4]
+                .copy_from_slice(&(_mm_cvtsi128_si32(res8) as u32).to_ne_bytes());
+            col += 4;
+        }
+
         // Handle remaining pixels with scalar
         while col < w {
             let a = tmp1_row[col] as i32;
@@ -10321,8 +10362,9 @@ pub unsafe extern "C" fn w_mask_420_8bpc_v3(
 
 // 16bpc w_mask (fully safe, slice-based)
 #[cfg(target_arch = "x86_64")]
-#[inline(always)]
+#[rite]
 fn w_mask_16bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
+    _token: Desktop64,
     dst: &mut [u8],
     dst_stride: usize,
     tmp1: &[i16; COMPINTER_LEN],
@@ -10349,6 +10391,14 @@ fn w_mask_16bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
     let mask_w = if SS_HOR { w >> 1 } else { w };
     let mut mask_off = 0usize;
 
+    let mask_rnd_v = _mm256_set1_epi16(mask_rnd as i16);
+    let c38 = _mm256_set1_epi16(38);
+    let c64_16 = _mm256_set1_epi16(64);
+    let rnd_v = _mm256_set1_epi32(rnd);
+    let bmax16 = _mm256_set1_epi16(bd_max as i16);
+    let mask_shv = _mm_cvtsi32_si128(mask_sh as i32);
+    let shv = _mm_cvtsi32_si128(sh as i32);
+
     for row_h in 0..h {
         let row_offset = row_h * w;
         let tmp1_row = &tmp1[row_offset..][..w];
@@ -10358,6 +10408,139 @@ fn w_mask_16bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
         let dst_row: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_row_bytes).unwrap();
 
         let mut x = 0;
+
+        // Same pmaddwd structure as the 8bpc impl; outputs stay u16 and
+        // clamp to bitdepth_max instead of packing to bytes.
+        while x + 16 <= w {
+            let t1 = loadu_256!(<&[i16; 16]>::try_from(&tmp1_row[x..x + 16]).unwrap());
+            let t2 = loadu_256!(<&[i16; 16]>::try_from(&tmp2_row[x..x + 16]).unwrap());
+            let diff = _mm256_abs_epi16(_mm256_sub_epi16(t1, t2));
+            let mv = _mm256_min_epi16(
+                _mm256_add_epi16(
+                    c38,
+                    _mm256_srl_epi16(_mm256_add_epi16(diff, mask_rnd_v), mask_shv),
+                ),
+                c64_16,
+            );
+            let inv = _mm256_sub_epi16(c64_16, mv);
+            let mm_lo = _mm256_unpacklo_epi16(mv, inv);
+            let mm_hi = _mm256_unpackhi_epi16(mv, inv);
+            let tt_lo = _mm256_unpacklo_epi16(t1, t2);
+            let tt_hi = _mm256_unpackhi_epi16(t1, t2);
+            let sum_lo = _mm256_add_epi32(_mm256_madd_epi16(mm_lo, tt_lo), rnd_v);
+            let sum_hi = _mm256_add_epi32(_mm256_madd_epi16(mm_hi, tt_hi), rnd_v);
+            let res_lo = _mm256_sra_epi32(sum_lo, shv);
+            let res_hi = _mm256_sra_epi32(sum_hi, shv);
+            let res16 = _mm256_packs_epi32(res_lo, res_hi);
+            let clamped = _mm256_min_epi16(_mm256_max_epi16(res16, _mm256_setzero_si256()), bmax16);
+            storeu_256!(
+                <&mut [u16; 16]>::try_from(&mut dst_row[x..x + 16]).unwrap(),
+                clamped
+            );
+
+            if !SS_HOR {
+                let m8 = _mm256_packus_epi16(mv, mv);
+                let m8 = _mm256_permute4x64_epi64(m8, 0b11011000);
+                storeu_128!(
+                    <&mut [u8; 16]>::try_from(&mut mask[mask_off + x..mask_off + x + 16])
+                        .unwrap(),
+                    _mm256_castsi256_si128(m8)
+                );
+            } else {
+                let mn = _mm256_hadd_epi16(mv, mv);
+                let mn8 =
+                    _mm256_castsi256_si128(_mm256_permute4x64_epi64(mn, 0b11011000));
+                if SS_VER && (row_h & 1 != 0) {
+                    let prev = _mm_cvtepu8_epi16(loadu_64!(
+                        <&[u8; 8]>::try_from(&mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8])
+                            .unwrap()
+                    ));
+                    let out = _mm_srli_epi16::<2>(_mm_add_epi16(
+                        _mm_add_epi16(mn8, _mm_set1_epi16(2 - sign as i16)),
+                        prev,
+                    ));
+                    let out8 = _mm_packus_epi16(out, out);
+                    storei64!(&mut mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8], out8);
+                } else if SS_VER {
+                    let out8 = _mm_packus_epi16(mn8, mn8);
+                    storei64!(&mut mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8], out8);
+                } else {
+                    let out = _mm_srli_epi16::<1>(_mm_add_epi16(
+                        mn8,
+                        _mm_set1_epi16(1 - sign as i16),
+                    ));
+                    let out8 = _mm_packus_epi16(out, out);
+                    storei64!(&mut mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 8], out8);
+                }
+            }
+            x += 16;
+        }
+
+        while x + 8 <= w {
+            let t1 = loadu_128!(<&[i16; 8]>::try_from(&tmp1_row[x..x + 8]).unwrap());
+            let t2 = loadu_128!(<&[i16; 8]>::try_from(&tmp2_row[x..x + 8]).unwrap());
+            let diff = _mm_abs_epi16(_mm_sub_epi16(t1, t2));
+            let mv = _mm_min_epi16(
+                _mm_add_epi16(
+                    _mm_set1_epi16(38),
+                    _mm_srl_epi16(_mm_add_epi16(diff, _mm256_castsi256_si128(mask_rnd_v)), mask_shv),
+                ),
+                _mm_set1_epi16(64),
+            );
+            let inv = _mm_sub_epi16(_mm_set1_epi16(64), mv);
+            let mm_lo = _mm_unpacklo_epi16(mv, inv);
+            let mm_hi = _mm_unpackhi_epi16(mv, inv);
+            let tt_lo = _mm_unpacklo_epi16(t1, t2);
+            let tt_hi = _mm_unpackhi_epi16(t1, t2);
+            let sum_lo = _mm_add_epi32(_mm_madd_epi16(mm_lo, tt_lo), _mm_set1_epi32(rnd));
+            let sum_hi = _mm_add_epi32(_mm_madd_epi16(mm_hi, tt_hi), _mm_set1_epi32(rnd));
+            let res_lo = _mm_sra_epi32(sum_lo, shv);
+            let res_hi = _mm_sra_epi32(sum_hi, shv);
+            let res16 = _mm_packs_epi32(res_lo, res_hi);
+            let clamped = _mm_min_epi16(
+                _mm_max_epi16(res16, _mm_setzero_si128()),
+                _mm_set1_epi16(bd_max as i16),
+            );
+            storeu_128!(
+                <&mut [u16; 8]>::try_from(&mut dst_row[x..x + 8]).unwrap(),
+                clamped
+            );
+
+            if !SS_HOR {
+                storei64!(
+                    &mut mask[mask_off + x..mask_off + x + 8],
+                    _mm_packus_epi16(mv, mv)
+                );
+            } else {
+                let mn = _mm_hadd_epi16(mv, mv);
+                if SS_VER && (row_h & 1 != 0) {
+                    let prev = _mm_cvtepu8_epi16(loadi32!(
+                        &mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 4]
+                    ));
+                    let out = _mm_srli_epi16::<2>(_mm_add_epi16(
+                        _mm_add_epi16(mn, _mm_set1_epi16(2 - sign as i16)),
+                        prev,
+                    ));
+                    let out8 = _mm_packus_epi16(out, out);
+                    mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 4]
+                        .copy_from_slice(&(_mm_cvtsi128_si32(out8) as u32).to_ne_bytes());
+                } else if SS_VER {
+                    let out8 = _mm_packus_epi16(mn, mn);
+                    mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 4]
+                        .copy_from_slice(&(_mm_cvtsi128_si32(out8) as u32).to_ne_bytes());
+                } else {
+                    let out = _mm_srli_epi16::<1>(_mm_add_epi16(
+                        mn,
+                        _mm_set1_epi16(1 - sign as i16),
+                    ));
+                    let out8 = _mm_packus_epi16(out, out);
+                    mask[mask_off + (x >> 1)..mask_off + (x >> 1) + 4]
+                        .copy_from_slice(&(_mm_cvtsi128_si32(out8) as u32).to_ne_bytes());
+                }
+            }
+            x += 8;
+        }
+
         while x < w {
             let diff = tmp1_row[x].abs_diff(tmp2_row[x]);
             let m = std::cmp::min(38 + ((diff.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
@@ -10416,6 +10599,7 @@ fn w_mask_444_16bpc_avx2_safe(
 ) {
     let mut dst = dst.flex_mut();
     w_mask_16bpc_avx2_safe_impl::<false, false>(
+        _token,
         &mut *dst,
         dst_stride,
         tmp1,
@@ -10445,6 +10629,7 @@ fn w_mask_422_16bpc_avx2_safe(
 ) {
     let mut dst = dst.flex_mut();
     w_mask_16bpc_avx2_safe_impl::<true, false>(
+        _token,
         &mut *dst,
         dst_stride,
         tmp1,
@@ -10474,6 +10659,7 @@ fn w_mask_420_16bpc_avx2_safe(
 ) {
     let mut dst = dst.flex_mut();
     w_mask_16bpc_avx2_safe_impl::<true, true>(
+        _token,
         &mut *dst,
         dst_stride,
         tmp1,
