@@ -776,6 +776,8 @@ fn w_avg_8bpc_avx512_safe(
                 _mm512_srai_epi32::<8>(sum_lo),
                 _mm512_srai_epi32::<8>(sum_hi),
             );
+            // cvtusepi16 treats lanes as unsigned — clamp negatives first.
+            let res16 = _mm512_max_epi16(res16, _mm512_setzero_si512());
             let result: __m256i = _mm512_cvtusepi16_epi8(res16);
 
             storeu_256!(&mut dst_row[col..col + 32], [u8; 32], result);
@@ -14496,6 +14498,13 @@ mod tests {
                     token, &mut dst_b, stride, &tmp1, &tmp2, w as i32, h as i32, &mask,
                 );
                 assert_eq!(dst_a, dst_b, "mask_8bpc w={w} h={h}");
+                if let Some(t512) = crate::src::cpu::summon_avx512() {
+                    let mut dst_c = vec![0xAAu8; h * stride];
+                    mask_8bpc_avx512_safe(
+                        t512, &mut dst_c, stride, &tmp1, &tmp2, w as i32, h as i32, &mask,
+                    );
+                    assert_eq!(dst_a, dst_c, "mask_8bpc_avx512 w={w} h={h}");
+                }
 
                 // w_avg: (a*weight + b*(16-weight) + 128) >> 8
                 for &weight in &[0i32, 1, 7, 8, 9, 15, 16] {
@@ -14513,6 +14522,16 @@ mod tests {
                         token, &mut dst_b, stride, &tmp1, &tmp2, w as i32, h as i32, weight,
                     );
                     assert_eq!(dst_a, dst_b, "w_avg_8bpc w={w} h={h} weight={weight}");
+                    if let Some(t512) = crate::src::cpu::summon_avx512() {
+                        let mut dst_c = vec![0xAAu8; h * stride];
+                        w_avg_8bpc_avx512_safe(
+                            t512, &mut dst_c, stride, &tmp1, &tmp2, w as i32, h as i32, weight,
+                        );
+                        assert_eq!(
+                            dst_a, dst_c,
+                            "w_avg_8bpc_avx512 w={w} h={h} weight={weight}"
+                        );
+                    }
                 }
             }
         }
