@@ -365,10 +365,14 @@ mod packed16 {
         let mut hi = [zero; 8];
         for row in 0..8 {
             let start = signed_idx(base, row as isize * stride - 7);
-            let bytes: [u8; 8] = buf[start..][..8].try_into().unwrap();
-            lo[row] = _mm_cvtepu8_epi16(_mm_cvtsi64_si128(i64::from_le_bytes(bytes)));
+            // One 14-byte window per row: `&[u8; 14]` has a statically known
+            // length so the two sub-slices below carry no bounds checks.
+            let win: &[u8; 14] = buf[start..start + 14].try_into().unwrap();
+            lo[row] = _mm_cvtepu8_epi16(_mm_cvtsi64_si128(i64::from_le_bytes(
+                win[..8].try_into().unwrap(),
+            )));
             let mut bytes = [0u8; 8];
-            bytes[..6].copy_from_slice(&buf[start + 8..][..6]);
+            bytes[..6].copy_from_slice(&win[8..]);
             hi[row] = _mm_cvtepu8_epi16(_mm_cvtsi64_si128(i64::from_le_bytes(bytes)));
         }
         let lo = transpose8(token, lo);
@@ -384,10 +388,14 @@ mod packed16 {
         );
         for row in 0..8 {
             let start = signed_idx(base, row as isize * stride - 6);
-            let bytes = _mm_cvtsi128_si64(_mm_packus_epi16(lo[row], zero)).to_le_bytes();
-            buf[start..][..8].copy_from_slice(&bytes);
-            let bytes = _mm_cvtsi128_si32(_mm_packus_epi16(hi[row], zero)).to_le_bytes();
-            buf[start + 8..][..4].copy_from_slice(&bytes);
+            // One 12-byte window per row (offsets -6..=5); fixed length means
+            // the two copies below carry no bounds checks.
+            let win: &mut [u8; 12] = (&mut buf[start..start + 12]).try_into().unwrap();
+            win[..8].copy_from_slice(
+                &_mm_cvtsi128_si64(_mm_packus_epi16(lo[row], zero)).to_le_bytes(),
+            );
+            win[8..]
+                .copy_from_slice(&_mm_cvtsi128_si32(_mm_packus_epi16(hi[row], zero)).to_le_bytes());
         }
     }
 }

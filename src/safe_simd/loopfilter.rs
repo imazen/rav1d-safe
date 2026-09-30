@@ -1352,16 +1352,19 @@ fn loop_filter_4_8bpc_wd6_simd_h(
     // Per row: 4 bytes at -3 = [p2,p1,p0,q0], 2 bytes at +1 = [q1,q2].
     // Build each half into one xmm (one dword per row) and column-extract
     // taps with pshufb. 4 live u8 lanes per tap vector.
-    let load_lo = |row: isize| -> __m128i {
+    // One 6-byte window per row at -3 covers both loads ([p2..q0] = w[..4],
+    // [q1,q2] = w[4..6]); the `&[u8; 6]` static length makes both check-free.
+    // Never touch +3/+4 — at a plane edge those belong to the next row a
+    // concurrent tile worker may be writing (#524).
+    let row_win = |row: isize| -> &[u8; 6] {
         let start = signed_idx(base, row * stridea - 3);
-        loadi32!(&buf[start..start + 4])
+        buf[start..start + 6].try_into().unwrap()
+    };
+    let load_lo = |row: isize| -> __m128i {
+        _mm_cvtsi32_si128(i32::from_ne_bytes(row_win(row)[..4].try_into().unwrap()))
     };
     let load_hi = |row: isize| -> __m128i {
-        // Only 2 bytes survive ([q1,q2]); lanes 2-3 of the row dword are
-        // dead. Never touch +3/+4 — at a plane edge those belong to the next
-        // row a concurrent tile worker may be writing (#524).
-        let start = signed_idx(base, row * stridea + 1);
-        _mm_cvtsi32_si128(u16::from_le_bytes(buf[start..start + 2].try_into().unwrap()) as i32)
+        _mm_cvtsi32_si128(u16::from_le_bytes(row_win(row)[4..6].try_into().unwrap()) as i32)
     };
     let lo = _mm_unpacklo_epi64(
         _mm_unpacklo_epi32(load_lo(0), load_lo(1)),
@@ -1652,30 +1655,32 @@ fn loop_filter_4_8bpc_wd16_simd_h(
     h: i32,
     stridea: isize,
 ) {
-    // Per row: 4 dwords at -7 (p6..p3), -3 (p2..q0), +1 (q1..q4), +5 (q5,q6).
-    // Pack each 4-byte column group across the 4 rows into one xmm
-    // (one dword per row), then pshufb column-extract the tap vectors.
-    let load_chunk = |row: isize, chunk_off: isize| -> __m128i {
-        let start = signed_idx(base, row * stridea + chunk_off);
-        loadi32!(&buf[start..start + 4])
+    // Per row: one 14-byte window at -7 covering dwords at -7 (p6..p3),
+    // -3 (p2..q0), +1 (q1..q4), +5 (q5,q6). The `&[u8; 14]` static length
+    // makes the four sub-slices check-free. Pack each 4-byte column group
+    // across the 4 rows into one xmm (one dword per row), then pshufb
+    // column-extract the tap vectors.
+    let row_win = |row: isize| -> &[u8; 14] {
+        let start = signed_idx(base, row * stridea - 7);
+        buf[start..start + 14].try_into().unwrap()
+    };
+    let d32 = |w: &[u8; 14], off: usize| -> __m128i {
+        _mm_cvtsi32_si128(i32::from_ne_bytes(w[off..off + 4].try_into().unwrap()))
     };
     // The last chunk needs only q5/q6: dead lanes are zero-filled rather
     // than reading the +7/+8 tail, which at a plane edge is the next row a
     // concurrent tile worker may be writing (#524).
-    let load_chunk2 = |row: isize, chunk_off: isize| -> __m128i {
-        let start = signed_idx(base, row * stridea + chunk_off);
-        _mm_cvtsi32_si128(u16::from_le_bytes(buf[start..start + 2].try_into().unwrap()) as i32)
-    };
-    let pack_rows = |l: &dyn Fn(isize) -> __m128i| -> __m128i {
+    let pack_rows = |l: &dyn Fn(&[u8; 14]) -> __m128i| -> __m128i {
         _mm_unpacklo_epi64(
-            _mm_unpacklo_epi32(l(0), l(1)),
-            _mm_unpacklo_epi32(l(2), l(3)),
+            _mm_unpacklo_epi32(l(row_win(0)), l(row_win(1))),
+            _mm_unpacklo_epi32(l(row_win(2)), l(row_win(3))),
         )
     };
-    let c0 = pack_rows(&|r| load_chunk(r, -7));
-    let c1 = pack_rows(&|r| load_chunk(r, -3));
-    let c2 = pack_rows(&|r| load_chunk(r, 1));
-    let c3 = pack_rows(&|r| load_chunk2(r, 5));
+    let c0 = pack_rows(&|w| d32(w, 0));
+    let c1 = pack_rows(&|w| d32(w, 4));
+    let c2 = pack_rows(&|w| d32(w, 8));
+    let c3 =
+        pack_rows(&|w| _mm_cvtsi32_si128(u16::from_le_bytes(w[12..14].try_into().unwrap()) as i32));
     let col = |v: __m128i, j: i8| -> __m128i {
         _mm_shuffle_epi8(
             v,
@@ -1762,10 +1767,11 @@ fn loop_filter_4_8bpc_wd16_simd_h(
             _mm_unpacklo_epi32(sel(c, k), _mm_setzero_si128()),
         );
         let start = signed_idx(base, r * stridea - 6);
-        let b8 = _mm_cvtsi128_si64(row).to_le_bytes();
-        buf[start..start + 8].copy_from_slice(&b8);
-        let b4 = _mm_extract_epi32::<2>(row).to_le_bytes();
-        buf[start + 8..start + 12].copy_from_slice(&b4);
+        // One 12-byte window per row; fixed length makes both copies
+        // check-free.
+        let w: &mut [u8; 12] = (&mut buf[start..start + 12]).try_into().unwrap();
+        w[..8].copy_from_slice(&_mm_cvtsi128_si64(row).to_le_bytes());
+        w[8..].copy_from_slice(&_mm_extract_epi32::<2>(row).to_le_bytes());
     };
     store_row(buf, 0);
     store_row(buf, 1);
