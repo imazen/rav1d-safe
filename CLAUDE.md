@@ -60,7 +60,15 @@ fired on the AVX-512 tier.
    manifest) at every CPU level, grain + no-grain, pinned to the suite's
    own sidecar MD5s. Streams lazy-fetch into `test-vectors/argon_subset/`
    (range-requests from the release zip, or a local extract / mirror).
-5. **Cross-arch compile** — `cargo check --target aarch64-unknown-linux-gnu`
+5. **Owned generated corpus** — `cargo nextest run --release --test gen_cover`
+   decodes 28 committed streams (sub-second) at every CPU level × grain
+   passes, pinned to ASM-build MD5s. The streams are ours: zenav1-svt's
+   `gen_cover` example encodes a fixed matrix (8/10-bit, 420/444/mono,
+   tiles, superres, film grain, sb64/128, preset/qp extremes, intra +
+   flat low-delay P sequences). Regenerate with `scripts/gen_vectors.sh`
+   (`ZENAV1_SVT=/path/to/checkout`); commit streams + manifest together.
+   Unlike Argon this gate needs no fetch and is safe to run every commit.
+6. **Cross-arch compile** — `cargo check --target aarch64-unknown-linux-gnu`
    and `--target wasm32-unknown-unknown` after touching shared kernels.
 
 The full Argon matrix (7 ISA legs × 6 shards: x86 scalar/v3/v4/native +
