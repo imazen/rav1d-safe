@@ -53,6 +53,13 @@ fired on the AVX-512 tier.
    token gate.
 4. **Argon spot check** — `bash scripts/argon_md5_check.sh <argon_root> \
    ./target/release/examples/decode_md5 [max_streams]` per `ARGON_LEVEL=…`.
+   For a broad sweep without downloading the full suite:
+   `cargo nextest run --release --test argon_cover` decodes a
+   greedy-minimal 57-stream set (covers every testPoint in the official
+   coverage reports — `scripts/argon_cover_select.py` regenerates the
+   manifest) at every CPU level, grain + no-grain, pinned to the suite's
+   own sidecar MD5s. Streams lazy-fetch into `test-vectors/argon_subset/`
+   (range-requests from the release zip, or a local extract / mirror).
 5. **Cross-arch compile** — `cargo check --target aarch64-unknown-linux-gnu`
    and `--target wasm32-unknown-unknown` after touching shared kernels.
 
