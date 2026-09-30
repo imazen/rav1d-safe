@@ -152,11 +152,55 @@ Some fixes are *also* free or faster:
   decode parity with fat LTO on test22; ~2x faster rebuilds).
 - **fat LTO + CGU=1** remains the shipped `release` profile.
 - **PGO**: `bench_pgo.sh` — `llvm-profdata` profile → `-Cprofile-use`.
+  Measured (4K AVIF, znver4): **−7.0%** (45.5→42.3 ms/iter); 10-bit IVF
+  **−10.4%**. Biggest single build lever.
+- **BOLT post-link** (`llvm-bolt`, instrumentation mode — works without
+  `perf_event_paranoid`): build with `-C link-arg=-Wl,--emit-relocs`,
+  `llvm-bolt --instrument`, run workload, `-reorder-blocks=ext-tsp
+  -reorder-functions=hfsort+ -split-functions -split-all-cold -split-eh`.
+  Measured **−4.4%** alone (45.4→43.4 ms/iter), but **no stack gain over
+  PGO** (PGO+BOLT ≈ PGO — rustc PGO already captures the layout win). Use
+  BOLT when PGO isn't an option, or on release binaries post-hoc.
+  `-indirect-call-promotion=all` promoted the 5 hot indirect callsites
+  (99% of indirect calls) with no further wall gain.
+- **MLGO**: not available — rustc's bundled LLVM 21 has no MLGO options
+  compiled in (`--enable-ml-inliner` removed upstream). BOLT is its
+  effective successor.
 - **`target-cpu=native`**: give the compiler hints, but *don't* measure
   dispatch coverage with it — it can mask which `#[rite]` tiers actually
   engaged (zenav1-svt CLAUDE.md makes the same point).
 - **`__bisect` diagnostic feature** env knobs to disable SIMD classes for
   triage (`a3f6e9f7`); `__simd_test` per-transform NEON-vs-scalar gate.
+
+### Kernel-vs-kernel measurement tooling
+
+- `scripts/perf/cg_resolve_asm.py <cg.out>` — resolves dav1d nasm
+  `..@N`/bare-address callgrind records to `dav1d_*` symbols: the true
+  per-kernel Ir table. On photo_4k (10 decodes): dav1d total asm
+  ~1.57B Ir vs our ~3.3B in safe_simd inners+cores. Largest deltas:
+  loopfilter family ~2.3B (h_sb_y 847M vs dav1d 110M), itx ~860M vs ~220M,
+  ipred ~800M vs ~32M. `dav1d_msac_decode_symbol_adapt4_sse2` alone is
+  712M — dav1d's biggest kernel too.
+- `scripts/perf/mca_cmp.sh <our_bin> <our_sym> <asm_bin> <dav1d_sym>` —
+  disassembles each function (spanning nasm `.sublabel`s via symbol
+  ranges) and runs `llvm-mca -mcpu=znver4`. Per-pass cycles, znver4:
+
+  | kernel | ours | dav1d |
+  |---|---|---|
+  | lpf_v_sb_y | 332 | 326 — **at parity** |
+  | lpf_h_sb_y | 662 | 548 |
+  | lpf_h_sb_uv | 313 | 155 |
+  | itx 32x32 | 386 | 117 |
+  | ipred_z2 | 1003 | 273 (IPC 1.26 vs 2.75) |
+  | ipred_dc | 149 | 24 (IPC 0.82 vs 5.71) |
+
+  Two structural lessons: (1) `lpf_v_sb_y` proves our codegen reaches
+  parity *when the structure matches*; (2) the h-filter's 4× dynamic
+  gap is path coverage, not throughput — dav1d's mask-driven dispatch
+  skips more work per superblock than our per-row `test_all_zeros`
+  early-outs.
+- Whole-binary BOLT ICP stats: only **5 indirect callsites cover 99%**
+  of all indirect calls — the dispatch surface is tiny.
 
 ## 10. Gate after every kernel
 
