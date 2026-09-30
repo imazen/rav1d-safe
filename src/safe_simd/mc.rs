@@ -615,9 +615,9 @@ const PW_2048: i16 = 2048;
 
 /// Weighted average for 8-bit pixels using AVX2
 ///
-/// Computes: (tmp1 * weight + tmp2 * (16 - weight) + 128) >> 8
-/// Using the optimized form from asm:
-///   ((((tmp1 - tmp2) * ((weight-16) << 12)) >> 16) + tmp1 + 8) >> 4
+/// Computes: (tmp1 * weight + tmp2 * (16 - weight) + rnd) >> 8 via pmaddwd
+/// pairs (w, 16-w)x(t1, t2) — exact for the full i16 tmp range (an i16
+/// diff*mulhi path wraps when |t1-t2| > 32767, e.g. warp_affine mids).
 ///
 /// # Safety
 ///
@@ -638,18 +638,16 @@ fn w_avg_8bpc_avx2_safe(
     let w = w as usize;
     let h = h as usize;
 
-    let (tmp1_ptr, tmp2_ptr, weight_scaled) = if weight > 7 {
-        (tmp1, tmp2, ((weight - 16) << 12) as i16)
-    } else {
-        (tmp2, tmp1, ((-weight) << 12) as i16)
-    };
-
-    let weight_vec = _mm256_set1_epi16(weight_scaled);
-    let round = _mm256_set1_epi16(PW_2048);
+    // rnd = (8 << intermediate_bits) + PREP_BIAS*16 = 128 + 0 (PREP_BIAS=0 at 8bpc)
+    let wv = _mm256_set1_epi16(weight as i16);
+    let iwv = _mm256_set1_epi16((16 - weight) as i16);
+    let mm_lo = _mm256_unpacklo_epi16(wv, iwv);
+    let mm_hi = _mm256_unpackhi_epi16(wv, iwv);
+    let rnd_v = _mm256_set1_epi32(128);
 
     for row in 0..h {
-        let tmp1_row = &tmp1_ptr[row * w..][..w];
-        let tmp2_row = &tmp2_ptr[row * w..][..w];
+        let tmp1_row = &tmp1[row * w..][..w];
+        let tmp2_row = &tmp2[row * w..][..w];
         let dst_row = &mut dst[row * dst_stride..][..w];
 
         let mut col = 0;
@@ -659,24 +657,34 @@ fn w_avg_8bpc_avx2_safe(
             let t2_lo = loadu_256!(&tmp2_row[col..col + 16], [i16; 16]);
             let t2_hi = loadu_256!(&tmp2_row[col + 16..col + 32], [i16; 16]);
 
-            // diff = tmp1 - tmp2
-            let diff_lo = _mm256_sub_epi16(t1_lo, t2_lo);
-            let diff_hi = _mm256_sub_epi16(t1_hi, t2_hi);
+            let sum_lo = _mm256_add_epi32(
+                _mm256_madd_epi16(mm_lo, _mm256_unpacklo_epi16(t1_lo, t2_lo)),
+                rnd_v,
+            );
+            let sum_hi = _mm256_add_epi32(
+                _mm256_madd_epi16(mm_hi, _mm256_unpackhi_epi16(t1_lo, t2_lo)),
+                rnd_v,
+            );
+            let res16_lo = _mm256_packs_epi32(
+                _mm256_srai_epi32::<8>(sum_lo),
+                _mm256_srai_epi32::<8>(sum_hi),
+            );
 
-            // scaled = (diff * weight_scaled) >> 16 (pmulhw gives high 16 bits)
-            let scaled_lo = _mm256_mulhi_epi16(diff_lo, weight_vec);
-            let scaled_hi = _mm256_mulhi_epi16(diff_hi, weight_vec);
+            let sum_lo = _mm256_add_epi32(
+                _mm256_madd_epi16(mm_lo, _mm256_unpacklo_epi16(t1_hi, t2_hi)),
+                rnd_v,
+            );
+            let sum_hi = _mm256_add_epi32(
+                _mm256_madd_epi16(mm_hi, _mm256_unpackhi_epi16(t1_hi, t2_hi)),
+                rnd_v,
+            );
+            let res16_hi = _mm256_packs_epi32(
+                _mm256_srai_epi32::<8>(sum_lo),
+                _mm256_srai_epi32::<8>(sum_hi),
+            );
 
-            // result = tmp1 + scaled
-            let sum_lo = _mm256_add_epi16(t1_lo, scaled_lo);
-            let sum_hi = _mm256_add_epi16(t1_hi, scaled_hi);
-
-            // Final rounding: (sum + 8) >> 4 via pmulhrsw with 2048
-            let avg_lo = _mm256_mulhrs_epi16(sum_lo, round);
-            let avg_hi = _mm256_mulhrs_epi16(sum_hi, round);
-
-            // Pack to bytes
-            let packed = _mm256_packus_epi16(avg_lo, avg_hi);
+            // Pack to bytes (packus saturates i16 -> u8 = iclip [0,255])
+            let packed = _mm256_packus_epi16(res16_lo, res16_hi);
             let result = _mm256_permute4x64_epi64(packed, 0b11_01_10_00);
 
             storeu_256!(&mut dst_row[col..col + 32], [u8; 32], result);
@@ -688,12 +696,8 @@ fn w_avg_8bpc_avx2_safe(
         while col < w {
             let a = tmp1_row[col] as i32;
             let b = tmp2_row[col] as i32;
-            // Use the optimized formula
-            let diff = a - b;
-            let scaled = (diff * (weight_scaled as i32)) >> 16;
-            let sum = a + scaled;
-            let avg = ((sum + 8) >> 4).clamp(0, 255) as u8;
-            dst_row[col] = avg;
+            let val = (a * weight + b * (16 - weight) + 128) >> 8;
+            dst_row[col] = val.clamp(0, 255) as u8;
             col += 1;
         }
     }
@@ -738,60 +742,41 @@ fn w_avg_8bpc_avx512_safe(
     let w = w as usize;
     let h = h as usize;
 
-    let (tmp1_ptr, tmp2_ptr, weight_scaled) = if weight > 7 {
-        (tmp1, tmp2, ((weight - 16) << 12) as i16)
-    } else {
-        (tmp2, tmp1, ((-weight) << 12) as i16)
-    };
-
-    let weight_vec = _mm512_set1_epi16(weight_scaled);
-    let round = _mm512_set1_epi16(PW_2048);
-    let zero = _mm512_setzero_si512();
+    // Same pmaddwd formulation as the AVX2 kernel: (w, 16-w)x(t1, t2) is
+    // exact for the full i16 tmp range (i16 diff*mulhi wraps at |d|>32767).
+    let wv = _mm512_set1_epi16(weight as i16);
+    let iwv = _mm512_set1_epi16((16 - weight) as i16);
+    let mm_lo = _mm512_unpacklo_epi16(wv, iwv);
+    let mm_hi = _mm512_unpackhi_epi16(wv, iwv);
+    let rnd_v = _mm512_set1_epi32(128);
 
     for row in 0..h {
-        let tmp1_row = &tmp1_ptr[row * w..][..w];
-        let tmp2_row = &tmp2_ptr[row * w..][..w];
+        let tmp1_row = &tmp1[row * w..][..w];
+        let tmp2_row = &tmp2[row * w..][..w];
         let dst_row = &mut dst[row * dst_stride..][..w];
 
         let mut col = 0;
-
-        // Process 64 pixels at a time
-        while col + 64 <= w {
-            // First 32
-            let t1_lo = loadu_512!(&tmp1_row[col..col + 32], [i16; 32]);
-            let t2_lo = loadu_512!(&tmp2_row[col..col + 32], [i16; 32]);
-            let diff_lo = _mm512_sub_epi16(t1_lo, t2_lo);
-            let scaled_lo = _mm512_mulhi_epi16(diff_lo, weight_vec);
-            let sum_lo = _mm512_add_epi16(t1_lo, scaled_lo);
-            let avg_lo = _mm512_mulhrs_epi16(sum_lo, round);
-            let avg_lo = _mm512_max_epi16(avg_lo, zero);
-            let result_lo: __m256i = _mm512_cvtusepi16_epi8(avg_lo);
-
-            // Second 32
-            let t1_hi = loadu_512!(&tmp1_row[col + 32..col + 64], [i16; 32]);
-            let t2_hi = loadu_512!(&tmp2_row[col + 32..col + 64], [i16; 32]);
-            let diff_hi = _mm512_sub_epi16(t1_hi, t2_hi);
-            let scaled_hi = _mm512_mulhi_epi16(diff_hi, weight_vec);
-            let sum_hi = _mm512_add_epi16(t1_hi, scaled_hi);
-            let avg_hi = _mm512_mulhrs_epi16(sum_hi, round);
-            let avg_hi = _mm512_max_epi16(avg_hi, zero);
-            let result_hi: __m256i = _mm512_cvtusepi16_epi8(avg_hi);
-
-            let combined = _mm512_inserti64x4::<1>(_mm512_castsi256_si512(result_lo), result_hi);
-            storeu_512!(&mut dst_row[col..col + 64], [u8; 64], combined);
-            col += 64;
-        }
 
         // Process 32 pixels at a time
         while col + 32 <= w {
             let t1 = loadu_512!(&tmp1_row[col..col + 32], [i16; 32]);
             let t2 = loadu_512!(&tmp2_row[col..col + 32], [i16; 32]);
-            let diff = _mm512_sub_epi16(t1, t2);
-            let scaled = _mm512_mulhi_epi16(diff, weight_vec);
-            let sum = _mm512_add_epi16(t1, scaled);
-            let avg = _mm512_mulhrs_epi16(sum, round);
-            let avg = _mm512_max_epi16(avg, zero);
-            let result: __m256i = _mm512_cvtusepi16_epi8(avg);
+
+            let sum_lo = _mm512_add_epi32(
+                _mm512_madd_epi16(mm_lo, _mm512_unpacklo_epi16(t1, t2)),
+                rnd_v,
+            );
+            let sum_hi = _mm512_add_epi32(
+                _mm512_madd_epi16(mm_hi, _mm512_unpackhi_epi16(t1, t2)),
+                rnd_v,
+            );
+            // packs_epi32 is lane-local; madd's per-lane i32 order
+            // {0-3,8-11|...} pairs with hi {4-7,12-15|...} into i16 px order.
+            let res16 = _mm512_packs_epi32(
+                _mm512_srai_epi32::<8>(sum_lo),
+                _mm512_srai_epi32::<8>(sum_hi),
+            );
+            let result: __m256i = _mm512_cvtusepi16_epi8(res16);
 
             storeu_256!(&mut dst_row[col..col + 32], [u8; 32], result);
             col += 32;
@@ -801,11 +786,8 @@ fn w_avg_8bpc_avx512_safe(
         while col < w {
             let a = tmp1_row[col] as i32;
             let b = tmp2_row[col] as i32;
-            let diff = a - b;
-            let scaled = (diff * (weight_scaled as i32)) >> 16;
-            let sum = a + scaled;
-            let avg = ((sum + 8) >> 4).clamp(0, 255) as u8;
-            dst_row[col] = avg;
+            let val = (a * weight + b * (16 - weight) + 128) >> 8;
+            dst_row[col] = val.clamp(0, 255) as u8;
             col += 1;
         }
     }
@@ -1095,34 +1077,23 @@ fn mask_8bpc_avx2_safe(
             let mask_bytes = loadu_128!(&mask_row[col..col + 16], [u8; 16]);
             let mask_lo = _mm256_cvtepu8_epi16(mask_bytes);
 
-            // Compute (tmp1 - tmp2)
-            let diff = _mm256_sub_epi16(t1_lo, t2_lo);
-
-            // Process low 8 elements (need 32-bit for tmp2*64 which can overflow 16-bit)
-            let diff_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(diff));
-            let mask_lo_32 = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(mask_lo));
-            let t2_lo_32 = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(t2_lo));
-
-            let prod_lo = _mm256_mullo_epi32(diff_lo, mask_lo_32);
-            let t2_64_lo = _mm256_slli_epi32(t2_lo_32, 6);
-            let sum_lo = _mm256_add_epi32(_mm256_add_epi32(prod_lo, t2_64_lo), rnd);
-
-            // Process high 8 elements
-            let diff_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(diff, 1));
-            let mask_hi_32 = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(mask_lo, 1));
-            let t2_hi_32 = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(t2_lo, 1));
-
-            let prod_hi = _mm256_mullo_epi32(diff_hi, mask_hi_32);
-            let t2_64_hi = _mm256_slli_epi32(t2_hi_32, 6);
-            let sum_hi = _mm256_add_epi32(_mm256_add_epi32(prod_hi, t2_64_hi), rnd);
+            // m*t1 + (64-m)*t2 via pmaddwd pairs — exact for the full i16
+            // tmp range (a wrapping i16 diff would lose carry).
+            let inv = _mm256_sub_epi16(_mm256_set1_epi16(64), mask_lo);
+            let mm_lo = _mm256_unpacklo_epi16(mask_lo, inv);
+            let mm_hi = _mm256_unpackhi_epi16(mask_lo, inv);
+            let tt_lo = _mm256_unpacklo_epi16(t1_lo, t2_lo);
+            let tt_hi = _mm256_unpackhi_epi16(t1_lo, t2_lo);
+            let sum_lo = _mm256_add_epi32(_mm256_madd_epi16(mm_lo, tt_lo), rnd);
+            let sum_hi = _mm256_add_epi32(_mm256_madd_epi16(mm_hi, tt_hi), rnd);
 
             // Shift right by 10
             let result_lo = _mm256_srai_epi32(sum_lo, 10);
             let result_hi = _mm256_srai_epi32(sum_hi, 10);
 
-            // Pack back to 16-bit
+            // Pack back to 16-bit (madd pairs yield i32s in pixel order per
+            // 128-bit lane, so packs_epi32 already produces ordered i16s).
             let result_16 = _mm256_packs_epi32(result_lo, result_hi);
-            let result_16 = _mm256_permute4x64_epi64(result_16, 0b11011000);
 
             // Pack to 8-bit with unsigned saturation
             let result_8 = _mm256_packus_epi16(result_16, result_16);
@@ -1137,8 +1108,8 @@ fn mask_8bpc_avx2_safe(
             col += 16;
         }
 
-        // w=4/8 lanes: pmaddwd on (m,64)x(diff,t2) pairs = m*(t1-t2)+64*t2,
-        // identical to the scalar (a*m + b*(64-m) + 512) >> 10.
+        // w=4/8 lanes: same pmaddwd pairs (m,64-m)x(t1,t2) — exact for any i16
+        // tmp (a wrapping i16 diff loses carry when |t1-t2| > 32767).
         let c64x = _mm_set1_epi16(64);
         let rndx = _mm_set1_epi32(512);
         while col + 8 <= w {
@@ -1147,11 +1118,11 @@ fn mask_8bpc_avx2_safe(
             let mv = _mm_cvtepu8_epi16(loadu_64!(
                 <&[u8; 8]>::try_from(&mask_row[col..col + 8]).unwrap()
             ));
-            let diff = _mm_sub_epi16(t1, t2);
-            let mm_lo = _mm_unpacklo_epi16(mv, c64x);
-            let mm_hi = _mm_unpackhi_epi16(mv, c64x);
-            let tt_lo = _mm_unpacklo_epi16(diff, t2);
-            let tt_hi = _mm_unpackhi_epi16(diff, t2);
+            let inv = _mm_sub_epi16(c64x, mv);
+            let mm_lo = _mm_unpacklo_epi16(mv, inv);
+            let mm_hi = _mm_unpackhi_epi16(mv, inv);
+            let tt_lo = _mm_unpacklo_epi16(t1, t2);
+            let tt_hi = _mm_unpackhi_epi16(t1, t2);
             let sum_lo = _mm_add_epi32(_mm_madd_epi16(mm_lo, tt_lo), rndx);
             let sum_hi = _mm_add_epi32(_mm_madd_epi16(mm_hi, tt_hi), rndx);
             let res16 = _mm_packs_epi32(_mm_srai_epi32::<10>(sum_lo), _mm_srai_epi32::<10>(sum_hi));
@@ -1167,9 +1138,9 @@ fn mask_8bpc_avx2_safe(
                 <&[i16; 4]>::try_from(&tmp2_row[col..col + 4]).unwrap(),
             );
             let mv = _mm_cvtepu8_epi16(loadi32!(&mask_row[col..col + 4]));
-            let diff = _mm_sub_epi16(t1, t2);
-            let mm_lo = _mm_unpacklo_epi16(mv, c64x);
-            let tt_lo = _mm_unpacklo_epi16(diff, t2);
+            let inv = _mm_sub_epi16(c64x, mv);
+            let mm_lo = _mm_unpacklo_epi16(mv, inv);
+            let tt_lo = _mm_unpacklo_epi16(t1, t2);
             let sum_lo = _mm_add_epi32(_mm_madd_epi16(mm_lo, tt_lo), rndx);
             let res16 = _mm_packs_epi32(_mm_srai_epi32::<10>(sum_lo), _mm_setzero_si128());
             let res8 = _mm_packus_epi16(res16, res16);
@@ -1250,10 +1221,13 @@ fn mask_8bpc_avx512_safe(
             let t2_full = loadu_512!(&tmp2_row[col..col + 32], [i16; 32]);
             let mask_bytes = loadu_256!(&mask_row[col..col + 32], [u8; 32]);
             let mask_16 = _mm512_cvtepu8_epi16(mask_bytes);
-            let diff = _mm512_sub_epi16(t1_full, t2_full);
 
-            // Low 16 pixels (expand to i32)
-            let diff_lo = _mm512_cvtepi16_epi32(_mm512_castsi512_si256(diff));
+            // Low 16 pixels (expand to i32; subtract in i32 — an i16 sub
+            // wraps when |t1-t2| > 32767, e.g. extreme warp_affine mids).
+            let diff_lo = _mm512_sub_epi32(
+                _mm512_cvtepi16_epi32(_mm512_castsi512_si256(t1_full)),
+                _mm512_cvtepi16_epi32(_mm512_castsi512_si256(t2_full)),
+            );
             let mask_lo = _mm512_cvtepi16_epi32(_mm512_castsi512_si256(mask_16));
             let t2_lo = _mm512_cvtepi16_epi32(_mm512_castsi512_si256(t2_full));
 
@@ -1263,7 +1237,10 @@ fn mask_8bpc_avx512_safe(
             let result_lo = _mm512_srai_epi32::<10>(sum_lo);
 
             // High 16 pixels
-            let diff_hi = _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64::<1>(diff));
+            let diff_hi = _mm512_sub_epi32(
+                _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64::<1>(t1_full)),
+                _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64::<1>(t2_full)),
+            );
             let mask_hi = _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64::<1>(mask_16));
             let t2_hi = _mm512_cvtepi16_epi32(_mm512_extracti64x4_epi64::<1>(t2_full));
 
@@ -1293,31 +1270,18 @@ fn mask_8bpc_avx512_safe(
             let mask_bytes = loadu_128!(&mask_row[col..col + 16], [u8; 16]);
             let mask_lo = _mm256_cvtepu8_epi16(mask_bytes);
 
-            let diff = _mm256_sub_epi16(t1_lo, t2_lo);
-
-            let diff_lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(diff));
-            let mask_lo_32 = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(mask_lo));
-            let t2_lo_32 = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(t2_lo));
-
-            let prod_lo = _mm256_mullo_epi32(diff_lo, mask_lo_32);
-            let t2_64_lo = _mm256_slli_epi32(t2_lo_32, 6);
-            let sum_lo =
-                _mm256_add_epi32(_mm256_add_epi32(prod_lo, t2_64_lo), _mm256_set1_epi32(512));
-
-            let diff_hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(diff, 1));
-            let mask_hi_32 = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(mask_lo, 1));
-            let t2_hi_32 = _mm256_cvtepi16_epi32(_mm256_extracti128_si256(t2_lo, 1));
-
-            let prod_hi = _mm256_mullo_epi32(diff_hi, mask_hi_32);
-            let t2_64_hi = _mm256_slli_epi32(t2_hi_32, 6);
-            let sum_hi =
-                _mm256_add_epi32(_mm256_add_epi32(prod_hi, t2_64_hi), _mm256_set1_epi32(512));
+            let inv = _mm256_sub_epi16(_mm256_set1_epi16(64), mask_lo);
+            let mm_lo = _mm256_unpacklo_epi16(mask_lo, inv);
+            let mm_hi = _mm256_unpackhi_epi16(mask_lo, inv);
+            let tt_lo = _mm256_unpacklo_epi16(t1_lo, t2_lo);
+            let tt_hi = _mm256_unpackhi_epi16(t1_lo, t2_lo);
+            let sum_lo = _mm256_add_epi32(_mm256_madd_epi16(mm_lo, tt_lo), _mm256_set1_epi32(512));
+            let sum_hi = _mm256_add_epi32(_mm256_madd_epi16(mm_hi, tt_hi), _mm256_set1_epi32(512));
 
             let result_lo = _mm256_srai_epi32(sum_lo, 10);
             let result_hi = _mm256_srai_epi32(sum_hi, 10);
 
             let result_16 = _mm256_packs_epi32(result_lo, result_hi);
-            let result_16 = _mm256_permute4x64_epi64(result_16, 0b11011000);
             let result_8 = _mm256_packus_epi16(result_16, result_16);
             let result_8 = _mm256_permute4x64_epi64(result_8, 0b11011000);
 
@@ -4221,7 +4185,10 @@ fn widen_row_u16_shl_bias_16bpc(
         let hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256::<1>(v));
         let lo = _mm256_sub_epi32(_mm256_sll_epi32(lo, cnt), bias_v);
         let hi = _mm256_sub_epi32(_mm256_sll_epi32(hi, cnt), bias_v);
-        storeu_256!(&mut dst[x..x + 16], [i16; 16], _mm256_packs_epi32(lo, hi));
+        // packs_epi32 is lane-local: [e0-3, e8-11 | e4-7, e12-15] — permute
+        // qwords back to linear order.
+        let packed = _mm256_permute4x64_epi64(_mm256_packs_epi32(lo, hi), 0b11_01_10_00);
+        storeu_256!(&mut dst[x..x + 16], [i16; 16], packed);
         x += 16;
     }
     let bias_x = _mm_set1_epi32(bias);
@@ -10062,11 +10029,14 @@ fn w_mask_8bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
             let t1 = loadu_256!(<&[i16; 16]>::try_from(&tmp1_row[x..x + 16]).unwrap());
             let t2 = loadu_256!(<&[i16; 16]>::try_from(&tmp2_row[x..x + 16]).unwrap());
             // m = min(38 + (|t1-t2| + mask_rnd) >> mask_sh, 64)
-            let diff = _mm256_abs_epi16(_mm256_sub_epi16(t1, t2));
+            // |t1-t2| as u16 without wrap: (max-min) has the true abs_diff bit
+            // pattern even when the difference exceeds i16 range (warp_affine
+            // mids). adds_epu16 then matches scalar u16::saturating_add.
+            let diff = _mm256_sub_epi16(_mm256_max_epi16(t1, t2), _mm256_min_epi16(t1, t2));
             let mv = _mm256_min_epi16(
                 _mm256_add_epi16(
                     c38,
-                    _mm256_srl_epi16(_mm256_add_epi16(diff, mask_rnd_v), mask_shv),
+                    _mm256_srl_epi16(_mm256_adds_epu16(diff, mask_rnd_v), mask_shv),
                 ),
                 c64_16,
             );
@@ -10143,12 +10113,12 @@ fn w_mask_8bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
         while x + 8 <= w {
             let t1 = loadu_128!(<&[i16; 8]>::try_from(&tmp1_row[x..x + 8]).unwrap());
             let t2 = loadu_128!(<&[i16; 8]>::try_from(&tmp2_row[x..x + 8]).unwrap());
-            let diff = _mm_abs_epi16(_mm_sub_epi16(t1, t2));
+            let diff = _mm_sub_epi16(_mm_max_epi16(t1, t2), _mm_min_epi16(t1, t2));
             let mv = _mm_min_epi16(
                 _mm_add_epi16(
                     _mm_set1_epi16(38),
                     _mm_srl_epi16(
-                        _mm_add_epi16(diff, _mm256_castsi256_si128(mask_rnd_v)),
+                        _mm_adds_epu16(diff, _mm256_castsi256_si128(mask_rnd_v)),
                         mask_shv,
                     ),
                 ),
@@ -10466,11 +10436,14 @@ fn w_mask_16bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
         while x + 16 <= w {
             let t1 = loadu_256!(<&[i16; 16]>::try_from(&tmp1_row[x..x + 16]).unwrap());
             let t2 = loadu_256!(<&[i16; 16]>::try_from(&tmp2_row[x..x + 16]).unwrap());
-            let diff = _mm256_abs_epi16(_mm256_sub_epi16(t1, t2));
+            // |t1-t2| as u16 without wrap: (max-min) has the true abs_diff bit
+            // pattern even when the difference exceeds i16 range (warp_affine
+            // mids). adds_epu16 then matches scalar u16::saturating_add.
+            let diff = _mm256_sub_epi16(_mm256_max_epi16(t1, t2), _mm256_min_epi16(t1, t2));
             let mv = _mm256_min_epi16(
                 _mm256_add_epi16(
                     c38,
-                    _mm256_srl_epi16(_mm256_add_epi16(diff, mask_rnd_v), mask_shv),
+                    _mm256_srl_epi16(_mm256_adds_epu16(diff, mask_rnd_v), mask_shv),
                 ),
                 c64_16,
             );
@@ -10536,12 +10509,12 @@ fn w_mask_16bpc_avx2_safe_impl<const SS_HOR: bool, const SS_VER: bool>(
         while x + 8 <= w {
             let t1 = loadu_128!(<&[i16; 8]>::try_from(&tmp1_row[x..x + 8]).unwrap());
             let t2 = loadu_128!(<&[i16; 8]>::try_from(&tmp2_row[x..x + 8]).unwrap());
-            let diff = _mm_abs_epi16(_mm_sub_epi16(t1, t2));
+            let diff = _mm_sub_epi16(_mm_max_epi16(t1, t2), _mm_min_epi16(t1, t2));
             let mv = _mm_min_epi16(
                 _mm_add_epi16(
                     _mm_set1_epi16(38),
                     _mm_srl_epi16(
-                        _mm_add_epi16(diff, _mm256_castsi256_si128(mask_rnd_v)),
+                        _mm_adds_epu16(diff, _mm256_castsi256_si128(mask_rnd_v)),
                         mask_shv,
                     ),
                 ),
@@ -14299,5 +14272,296 @@ mod tests {
         });
         eprintln!("MC avg permutations: {}", report.permutations_run);
         assert!(report.permutations_run >= 1);
+    }
+
+    /// Scalar oracle for `w_mask_16bpc_avx2_safe_impl`, mirroring
+    /// `src/mc.rs::w_mask_rust` on flat slices.
+    fn w_mask_16bpc_scalar_ref(
+        dst: &mut [u8],
+        dst_stride: usize,
+        tmp1: &[i16; COMPINTER_LEN],
+        tmp2: &[i16; COMPINTER_LEN],
+        w: usize,
+        h: usize,
+        mask: &mut [u8; SEG_MASK_LEN],
+        sign: i32,
+        bitdepth_max: i32,
+        ss_hor: bool,
+        ss_ver: bool,
+    ) {
+        let sign = sign as u8;
+        let bd_max = bitdepth_max as i32;
+        let bitdepth = if bitdepth_max == 1023 { 10u32 } else { 12u32 };
+        let intermediate_bits = (14 - bitdepth) as u32;
+        let sh = intermediate_bits + 6;
+        let rnd = (32i32 << intermediate_bits) + 8192 * 64;
+        let mask_sh = bitdepth + intermediate_bits - 4;
+        let mask_rnd = 1u16 << (mask_sh - 5);
+        let mask_w = if ss_hor { w >> 1 } else { w };
+        let mut mask_off = 0usize;
+
+        for row_h in 0..h {
+            let row_offset = row_h * w;
+            let tmp1_row = &tmp1[row_offset..][..w];
+            let tmp2_row = &tmp2[row_offset..][..w];
+            let dst_row_bytes = &mut dst[row_h * dst_stride..][..w * 2];
+            let dst_row: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_row_bytes).unwrap();
+            let mut x = 0;
+            while x < w {
+                let diff = tmp1_row[x].abs_diff(tmp2_row[x]);
+                let m = std::cmp::min(38 + ((diff.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
+                let t1 = tmp1_row[x] as i32;
+                let t2 = tmp2_row[x] as i32;
+                let pixel = (t1 * m as i32 + t2 * (64 - m as i32) + rnd) >> sh;
+                dst_row[x] = pixel.clamp(0, bd_max) as u16;
+
+                if ss_hor {
+                    x += 1;
+                    let diff2 = tmp1_row[x].abs_diff(tmp2_row[x]);
+                    let n =
+                        std::cmp::min(38 + ((diff2.saturating_add(mask_rnd)) >> mask_sh), 64) as u8;
+                    let t1 = tmp1_row[x] as i32;
+                    let t2 = tmp2_row[x] as i32;
+                    let pixel = (t1 * n as i32 + t2 * (64 - n as i32) + rnd) >> sh;
+                    dst_row[x] = pixel.clamp(0, bd_max) as u16;
+
+                    let mask_x = x >> 1;
+                    if ss_ver && (row_h & 1 != 0) {
+                        let prev = mask[mask_off + mask_x];
+                        mask[mask_off + mask_x] =
+                            (((m as u16 + n as u16 + 2 - sign as u16) + prev as u16) >> 2) as u8;
+                    } else if ss_ver {
+                        mask[mask_off + mask_x] = m + n;
+                    } else {
+                        mask[mask_off + mask_x] =
+                            ((m as u16 + n as u16 + 1 - sign as u16) >> 1) as u8;
+                    }
+                } else {
+                    mask[mask_off + x] = m;
+                }
+                x += 1;
+            }
+
+            if !ss_ver || (row_h & 1 != 0) {
+                mask_off += mask_w;
+            }
+        }
+    }
+
+    #[test]
+    fn w_mask_16bpc_simd_matches_scalar() {
+        let _tok_lock = archmage::testing::lock_token_testing();
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("w_mask_16bpc_simd_matches_scalar: no AVX2 token, skipping");
+            return;
+        };
+        let mut tmp1 = [0i16; COMPINTER_LEN];
+        let mut tmp2 = [0i16; COMPINTER_LEN];
+        let mut st: u32 = 0xabcd_1234;
+        for i in 0..COMPINTER_LEN {
+            st ^= st << 13;
+            st ^= st >> 17;
+            st ^= st << 5;
+            tmp1[i] = (((st >> 4) as i32 % 65536) - 32768) as i16;
+            st ^= st << 13;
+            st ^= st >> 17;
+            st ^= st << 5;
+            tmp2[i] = (((st >> 4) as i32 % 65536) - 32768) as i16;
+        }
+        // Full block-size grid incl. 128x128; w_mask is called with luma dims.
+        for &w in &[2usize, 4, 6, 8, 10, 12, 16, 24, 32, 48, 64, 96, 128] {
+            for &h in &[1usize, 2, 3, 4, 6, 8, 12, 16, 24, 32, 64, 128] {
+                for &bd_max in &[1023i32, 4095] {
+                    for &sign in &[0i32, 1] {
+                        for &(hor, ver) in &[(true, true), (true, false), (false, false)] {
+                            let stride = w * 2 + 34;
+                            let mut dst_a = vec![0xAAu8; h * stride];
+                            let mut dst_b = vec![0xAAu8; h * stride];
+                            let mut mask_a = [0xCCu8; SEG_MASK_LEN];
+                            let mut mask_b = [0xCCu8; SEG_MASK_LEN];
+                            w_mask_16bpc_scalar_ref(
+                                &mut dst_a,
+                                stride,
+                                &tmp1,
+                                &tmp2,
+                                w,
+                                h,
+                                &mut mask_a,
+                                sign,
+                                bd_max,
+                                hor,
+                                ver,
+                            );
+                            match (hor, ver) {
+                                (true, true) => w_mask_420_16bpc_avx2_safe(
+                                    token,
+                                    &mut dst_b,
+                                    stride,
+                                    &tmp1,
+                                    &tmp2,
+                                    w as i32,
+                                    h as i32,
+                                    &mut mask_b,
+                                    sign,
+                                    bd_max,
+                                ),
+                                (true, false) => w_mask_422_16bpc_avx2_safe(
+                                    token,
+                                    &mut dst_b,
+                                    stride,
+                                    &tmp1,
+                                    &tmp2,
+                                    w as i32,
+                                    h as i32,
+                                    &mut mask_b,
+                                    sign,
+                                    bd_max,
+                                ),
+                                _ => w_mask_444_16bpc_avx2_safe(
+                                    token,
+                                    &mut dst_b,
+                                    stride,
+                                    &tmp1,
+                                    &tmp2,
+                                    w as i32,
+                                    h as i32,
+                                    &mut mask_b,
+                                    sign,
+                                    bd_max,
+                                ),
+                            }
+                            assert_eq!(
+                                &mask_a[..],
+                                &mask_b[..],
+                                "w_mask_16bpc mask w={w} h={h} bd={bd_max} sign={sign} hor={hor} ver={ver}\n a={:?}\n b={:?}",
+                                &mask_a[..32.min(SEG_MASK_LEN)],
+                                &mask_b[..32.min(SEG_MASK_LEN)]
+                            );
+                            assert_eq!(
+                                dst_a, dst_b,
+                                "w_mask_16bpc dst w={w} h={h} bd={bd_max} sign={sign} hor={hor} ver={ver}\n a={:?}\n b={:?}",
+                                dst_a, dst_b
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// mask_8bpc + w_avg_8bpc must match the scalar formulas for the full i16
+    /// tmp range — warp_affine mids can approach +-32767, where an i16
+    /// (t1 - t2) wraps and a mullo/mulhi on it diverges from scalar i32 math.
+    #[test]
+    fn mask_w_avg_8bpc_simd_matches_scalar() {
+        let _tok_lock = archmage::testing::lock_token_testing();
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("mask_w_avg_8bpc_simd_matches_scalar: no AVX2 token, skipping");
+            return;
+        };
+        let mut tmp1 = [0i16; COMPINTER_LEN];
+        let mut tmp2 = [0i16; COMPINTER_LEN];
+        let mut st: u32 = 0x51ab_77cd;
+        for i in 0..COMPINTER_LEN {
+            st ^= st << 13;
+            st ^= st >> 17;
+            st ^= st << 5;
+            tmp1[i] = (((st >> 4) as i32 % 65536) - 32768) as i16;
+            st ^= st << 13;
+            st ^= st >> 17;
+            st ^= st << 5;
+            tmp2[i] = (((st >> 4) as i32 % 65536) - 32768) as i16;
+        }
+
+        for &w in &[4usize, 8, 12, 16, 24, 32, 48, 64, 128] {
+            for &h in &[1usize, 2, 3, 8, 16] {
+                let stride = w + 7;
+                // mask blend: (a*m + b*(64-m) + 512) >> 10
+                let mut mask = vec![0u8; w * h];
+                for (i, m) in mask.iter_mut().enumerate() {
+                    *m = ((i * 37 + h * 11 + w) % 65) as u8;
+                }
+                let mut dst_a = vec![0xAAu8; h * stride];
+                let mut dst_b = vec![0xAAu8; h * stride];
+                for row in 0..h {
+                    for x in 0..w {
+                        let a = tmp1[row * w + x] as i32;
+                        let b = tmp2[row * w + x] as i32;
+                        let m = mask[row * w + x] as i32;
+                        dst_a[row * stride + x] =
+                            ((a * m + b * (64 - m) + 512) >> 10).clamp(0, 255) as u8;
+                    }
+                }
+                mask_8bpc_avx2_safe(
+                    token, &mut dst_b, stride, &tmp1, &tmp2, w as i32, h as i32, &mask,
+                );
+                assert_eq!(dst_a, dst_b, "mask_8bpc w={w} h={h}");
+
+                // w_avg: (a*weight + b*(16-weight) + 128) >> 8
+                for &weight in &[0i32, 1, 7, 8, 9, 15, 16] {
+                    let mut dst_a = vec![0xAAu8; h * stride];
+                    let mut dst_b = vec![0xAAu8; h * stride];
+                    for row in 0..h {
+                        for x in 0..w {
+                            let a = tmp1[row * w + x] as i32;
+                            let b = tmp2[row * w + x] as i32;
+                            dst_a[row * stride + x] =
+                                ((a * weight + b * (16 - weight) + 128) >> 8).clamp(0, 255) as u8;
+                        }
+                    }
+                    w_avg_8bpc_avx2_safe(
+                        token, &mut dst_b, stride, &tmp1, &tmp2, w as i32, h as i32, weight,
+                    );
+                    assert_eq!(dst_a, dst_b, "w_avg_8bpc w={w} h={h} weight={weight}");
+                }
+            }
+        }
+    }
+
+    /// widen_row_u16_shl_bias_16bpc's 16-px lane: packs_epi32 is lane-local
+    /// and needs a qword permute to restore linear order.
+    #[cfg(target_arch = "x86_64")]
+    #[arcane]
+    fn widen_row_16bpc_test_entry(
+        _t: Desktop64,
+        dst: &mut [i16],
+        src: &[u16],
+        w: usize,
+        ib: i32,
+        bias: i32,
+    ) {
+        widen_row_u16_shl_bias_16bpc(_t, dst, src, w, ib, bias);
+    }
+
+    #[test]
+    fn widen_row_16bpc_simd_matches_scalar() {
+        let _tok_lock = archmage::testing::lock_token_testing();
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("widen_row_16bpc_simd_matches_scalar: no AVX2 token, skipping");
+            return;
+        };
+        let mut src = [0u16; 256];
+        let mut st: u32 = 0x1234_9abc;
+        for s in src.iter_mut() {
+            st ^= st << 13;
+            st ^= st >> 17;
+            st ^= st << 5;
+            *s = (st & 0x0fff) as u16; // pixels are <= bd_max = 4095
+        }
+        for &w in &[1usize, 7, 8, 9, 15, 16, 17, 31, 32, 64, 128] {
+            // ib=4 pairs with 10bpc (px<=1023), ib=2 with 12bpc (px<=4095);
+            // outside that domain the scalar `as i16` wrap legitimately
+            // differs from packs_epi32 saturation.
+            for &(ib, bias, pmax) in &[(4i32, 8192i32, 1023u16), (2, 8192, 4095)] {
+                let mut a = vec![0i16; w];
+                let mut b = vec![0i16; w];
+                for x in 0..w {
+                    a[x] = (((src[x] & pmax) as i32) << ib).wrapping_sub(bias) as i16;
+                }
+                let src_p: Vec<u16> = src[..w].iter().map(|&v| v & pmax).collect();
+                widen_row_16bpc_test_entry(token, &mut b, &src_p, w, ib, bias);
+                assert_eq!(a, b, "widen_row_16bpc w={w} ib={ib} bias={bias}");
+            }
+        }
     }
 }
