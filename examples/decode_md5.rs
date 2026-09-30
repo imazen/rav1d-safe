@@ -212,8 +212,13 @@ fn main() {
                     Some("v2") => L::X86V2,
                     Some("v3") => L::X86V3,
                     Some("v4") => L::X86V4,
+                    Some("neon") => L::Neon,
+                    Some("neon-dotprod") => L::NeonDotprod,
+                    Some("neon-i8mm") => L::NeonI8mm,
                     Some("native") => L::Native,
-                    other => panic!("--level needs scalar|v2|v3|v4|native, got {other:?}"),
+                    other => panic!(
+                        "--level needs scalar|v2|v3|v4|neon|neon-dotprod|neon-i8mm|native, got {other:?}"
+                    ),
                 });
             }
             "--threads" => {

@@ -171,11 +171,18 @@ jobs:
           echo "Pass rate: $(( PASS * 100 / TOTAL ))%"
           [ $FAIL -lt 50 ] || exit 1  # Allow some failures
 
-  # Full Argon conformance suite (5.1 GB, ~2788 streams) — monthly + manual.
+  # Full Argon conformance suite (5.1 GB, ~2763 streams) — monthly + manual.
   # Verifies decoder output bit-for-bit against the shipped reference MD5s:
   # both the film-grain (md5_ref) and no-grain (md5_no_film_grain) sidecars.
-  test-argon:
-    name: Test Argon Conformance Suite
+  #
+  # Streams come from the Argon suite (source: gitlab.com/AOMediaCodec/
+  # argon-streams; packaged tarball fetched from streams.videolan.org).
+  # The suite runs once per ISA tier on both arches, sharded 4 ways to keep
+  # each leg under the 6h job limit on 4-vCPU runners. `x86-v2` is omitted:
+  # in the default safe-SIMD build it is an alias for scalar (nothing reads
+  # the SSE2/SSSE3/SSE4.1 flags), so it would only duplicate the scalar leg.
+  prep-argon:
+    name: Fetch Argon suite
     runs-on: ubuntu-latest
     if: |
       (github.event.inputs.corpus == 'all' || github.event.inputs.corpus == 'argon-only')
@@ -183,14 +190,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Restore Argon vectors
+        uses: actions/cache@v5
         with:
-          toolchain: stable
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Build decoder
-        run: cargo build --release --example decode_md5 --no-default-features --features "bitdepth_8,bitdepth_16"
+          path: test-vectors/argon/argon
+          key: argon-extracted-v1
 
       - name: Free up disk space
         run: |
@@ -200,25 +204,93 @@ jobs:
           df -h
 
       - name: Download Argon conformance suite
-        run: bash scripts/download-all-test-vectors.sh
+        run: |
+          mkdir -p test-vectors/argon
+          cd test-vectors/argon
+          if [ ! -d argon ]; then
+            wget -q --show-progress \
+              https://streams.videolan.org/argon/argon.tar.zst \
+              -O argon.tar.zst
+            tar --use-compress-program=unzstd -xf argon.tar.zst
+            rm argon.tar.zst
+          fi
 
-      - name: Cache Argon vectors
+  test-argon:
+    name: Argon (${{ matrix.isa }} shard ${{ matrix.shard }})
+    needs: prep-argon
+    runs-on: ${{ contains(matrix.isa, 'arm-') && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    if: |
+      (github.event.inputs.corpus == 'all' || github.event.inputs.corpus == 'argon-only')
+      || (github.event_name == 'schedule' && github.event.schedule == '0 3 1 * *')
+    strategy:
+      fail-fast: false
+      matrix:
+        isa:
+          - x86-scalar
+          - x86-v3
+          - x86-v4
+          - x86-native
+          - arm-scalar
+          - arm-neon
+          - arm-native
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Restore Argon vectors
         uses: actions/cache@v5
         with:
-          path: test-vectors/argon
-          key: argon-vectors-v1
-          restore-keys: argon-vectors-
+          path: test-vectors/argon/argon
+          key: argon-extracted-v1
+
+      # CpuLevel is a clamp on detected features, not a force: --level v4 on
+      # non-AVX-512 silicon would silently re-test v3. Skip instead so the
+      # result is honest.
+      - name: Gate on ISA availability
+        id: gate
+        run: |
+          ok=true
+          if [ "${{ matrix.isa }}" = "x86-v4" ] && \
+             ! { grep -qw avx512f /proc/cpuinfo && grep -qw avx512bw /proc/cpuinfo; }; then
+            ok=false
+            echo "::warning title=ISA gate::x86-v4 leg skipped — runner lacks AVX-512 F/BW"
+          fi
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+
+      - name: Build decoder
+        if: steps.gate.outputs.ok == 'true'
+        run: cargo build --release --example decode_md5 --no-default-features --features "bitdepth_8,bitdepth_16"
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          df -h
 
       # Reference MD5s were generated with dav1d (conceal-and-continue)
       # semantics, so verification runs --lenient. A handful of synthesized
       # coverage streams are deliberately non-conforming (e.g. segment_id
       # beyond LastActiveSegId, AV1 §6.10.8) and are correctly rejected by
       # the default Strictness::Strict; the script reports those separately.
-      - name: Verify all Argon streams bit-exactly
+      - name: Verify Argon shard bit-exactly
+        if: steps.gate.outputs.ok == 'true'
         run: |
-          bash scripts/argon_md5_check.sh \
-            test-vectors/argon/argon \
-            ./target/release/examples/decode_md5
+          LEVEL="${{ matrix.isa }}"
+          LEVEL="${LEVEL#*-}"
+          echo "ISA=${{ matrix.isa }} -> decode_md5 --level $LEVEL"
+          ARGON_LEVEL="$LEVEL" \
+          ARGON_SHARD="${{ matrix.shard }}" \
+          ARGON_SHARDS=4 \
+            bash scripts/argon_md5_check.sh \
+              test-vectors/argon/argon \
+              ./target/release/examples/decode_md5
 
       - name: Disk space after test
         run: df -h
