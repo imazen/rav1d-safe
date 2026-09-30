@@ -4207,6 +4207,49 @@ fn widen_row_u8_shl_8bpc(_t: Desktop64, dst: &mut [i16], src: &[u8], w: usize, i
     }
 }
 
+/// Widen a u16 row into `dst` as `(px << ib) - bias` (16bpc prep copy case).
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn widen_row_u16_shl_bias_16bpc(
+    _t: Desktop64,
+    dst: &mut [i16],
+    src: &[u16],
+    w: usize,
+    ib: i32,
+    bias: i32,
+) {
+    let cnt = _mm_cvtsi32_si128(ib);
+    let bias_v = _mm256_set1_epi32(bias);
+    let mut x = 0usize;
+    while x + 16 <= w {
+        let v = loadu_256!(<&[u16; 16]>::try_from(&src[x..x + 16]).unwrap());
+        let lo = _mm256_cvtepu16_epi32(_mm256_castsi256_si128(v));
+        let hi = _mm256_cvtepu16_epi32(_mm256_extracti128_si256::<1>(v));
+        let lo = _mm256_sub_epi32(_mm256_sll_epi32(lo, cnt), bias_v);
+        let hi = _mm256_sub_epi32(_mm256_sll_epi32(hi, cnt), bias_v);
+        storeu_256!(
+            &mut dst[x..x + 16],
+            [i16; 16],
+            _mm256_packs_epi32(lo, hi)
+        );
+        x += 16;
+    }
+    let bias_x = _mm_set1_epi32(bias);
+    while x + 8 <= w {
+        let v = loadu_128!(<&[u16; 8]>::try_from(&src[x..x + 8]).unwrap());
+        let lo = _mm_cvtepu16_epi32(v);
+        let hi = _mm_cvtepu16_epi32(_mm_srli_si128::<8>(v));
+        let lo = _mm_sub_epi32(_mm_sll_epi32(lo, cnt), bias_x);
+        let hi = _mm_sub_epi32(_mm_sll_epi32(hi, cnt), bias_x);
+        storeu_128!(&mut dst[x..x + 8], [i16; 8], _mm_packs_epi32(lo, hi));
+        x += 8;
+    }
+    while x < w {
+        dst[x] = ((src[x] as i32) << ib).wrapping_sub(bias) as i16;
+        x += 1;
+    }
+}
+
 /// Generic 8-tap prep function for 8bpc
 ///
 /// Similar to put but writes to i16 intermediate buffer instead of pixel output
@@ -4291,26 +4334,26 @@ fn prep_8tap_8bpc_avx2_impl_inner(
             }
         }
         (None, Some(fv)) => {
-            // Case 3: V-only filtering
+            // Case 3: V-only filtering. Widen each of the h+7 source rows
+            // once into a pooled mid buffer, then slide the 8-row window —
+            // the previous per-row rebuild did 8x redundant widen work.
+            let tmp_h = h + 7;
+            let mut mid = take_mid_i16_135();
+            for y in 0..tmp_h {
+                let src_row_base = (sb + (y as isize - 3) * src_stride) as usize;
+                widen_row_u8_shl_8bpc(
+                    _token,
+                    &mut mid[y],
+                    &src[src_row_base..],
+                    w,
+                    intermediate_bits as i32,
+                );
+            }
             for y in 0..h {
                 let out_row = y * w;
-
-                // Build intermediate buffer from 8 source rows
-                let mut mid = [[0i16; MID_STRIDE]; 8];
-                for i in 0..8 {
-                    let src_row =
-                        &src[(sb + (y as isize + i as isize - 3) * src_stride) as usize..];
-                    widen_row_u8_shl_8bpc(
-                        _token,
-                        &mut mid[i],
-                        src_row,
-                        w,
-                        intermediate_bits as i32,
-                    );
-                }
-
-                v_filter_8tap_to_i16_avx2_inner(_token, &mid, &mut tmp[out_row..], w, fv, 6);
+                v_filter_8tap_to_i16_avx2_inner(_token, &mid[y..], &mut tmp[out_row..], w, fv, 6);
             }
+            put_mid_i16_135(mid);
         }
         (None, None) => {
             // Case 4: Simple copy with intermediate scaling
@@ -4396,22 +4439,23 @@ fn prep_8tap_8bpc_avx512_impl_inner(
             }
         }
         (None, Some(fv)) => {
+            let tmp_h = h + 7;
+            let mut mid = take_mid_i16_135();
+            for y in 0..tmp_h {
+                let src_row_base = (sb + (y as isize - 3) * src_stride) as usize;
+                widen_row_u8_shl_8bpc(
+                    _token.v3(),
+                    &mut mid[y],
+                    &src[src_row_base..],
+                    w,
+                    intermediate_bits as i32,
+                );
+            }
             for y in 0..h {
                 let out_row = y * w;
-                let mut mid = [[0i16; MID_STRIDE]; 8];
-                for i in 0..8 {
-                    let src_row =
-                        &src[(sb + (y as isize + i as isize - 3) * src_stride) as usize..];
-                    widen_row_u8_shl_8bpc(
-                        _token.v3(),
-                        &mut mid[i],
-                        src_row,
-                        w,
-                        intermediate_bits as i32,
-                    );
-                }
-                v_filter_8tap_to_i16_avx512_inner(_token, &mid, &mut tmp[out_row..], w, fv, 6);
+                v_filter_8tap_to_i16_avx512_inner(_token, &mid[y..], &mut tmp[out_row..], w, fv, 6);
             }
+            put_mid_i16_135(mid);
         }
         (None, None) => {
             for y in 0..h {
@@ -7481,11 +7525,14 @@ fn prep_8tap_16bpc_avx2_impl_inner(
             for y in 0..h {
                 let src_row = &src[(sb + y as isize * src_stride_elems) as usize..];
                 let out_row = y * w;
-                for x in 0..w {
-                    let px = src_row[x] as i32;
-                    let val = (px << intermediate_bits) - PREP_BIAS;
-                    tmp[out_row + x] = val as i16;
-                }
+                widen_row_u16_shl_bias_16bpc(
+                    _token,
+                    &mut tmp[out_row..],
+                    src_row,
+                    w,
+                    intermediate_bits,
+                    PREP_BIAS,
+                );
             }
         }
     }
