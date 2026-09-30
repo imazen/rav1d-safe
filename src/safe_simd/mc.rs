@@ -14518,6 +14518,168 @@ mod tests {
         }
     }
 
+    /// Scalar oracle mirroring `w_mask_rust` at 8bpc (ib=4, PREP_BIAS=0):
+    /// dst u8, seg_mask at subsampled resolution.
+    #[allow(clippy::too_many_arguments)]
+    fn w_mask_8bpc_scalar_ref(
+        dst: &mut [u8],
+        dst_stride: usize,
+        tmp1: &[i16; COMPINTER_LEN],
+        tmp2: &[i16; COMPINTER_LEN],
+        w: usize,
+        h: usize,
+        mask: &mut [u8],
+        sign: u8,
+        ss_hor: bool,
+        ss_ver: bool,
+    ) {
+        let sh = 4 + 6;
+        let rnd = 32i32 << 4;
+        let mask_sh = 8 + 4 - 4;
+        let mask_rnd = 1u16 << (mask_sh - 5);
+        let mask_w = if ss_hor { w >> 1 } else { w };
+        let mut mask_off = 0usize;
+        for row_h in 0..h {
+            let tmp1_row = &tmp1[row_h * w..][..w];
+            let tmp2_row = &tmp2[row_h * w..][..w];
+            let dst_row = &mut dst[row_h * dst_stride..][..w];
+            let mut x = 0;
+            while x < w {
+                let m = std::cmp::min(
+                    38 + (tmp1_row[x].abs_diff(tmp2_row[x]).saturating_add(mask_rnd) >> mask_sh),
+                    64,
+                ) as u8;
+                let px =
+                    (tmp1_row[x] as i32 * m as i32 + tmp2_row[x] as i32 * (64 - m as i32) + rnd)
+                        >> sh;
+                dst_row[x] = px.clamp(0, 255) as u8;
+                if ss_hor {
+                    x += 1;
+                    let n = std::cmp::min(
+                        38 + (tmp1_row[x].abs_diff(tmp2_row[x]).saturating_add(mask_rnd)
+                            >> mask_sh),
+                        64,
+                    ) as u8;
+                    let px = (tmp1_row[x] as i32 * n as i32
+                        + tmp2_row[x] as i32 * (64 - n as i32)
+                        + rnd)
+                        >> sh;
+                    dst_row[x] = px.clamp(0, 255) as u8;
+                    let mask_x = x >> 1;
+                    if ss_ver && (row_h & 1 != 0) {
+                        let prev = mask[mask_off + mask_x];
+                        mask[mask_off + mask_x] =
+                            (((m as u16 + n as u16 + 2 - sign as u16) + prev as u16) >> 2) as u8;
+                    } else if ss_ver {
+                        mask[mask_off + mask_x] = m + n;
+                    } else {
+                        mask[mask_off + mask_x] =
+                            ((m as u16 + n as u16 + 1 - sign as u16) >> 1) as u8;
+                    }
+                } else {
+                    mask[mask_off + x] = m;
+                }
+                x += 1;
+            }
+            if !ss_ver || (row_h & 1 != 0) {
+                mask_off += mask_w;
+            }
+        }
+    }
+
+    /// w_mask_8bpc must match scalar for the full i16 tmp range (warp_affine
+    /// mids can approach +-32767 where an i16 abs_diff wraps).
+    #[test]
+    fn w_mask_8bpc_simd_matches_scalar() {
+        let _tok_lock = archmage::testing::lock_token_testing();
+        let Some(token) = crate::src::cpu::summon_avx2() else {
+            eprintln!("w_mask_8bpc_simd_matches_scalar: no AVX2 token, skipping");
+            return;
+        };
+        let mut tmp1 = [0i16; COMPINTER_LEN];
+        let mut tmp2 = [0i16; COMPINTER_LEN];
+        let mut st: u32 = 0x77aa_3311;
+        for i in 0..COMPINTER_LEN {
+            st ^= st << 13;
+            st ^= st >> 17;
+            st ^= st << 5;
+            tmp1[i] = (((st >> 4) as i32 % 65536) - 32768) as i16;
+            st ^= st << 13;
+            st ^= st >> 17;
+            st ^= st << 5;
+            tmp2[i] = (((st >> 4) as i32 % 65536) - 32768) as i16;
+        }
+        for &w in &[2usize, 4, 6, 8, 10, 12, 16, 24, 32, 48, 64, 96, 128] {
+            for &h in &[1usize, 2, 3, 4, 6, 8, 12, 16, 32, 64, 128] {
+                for &sign in &[0i32, 1] {
+                    for &(hor, ver) in &[(true, true), (true, false), (false, false)] {
+                        let stride = w + 13;
+                        let mut dst_a = vec![0xAAu8; h * stride];
+                        let mut dst_b = vec![0xAAu8; h * stride];
+                        let mut mask_a = [0xCCu8; SEG_MASK_LEN];
+                        let mut mask_b = [0xCCu8; SEG_MASK_LEN];
+                        w_mask_8bpc_scalar_ref(
+                            &mut dst_a,
+                            stride,
+                            &tmp1,
+                            &tmp2,
+                            w,
+                            h,
+                            &mut mask_a,
+                            sign as u8,
+                            hor,
+                            ver,
+                        );
+                        match (hor, ver) {
+                            (true, true) => w_mask_420_8bpc_avx2_safe(
+                                token,
+                                &mut dst_b,
+                                stride,
+                                &tmp1,
+                                &tmp2,
+                                w as i32,
+                                h as i32,
+                                &mut mask_b,
+                                sign,
+                            ),
+                            (true, false) => w_mask_422_8bpc_avx2_safe(
+                                token,
+                                &mut dst_b,
+                                stride,
+                                &tmp1,
+                                &tmp2,
+                                w as i32,
+                                h as i32,
+                                &mut mask_b,
+                                sign,
+                            ),
+                            _ => w_mask_444_8bpc_avx2_safe(
+                                token,
+                                &mut dst_b,
+                                stride,
+                                &tmp1,
+                                &tmp2,
+                                w as i32,
+                                h as i32,
+                                &mut mask_b,
+                                sign,
+                            ),
+                        }
+                        assert_eq!(
+                            &mask_a[..],
+                            &mask_b[..],
+                            "w_mask_8bpc mask w={w} h={h} sign={sign} hor={hor} ver={ver}"
+                        );
+                        assert_eq!(
+                            dst_a, dst_b,
+                            "w_mask_8bpc dst w={w} h={h} sign={sign} hor={hor} ver={ver}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     /// widen_row_u16_shl_bias_16bpc's 16-px lane: packs_epi32 is lane-local
     /// and needs a qword permute to restore linear order.
     #[cfg(target_arch = "x86_64")]
