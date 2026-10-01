@@ -36,7 +36,25 @@ fn decode_ivf_frames(frames: &[ivf_parser::IvfFrame]) -> usize {
         .unwrap_or(1);
     // Tile threading only, matching `dav1d --framedelay 1` and the rest of the
     // gap campaign. A no-op in the checked build, which pins n_fc = 1 anyway.
-    settings.max_frame_delay = 1;
+    // `RAV1D_FRAME_DELAY=N` allows N frames in flight (0 = auto). Default 1 (tile
+    // threading only). Frame threading needs `untracked`; tracked builds clamp to 1.
+    settings.max_frame_delay = std::env::var("RAV1D_FRAME_DELAY")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
+    // `RAV1D_LEVEL=scalar|v2|v3|v4|native` caps the CPU tier (v3 = AVX2). Used to
+    // compare like-for-like against decoders limited to AVX2 (libgav1).
+    if let Ok(level) = std::env::var("RAV1D_LEVEL") {
+        use rav1d_safe::src::managed::CpuLevel as L;
+        settings.cpu_level = match level.as_str() {
+            "scalar" => L::Scalar,
+            "v2" => L::X86V2,
+            "v3" => L::X86V3,
+            "v4" => L::X86V4,
+            "native" => L::Native,
+            other => panic!("RAV1D_LEVEL={other}: expected scalar|v2|v3|v4|native"),
+        };
+    }
     settings.inloop_filters = match std::env::var("RAV1D_INLOOP").as_deref().unwrap_or("all") {
         "all" => InloopFilters::all(),
         "none" => InloopFilters::none(),
