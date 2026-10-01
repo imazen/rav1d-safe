@@ -91,13 +91,14 @@
 ))]
 compile_error!("unsound measurement probes are disabled; use a historical benchmark revision");
 
-// `__probe_untracked` is a MEASUREMENT-ONLY arm, re-enabled 2026-10-01 to
-// bound the tracker's wall-clock cost under sampling: it turns EVERY safe
-// constructor's storage into `Unchecked`, so overlap registration is skipped
-// while `get_mut`'s bounds panics still run — "concurrency overlap checking
-// off, bounds checking on". Strictly less unsound than the shipped
-// `unchecked` profile (which also drops slice bounds checks). Never enable
-// it in any shipping configuration.
+// `untracked` (alias `__probe_untracked`) is an OPT-IN mode, not a measurement
+// probe: every safe constructor's storage becomes `Unchecked`, so overlap
+// registration is skipped while `get_mut`'s bounds panics still run -- overlap
+// checking off, bounds checking on. Overlapping borrows are then undefined
+// behaviour in the Rust memory model by design; see the `PlainData` docs for
+// exactly what is and is not claimed. The main crate's `c-ffi`/`asm`/
+// `partial_asm` features enable it. Never enable it in a library: Cargo feature
+// unification would impose it on every user of this crate.
 
 #[cfg(all(
     disjoint_mut_loom,
@@ -212,15 +213,25 @@ pub struct DisjointMut<T: ?Sized + AsMutPtr> {
 /// [`zerocopy::FromBytes`], i.e. EVERY bit pattern is a valid value and there
 /// are no pointers, references or niches.
 ///
-/// This is what lets the untracked mode (`untracked` feature) state exactly what
-/// an overlapping access can do. A racing or aliased read of such a type yields
-/// some valid value of that type -- wrong output at worst -- and never an
-/// invalid enum discriminant, a dangling pointer or an out-of-range index
-/// derived from a forged one. Bounds are separately enforced against the
-/// owner's live length, which is never part of the contested bytes. Overlap is
-/// still undefined behaviour in the Rust memory model; this bound confines the
-/// *consequences* to wrong values, and makes that confinement a compile-time
-/// fact rather than a manual audit (cf. upstream rav1d's "checked manually").
+/// What this bound guarantees, and what it does not. A load through an
+/// overlapping or racing guard (the `untracked` feature) always yields a VALID
+/// value of the element type -- never an invalid enum discriminant, a
+/// reference, or a forged niche. Bounds are separately enforced against the
+/// owner's live length, which is never part of the contested bytes. This makes
+/// "the loaded value is valid" a compile-time fact instead of a manual audit
+/// (cf. upstream rav1d's "checked manually").
+///
+/// It does NOT make overlap defined behaviour. Two `&mut` to the same bytes
+/// remain `noalias`-violating UB in the Rust memory model, so an optimizer is
+/// entitled to reason as if the memory were not modified, e.g. rematerialise a
+/// load after a bounds check. No miscompile has been observed, and the decoder's
+/// overlap sites write identical bytes, but that is an empirical statement
+/// about today's compiler, not a language guarantee. Code that must stay robust
+/// should copy a value out of an overlapping guard before using it as an index.
+///
+/// Exact edge cases: `MaybeUninit<T>` is `FromBytes` for every `T`, so
+/// `MaybeUninit<*mut u8>` satisfies this bound; safe code cannot read it
+/// without `unsafe`, so no pointer is ever readable through it.
 pub trait PlainData: Copy + zerocopy::FromBytes {}
 impl<T: Copy + zerocopy::FromBytes> PlainData for T {}
 

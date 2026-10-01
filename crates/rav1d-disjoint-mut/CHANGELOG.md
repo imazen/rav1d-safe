@@ -2,6 +2,26 @@
 
 All notable changes to `rav1d-disjoint-mut` are documented in this file. Format follows [Keep a Changelog](https://keepachangelog.com/). Versions before `0.3.1` were not changelogged; see git history.
 
+## [Unreleased]
+
+Breaking: needs a 0.4.0 bump when released.
+
+### Changed (breaking)
+- `AsMutPtr::Target` / `ExternalAsMutPtr::Target` and the container impls now
+  require the new `PlainData` trait (`Copy + zerocopy::FromBytes`) instead of
+  plain `Copy`. `zerocopy` is now a required dependency; the `zerocopy` feature
+  is a no-op kept for compatibility.
+
+### Added
+- Opt-in `untracked` feature (alias `__probe_untracked`): no overlap tracking on
+  any instance, bounds checks unchanged. Overlap is UB by design; see the README
+  and `PlainData` docs for what is and is not claimed.
+
+### Fixed
+- A poisoned `DisjointMut` now also refuses empty-range borrows (the empty-range
+  early return in the tracker skipped the poison check). Found by an independent
+  adversarial review.
+
 ## [0.3.2] - 2026-09-08
 
 This release keeps the current sharded tracker and soundness fixes while

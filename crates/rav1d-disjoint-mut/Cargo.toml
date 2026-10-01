@@ -38,10 +38,11 @@ __probe_count = ["std"]
 __probe_noscan = []
 __probe_lockonly = []
 # Overlap tracking OFF; slice bounds checks stay ON. Overlapping borrows become
-# undefined behaviour in the Rust memory model (aliasing / data races), but every
-# element type is `PlainData`, so the only observable consequence of an overlap is
-# a wrong value -- never an out-of-bounds access, an invalid value or a pointer.
-# See `PlainData` and the crate README. Opt-in; unifies across the whole graph.
+# undefined behaviour in the Rust memory model (aliasing / data races). Every
+# element type is `PlainData`, so a load always yields a VALID value (never an
+# invalid enum, reference or niche) and bounds stay enforced; the memory-model UB
+# itself is not removed. See `PlainData` and the crate README. Opt-in; unifies
+# across the whole dependency graph.
 untracked = []
 # Historical alias used by the benchmark scripts.
 __probe_untracked = ["untracked"]

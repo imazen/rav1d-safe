@@ -31,9 +31,15 @@ model; this mode accepts that. What bounds the *consequence*:
    owner's live length, which is not part of the contested bytes. Pinned by
    `crates/rav1d-disjoint-mut/tests/untracked_mode.rs`.
 2. **Every element is `PlainData`** (`Copy + zerocopy::FromBytes`): all bit
-   patterns valid, no pointers, no niches. This is a compile-time bound on
-   `AsMutPtr::Target`, in every build, so a racing or aliased read yields *some
-   valid value* -- never an invalid enum, a forged index or a dangling pointer.
+   patterns valid, no references, no niches. This is a compile-time bound on
+   `AsMutPtr::Target`, in every build, so a racing or aliased *load* yields a
+   valid value of the element type -- never an invalid enum, a forged niche or a
+   reference. It does **not** make overlap defined behaviour: two `&mut` to the
+   same bytes still violate `noalias`, so an optimizer may legally rematerialise
+   a load after a bounds check. No miscompile has been observed, and the
+   decoder's overlap sites write identical bytes, but that is a statement about
+   today's compiler, not a language guarantee. (An independent adversarial
+   review flagged the earlier "wrong value at worst" wording as overstated.)
    (Upstream rav1d relies on the same argument but "checks it manually".)
    Enum-valued context arrays therefore store the `*Byte` newtypes in
    `src/plain.rs` (total decode: any byte maps to a valid variant). `Av1Block`,
@@ -41,6 +47,8 @@ model; this mode accepts that. What bounds the *consequence*:
    slot, used only by 2-pass frame threading.
 3. **All unsafe is in `rav1d-disjoint-mut`.** The main crate is
    `forbid(unsafe_code)`, so no data race can exist outside `DisjointMut`.
+   (`forbid` here means the *main crate* has no unsafe; it does not make the
+   mode sound, because the UB is inside the sub-crate by construction.)
 
 ## Measured (intra_4k, 3840x2160 x16, interleaved A/B, identical output md5)
 

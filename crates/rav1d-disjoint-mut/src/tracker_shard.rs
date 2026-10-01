@@ -2299,6 +2299,12 @@ impl BorrowTracker {
             return BorrowId::UNCHECKED;
         }
         if start >= end {
+            // An empty borrow touches no bytes, but a poisoned tracker must still
+            // refuse EVERY later access (found by an adversarial review: this
+            // early return used to skip the poison check in `add_slow`).
+            if self.state.load(Ordering::Acquire) & POISON_BIT != 0 {
+                Self::poisoned_panic();
+            }
             return BorrowId::EMPTY;
         }
         // ONE-SHARD INSTANCES SKIP THE BLOCK ARITHMETIC ENTIRELY.

@@ -42,14 +42,16 @@ Every `.index()` and `.index_mut()` call validates that the requested range does
 
 Guards act as locks — the borrow is tracked for the guard's lifetime and released on drop.
 
-### Element types must be `Copy`
+### Element types must be `PlainData`
 
-All container element types must be `Copy`. This excludes element destructors;
-it does not permit torn reads or data races. A data race is undefined behavior
-even for `u8`, and `Copy` types can still have validity requirements. Disjoint
+All container element types must be `PlainData` (`Copy + zerocopy::FromBytes`):
+every bit pattern is a valid value, with no references or niches. This excludes
+element destructors and invalid-value UB (enums, `bool`, `NonZero*`); store such
+values as plain bytes and decode on read. It does not permit torn reads or data
+races on its own: a data race is undefined behavior even for `u8`. Disjoint
 regions must not overlap at their boundaries, and the tracker must synchronize
-successive conflicting accesses. Safety comes from those guarantees, not from
-the `Copy` bound.
+successive conflicting accesses. In the default build safety comes from those
+guarantees, not from the `PlainData` bound; the bound matters for `untracked`.
 
 ### Borrow tracking
 
@@ -75,11 +77,11 @@ Like `std::sync::Mutex`, `DisjointMut` poisons the data structure when a thread 
 
 Immutable guards do **not** poison on panic. Poisoning also triggers on out-of-bounds panics during indexing.
 
-### Unchecked mode
+### Unchecked and untracked modes
 
-`unsafe fn dangerously_unchecked()` creates an instance without runtime tracking. The caller must guarantee that all borrows are non-overlapping.
+`unsafe fn dangerously_unchecked()` creates one instance without runtime tracking. The caller must guarantee that all borrows are non-overlapping.
 
-`new()` always creates a tracked instance.
+The `untracked` Cargo feature removes tracking from EVERY instance, including the safe constructors. Slice bounds checks stay on; overlapping borrows become undefined behavior in the Rust memory model by design. Because every element is `PlainData`, a load through an overlapping guard always yields a valid value of the element type and an out-of-bounds access stays impossible, but the optimizer is still entitled to assume no aliasing, so this is not a guarantee of "wrong value at worst". Do not enable it in a library (feature unification imposes it on all users). It is opt-in and off by default; without it `new()` always creates a tracked instance.
 
 ### Open-ended ranges
 
@@ -178,7 +180,8 @@ The primary API is `index()` / `index_mut()`, which return tracked guards. Prefe
 | `std` | yes | Enables `std::thread::panicking()` for mutable guard poisoning on panic. |
 | `aligned` | no | Aligned newtypes (`Align4`..`Align64`) and `AlignedVec32`/`AlignedVec64` for SIMD-friendly layout. |
 | `pic-buf` | no | `PicBuf`: owned byte buffer with alignment offset for `DisjointMut`. |
-| `zerocopy` | no | Zero-copy typed access via zerocopy's `IntoBytes`/`FromBytes` traits. |
+| `zerocopy` | no | Zero-copy typed access via zerocopy's `IntoBytes`/`FromBytes` traits. (zerocopy itself is a required dependency; this feature is a no-op kept for compatibility.) |
+| `untracked` | no | Remove overlap tracking from every instance; bounds checks stay on. Opt-in, UB on overlap by design. See above. |
 
 ## `no_std` support
 
