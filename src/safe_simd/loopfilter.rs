@@ -2526,6 +2526,8 @@ fn lpf_h_sb_y_8bpc_inner(
 
     let vm = vmask[0] | vmask[1] | vmask[2];
     let mut lvl_offset = lvl_base;
+    #[cfg(target_arch = "x86_64")]
+    let v4_token = crate::src::cpu::summon_avx512();
 
     // Helper: same as v-filter dispatcher
     let derive_levels = |lvl_offset: usize| -> Option<(u8, i32, i32, i32)> {
@@ -2581,13 +2583,23 @@ fn lpf_h_sb_y_8bpc_inner(
                             && l2 == l
                         {
                             if idx == 16 {
-                                packed16::apply_h(
-                                    _token,
-                                    buf,
-                                    dst_offset,
-                                    stride,
-                                    [e as u8, i as u8, h as u8],
-                                );
+                                if let Some(token) = v4_token {
+                                    packed16::apply_h_v4(
+                                        token,
+                                        buf,
+                                        dst_offset,
+                                        stride,
+                                        [e as u8, i as u8, h as u8],
+                                    );
+                                } else {
+                                    packed16::apply_h(
+                                        _token,
+                                        buf,
+                                        dst_offset,
+                                        stride,
+                                        [e as u8, i as u8, h as u8],
+                                    );
+                                }
                             } else if idx == 8 {
                                 loop_filter_4_8bpc_wd8_simd_h_x8(
                                     _token, buf, dst_offset, e, i, h, stridea,

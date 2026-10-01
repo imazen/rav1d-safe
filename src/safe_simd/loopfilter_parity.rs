@@ -6,7 +6,7 @@ mod mask_parity_tests {
 
     // Index order matches the mask census, with each SIMD lane processing one
     // independent edge position. The x16 leaf requires the AVX-512 token.
-    const KERNELS: [(usize, bool, usize); 16] = [
+    const KERNELS: [(usize, bool, usize); 17] = [
         (6, false, 4),
         (8, false, 4),
         (8, false, 8),
@@ -22,6 +22,7 @@ mod mask_parity_tests {
         (4, false, 8),
         (6, false, 8),
         (6, true, 8),
+        (16, true, 8),
         (16, true, 8),
     ];
 
@@ -61,6 +62,17 @@ mod mask_parity_tests {
             15 => packed16::apply_h(token, buf, base, stride, levels),
             _ => unreachable!(),
         }
+        true
+    }
+
+    fn run_simd_v4(kernel: usize, buf: &mut [u8], base: usize, stride: isize, levels: [u8; 3]) -> bool {
+        if kernel != 16 {
+            return false;
+        }
+        let Some(token) = crate::src::cpu::summon_avx512() else {
+            return false;
+        };
+        packed16::apply_h_v4(token, buf, base, stride, levels);
         true
     }
 
@@ -142,6 +154,10 @@ mod mask_parity_tests {
                             255
                         }
                     }
+                    // Nearly-flat region: |tap - p0| <= 1 everywhere so
+                    // flat8in/out + fm all fire and the 14-tap weights are
+                    // actually observed (uniform taps mask weight errors).
+                    12 => side + (k & 1) as u8,
                     _ => unreachable!(),
                 };
                 buf[base
@@ -159,12 +175,12 @@ mod mask_parity_tests {
         let avx512 = crate::src::cpu::summon_avx512().is_some();
         let mut cells = 0;
         for (kernel, &(width, horizontal, lanes)) in KERNELS.iter().enumerate() {
-            if !(if kernel == 4 { avx512 } else { avx2 }) {
+            if !(if kernel == 4 || kernel == 16 { avx512 } else { avx2 }) {
                 continue;
             }
             for stride in [32, 67, -32, -67] {
                 for offset in [0, 3] {
-                    for pattern in 0..12 {
+                    for pattern in 0..13 {
                         for levels in [
                             [0, 0, 0],
                             [8, 4, 0],
@@ -176,7 +192,11 @@ mod mask_parity_tests {
                                 input(lanes, horizontal, stride, offset, pattern);
                             let mut actual = pixels.clone();
                             let mut expected = pixels.clone();
-                            assert!(run_simd(kernel, &mut actual, base, stride, levels));
+                            if kernel == 16 {
+                                assert!(run_simd_v4(kernel, &mut actual, base, stride, levels));
+                            } else {
+                                assert!(run_simd(kernel, &mut actual, base, stride, levels));
+                            }
                             crate::src::loopfilter::loop_filter_scalar_for_test(
                                 &mut expected,
                                 base,
@@ -205,7 +225,7 @@ mod mask_parity_tests {
                 }
             }
         }
-        assert_eq!(cells, (usize::from(avx2) * 15 + usize::from(avx512)) * 480);
+        assert_eq!(cells, (usize::from(avx2) * 15 + usize::from(avx512) * 2) * 520);
         eprintln!("loopfilter mask sweep: {cells} live SIMD cells match the scalar decoder");
     }
 
