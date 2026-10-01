@@ -200,10 +200,8 @@ fn parallel_frame_tile_contexts_preserve_frames() {
         &[0x12, 0],
         "temporal delimiter required for repetition"
     );
-    let mut modes = vec![(8, 1)];
-    if cfg!(feature = "untracked") {
-        modes.extend([(8, 2), (8, 4)]);
-    }
+    // Frame threading (explicit delay > 1) is available in tracked builds too.
+    let modes = vec![(8, 1), (8, 2), (8, 4)];
     for (threads, max_frame_delay) in modes {
         let mut settings = Settings::default();
         settings.threads = threads;
@@ -237,5 +235,50 @@ fn parallel_frame_tile_contexts_preserve_frames() {
             assert_eq!(hash(frame), reference, "frame contexts={max_frame_delay}");
         }
         eprintln!("workers={threads} frame_contexts={max_frame_delay}: all 12 frame hashes match");
+    }
+}
+
+// Committed 384x256 still; decodes to ONE tile.
+const SINGLE_TILE_STREAM: &[u8] =
+    include_bytes!("../../tests/crash_vectors/kodim03_yuv420_8bpc.obu");
+
+/// A single-tile frame has no tile neighbours writing the same rows, so the
+/// per-row guard splitting (and the compact copy) is pure cost there: the picture
+/// keeps hull guards at any thread count. Multi-tile frames still split
+/// (`assert_picture_policy` above pins that). Output must not depend on the policy.
+#[test]
+fn single_tile_frames_keep_hull_guards_at_any_thread_count() {
+    let mut reference = None;
+    for threads in [1u32, 2, 4, 8] {
+        let mut settings = Settings::default();
+        settings.threads = threads;
+        settings.max_frame_delay = 1;
+        let mut decoder = Decoder::with_settings(settings).unwrap();
+        let frame = decoder
+            .decode(SINGLE_TILE_STREAM)
+            .unwrap()
+            .expect("still frame");
+        let hdr = frame.inner.frame_hdr.as_ref().expect("frame header");
+        assert_eq!(
+            hdr.tiling.cols as usize * hdr.tiling.rows as usize,
+            1,
+            "fixture must be a single-tile frame"
+        );
+        for plane in &frame.inner.data.as_ref().unwrap().data {
+            let policy = plane
+                .threading_policy()
+                .expect("decoder-owned picture policy");
+            assert_eq!(policy.parallel, threads > 1);
+            assert!(
+                !plane.uses_row_guards(),
+                "single-tile frame must not use per-row guards (threads = {threads})"
+            );
+        }
+        let h = hash(&frame);
+        assert_eq!(
+            *reference.get_or_insert(h.clone()),
+            h,
+            "threads = {threads}"
+        );
     }
 }

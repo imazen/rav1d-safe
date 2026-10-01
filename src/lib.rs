@@ -120,11 +120,13 @@ fn get_num_threads(s: &Rav1dSettings) -> NumThreads {
     } else {
         cmp::min((n_tc as f64).sqrt().ceil() as usize, 8)
     };
-    // Tile threading (n_fc=1) works under forbid(unsafe_code).
-    // Frame threading (n_fc>1) needs `untracked`: concurrent frame contexts
-    // legitimately overlap reference-frame guards, which the tracker would reject.
+    // Frame threading (n_fc>1) works under the overlap tracker (validated on the whole
+    // conformance corpus at several thread/delay combinations), but it changes
+    // `decode()` from effectively synchronous to asynchronous, so tracked builds only
+    // enable it when the caller EXPLICITLY asks for `max_frame_delay > 1`; auto (0)
+    // stays tile-only. `untracked` builds keep the auto default.
     #[cfg(not(feature = "untracked"))]
-    let n_fc = 1;
+    let n_fc = if s.max_frame_delay > 1 { n_fc } else { 1 };
     NumThreads { n_fc, n_tc }
 }
 

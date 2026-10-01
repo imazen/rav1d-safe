@@ -6,8 +6,8 @@
 //! `out_delayed` slot) and only then loop `rav1d_get_picture`, which by that
 //! point had nothing left to return. Two consequences, both silent frame loss:
 //!
-//! * With frame threading (`threads >= 2`, `max_frame_delay != 1` — needs the
-//!   `unchecked` or `asm` feature, the default build clamps `n_fc` to 1),
+//! * With frame threading (`threads >= 2`, `max_frame_delay > 1` explicitly in
+//!   tracked builds; automatic with `untracked`/`asm`),
 //!   `decode()` legitimately returns `Ok(None)` with the frame in flight, and the
 //!   following `flush()` destroyed it. Whether a consumer lost its last frame
 //!   depended on scheduling — the `asm` CI flavour hashed 0 frames on every
@@ -22,9 +22,10 @@
 //! produce the second frame. Reverting `flush()` to reset-then-drain fails
 //! `flush_returns_frames_still_queued_in_the_last_chunk` at `threads = 1`.
 //! The first case is asserted by the threaded tests, which are only a real gate
-//! where frame threading exists (`--features unchecked`, or the `asm` CI leg);
-//! elsewhere they degrade to the single-thread contract, which is stated in
-//! each assertion message.
+//! where frame threading is engaged (`untracked`, `asm`, or an explicit
+//! `max_frame_delay > 1`); with the default auto delay in a tracked build they
+//! degrade to the single-thread contract, which is stated in each assertion
+//! message.
 
 #![forbid(unsafe_code)]
 
@@ -122,14 +123,16 @@ fn flush_returns_frames_still_queued_in_the_last_chunk() {
 
 /// With frame threading, `decode()` may return `None` while the frame is still
 /// in flight; `flush()` must wait for it and return it. Where frame threading
-/// is compiled out (`n_fc` clamped to 1 without `unchecked`/`asm`), this is the
+/// is not engaged (tracked build with the auto delay: `n_fc` stays 1), this is the
 /// same single-thread contract as above — one frame, never zero.
 #[test]
 fn flush_returns_in_flight_frames_under_frame_threading() {
     let stream = single_tu_stream();
     let mut saw_deferred = false;
-    for threads in [2u32, 4, 8] {
-        let mut dec = decoder(threads, 0);
+    // Auto delay (frame threading only in untracked/asm builds) and EXPLICIT delays
+    // (frame threading in every build).
+    for (threads, delay) in [(2u32, 0u32), (4, 0), (8, 0), (2, 2), (4, 3), (8, 4)] {
+        let mut dec = decoder(threads, delay);
         let first = dec.decode(&stream).expect("decode");
         saw_deferred |= first.is_none();
         let mut frames: Vec<Frame> = first.into_iter().collect();
@@ -137,7 +140,7 @@ fn flush_returns_in_flight_frames_under_frame_threading() {
         assert_eq!(
             frames.len(),
             1,
-            "threads = {threads}, max_frame_delay = auto: one temporal unit in, so \
+            "threads = {threads}, max_frame_delay = {delay}: one temporal unit in, so \
              decode() + flush() must yield exactly one frame — with frame threading \
              the frame was in flight when flush() ran and flush() threw it away"
         );

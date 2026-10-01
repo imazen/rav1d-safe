@@ -919,7 +919,12 @@ impl Rav1dPictureDataComponent {
         return false;
         #[cfg(not(feature = "untracked"))]
         self.threading
-            .map_or_else(tile_threading_active, |p| p.parallel)
+            // Per-row guards (and the compact copy that goes with them) exist to
+            // stop two tile workers' strided HULLS colliding over the gap bytes of
+            // rows they share. With a single tile there is no such neighbour, so
+            // the extra registrations (about 3.4 ms/frame on 480p inter at t>=2)
+            // buy nothing.
+            .map_or_else(tile_threading_active, |p| p.parallel && p.multi_tile)
     }
 
     pub(crate) fn threading_policy(&self) -> Option<PictureThreading> {
@@ -927,8 +932,21 @@ impl Rav1dPictureDataComponent {
     }
 
     pub(crate) fn set_threading_policy(&mut self, policy: PictureThreading) {
+        // Shard the picture's tracker when tile workers can share rows, or when the
+        // plane is big enough that several post-filter workers will hammer one lock.
+        // A SMALL single-tile plane's hull guards would otherwise span many shards
+        // and take the slow multi-shard/wide paths for no contention benefit
+        // (480p inter at 2 threads: -28% instructions, -28..36% wall; 4K single-tile
+        // wall is unchanged either way, so big planes keep the sharded layout).
+        const SINGLE_SHARD_PLANE_BYTES: usize = 2 << 20;
+        let small_single_tile =
+            !policy.multi_tile && self.data.as_mut_slice().len() < SINGLE_SHARD_PLANE_BYTES;
         self.data.configure_parallelism(
-            if policy.parallel { 2 } else { 1 },
+            if policy.parallel && !small_single_tile {
+                2
+            } else {
+                1
+            },
             if policy.multi_tile { 2 } else { 1 },
         );
         self.threading = Some(policy);

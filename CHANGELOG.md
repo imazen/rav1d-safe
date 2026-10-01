@@ -12,6 +12,19 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   decoded-frame accessors.
 
 ### Changed
+- Multi-threaded tracked builds: single-tile frames keep hull guards (no per-row
+  splitting and no compact copy), and small single-tile planes (< 2 MiB) use the
+  single-shard tracker layout. The tracker's multi-shard/wide paths were ~90% of the
+  extra work a 2-thread decode did over a 1-thread one on small inter frames:
+  instructions at 2 threads 12.83 G -> 7.87 G (1 thread: 7.30 G). Multi-tile frames
+  are unchanged. Validated with the live tracker as oracle: 803/803 vectors at 2/4/8
+  threads and 640 stress runs, no overlap panics.
+- Frame threading (`max_frame_delay > 1`) is now available in tracked builds when
+  requested explicitly (480p inter at 4 threads: 8.0 -> 4.3 ms/frame under load).
+  Auto (0) stays tile-only there, so `decode()` does not become asynchronous
+  unasked; `untracked` builds keep the auto default. Validated: 803/803 vectors at
+  (2 threads, delay 2), (4, 3) and (8, 4), 640 stress runs, tracked film-grain
+  frame-context test. `decode_md5` gained `--delay N`.
 - Enum-valued context arrays (`comp_type`, `filter`, `tx`) and `RefMvsBlock.bs`
   store plain bytes with total decoding (`src/plain.rs`); `SegmentId` is a masked
   byte; the 2-pass frame-threading block store is a `Mutex` per slot.

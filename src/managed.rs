@@ -188,9 +188,11 @@ pub struct Settings {
     /// [`flush()`](Decoder::flush) once at end of input — it drains every frame still
     /// owed (in flight or queued in the last chunk) before it resets.
     ///
-    /// Tile threading works in the default checked build. Decoding multiple
-    /// frames in flight also requires the `untracked` feature; without it,
-    /// frame delay is capped at one while the requested worker count is retained.
+    /// Tile threading is always available. Decoding multiple frames in flight
+    /// (frame threading, which scales much better on small frames) is automatic with
+    /// the `untracked` feature; in other builds it is opt-in: set
+    /// [`max_frame_delay`](Self::max_frame_delay) above one, otherwise the delay stays
+    /// at one and `decode()` stays effectively synchronous.
     /// For stills, additional workers help mainly when the image has multiple
     /// tiles. Set [`max_frame_delay`](Self::max_frame_delay) to one for explicit
     /// single-frame latency measurements.

@@ -107,14 +107,51 @@ threads in other modes, and the main crate is `forbid(unsafe_code)`, so the
 single-thread invariant has to be enforced inside the crate (or the knob left as
 the compile-time `untracked` feature).
 
+## What was fixed (2026-10-01, same day)
+
+Two changes to tracked builds, both validated with the live tracker as oracle (any
+real overlap would have panicked):
+
+1. **No per-row guard splitting for single-tile frames, and a single-shard tracker
+   layout for small single-tile planes (< 2 MiB).** At 2 threads the 480p stream's
+   instructions drop 12.83 G -> 7.87 G (1 thread: 7.30 G); the leftover +8% is the
+   multi-thread machinery itself. Multi-tile frames are unchanged. Validation:
+   803/803 vectors at 2/4/8 threads and 640 stress runs of the 40 largest vectors,
+   zero overlap panics, zero md5 mismatches.
+2. **Frame threading in tracked builds, opt-in** (explicit `max_frame_delay > 1`;
+   auto stays tile-only so `decode()` does not turn asynchronous unasked). The old
+   clamp was removed on the strength of: 803/803 vectors at (2 threads, delay 2),
+   (4, 3), (8, 4); 640 stress runs; the tracked film-grain frame-context md5 test.
+
+The suspicion that this was a tracking-code regression or spinlocking was checked:
+`v0.6.0` and `main` before this branch show the same 1 -> 2 thread jump, and the
+profile has 2 of 6,120 samples in `lock_slow` (0.03%) at 2 threads (2-3% at 8
+threads on 4K, before and after, on a loaded box). The cost was policy: per-row
+guards multiplying registrations, then the sharded layout turning each hull into
+a multi-shard/wide registration.
+
+Tracked default build, ms/frame, interleaved x7, **box loaded (load ~16) so read
+only the ratios**:
+
+| stream | before | fixed (tile threads) | fixed + frame threads (d=4) |
+|---|---:|---:|---:|
+| 480p inter, t=1 | 5.20 | 5.18 | 5.20 |
+| 480p inter, t=2 | 10.55 | 6.69 | **4.13** (2.6x) |
+| 480p inter, t=4 | 11.92 | 7.90 | **4.29** (2.8x) |
+| 480p inter, t=8 | 12.88 | 8.67 | **4.23** (3.0x) |
+| small intra, t=4 | 4.64 | 4.86 | **2.02** (2.3x) |
+| 4K photo, t=1 | 45.1 | 45.1 | 45.2 |
+| 4K photo, t=4 | 28.8 | 28.6 | 37.6 (**0.77x, worse**) |
+
+Frame threading is a win on small frames and a loss on big ones (each frame gets
+fewer workers and the working set multiplies); that is why it is opt-in. A size-aware
+automatic choice would be a sensible follow-up.
+
 ## Where this points
 
-1. **Default (tracked) build, threads > 1:** drop the per-row guard splitting when
-   the frame has one tile column (to be confirmed for this stream) (or otherwise cut registrations per block): about
-   3.4 ms/frame on 480p, and the main reason the default is 2-5x slower than
-   untracked at 4 threads. Needs a concurrency review (post-filter tasks run beside
-   reconstruction).
-2. **Frame threading for tracked builds:** biggest single scaling lever on small
-   frames (2.5x), currently clamped away.
-3. **Tracker at 1 thread:** 12-24%; lock RMW is only a sixth of it.
+1. ~~Per-row guard splitting for single-tile frames~~ and
+2. ~~frame threading for tracked builds~~: done, see "What was fixed". Remaining
+   there: a size-aware automatic frame-delay choice (big frames get slower with it).
+3. **Tracker at 1 thread:** 12-24%; the lock RMW is only a sixth of it, so a serial
+   backend needs a different data structure.
 4. Kernel targets for stills unchanged: docs/SAFE_VS_DAV1D.md.

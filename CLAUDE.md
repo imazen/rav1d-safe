@@ -799,9 +799,12 @@ bitstream through the heic AVIF decode path. Separate from the CDEF race above.
 - `looprestoration.rs`: per-row source reads instead of strided_slice
 - `ipred.rs`: per-row CFL prediction reads
 
-**Frame threading (n_fc>1) OPEN:** Reference frame guard conflicts between concurrent
-frame contexts (loopfilter mutable vs reference read immutable on the same frame's picture
-buffer). n_fc clamped to 1 without `untracked`.
+**Frame threading (n_fc>1): WORKS under the tracker (2026-10-01).** It was clamped away
+because reference-frame guards between concurrent frame contexts were feared to conflict.
+Removing the clamp and running the whole corpus with explicit `max_frame_delay` 2-4 at
+2-8 threads (plus stress runs) produced no overlap panics and no md5 mismatches. Tracked
+builds enable it only on an EXPLICIT `max_frame_delay > 1` (it makes `decode()`
+asynchronous); `untracked` builds keep the auto default. See docs/DECODER_COMPARISON.md.
 
 Reproducer: `cargo test --release --test reproduce_overlap -- --ignored`
 
@@ -992,10 +995,10 @@ CI runs the corpus test in dev on both conformance architectures (`69b6c704`).
 The reservations are block-row segments, not full-width image rows: at most
 32 luma pixels, 16 horizontally subsampled chroma pixels (32 for 4:4:4), and
 32 input-luma pixels. Each callback drops its guards before the next row.
-Default checked builds clamp `n_fc` to 1 in `src/lib.rs::get_num_threads`,
-so the 1/2/4/8-thread corpus run validates tile/grain worker concurrency,
-not concurrent frame contexts. The latter requires `unchecked` and was not
-validated in this run. Throughput impact was not measured.
+(At the time of that run, checked builds clamped `n_fc` to 1 in
+`src/lib.rs::get_num_threads`, so the 1/2/4/8-thread corpus run validated
+tile/grain worker concurrency, not concurrent frame contexts; frame contexts are
+now covered, see the Frame threading note above.) Throughput impact was not measured.
 Follow-up concurrency validation on 2026-09-06 (`6115e06b`) passes with
 `unchecked`: 117 film-grain runs using 2/4 frame contexts, three independent
 decoders, and a 32-tile stream at eight workers and 1/2/4 frame contexts.

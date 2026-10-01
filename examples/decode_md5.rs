@@ -198,6 +198,9 @@ fn main() {
     // size sweep, a forced-tile grid) are not in the corpus that
     // `md5_inventory --threads` covers.
     let mut threads: u32 = 1;
+    // Frames in flight (`--delay N`, 0 = auto). Defaults to the library default, which
+    // in untracked builds already frame-threads when `--threads` > 1.
+    let mut max_frame_delay = Settings::default().max_frame_delay;
     let mut limit: Option<u32> = None;
     // dav1d-test-data standalone test() args — see tests/decode_cpu_levels.rs
     // for the same mapping applied via Settings.
@@ -235,6 +238,12 @@ fn main() {
                         "--level needs scalar|v2|v3|v4|neon|neon-dotprod|neon-i8mm|native, got {other:?}"
                     ),
                 });
+            }
+            "--delay" => {
+                max_frame_delay = it
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .expect("--delay needs a number (frames in flight; 0 = auto)");
             }
             "--threads" => {
                 threads = it
@@ -290,6 +299,7 @@ fn main() {
 
     let mut settings = Settings::default();
     settings.threads = threads;
+    settings.max_frame_delay = max_frame_delay;
     settings.apply_grain = filmgrain;
     if let Some(l) = level {
         settings.cpu_level = l;
