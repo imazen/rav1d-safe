@@ -495,11 +495,19 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
     // shift is redundant for 8bpc (i16-clipped >>2 stays inside [-8192,8192]).
     let raw_coeff: &[i16; 1024] = coeff.as_slice()[..1024].try_into().unwrap();
     let mut tmp = dct32_row_pass_i16_simd::<2>(_token, raw_coeff, 2);
-    // SIMD column transform: 8 columns x 4 chunks
-    dct32x32_cols_simd(_token, &mut tmp, col_clip_min, col_clip_max);
+    // Column transform. AVX-512: fused col+dst-add (no tmp write-back).
     if let Some(t512) = crate::src::cpu::summon_avx512() {
-        add_to_dst_8bpc_v4(t512, &mut *dst, dst_stride, &tmp, 32, 32, 32, bitdepth_max);
+        dct32_cols_add_8bpc_v4(
+            t512,
+            &tmp,
+            &mut *dst,
+            dst_stride,
+            col_clip_min,
+            col_clip_max,
+        );
     } else {
+        // AVX2: in-place column pass, then the separate dst-add pass.
+        dct32x32_cols_simd(_token, &mut tmp, col_clip_min, col_clip_max);
         add_32x32_to_dst(
             _token,
             &mut *dst,

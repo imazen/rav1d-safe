@@ -63,11 +63,19 @@ mod tests {
 
 impl TrackerStorage {
     pub(super) const fn new() -> Self {
-        Self::Lazy(spin::Once::new())
+        if cfg!(feature = "__probe_untracked") {
+            Self::Unchecked
+        } else {
+            Self::Lazy(spin::Once::new())
+        }
     }
 
     pub(super) fn eager(len: usize) -> Self {
-        Self::Eager(Box::new(BorrowTracker::new(len)))
+        if cfg!(feature = "__probe_untracked") {
+            Self::Unchecked
+        } else {
+            Self::Eager(Box::new(BorrowTracker::new(len)))
+        }
     }
 
     pub(super) const fn is_checked(&self) -> bool {

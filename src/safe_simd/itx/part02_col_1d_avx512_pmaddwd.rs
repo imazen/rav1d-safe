@@ -669,6 +669,53 @@ fn dct32_cols_v4(
     }
 }
 
+/// dct32 1D column transform + fused dst-add for 8bpc 32x32 (AVX-512).
+///
+/// Same math as `dct32_cols_v4` feeding `add_to_dst_8bpc_v4`, but each column
+/// chunk's output rows are added into `dst` while still in registers — the
+/// 4 KiB `tmp` write-back and re-read never happen. `tmp` is read-only here.
+#[cfg(target_arch = "x86_64")]
+#[arcane]
+fn dct32_cols_add_8bpc_v4(
+    token: Server64,
+    tmp: &[i32; 1024],
+    dst: &mut [u8],
+    dst_stride: usize,
+    min: i32,
+    max: i32,
+) {
+    let mut dst = dst.flex_mut();
+    let min_v = _mm512_set1_epi32(min);
+    let max_v = _mm512_set1_epi32(max);
+    let rnd = _mm512_set1_epi32(8); // final (c + 8) >> 4, as in add_to_dst_8bpc_v4
+    let zero_256 = _mm256_setzero_si256();
+    let max_255_256 = _mm256_set1_epi16(255);
+    for cx_chunk in 0..2 {
+        let cx = cx_chunk * 16;
+        let mut v = [_mm512_setzero_si512(); 32];
+        for i in 0..32 {
+            v[i] = loadu_512!(&tmp[i * 32 + cx..i * 32 + cx + 16], [i32; 16]);
+        }
+        dct32_1d_cols16(token, &mut v, min_v, max_v);
+        for i in 0..32 {
+            // v[i] = 16 i32 outputs for row i, cols cx..cx+16
+            let scaled = _mm512_srai_epi32::<4>(_mm512_add_epi32(v[i], rnd));
+            let c16 = _mm512_cvtsepi32_epi16(scaled); // 16 i16, same saturate as the v4 add
+            let d = loadu_128!(&dst[i * dst_stride + cx..i * dst_stride + cx + 16], [u8; 16]);
+            let d16 = _mm256_cvtepu8_epi16(d);
+            let sum = _mm256_add_epi16(d16, c16);
+            let clamped = _mm256_max_epi16(_mm256_min_epi16(sum, max_255_256), zero_256);
+            // Values are already in [0,255], so truncating cvt == packus.
+            let packed = _mm256_cvtepi16_epi8(clamped); // 16 u8 (avx512vl+bw)
+            storeu_128!(
+                &mut dst[i * dst_stride + cx..i * dst_stride + cx + 16],
+                [u8; 16],
+                packed
+            );
+        }
+    }
+}
+
 /// Run dct16 1D column transform over a row-major buffer using AVX-512.
 /// `tmp` has `total_w` cols × `n_rows` rows. Processes 16 cols at a time.
 /// `n_chunks` = `total_w / 16`. Caller is responsible for ensuring this divides.

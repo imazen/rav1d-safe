@@ -80,13 +80,20 @@
 // arms must never turn the safe constructor into an unchecked one in a release.
 // Reproduce them at the revisions recorded in docs/OWNERSHIP_MODELS.md.
 #[cfg(any(
-    feature = "__probe_untracked",
     feature = "__probe_noscan",
     feature = "__probe_lockonly",
     feature = "__probe_tinynop",
     feature = "__probe_addnop"
 ))]
 compile_error!("unsound measurement probes are disabled; use a historical benchmark revision");
+
+// `__probe_untracked` is a MEASUREMENT-ONLY arm, re-enabled 2026-10-01 to
+// bound the tracker's wall-clock cost under sampling: it turns EVERY safe
+// constructor's storage into `Unchecked`, so overlap registration is skipped
+// while `get_mut`'s bounds panics still run — "concurrency overlap checking
+// off, bounds checking on". Strictly less unsound than the shipped
+// `unchecked` profile (which also drops slice bounds checks). Never enable
+// it in any shipping configuration.
 
 #[cfg(all(
     disjoint_mut_loom,
