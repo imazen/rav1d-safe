@@ -11,14 +11,14 @@ NOTE: excluded-feature surface (__ablate,__bisect,__lrpoison,__lrvarcov,__pad2,_
 ## summary
 #
 #   pub types (struct/enum/trait/alias)         3
-#   inherent methods                           31
-#   trait roster entries (type × trait)        33
+#   inherent methods                           33
+#   trait roster entries (type × trait)        35
 #
 # per-module pub lines:
 #   include                          23
-#   src                              11
+#   src                              13
 
-## items (34 lines)
+## items (36 lines)
 
 pub fn include::dav1d::headers::Rav1dAdaptiveBoolean::assert_fields_are_eq(&self)
 pub fn include::dav1d::headers::Rav1dChromaSamplePosition::assert_fields_are_eq(&self)
@@ -49,13 +49,15 @@ pub fn src::managed::Error::assert_fields_are_eq(&self)
 pub fn src::managed::InloopFilters::assert_fields_are_eq(&self)
 pub fn src::managed::MatrixCoefficients::assert_fields_are_eq(&self)
 pub fn src::managed::PixelLayout::assert_fields_are_eq(&self)
+pub fn src::managed::RawColorInfo::assert_fields_are_eq(&self)
+pub fn src::managed::SendStatus::assert_fields_are_eq(&self)
 pub fn src::managed::Strictness::assert_fields_are_eq(&self)
 pub fn src::managed::TransferCharacteristics::assert_fields_are_eq(&self)
 pub type include::dav1d::picture::AlignedPixelChunk::MaybeUninit = __ZerocopyKnownLayoutMaybeUninit
 pub type include::dav1d::picture::AlignedPixelChunk::ProjectToTag = zerocopy::pointer::cast::CastToUnit
 pub type include::dav1d::picture::AlignedPixelChunk::Tag = ()
 
-## trait impls (33 types)
+## trait impls (35 types)
 
 include::dav1d::headers::Dav1dSequenceHeaderOperatingParameterInfo: TrivialClone
 include::dav1d::headers::Dav1dSequenceHeaderOperatingPoint: TrivialClone
@@ -88,5 +90,7 @@ src::managed::InloopFilters: TrivialClone
 src::managed::MasteringDisplay: TrivialClone
 src::managed::MatrixCoefficients: TrivialClone
 src::managed::PixelLayout: TrivialClone
+src::managed::RawColorInfo: TrivialClone
+src::managed::SendStatus: TrivialClone
 src::managed::Strictness: TrivialClone
 src::managed::TransferCharacteristics: TrivialClone

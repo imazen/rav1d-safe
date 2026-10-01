@@ -4,19 +4,12 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
-### Added
-- Opt-in `untracked` feature (docs/UNTRACKED_MODE.md): no `DisjointMut` overlap
-  tracking and, under tile threading, zero-copy in-place pixel access instead of
-  the compact copy-in / diff-write-back path. Slice bounds checks stay on. On the
-  4K stream: 42.7 -> 37.6 ms/frame at 1 thread, 18.3 -> 11.6 at 4 threads.
-  Overlap is formally UB by design; every `DisjointMut` element is now `PlainData`
-  (all bit patterns valid) so a load is always a valid value. `c-ffi`, `asm` and
-  `partial_asm` imply it. `managed::is_untracked()` reports it.
-- `rav1d-disjoint-mut` 0.4.0 (breaking, see its CHANGELOG): `PlainData` element
-  bound, `untracked`, a poison/empty-range fix and an overflow fix in the cast API.
-- Tools and write-ups for finding where we lose to dav1d:
-  `docs/SAFE_VS_DAV1D.md`, `docs/ASM_VS_DAV1D.md`, `scripts/perf/{cg_lines.py,
-  family_compare.py,libc_call_shim.c}`.
+### Fixed
+- Convert managed AV1 mastering-display metadata using its actual fixed-point
+  units: chromaticities / 65536, maximum luminance / 256, and minimum luminance
+  / 16384. A 1000-nit maximum previously returned 25.6 nits. Raw fields retain
+  their original bitstream values; a regression test covers parsing through
+  decoded-frame accessors.
 
 ### Changed
 - Enum-valued context arrays (`comp_type`, `filter`, `tx`) and `RefMvsBlock.bs`
@@ -47,6 +40,29 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   table is in [docs/DIAGNOSTIC_FEATURES.md](docs/DIAGNOSTIC_FEATURES.md).
 
 ### Added
+- Opt-in `untracked` feature (docs/UNTRACKED_MODE.md): no `DisjointMut` overlap
+  tracking and, under tile threading, zero-copy in-place pixel access instead of
+  the compact copy-in / diff-write-back path. Slice bounds checks stay on. On the
+  4K stream: 42.7 -> 37.6 ms/frame at 1 thread, 18.3 -> 11.6 at 4 threads.
+  Overlap is formally UB by design; every `DisjointMut` element is now `PlainData`
+  (all bit patterns valid) so a load is always a valid value. `c-ffi`, `asm` and
+  `partial_asm` imply it. `managed::is_untracked()` reports it.
+- `rav1d-disjoint-mut` 0.4.0 (breaking, see its CHANGELOG): `PlainData` element
+  bound, `untracked`, a poison/empty-range fix and an overflow fix in the cast API.
+- Tools and write-ups for finding where we lose to dav1d:
+  `docs/SAFE_VS_DAV1D.md`, `docs/ASM_VS_DAV1D.md`, `scripts/perf/{cg_lines.py,
+  family_compare.py,libc_call_shim.c}`.
+- Managed frame presentation provenance: `is_show_existing` distinguishes
+  replayed reference pictures, and `is_keyframe` identifies newly coded visible
+  key frames without mistaking an older reference header for a new seek point.
+- Owned `Packet` submission with explicit accepted/backpressure results, input
+  timestamp/duration/offset propagation, and incremental `end_input`/`receive`
+  draining with terminal EOS. `reset` explicitly discards pending state while
+  previously returned pictures remain valid. The existing `flush` convenience
+  method uses this drain protocol and still drains then resets.
+- Raw color-code and AV1 chroma-position accessors, coded render dimensions,
+  and input packet offsets on managed frames. Unknown color codes are retained.
+  See [managed packet decoding](docs/MANAGED_PACKETS.md) for ownership and timing.
 - Release provenance record mapping all 19 published `rav1d-safe` and
   `rav1d-disjoint-mut` versions to their source commits, with
   `tools/verify-published-provenance.py` to regenerate and check it

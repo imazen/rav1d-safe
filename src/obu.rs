@@ -2542,6 +2542,7 @@ fn parse_obus(
             }
             if c.fc.len() == 1 {
                 state.out = state.refs[frame_hdr.existing_frame_idx as usize].p.clone();
+                state.out.p.show_existing_frame = true;
                 rav1d_picture_copy_props(
                     &mut state.out.p,
                     state.content_light.clone(),
@@ -2601,6 +2602,7 @@ fn parse_obus(
                     let _ = mem::take(out_delayed);
                 }
                 *out_delayed = state.refs[frame_hdr.existing_frame_idx as usize].p.clone();
+                out_delayed.p.show_existing_frame = true;
                 out_delayed.visible = true;
                 rav1d_picture_copy_props(
                     &mut out_delayed.p,

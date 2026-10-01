@@ -1,0 +1,20 @@
+{
+  "source": "zenrav1e tests/small_video_roundtrip.rs",
+  "file": "native-reordered-17x17-444.obu",
+  "sha256": "60d9e0897a43fc17df5e1118671bbbe2e996a9cd2bfd907c7da6ad67f4d8ab72",
+  "dimensions": [
+    17,
+    17
+  ],
+  "bits": 8,
+  "sampling": "444",
+  "frames": 5,
+  "preset": 6,
+  "quantizer": 0,
+  "reorder": true,
+  "source_pattern": "(17*x + 29*y + 43*frame + 71*plane) % 256",
+  "command": "SMALL_VIDEO_ARTIFACTS=<dir> cargo test --release --test small_video_roundtrip",
+  "codec_revision": "9057c4bacf1d8a23974e32de09fd4446a1cc525a",
+  "generator_sha256": "f86018d9639d9bf89211874dbedde269645b06a78dbda0df39737a2db5b71055",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)"
+}

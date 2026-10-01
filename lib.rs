@@ -253,7 +253,7 @@ pub mod src {
 // Users can write `rav1d_safe::Decoder` instead of `rav1d_safe::src::managed::Decoder`.
 pub use src::managed::{
     ColorInfo, ColorPrimaries, ColorRange, ContentLightLevel, CpuLevel, DecodeFrameType, Decoder,
-    Error, Frame, InloopFilters, MasteringDisplay, MatrixCoefficients, PixelLayout, PlaneView8,
-    PlaneView16, Planes, Planes8, Planes16, Result, Settings, Strictness, TransferCharacteristics,
-    enabled_features,
+    Error, Frame, InloopFilters, MasteringDisplay, MatrixCoefficients, Packet, PixelLayout,
+    PlaneView8, PlaneView16, Planes, Planes8, Planes16, RawColorInfo, ReceiveStatus, Result,
+    SendStatus, Settings, Strictness, TransferCharacteristics, enabled_features,
 };

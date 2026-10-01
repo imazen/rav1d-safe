@@ -583,6 +583,93 @@ pub struct Decoder {
     /// [`Error::Cancelled`] by re-checking the caller's token — independent of
     /// how the internal error code is plumbed.
     stop: Option<Arc<dyn Stop>>,
+    input_ended: bool,
+    drained: bool,
+}
+
+/// One owned chunk of AV1 OBUs with caller-supplied timing.
+///
+/// Pass complete OBUs (normally one temporal unit), not arbitrary network read
+/// fragments. Container parsing and time-base conversion belong to the caller.
+/// [`Decoder::send_packet`] empties this packet only when accepted. Backpressure
+/// leaves the exact same allocation available for retry without copying.
+pub struct Packet {
+    inner: Rav1dData,
+}
+
+impl Packet {
+    /// Take ownership of a nonempty compressed buffer.
+    pub fn new(data: Vec<u8>) -> Result<Self> {
+        if data.is_empty() {
+            return Err(Error::InvalidData.into());
+        }
+        let data = crate::src::c_box::CBox::from_box(data.into_boxed_slice());
+        let data = CArc::wrap(data).map_err(|_| Error::OutOfMemory)?;
+        let size = data.len();
+        Ok(Self {
+            inner: Rav1dData {
+                data: Some(data),
+                m: crate::include::dav1d::common::Rav1dDataProps {
+                    size,
+                    ..Default::default()
+                },
+            },
+        })
+    }
+
+    /// Set presentation timestamp in caller-defined units.
+    ///
+    /// The default, `i64::MIN`, means unknown. All output pictures produced by
+    /// this packet inherit this value; submit distinct temporal units separately
+    /// when they have different timestamps. Negative timestamps are supported.
+    pub fn with_timestamp(mut self, timestamp: i64) -> Self {
+        self.inner.m.timestamp = timestamp;
+        self
+    }
+
+    /// Set duration in the same units as timestamp (default: zero/unknown).
+    /// The decoder carries this value unchanged; it does not derive durations.
+    pub fn with_duration(mut self, duration: i64) -> Self {
+        self.inner.m.duration = duration;
+        self
+    }
+
+    /// Set a caller-defined input byte offset (default: -1/unknown).
+    pub fn with_offset(mut self, offset: i64) -> Self {
+        self.inner.m.offset = offset;
+        self
+    }
+
+    /// Number of compressed bytes, or zero after successful acceptance.
+    pub fn len(&self) -> usize {
+        self.inner.data.as_ref().map_or(0, |data| data.len())
+    }
+
+    /// Whether this packet has been accepted and emptied.
+    pub fn is_empty(&self) -> bool {
+        self.inner.data.is_none()
+    }
+}
+
+/// Result of submitting an owned packet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SendStatus {
+    /// Ownership has transferred to the decoder; the packet is now empty.
+    Accepted,
+    /// Receive pending output, then retry the unchanged packet.
+    ReceivePending,
+}
+
+/// Incremental output state, distinguishing temporary starvation from terminal EOS.
+#[non_exhaustive]
+pub enum ReceiveStatus {
+    /// One owned picture; it remains valid across more decoding and decoder drop.
+    Frame(Frame),
+    /// No output on this call. More input may be submitted.
+    NeedInput,
+    /// Input was explicitly ended and all pending pictures have been returned.
+    EndOfStream,
 }
 
 /// Returns `true` if the `untracked` feature is enabled.
@@ -615,6 +702,8 @@ impl Decoder {
             ctx,
             worker_handles,
             stop: None,
+            input_ended: false,
+            drained: false,
         })
     }
 
@@ -660,6 +749,77 @@ impl Decoder {
         }
     }
 
+    /// Submit compressed data without also consuming an output frame.
+    ///
+    /// On [`SendStatus::ReceivePending`], receive frames and retry this same
+    /// packet. On any error the packet is retained, but the stream may have been
+    /// partially processed: call [`reset`](Self::reset) before starting again.
+    /// Sending an empty/already accepted packet is an error. New input after
+    /// [`end_input`](Self::end_input) requires a reset.
+    pub fn send_packet(&mut self, packet: &mut Packet) -> Result<SendStatus> {
+        if self.input_ended {
+            return Err(Error::Other(
+                "input has ended; reset before submitting a new stream".into(),
+            )
+            .into());
+        }
+        if packet.is_empty() {
+            return Err(Error::InvalidData.into());
+        }
+        match crate::src::lib::rav1d_send_data(&self.ctx, &mut packet.inner) {
+            Ok(()) => Ok(SendStatus::Accepted),
+            Err(Rav1dError::EAGAIN) => Ok(SendStatus::ReceivePending),
+            Err(e) => Err(self.classify_decode_error(e)),
+        }
+    }
+
+    /// Declare that no more packets will arrive, without collecting output.
+    ///
+    /// Repeated calls are harmless. Call [`receive`](Self::receive) until it
+    /// returns [`ReceiveStatus::EndOfStream`]. This does not discard references
+    /// or reset the decoder, and does not allocate a vector of pending frames.
+    pub fn end_input(&mut self) {
+        self.input_ended = true;
+    }
+
+    /// Receive at most one picture with explicit end-of-stream semantics.
+    ///
+    /// Before [`end_input`](Self::end_input), no picture means `NeedInput`.
+    /// Afterwards, this also waits for frame-threaded pictures before reporting
+    /// terminal `EndOfStream`. Errors are never reported as end of stream.
+    pub fn receive(&mut self) -> Result<ReceiveStatus> {
+        if self.drained {
+            return Ok(ReceiveStatus::EndOfStream);
+        }
+        // The first get_picture following send_data enters drain mode. A second
+        // poll is required after EAGAIN to wait for delayed frame-thread output.
+        let attempts = if self.input_ended { 2 } else { 1 };
+        for _ in 0..attempts {
+            let mut pic = Rav1dPicture::default();
+            match crate::src::lib::rav1d_get_picture(&self.ctx, &mut pic) {
+                Ok(()) => return Ok(ReceiveStatus::Frame(Frame { inner: pic })),
+                Err(Rav1dError::EAGAIN) => {}
+                Err(e) => return Err(self.classify_decode_error(e)),
+            }
+        }
+        if self.input_ended {
+            self.drained = true;
+            Ok(ReceiveStatus::EndOfStream)
+        } else {
+            Ok(ReceiveStatus::NeedInput)
+        }
+    }
+
+    /// Discard pending input, output and references, ready for a new stream.
+    ///
+    /// Previously returned frames remain valid. Decoder settings and the stop
+    /// token are retained. This is a discard operation, not an output drain.
+    pub fn reset(&mut self) {
+        crate::src::lib::rav1d_flush(&self.ctx);
+        self.input_ended = false;
+        self.drained = false;
+    }
+
     /// Decode AV1 OBU data from a byte slice
     ///
     /// Returns `Ok(None)` if more data is needed (the decoder is waiting for more input).
@@ -685,6 +845,12 @@ impl Decoder {
     /// # }
     /// ```
     pub fn decode(&mut self, data: &[u8]) -> Result<Option<Frame>> {
+        if self.input_ended {
+            return Err(Error::Other(
+                "input has ended; reset before submitting a new stream".into(),
+            )
+            .into());
+        }
         // Create Rav1dData from slice by copying to a CArc-owned buffer
         let mut rav1d_data = if !data.is_empty() {
             // Allocate and copy in one go: convert to Vec, then Box, then CBox, then CArc
@@ -724,11 +890,9 @@ impl Decoder {
     /// additional frames (e.g. from a raw OBU stream containing multiple temporal
     /// units). Call this in a loop until it returns `Ok(None)` to drain them.
     pub fn get_frame(&mut self) -> Result<Option<Frame>> {
-        let mut pic = Rav1dPicture::default();
-        match crate::src::lib::rav1d_get_picture(&self.ctx, &mut pic) {
-            Ok(()) => Ok(Some(Frame { inner: pic })),
-            Err(Rav1dError::EAGAIN) => Ok(None),
-            Err(e) => Err(self.classify_decode_error(e)),
+        match self.receive()? {
+            ReceiveStatus::Frame(frame) => Ok(Some(frame)),
+            ReceiveStatus::NeedInput | ReceiveStatus::EndOfStream => Ok(None),
         }
     }
 
@@ -757,17 +921,18 @@ impl Decoder {
         // in-flight frames (and fails, rather than wedging, if a worker
         // panicked), and returns `EAGAIN` once nothing is left.
         let mut frames = Vec::new();
+        self.end_input();
         let drained = loop {
-            let mut pic = Rav1dPicture::default();
-            match crate::src::lib::rav1d_get_picture(&self.ctx, &mut pic) {
-                Ok(()) => frames.push(Frame { inner: pic }),
-                Err(Rav1dError::EAGAIN) => break Ok(()),
-                Err(e) => break Err(self.classify_decode_error(e)),
+            match self.receive() {
+                Ok(ReceiveStatus::Frame(frame)) => frames.push(frame),
+                Ok(ReceiveStatus::EndOfStream) => break Ok(()),
+                Ok(ReceiveStatus::NeedInput) => unreachable!("input has ended"),
+                Err(e) => break Err(e),
             }
         };
 
         // Now reset, so the next decode() starts a fresh stream.
-        crate::src::lib::rav1d_flush(&self.ctx);
+        self.reset();
 
         drained?;
         Ok(frames)
@@ -835,6 +1000,32 @@ impl Frame {
         self.inner.p.bpc
     }
 
+    /// Whether this presentation shows a previously decoded reference picture.
+    /// Its pixel allocation and coded-frame header belong to that older picture;
+    /// timestamp, duration and input offset belong to this presentation instead.
+    pub fn is_show_existing(&self) -> bool {
+        self.inner.show_existing_frame
+    }
+
+    /// Whether this output is a newly coded, visible AV1 key frame.
+    ///
+    /// A show-existing presentation of an older key frame returns false. Hidden
+    /// key frames returned by `output_invisible_frames` also return false. This
+    /// describes picture provenance, not a complete container seek guarantee:
+    /// random access still needs the applicable sequence header, packet boundary
+    /// and any container initialization data.
+    pub fn is_keyframe(&self) -> bool {
+        let header = &self
+            .inner
+            .frame_hdr
+            .as_ref()
+            .expect("missing frame_hdr")
+            .rav1d;
+        !self.is_show_existing()
+            && header.show_frame != 0
+            && header.frame_type == crate::include::dav1d::headers::Rav1dFrameType::Key
+    }
+
     /// Pixel layout (chroma subsampling)
     pub fn pixel_layout(&self) -> PixelLayout {
         self.inner.p.layout.into()
@@ -864,6 +1055,37 @@ impl Frame {
                 ColorRange::Limited
             },
         }
+    }
+
+    /// Bitstream color codes without collapsing reserved or unrecognized values.
+    ///
+    /// These are claims from the AV1 sequence header, not resolved container/ICC
+    /// color metadata. Chroma position is meaningful only for subsampled chroma;
+    /// AV1 value 0 means unknown, not a promise of centered siting.
+    pub fn raw_color_info(&self) -> RawColorInfo {
+        let header = &self.inner.seq_hdr.as_ref().expect("missing seq_hdr").rav1d;
+        RawColorInfo {
+            primaries: header.pri.0,
+            transfer_characteristics: header.trc.0,
+            matrix_coefficients: header.mtrx.0,
+            full_range: header.color_range != 0,
+            chroma_sample_position: header.chr as u8,
+        }
+    }
+
+    /// Intended render dimensions from the coded frame header.
+    /// This is metadata; the returned pixel planes are not resized to it.
+    pub fn render_size(&self) -> (u32, u32) {
+        let header = &self
+            .inner
+            .frame_hdr
+            .as_ref()
+            .expect("missing frame_hdr")
+            .rav1d;
+        (
+            header.size.render_width as u32,
+            header.size.render_height as u32,
+        )
     }
 
     /// HDR content light level metadata, if present
@@ -899,6 +1121,25 @@ impl Frame {
     pub fn duration(&self) -> i64 {
         self.inner.m.duration
     }
+
+    /// Byte offset attached to the input packet, or -1 when not supplied.
+    /// For a show-existing-frame presentation this identifies the presentation
+    /// packet, not the earlier packet that originally coded its pixels.
+    pub fn input_offset(&self) -> i64 {
+        self.inner.m.offset
+    }
+}
+
+/// Raw AV1 color signaling, including codes unknown to this crate version.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct RawColorInfo {
+    pub primaries: u8,
+    pub transfer_characteristics: u8,
+    pub matrix_coefficients: u8,
+    pub full_range: bool,
+    /// AV1 chroma_sample_position: 0 unknown, 1 vertical, 2 colocated, 3 reserved.
+    pub chroma_sample_position: u8,
 }
 
 /// Pixel layout (chroma subsampling)
@@ -1414,29 +1655,33 @@ pub struct ContentLightLevel {
     pub max_frame_average_light_level: u16,
 }
 
-/// HDR mastering display color volume (SMPTE 2086)
+/// HDR mastering display color volume carried by AV1.
+///
+/// Fields retain the AV1 metadata OBU's unsigned fixed-point representation.
+/// Its units differ from the integer representation used by some other codecs
+/// and containers. Use the accessors to obtain physical values.
 #[derive(Clone, Copy, Debug)]
 pub struct MasteringDisplay {
-    /// RGB primaries in 0.00002 increments \[R\], \[G\], \[B\]
+    /// RGB primaries in unsigned 0.16 fixed point \[R\], \[G\], \[B\].
     /// Each is [x, y] chromaticity coordinate
     pub primaries: [[u16; 2]; 3],
-    /// White point [x, y] in 0.00002 increments
+    /// White point [x, y] in unsigned 0.16 fixed point.
     pub white_point: [u16; 2],
-    /// Maximum luminance in 0.0001 cd/m² increments
+    /// Maximum luminance in unsigned 24.8 fixed point, in cd/m².
     pub max_luminance: u32,
-    /// Minimum luminance in 0.0001 cd/m² increments
+    /// Minimum luminance in unsigned 18.14 fixed point, in cd/m².
     pub min_luminance: u32,
 }
 
 impl MasteringDisplay {
     /// Get max luminance in nits (cd/m²)
     pub fn max_luminance_nits(&self) -> f64 {
-        self.max_luminance as f64 / 10000.0
+        self.max_luminance as f64 / 256.0
     }
 
     /// Get min luminance in nits (cd/m²)
     pub fn min_luminance_nits(&self) -> f64 {
-        self.min_luminance as f64 / 10000.0
+        self.min_luminance as f64 / 16384.0
     }
 
     /// Get primary chromaticity as normalized floats [0.0, 1.0]
@@ -1445,16 +1690,16 @@ impl MasteringDisplay {
     pub fn primary_chromaticity(&self, index: usize) -> [f64; 2] {
         assert!(index < 3, "primary index must be 0-2");
         [
-            self.primaries[index][0] as f64 / 50000.0,
-            self.primaries[index][1] as f64 / 50000.0,
+            self.primaries[index][0] as f64 / 65536.0,
+            self.primaries[index][1] as f64 / 65536.0,
         ]
     }
 
     /// Get white point as normalized floats [0.0, 1.0]
     pub fn white_point_chromaticity(&self) -> [f64; 2] {
         [
-            self.white_point[0] as f64 / 50000.0,
-            self.white_point[1] as f64 / 50000.0,
+            self.white_point[0] as f64 / 65536.0,
+            self.white_point[1] as f64 / 65536.0,
         ]
     }
 }
