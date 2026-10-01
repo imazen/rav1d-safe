@@ -11,9 +11,16 @@ An opt-in Cargo feature (`--features untracked`). It is **not** in `default`.
 | t>1 pixel access | compact copy-in + diff write-back | **zero-copy in place** |
 | `forbid(unsafe_code)` in the main crate | yes | yes |
 
-There is deliberately **no** bounds-unchecked variant of this mode. Measured on
-`intra_4k`, dropping slice bounds checks on top of tracker removal changes
-nothing (38.32 vs 38.32 ms/frame), so none is offered.
+The former `unchecked` feature is gone. It only removed tracking at the four
+`dm_new` call sites (everything built through `DisjointMut::default()` stayed
+tracked) and swapped safe SIMD loads/stores for raw-pointer ones; the latter
+measured 0% (see below). `c-ffi`, `asm` and `partial_asm` now imply `untracked`,
+which is what `unchecked` gave them (frame threading, `max_frame_delay > 1`, is
+only available with it). There is deliberately **no** bounds-unchecked variant. Measured
+with and without it on top of `untracked` (interleaved A/B, x86_64): 4K intra,
+480p inter (1800 frames), 8-bit intra and 10-bit high-bitrate streams at 1 and 4
+threads all land within -1.7%..+1.3%, both signs, i.e. noise. aarch64/wasm were
+not measured.
 
 ## What overlap can and cannot do
 

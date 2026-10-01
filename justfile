@@ -175,9 +175,9 @@ test-lsan:
 bench:
     cargo bench --bench decode --no-default-features --features "bitdepth_8,bitdepth_16"
 
-# Benchmark decode (unchecked indexing)
-bench-unchecked:
-    cargo bench --bench decode --no-default-features --features "bitdepth_8,bitdepth_16,unchecked"
+# Benchmark decode (no overlap tracking)
+bench-untracked:
+    cargo bench --bench decode --no-default-features --features "bitdepth_8,bitdepth_16,untracked"
 
 # Benchmark decode (hand-written asm)
 bench-asm:
@@ -191,7 +191,7 @@ bench-partial-asm:
 test-panic:
     cargo nextest run --no-default-features --features "bitdepth_8,bitdepth_16" --test panic_safety_test --release
 
-# Profile decode: all four modes (asm, partial asm, safe checked, safe unchecked)
+# Profile decode: all four modes (asm, partial asm, safe tracked, safe untracked)
 # Uses allintra 8bpc IVF (39 frames) + real photos (4K + 8K AVIF)
 profile iters="500" avif_iters="20":
     #!/usr/bin/env bash
@@ -214,8 +214,8 @@ profile iters="500" avif_iters="20":
     ./target/release/examples/profile_avif "$AVIF8K" {{avif_iters}} 2>&1
     echo ""
 
-    echo "=== Safe-SIMD (unchecked bounds) ==="
-    cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16,unchecked" --example profile_decode --example profile_avif 2>/dev/null
+    echo "=== Safe-SIMD (untracked) ==="
+    cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --example profile_decode --example profile_avif 2>/dev/null
     ./target/release/examples/profile_decode "$IVF8" {{iters}} 2>&1
     ./target/release/examples/profile_avif "$AVIF4K" {{avif_iters}} 2>&1
     ./target/release/examples/profile_avif "$AVIF8K" {{avif_iters}} 2>&1
@@ -260,9 +260,9 @@ generate-bench-avif avifenc="avifenc" avifdec="avifdec":
 bench-avif:
     cargo bench --bench decode_avif --no-default-features --features "bitdepth_8,bitdepth_16"
 
-# Benchmark AVIF decode (unchecked)
-bench-avif-unchecked:
-    cargo bench --bench decode_avif --no-default-features --features "bitdepth_8,bitdepth_16,unchecked"
+# Benchmark AVIF decode (no overlap tracking)
+bench-avif-untracked:
+    cargo bench --bench decode_avif --no-default-features --features "bitdepth_8,bitdepth_16,untracked"
 
 # Benchmark AVIF decode (asm)
 bench-avif-asm:
@@ -305,10 +305,10 @@ bench-compare:
     cargo bench --bench decode --no-default-features --features "bitdepth_8,bitdepth_16" 2>&1 | grep -E "bit/|film_grain/|Timer"
     echo ""
     echo "============================================"
-    echo "=== Safe-SIMD (unchecked bounds)         ==="
+    echo "=== Safe-SIMD (untracked)         ==="
     echo "============================================"
-    cargo bench --bench decode_avif --no-default-features --features "bitdepth_8,bitdepth_16,unchecked" 2>&1 | grep -E "photo_|Timer"
-    cargo bench --bench decode --no-default-features --features "bitdepth_8,bitdepth_16,unchecked" 2>&1 | grep -E "bit/|film_grain/|Timer"
+    cargo bench --bench decode_avif --no-default-features --features "bitdepth_8,bitdepth_16,untracked" 2>&1 | grep -E "photo_|Timer"
+    cargo bench --bench decode --no-default-features --features "bitdepth_8,bitdepth_16,untracked" 2>&1 | grep -E "bit/|film_grain/|Timer"
     echo ""
     echo "============================================"
     echo "=== Partial ASM (ASM msac + loopfilter)  ==="
@@ -338,7 +338,7 @@ arm-tiers-macos:
 # #526: actual frame contexts plus a 32-tile stream, and concurrent decoders.
 test-filmgrain-concurrency:
     CARGO_BUILD_JOBS=2 nice -n 19 cargo nextest run --lib --test filmgrain_threads -E 'binary(filmgrain_threads) | test(parallel_frame_tile_contexts)' --test-threads 1 --success-output immediate
-    CARGO_BUILD_JOBS=2 nice -n 19 cargo nextest run --features unchecked --lib --test filmgrain_threads -E 'binary(filmgrain_threads) | test(parallel_frame_tile_contexts)' --test-threads 1 --success-output immediate
+    CARGO_BUILD_JOBS=2 nice -n 19 cargo nextest run --features untracked --lib --test filmgrain_threads -E 'binary(filmgrain_threads) | test(parallel_frame_tile_contexts)' --test-threads 1 --success-output immediate
 
 # Root API and strict/lenient conformance regression checks (issues 525, 522, 523).
 test-strictness:

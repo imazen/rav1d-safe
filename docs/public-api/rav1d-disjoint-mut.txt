@@ -6,26 +6,26 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: rav1d-disjoint-mut.txt 138 lines (supported surface) | rav1d-disjoint-mut.features.txt 81 added (features: aligned,instrument,pic-buf,std,zerocopy) | rav1d-disjoint-mut.internal.txt 132 lines (26 hidden + 157 excluded-feature)
+# files: rav1d-disjoint-mut.txt 141 lines (supported surface) | rav1d-disjoint-mut.features.txt 81 added (features: aligned,instrument,pic-buf,std,untracked,zerocopy) | rav1d-disjoint-mut.internal.txt 19 lines (27 hidden + 0 excluded-feature)
 
 ## summary
 #
 #   pub modules                                 1
-#   pub types (struct/enum/trait/alias)        25
-#   pub consts/statics                          1
+#   pub types (struct/enum/trait/alias)        26
+#   pub consts/statics                          2
 #   free functions                             10
-#   inherent methods                           45
+#   inherent methods                           46
 #   enum variants                              23
-#   trait roster entries (type × trait)        48
+#   trait roster entries (type × trait)        49
 #   conditional trait impls (verbatim)          1
 #   auto-trait-complete types                   1
 #   auto-trait exceptions                      10
 #
 # per-module pub lines:
-#   (root)                          101
+#   (root)                          104
 #   alloc                             4
 
-## items (105 lines)
+## items (108 lines)
 
 pub mod rav1d_disjoint_mut
 pub struct Bounds
@@ -45,6 +45,7 @@ pub fn DisjointMut<T>::is_empty(&self) -> bool
 pub fn DisjointMut<T>::len(&self) -> usize
 pub fn DisjointMut<T>::probe_declare_stride(&self, isize)
 pub fn DisjointMut<T>::probe_eval_rect(&self, &'static core::panic::location::Location<'static>, bool, usize, usize, usize, isize)
+pub fn DisjointMut<T>::configure_parallelism(&mut self, usize, usize)
 pub fn DisjointMut<T>::declare_row_stride(&mut self, usize)
 pub fn DisjointMut<T>::index_rect<'a>(&'a self, usize, usize, usize, isize) -> core::option::Option<DisjointImmutRectGuard<'a, T, <T as AsMutPtr>::Target>>
 pub fn DisjointMut<T>::index_rect_mut<'a>(&'a self, usize, usize, usize, isize) -> core::option::Option<DisjointMutRectGuard<'a, T, <T as AsMutPtr>::Target>>
@@ -56,8 +57,9 @@ pub fn DisjointMut<T>::try_resize(&mut self, usize, <T as TryResizable>::Value) 
 pub fn DisjointMut<T>::try_resize_with<F>(&mut self, usize, F) -> core::result::Result<(), alloc::collections::TryReserveError> where F: core::ops::function::FnMut() -> <T as TryResizableWith>::Item, T: TryResizableWith
 pub unsafe const fn DisjointMut<T>::dangerously_unchecked(T) -> Self
 pub fn DisjointMut<T>::into_inner(self) -> T
-pub fn DisjointMut<T>::new(T) -> Self
-pub struct DisjointMutArcSlice<T: core::marker::Copy>
+pub const fn DisjointMut<T>::new(T) -> Self
+pub fn DisjointMut<T>::new_eager(T) -> Self
+pub struct DisjointMutArcSlice<T: PlainData>
 pub fn DisjointMutArcSlice<T>::try_new(usize, T) -> core::result::Result<Self, alloc::collections::TryReserveError>
 pub unsafe fn DisjointMutArcSlice<T>::try_new_unchecked(usize, T) -> core::result::Result<Self, alloc::collections::TryReserveError>
 pub struct DisjointMutGuard<'a, T: ?core::marker::Sized + AsMutPtr, V: ?core::marker::Sized>
@@ -67,7 +69,7 @@ pub fn DisjointMutRectGuard<'a, T, V>::row_mut(&mut self, usize) -> &mut [V]
 pub fn DisjointMutRectGuard<'a, T, V>::rows(&self) -> usize
 pub fn DisjointMutRectGuard<'a, T, V>::seg(&self) -> usize
 pub unsafe trait AsMutPtr: sealed::Sealed
-pub type AsMutPtr::Target: core::marker::Copy
+pub type AsMutPtr::Target: PlainData
 pub unsafe fn AsMutPtr::as_mut_ptr(*mut Self) -> *mut Self::Target
 pub unsafe fn AsMutPtr::as_mut_slice(*mut Self) -> *mut [Self::Target]
 pub fn AsMutPtr::is_empty(&self) -> bool
@@ -106,11 +108,12 @@ pub unsafe fn DisjointMutIndex::get_mut(self, *mut T) -> *mut Self::Output
 pub unsafe fn I::get_mut(self, *mut [T]) -> *mut Self::Output
 pub unsafe fn usize::get_mut(self, *mut [T]) -> *mut Self::Output
 pub unsafe trait ExternalAsMutPtr
-pub type ExternalAsMutPtr::Target: core::marker::Copy
+pub type ExternalAsMutPtr::Target: PlainData
 pub unsafe fn ExternalAsMutPtr::as_mut_ptr(*mut Self) -> *mut Self::Target
 pub unsafe fn ExternalAsMutPtr::as_mut_slice(*mut Self) -> *mut [Self::Target]
 pub fn ExternalAsMutPtr::is_empty(&self) -> bool
 pub fn ExternalAsMutPtr::len(&self) -> usize
+pub trait PlainData: core::marker::Copy + zerocopy::FromBytes
 pub trait Resizable
 pub type Resizable::Value
 pub fn Resizable::resize(&mut self, usize, Self::Value)
@@ -144,7 +147,7 @@ DisjointMut<T>: Debug, Default
 DisjointMutArcSlice<T>: Clone, Default, Deref, FromIterator<T>
 DisjointMutGuard<'a, T, V>: Deref, DerefMut, Drop
 DisjointMutRectGuard<'a, T, V>: Drop
-T: AsMutPtr
+T: AsMutPtr, PlainData
 [V; N]: AsMutPtr
 [V]: AsMutPtr
 alloc::boxed::Box<[V]>: AsMutPtr
@@ -166,7 +169,7 @@ DisjointImmutGuard<'a, T, V>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindS
 DisjointImmutRectGuard<'_, T, V>: !Freeze !RefUnwindSafe !Unpin !UnwindSafe
 DisjointImmutRectGuard<'a, T, V>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 DisjointMut<T>: !Freeze !RefUnwindSafe !Unpin !UnwindSafe
-DisjointMutArcSlice<T>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
+DisjointMutArcSlice<T>: !RefUnwindSafe !Send !Sync !UnwindSafe
 DisjointMutGuard<'_, T, V>: !Freeze !RefUnwindSafe !Unpin !UnwindSafe
 DisjointMutGuard<'a, T, V>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 DisjointMutRectGuard<'_, T, V>: !Freeze !RefUnwindSafe !Unpin !UnwindSafe

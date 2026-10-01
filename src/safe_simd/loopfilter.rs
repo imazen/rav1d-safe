@@ -15,8 +15,14 @@
 //! entries on demand via `Relaxed` atomic loads. No intermediate gather buffer is needed.
 //! PicOffset pixel data is converted to slices. All inner functions are fully safe.
 
-#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
-#![cfg_attr(feature = "unchecked", deny(unsafe_code))]
+#![cfg_attr(
+    not(any(feature = "asm", feature = "c-ffi", feature = "partial_asm")),
+    forbid(unsafe_code)
+)]
+#![cfg_attr(
+    any(feature = "asm", feature = "c-ffi", feature = "partial_asm"),
+    deny(unsafe_code)
+)]
 #![allow(unused_imports)]
 
 #[cfg(target_arch = "x86_64")]

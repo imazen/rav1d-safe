@@ -21,7 +21,7 @@ static TILE_THREADING: AtomicBool = AtomicBool::new(false);
 /// intra left-edge column claims 16,321 pixels to read 16 — and any
 /// concurrent row write inside that span is a real conflict. In a checked
 /// build that surfaced as a spurious `overlapping DisjointMut` panic in
-/// `rav1d_prepare_intra_edges`; in an `unchecked` build it is an undetected
+/// `rav1d_prepare_intra_edges`; in an `untracked` build it is an undetected
 /// data race on picture memory.
 ///
 /// Measured on this branch before the latch: 6 concurrent
@@ -2848,7 +2848,7 @@ mod tile_threading_latch_tests {
     /// intra left-edge column — while their tile workers were running. That
     /// showed up as spurious `overlapping DisjointMut` panics under load (8-9
     /// of 24 concurrent runs) and would be an undetected data race in an
-    /// `unchecked` build.
+    /// `untracked` build.
     #[test]
     fn set_tile_threading_is_monotone() {
         use super::{set_tile_threading, tile_threading_active};
@@ -2878,15 +2878,14 @@ mod tile_threading_latch_tests {
 ///   belong to other tile COLUMNS. A neighbouring tile's legitimate write then
 ///   trips a spurious `overlapping DisjointMut` panic (measured 8-9 of 24
 ///   concurrent runs before [`set_tile_threading`] was made monotone), or, in
-///   an `unchecked` build, races undetected.
+///   an `untracked` build, races undetected.
 ///
 /// So each test asserts which EXTENT got reserved, by holding a byte that only
 /// the hull covers and checking whether the tracker rejects the call.
 // These assert what the borrow TRACKER reserved, so they cannot run in an
-// `unchecked` build (which `asm` implies) — tracking is compiled out there and
-// the tests' own anti-vacuity assertion correctly fires. Same idiom as
-// src/disjoint_mut.rs:29 and src/safe_simd/pixel_access.rs:451.
-#[cfg(all(test, not(feature = "unchecked"), not(feature = "untracked")))]
+// `untracked` build (which `asm` implies) — tracking is compiled out there and
+// the tests' own anti-vacuity assertion correctly fires.
+#[cfg(all(test, not(feature = "untracked")))]
 mod row_guard_policy_tests {
     use super::{
         Rav1dPictureDataComponent, Rav1dPictureDataComponentInner, set_tile_threading,
@@ -3308,7 +3307,7 @@ mod row_guard_policy_tests {
              `set_tile_threading` latch exist to prevent"
         );
         // Anti-vacuity: without this, the assertion above would also pass with
-        // borrow tracking compiled out entirely (`--features unchecked`).
+        // borrow tracking compiled out entirely (`--features untracked`).
         assert!(
             conflicts_with(STRIDE),
             "row 1 column 0 IS written by this block, so a live mutable borrow \

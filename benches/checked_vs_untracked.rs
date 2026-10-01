@@ -1,14 +1,14 @@
 //! Decode performance benchmarks.
 //!
 //! Scalar vs SIMD (interleaved, same binary — fair comparison):
-//!   cargo bench --bench checked_vs_unchecked --no-default-features --features "bitdepth_8,bitdepth_16"
+//!   cargo bench --bench checked_vs_untracked --no-default-features --features "bitdepth_8,bitdepth_16"
 //!
-//! Checked vs unchecked DisjointMut (cross-build baseline comparison):
-//!   cargo clean && cargo bench --bench checked_vs_unchecked \
+//! Tracked vs untracked DisjointMut (cross-build baseline comparison):
+//!   cargo clean && cargo bench --bench checked_vs_untracked \
 //!     --no-default-features --features "bitdepth_8,bitdepth_16" \
 //!     -- --save-baseline=checked
-//!   cargo clean && cargo bench --bench checked_vs_unchecked \
-//!     --no-default-features --features "bitdepth_8,bitdepth_16,unchecked" \
+//!   cargo clean && cargo bench --bench checked_vs_untracked \
+//!     --no-default-features --features "bitdepth_8,bitdepth_16,untracked" \
 //!     -- --baseline=checked
 
 use rav1d_safe::src::managed::{self, CpuLevel, Decoder, Settings};
@@ -47,10 +47,10 @@ fn decode(obu: &[u8], cpu: CpuLevel) {
 }
 
 fn bench_decode(suite: &mut Suite) {
-    let mode = if managed::is_unchecked() {
-        "unchecked"
+    let mode = if managed::is_untracked() {
+        "untracked"
     } else {
-        "checked"
+        "tracked"
     };
     eprintln!("rav1d-safe build mode: {mode}");
 
@@ -66,7 +66,7 @@ fn bench_decode(suite: &mut Suite) {
         g.bench("simd", |b| b.iter(|| decode(obu, CpuLevel::Native)));
     });
 
-    // Single bench for cross-build baseline comparison (checked vs unchecked)
+    // Single bench for cross-build baseline comparison (tracked vs untracked)
     suite.group("decode_4k_1t", |g| {
         g.throughput(Throughput::Bytes(obu.len() as u64));
         g.config().max_time(std::time::Duration::from_secs(30));

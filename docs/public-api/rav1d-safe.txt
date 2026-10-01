@@ -6,7 +6,7 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: rav1d-safe.txt 1237 lines (supported surface) | rav1d-safe.features.txt 141 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,blockshift-10,blockshift-13,blockshift-14,blockshift-15,blockshift-16,blockshift-8,blockshift-adaptive,bps-1,bps-4,bps-8,bps-blocks,bps-half,bps-quarter,c-ffi,dav1d-compat,held-row-guards,libc,msb-5,partial_asm,probe-addnop,probe-count,probe-lock-backoff,probe-lock-park,probe-lock-relax,probe-lock-yield,probe-lockonly,probe-noscan,probe-shardsim,probe-shiftpin,probe-sites,probe-tasktime,probe-tasktime-untracked,probe-tinynop,probe-untracked,probe-wide,rpb-16,rpb-2,rpb-8,shard-ident,shards-1,shards-128,shards-16,shards-256,shards-32,shards-4,shards-64,shards-8,tracker-legacy,unchecked) | rav1d-safe.internal.txt 67 lines (68 hidden + 0 excluded-feature)
+# files: rav1d-safe.txt 1237 lines (supported surface) | rav1d-safe.features.txt 115 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,c-ffi,dav1d-compat,libc,partial_asm,untracked) | rav1d-safe.internal.txt 67 lines (68 hidden + 0 excluded-feature)
 
 ## summary
 #
@@ -990,7 +990,7 @@ pub src::managed::Settings::output_invisible_frames: bool
 pub src::managed::Settings::strict_std_compliance: bool
 pub src::managed::Settings::strictness: src::managed::Strictness
 pub src::managed::Settings::threads: u32
-pub const fn src::managed::is_unchecked() -> bool
+pub const fn src::managed::is_untracked() -> bool
 #[repr(u8)] pub enum ColorPrimaries [also: src::managed]
 pub ColorPrimaries::BT2020 = 9
 pub ColorPrimaries::BT470BG = 5
@@ -1263,7 +1263,7 @@ impl zerocopy::TryFromBytes for include::dav1d::picture::AlignedPixelChunk where
 include::dav1d::headers::DRav1d<R, D>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
 include::dav1d::headers::Rav1dFrameHeader: !Freeze
 include::dav1d::headers::Rav1dWarpedMotionParams: !Freeze
-include::dav1d::picture::BlockMut<'a, BD>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
+include::dav1d::picture::BlockMut<'a, BD>: !RefUnwindSafe !Send !Sync !UnwindSafe
 include::dav1d::picture::Rav1dPictureData: !Freeze !RefUnwindSafe !UnwindSafe
 include::dav1d::picture::Rav1dPictureDataComponent: !Freeze !RefUnwindSafe
 src::managed::Decoder: !RefUnwindSafe !UnwindSafe

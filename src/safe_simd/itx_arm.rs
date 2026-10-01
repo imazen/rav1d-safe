@@ -5,8 +5,14 @@
 
 #![allow(unused_imports)]
 #![allow(clippy::too_many_arguments)]
-#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
-#![cfg_attr(feature = "unchecked", deny(unsafe_code))]
+#![cfg_attr(
+    not(any(feature = "asm", feature = "c-ffi", feature = "partial_asm")),
+    forbid(unsafe_code)
+)]
+#![cfg_attr(
+    any(feature = "asm", feature = "c-ffi", feature = "partial_asm"),
+    deny(unsafe_code)
+)]
 // This module pairs every NEON kernel with the scalar reference implementation it
 // was derived from (`*_inner` functions, the DCT/ADST coefficient tables, the
 // generic `resolve_1d`/`shift_for` engine). Those references have exactly two

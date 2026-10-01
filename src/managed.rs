@@ -189,7 +189,7 @@ pub struct Settings {
     /// owed (in flight or queued in the last chunk) before it resets.
     ///
     /// Tile threading works in the default checked build. Decoding multiple
-    /// frames in flight also requires the `unchecked` feature; without it,
+    /// frames in flight also requires the `untracked` feature; without it,
     /// frame delay is capped at one while the requested worker count is retained.
     /// For stills, additional workers help mainly when the image has multiple
     /// tiles. Set [`max_frame_delay`](Self::max_frame_delay) to one for explicit
@@ -441,8 +441,8 @@ pub enum CpuLevel {
     /// x86 dispatcher gates on `summon_avx2()` or higher, so the safe-SIMD tier
     /// ladder starts at AVX2 and a pre-Haswell x86 gets no vector kernels.
     /// The level is not inert in every build — `--features asm` links dav1d's
-    /// SSSE3/SSE4.1 assembly, and `unchecked` uses SSE2 intrinsics in msac —
-    /// but for the default (safe-SIMD, checked) build, treat it as a synonym
+    /// SSSE3/SSE4.1 assembly —
+    /// but for the default (safe-SIMD) build, treat it as a synonym
     /// for `Scalar`. See `docs/X64_APPLICABILITY.md` H2.
     X86V2,
 
@@ -585,14 +585,16 @@ pub struct Decoder {
     stop: Option<Arc<dyn Stop>>,
 }
 
-/// Returns `true` if the `unchecked` feature is enabled.
+/// Returns `true` if the `untracked` feature is enabled.
 ///
-/// When unchecked:
-/// - DisjointMut borrow tracking is disabled (enables multithreading)
-/// - SIMD hot-path bounds checks use `get_unchecked` with debug_assert
-/// - msac entropy coding uses inlined SSE2 intrinsics on x86_64
-pub const fn is_unchecked() -> bool {
-    cfg!(feature = "unchecked")
+/// When untracked:
+/// - DisjointMut overlap tracking is disabled (overlap is not detected)
+/// - tile-threaded pixel access is zero-copy instead of copy-in / write-back
+/// - frame threading (`max_frame_delay > 1`) is available
+///
+/// Slice bounds checks stay on. See `docs/UNTRACKED_MODE.md`.
+pub const fn is_untracked() -> bool {
+    cfg!(feature = "untracked")
 }
 
 impl Decoder {
@@ -1478,8 +1480,8 @@ pub fn enabled_features() -> String {
     if cfg!(feature = "c-ffi") {
         features.push("c-ffi");
     }
-    if cfg!(feature = "unchecked") {
-        features.push("unchecked");
+    if cfg!(feature = "untracked") {
+        features.push("untracked");
     }
     if cfg!(feature = "bitdepth_8") {
         features.push("bitdepth_8");
@@ -1495,8 +1497,8 @@ pub fn enabled_features() -> String {
         features.push("safety:partial-asm");
     } else if cfg!(feature = "c-ffi") {
         features.push("safety:c-ffi");
-    } else if cfg!(feature = "unchecked") {
-        features.push("safety:unchecked");
+    } else if cfg!(feature = "untracked") {
+        features.push("safety:untracked");
     } else {
         features.push("safety:forbid-unsafe");
     }

@@ -355,8 +355,8 @@ fn some_vector_spans_multiple_row_bands() {
     eprintln!("tallest grain vector {best_name}: {best} px = {bands} row bands");
 }
 
-/// Frame contexts must actually be enabled; checked builds clamp them to one.
-#[cfg(feature = "unchecked")]
+/// Frame contexts must actually be enabled; tracked builds clamp them to one.
+#[cfg(feature = "untracked")]
 #[test]
 fn film_grain_frame_and_tile_threads_match_reference() {
     let vectors = grain_vectors();
@@ -410,7 +410,7 @@ fn film_grain_independent_decoders_match_reference() {
                 // workers blocked at a later barrier.
                 barrier.wait();
                 for v in vectors {
-                    let delay = if cfg!(feature = "unchecked") && worker != 0 {
+                    let delay = if cfg!(feature = "untracked") && worker != 0 {
                         2
                     } else {
                         1

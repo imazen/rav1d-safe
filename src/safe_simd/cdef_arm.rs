@@ -47,8 +47,14 @@
 //! picture row at all: the only picture reads are the padding copies above, and
 //! each of those is bounded to the columns it actually touches.
 
-#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
-#![cfg_attr(feature = "unchecked", deny(unsafe_code))]
+#![cfg_attr(
+    not(any(feature = "asm", feature = "c-ffi", feature = "partial_asm")),
+    forbid(unsafe_code)
+)]
+#![cfg_attr(
+    any(feature = "asm", feature = "c-ffi", feature = "partial_asm"),
+    deny(unsafe_code)
+)]
 #![allow(unused_imports)]
 #![allow(clippy::too_many_arguments)]
 

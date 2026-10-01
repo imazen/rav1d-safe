@@ -124,7 +124,7 @@ mod tests {
                     assert!(start <= index && index < end);
                 }
             }
-            #[cfg(not(feature = "unchecked"))]
+            #[cfg(not(feature = "untracked"))]
             for probe in [start, start + 32, end - 1] {
                 assert!(
                     catch_unwind(AssertUnwindSafe(|| pic.index_mut::<BitDepth8>(probe))).is_err()

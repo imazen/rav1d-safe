@@ -201,7 +201,7 @@ fn parallel_frame_tile_contexts_preserve_frames() {
         "temporal delimiter required for repetition"
     );
     let mut modes = vec![(8, 1)];
-    if cfg!(feature = "unchecked") {
+    if cfg!(feature = "untracked") {
         modes.extend([(8, 2), (8, 4)]);
     }
     for (threads, max_frame_delay) in modes {

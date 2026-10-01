@@ -91,11 +91,7 @@ nasm-rs = { version = "0.3.2", features = ["parallel"] }
 # Default: forbid(unsafe_code), multithreaded, bounds-checked
 default = ["bitdepth_8", "bitdepth_16"]
 
-# Unchecked slice access in hot paths (get_unchecked with debug_assert!).
-# Also disables DisjointMut runtime overlap checking for hot-path
-# instances (PicBuf, ArcSlice) via dangerously_unchecked().
-unchecked = []
-# Race-tolerant fast mode: NO overlap tracking and, under tile threading, zero-copy
+# Race-tolerant fast mode (also what `c-ffi`, `asm` and `partial_asm` use; frame threading, n_fc>1, needs it): NO overlap tracking and, under tile threading, zero-copy
 # in-place guards instead of the compact copy-in / diff-write-back path.
 # Slice BOUNDS CHECKS STAY ON. Overlapping access is formally UB, but every
 # `DisjointMut` element is `PlainData` (all bit patterns valid, no pointers), so
@@ -159,7 +155,7 @@ __probe_tinynop = ["rav1d-disjoint-mut/__probe_tinynop"]
 __probe_addnop = ["rav1d-disjoint-mut/__probe_addnop"]
 __probe_noscan = ["rav1d-disjoint-mut/__probe_noscan"]
 __probe_lockonly = ["rav1d-disjoint-mut/__probe_lockonly"]
-# Tracking off, bounds checks untouched (isolates the tracker from `unchecked`).
+# Tracking off, copy path kept, bounds checks untouched: the historical tracker-only arm.
 # Historical alias (tracker removed, copy path kept): the old measurement arm.
 __probe_untracked = ["rav1d-disjoint-mut/__probe_untracked"]
 __probe_shardsim = ["__probe_count", "rav1d-disjoint-mut/__probe_shardsim"]
@@ -238,7 +234,7 @@ __test_induce_worker_panic = []
 
 # C FFI API compatibility (unsafe extern "C" functions)
 # Enables: dav1d_* C API, FFISafe, c_arc, c_box
-c-ffi = ["unchecked", "dav1d-compat", "libc"]
+c-ffi = ["untracked", "dav1d-compat", "libc"]
 
 # Export C symbols as dav1d_* (drop-in replacement for libdav1d).
 # When disabled, symbols are exported as rav1d_* for side-by-side benchmarking.
@@ -246,7 +242,7 @@ dav1d-compat = []
 
 # Hand-written ASM for entropy decoding (msac) and loopfilter only.
 # Everything else stays in safe Rust SIMD.
-partial_asm = ["unchecked"]
+partial_asm = ["untracked"]
 
 # Level 4: Hand-written assembly (maximum performance)
 asm = ["c-ffi"]
@@ -315,7 +311,7 @@ name = "tile_threading"
 harness = false
 
 [[bench]]
-name = "checked_vs_unchecked"
+name = "checked_vs_untracked"
 harness = false
 
 [profile.bench]

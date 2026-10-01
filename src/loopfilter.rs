@@ -1867,8 +1867,8 @@ mod compact_window {
     /// 384 is not, so this plane's rows are exactly its width), 256 rows.
     const STRIDE: usize = 384;
     /// Only the two guard-backed tests allocate a whole plane, and those are
-    /// not built under `unchecked` (no borrow tracker to observe).
-    #[cfg(not(feature = "unchecked"))]
+    /// not built under `untracked` (no borrow tracker to observe).
+    #[cfg(not(feature = "untracked"))]
     const ROWS: usize = 256;
     /// The last 4-column group of the row.
     const COL: usize = STRIDE - 4;
@@ -1950,13 +1950,13 @@ mod compact_window {
     /// over the rows above it. Before the fix this is the reported
     /// `overlapping DisjointMut` panic, verbatim.
     ///
-    /// Not built under `unchecked`, which compiles the borrow tracker out of
+    /// Not built under `untracked`, which compiles the borrow tracker out of
     /// `rav1d-disjoint-mut` entirely: with no tracker there is no overlap to
     /// observe, so this pair would report a vacuous pass and its liveness twin
     /// would fail outright. The window geometry itself is covered
     /// unconditionally by the two tests above. `asm` implies `c-ffi` implies
-    /// `unchecked`, so the CI `asm` leg takes this branch.
-    #[cfg(not(feature = "unchecked"))]
+    /// `untracked` (which `asm` implies), so the CI `asm` leg takes this branch.
+    #[cfg(not(feature = "untracked"))]
     #[test]
     fn issue_524_h_window_does_not_collide_with_the_next_rows_stitch() {
         use crate::include::common::bitdepth::BitDepth8;
@@ -1998,8 +1998,8 @@ mod compact_window {
     /// deliberately over-wide window — the plane worst case the H direction
     /// used before #524 — and requires it to panic.
     ///
-    /// Gated with its twin: `unchecked`/`untracked` remove the tracker this asserts on.
-    #[cfg(not(any(feature = "unchecked", feature = "untracked")))]
+    /// Gated with its twin: `untracked` removes the tracker this asserts on.
+    #[cfg(not(feature = "untracked"))]
     #[test]
     fn issue_524_harness_detects_a_window_that_does_lap() {
         use crate::include::common::bitdepth::BitDepth8;

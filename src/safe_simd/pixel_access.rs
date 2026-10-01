@@ -1,17 +1,13 @@
 #![allow(dead_code)]
-// The load/store macros expand to `unsafe {}` blocks with bounds-checked pointer access.
-// These are verified safe by construction (bounds check precedes raw pointer use).
 #![allow(clippy::undocumented_unsafe_blocks)]
 //! Safe pixel access helpers and SIMD load/store macros for SIMD modules.
 //!
 //! All slice access functions use bounds-checked indexing unconditionally.
-//! The `unchecked` feature only controls DisjointMut tracking overhead,
-//! not slice bounds checking.
 //!
 //! # SIMD Load/Store Macros
 //!
-//! These macros provide a clean, unified API for SIMD memory access that
-//! switches between safe and unchecked implementations:
+//! These macros provide a clean, unified API for safe, bounds-checked SIMD
+//! memory access:
 //!
 //! ```ignore
 //! // x86_64 AVX2: load/store 256 bits (32 bytes)
@@ -27,16 +23,11 @@
 //! storeu_256!(&mut arr, v);  // arr: [u8; 32]
 //! ```
 //!
-//! When `unchecked` is **off** (default):
-//! - Uses `archmage::intrinsics` for memory access (safe, bounds-checked)
-//! - Compatible with `#![forbid(unsafe_code)]` in calling modules
-//!
-//! When `unchecked` is **on**:
-//! - Uses raw `core::arch` intrinsics with pointer access (no bounds checks)
-//! - `debug_assert!` still validates in debug builds
+//! They use `archmage::intrinsics` for memory access (safe, bounds-checked), so
+//! they are compatible with `#![forbid(unsafe_code)]` in calling modules.
 
-// forbid(unsafe_code) in default build; asm-gated FFI helpers need unsafe.
-#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
+// forbid(unsafe_code) except in the `asm` build, whose FFI helpers need unsafe.
+#![cfg_attr(not(feature = "asm"), forbid(unsafe_code))]
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Ref};
 
@@ -421,9 +412,7 @@ pub unsafe fn strided_slice_from_ptr<'a, T>(
 // SIMD Load/Store Macros
 // =============================================================================
 //
-// These macros abstract over archmage::intrinsics (bounds-checked, safe) and raw
-// core::arch intrinsics (unchecked, pointer-based) depending on the `unchecked`
-// feature flag.
+// These macros wrap archmage::intrinsics (safe, bounds-checked) memory access.
 //
 // Each macro supports two forms:
 //   - 1-arg: takes a typed array reference (&[u8; 32], &[u16; 16], etc.)
@@ -439,7 +428,7 @@ pub unsafe fn strided_slice_from_ptr<'a, T>(
 /// `Is256BitsUnaligned` (e.g., `&[u8; 32]`, `&[u16; 16]`, `&[i16; 16]`, `&[i32; 8]`).
 ///
 /// **Slice form:** `$slice` is `&[T]` and `$T` is the target array type.
-/// Converts via `try_into().unwrap()` in checked mode; raw pointer in unchecked mode.
+/// Converts via `try_into().unwrap()`, so the slice length is checked.
 ///
 /// ```ignore
 /// let v: __m256i = loadu_256!(&arr);                          // arr: [u8; 32]
@@ -447,42 +436,8 @@ pub unsafe fn strided_slice_from_ptr<'a, T>(
 /// ```
 #[cfg(target_arch = "x86_64")]
 macro_rules! loadu_256 {
-    ($src:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::x86_64::_mm256_loadu_si256($src)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::x86_64::_mm256_loadu_si256(core::ptr::from_ref($src).cast())
-            }
-        }
-    }};
-    ($slice:expr, $T:ty) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::x86_64::_mm256_loadu_si256::<$T>(($slice).try_into().unwrap())
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            let __s = $slice;
-            debug_assert!(core::mem::size_of_val(__s) >= 32);
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::x86_64::_mm256_loadu_si256(__s.as_ptr() as *const _)
-            }
-        }
-    }};
+    ($src:expr) => {{ archmage::intrinsics::x86_64::_mm256_loadu_si256($src) }};
+    ($slice:expr, $T:ty) => {{ archmage::intrinsics::x86_64::_mm256_loadu_si256::<$T>(($slice).try_into().unwrap()) }};
 }
 #[cfg(target_arch = "x86_64")]
 pub(crate) use loadu_256;
@@ -501,45 +456,8 @@ pub(crate) use loadu_256;
 /// ```
 #[cfg(target_arch = "x86_64")]
 macro_rules! storeu_256 {
-    ($dst:expr, $val:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::x86_64::_mm256_storeu_si256($dst, $val)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::x86_64::_mm256_storeu_si256(core::ptr::from_mut($dst).cast(), $val)
-            }
-        }
-    }};
-    ($slice:expr, $T:ty, $val:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::x86_64::_mm256_storeu_si256::<$T>(
-                ($slice).try_into().unwrap(),
-                $val,
-            )
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            let __s = $slice;
-            debug_assert!(core::mem::size_of_val(__s) >= 32);
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::x86_64::_mm256_storeu_si256(__s.as_mut_ptr() as *mut _, $val)
-            }
-        }
-    }};
+    ($dst:expr, $val:expr) => {{ archmage::intrinsics::x86_64::_mm256_storeu_si256($dst, $val) }};
+    ($slice:expr, $T:ty, $val:expr) => {{ archmage::intrinsics::x86_64::_mm256_storeu_si256::<$T>(($slice).try_into().unwrap(), $val) }};
 }
 #[cfg(target_arch = "x86_64")]
 pub(crate) use storeu_256;
@@ -550,7 +468,7 @@ pub(crate) use storeu_256;
 /// `Is512BitsUnaligned` (e.g., `&[u8; 64]`, `&[u16; 32]`, `&[i16; 32]`, `&[i32; 16]`).
 ///
 /// **Slice form:** `$slice` is `&[T]` and `$T` is the target array type.
-/// Converts via `try_into().unwrap()` in checked mode; raw pointer in unchecked mode.
+/// Converts via `try_into().unwrap()`, so the slice length is checked.
 ///
 /// ```ignore
 /// let v: __m512i = loadu_512!(&arr);                          // arr: [u8; 64]
@@ -558,42 +476,8 @@ pub(crate) use storeu_256;
 /// ```
 #[cfg(target_arch = "x86_64")]
 macro_rules! loadu_512 {
-    ($src:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::x86_64::_mm512_loadu_si512($src)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::x86_64::_mm512_loadu_si512(core::ptr::from_ref($src).cast())
-            }
-        }
-    }};
-    ($slice:expr, $T:ty) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::x86_64::_mm512_loadu_si512::<$T>(($slice).try_into().unwrap())
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            let __s = $slice;
-            debug_assert!(core::mem::size_of_val(__s) >= 64);
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::x86_64::_mm512_loadu_si512(__s.as_ptr() as *const _)
-            }
-        }
-    }};
+    ($src:expr) => {{ archmage::intrinsics::x86_64::_mm512_loadu_si512($src) }};
+    ($slice:expr, $T:ty) => {{ archmage::intrinsics::x86_64::_mm512_loadu_si512::<$T>(($slice).try_into().unwrap()) }};
 }
 #[cfg(target_arch = "x86_64")]
 pub(crate) use loadu_512;
@@ -612,45 +496,8 @@ pub(crate) use loadu_512;
 /// ```
 #[cfg(target_arch = "x86_64")]
 macro_rules! storeu_512 {
-    ($dst:expr, $val:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::x86_64::_mm512_storeu_si512($dst, $val)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::x86_64::_mm512_storeu_si512(core::ptr::from_mut($dst).cast(), $val)
-            }
-        }
-    }};
-    ($slice:expr, $T:ty, $val:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::x86_64::_mm512_storeu_si512::<$T>(
-                ($slice).try_into().unwrap(),
-                $val,
-            )
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            let __s = $slice;
-            debug_assert!(core::mem::size_of_val(__s) >= 64);
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::x86_64::_mm512_storeu_si512(__s.as_mut_ptr() as *mut _, $val)
-            }
-        }
-    }};
+    ($dst:expr, $val:expr) => {{ archmage::intrinsics::x86_64::_mm512_storeu_si512($dst, $val) }};
+    ($slice:expr, $T:ty, $val:expr) => {{ archmage::intrinsics::x86_64::_mm512_storeu_si512::<$T>(($slice).try_into().unwrap(), $val) }};
 }
 #[cfg(target_arch = "x86_64")]
 pub(crate) use storeu_512;
@@ -668,42 +515,8 @@ pub(crate) use storeu_512;
 /// ```
 #[cfg(target_arch = "x86_64")]
 macro_rules! loadu_128 {
-    ($src:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::x86_64::_mm_loadu_si128($src)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::x86_64::_mm_loadu_si128(core::ptr::from_ref($src).cast())
-            }
-        }
-    }};
-    ($slice:expr, $T:ty) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::x86_64::_mm_loadu_si128::<$T>(($slice).try_into().unwrap())
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            let __s = $slice;
-            debug_assert!(core::mem::size_of_val(__s) >= 16);
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::x86_64::_mm_loadu_si128(__s.as_ptr() as *const _)
-            }
-        }
-    }};
+    ($src:expr) => {{ archmage::intrinsics::x86_64::_mm_loadu_si128($src) }};
+    ($slice:expr, $T:ty) => {{ archmage::intrinsics::x86_64::_mm_loadu_si128::<$T>(($slice).try_into().unwrap()) }};
 }
 #[cfg(target_arch = "x86_64")]
 pub(crate) use loadu_128;
@@ -721,23 +534,7 @@ pub(crate) use loadu_128;
 /// ```
 #[cfg(target_arch = "x86_64")]
 macro_rules! loadu_64 {
-    ($src:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::x86_64::_mm_loadu_si64($src)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::x86_64::_mm_loadu_si64(core::ptr::from_ref($src).cast())
-            }
-        }
-    }};
+    ($src:expr) => {{ archmage::intrinsics::x86_64::_mm_loadu_si64($src) }};
 }
 #[cfg(target_arch = "x86_64")]
 pub(crate) use loadu_64;
@@ -756,42 +553,8 @@ pub(crate) use loadu_64;
 /// ```
 #[cfg(target_arch = "x86_64")]
 macro_rules! storeu_128 {
-    ($dst:expr, $val:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::x86_64::_mm_storeu_si128($dst, $val)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::x86_64::_mm_storeu_si128(core::ptr::from_mut($dst).cast(), $val)
-            }
-        }
-    }};
-    ($slice:expr, $T:ty, $val:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::x86_64::_mm_storeu_si128::<$T>(($slice).try_into().unwrap(), $val)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            let __s = $slice;
-            debug_assert!(core::mem::size_of_val(__s) >= 16);
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::x86_64::_mm_storeu_si128(__s.as_mut_ptr() as *mut _, $val)
-            }
-        }
-    }};
+    ($dst:expr, $val:expr) => {{ archmage::intrinsics::x86_64::_mm_storeu_si128($dst, $val) }};
+    ($slice:expr, $T:ty, $val:expr) => {{ archmage::intrinsics::x86_64::_mm_storeu_si128::<$T>(($slice).try_into().unwrap(), $val) }};
 }
 #[cfg(target_arch = "x86_64")]
 pub(crate) use storeu_128;
@@ -893,23 +656,7 @@ pub(crate) use storei64;
 // two arches keep a symmetric API. Narrow allow rather than deletion.
 #[allow(unused_macros)]
 macro_rules! neon_ld1q_u8 {
-    ($src:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::aarch64::vld1q_u8($src)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::aarch64::vld1q_u8(($src).as_ptr())
-            }
-        }
-    }};
+    ($src:expr) => {{ archmage::intrinsics::aarch64::vld1q_u8($src) }};
 }
 #[cfg(target_arch = "aarch64")]
 #[allow(unused_imports)]
@@ -922,23 +669,7 @@ pub(crate) use neon_ld1q_u8;
 // two arches keep a symmetric API. Narrow allow rather than deletion.
 #[allow(unused_macros)]
 macro_rules! neon_ld1q_u16 {
-    ($src:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::aarch64::vld1q_u16($src)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::aarch64::vld1q_u16(($src).as_ptr())
-            }
-        }
-    }};
+    ($src:expr) => {{ archmage::intrinsics::aarch64::vld1q_u16($src) }};
 }
 #[cfg(target_arch = "aarch64")]
 #[allow(unused_imports)]
@@ -951,23 +682,7 @@ pub(crate) use neon_ld1q_u16;
 // two arches keep a symmetric API. Narrow allow rather than deletion.
 #[allow(unused_macros)]
 macro_rules! neon_ld1q_s16 {
-    ($src:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::aarch64::vld1q_s16($src)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::aarch64::vld1q_s16(($src).as_ptr())
-            }
-        }
-    }};
+    ($src:expr) => {{ archmage::intrinsics::aarch64::vld1q_s16($src) }};
 }
 #[cfg(target_arch = "aarch64")]
 #[allow(unused_imports)]
@@ -980,23 +695,7 @@ pub(crate) use neon_ld1q_s16;
 // two arches keep a symmetric API. Narrow allow rather than deletion.
 #[allow(unused_macros)]
 macro_rules! neon_st1q_u8 {
-    ($dst:expr, $val:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::aarch64::vst1q_u8($dst, $val)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::aarch64::vst1q_u8(($dst).as_mut_ptr(), $val)
-            }
-        }
-    }};
+    ($dst:expr, $val:expr) => {{ archmage::intrinsics::aarch64::vst1q_u8($dst, $val) }};
 }
 #[cfg(target_arch = "aarch64")]
 #[allow(unused_imports)]
@@ -1009,23 +708,7 @@ pub(crate) use neon_st1q_u8;
 // two arches keep a symmetric API. Narrow allow rather than deletion.
 #[allow(unused_macros)]
 macro_rules! neon_st1q_u16 {
-    ($dst:expr, $val:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::aarch64::vst1q_u16($dst, $val)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::aarch64::vst1q_u16(($dst).as_mut_ptr(), $val)
-            }
-        }
-    }};
+    ($dst:expr, $val:expr) => {{ archmage::intrinsics::aarch64::vst1q_u16($dst, $val) }};
 }
 #[cfg(target_arch = "aarch64")]
 #[allow(unused_imports)]
@@ -1044,42 +727,8 @@ pub(crate) use neon_st1q_u16;
 /// ```
 #[cfg(target_arch = "wasm32")]
 macro_rules! wasm_load_128 {
-    ($src:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::wasm32::v128_load($src)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::wasm32::v128_load(core::ptr::from_ref($src).cast())
-            }
-        }
-    }};
-    ($slice:expr, $T:ty) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::wasm32::v128_load::<$T>(($slice).try_into().unwrap())
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            let __s = $slice;
-            debug_assert!(core::mem::size_of_val(__s) >= 16);
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::wasm32::v128_load(__s.as_ptr() as *const _)
-            }
-        }
-    }};
+    ($src:expr) => {{ archmage::intrinsics::wasm32::v128_load($src) }};
+    ($slice:expr, $T:ty) => {{ archmage::intrinsics::wasm32::v128_load::<$T>(($slice).try_into().unwrap()) }};
 }
 #[cfg(target_arch = "wasm32")]
 pub(crate) use wasm_load_128;
@@ -1092,42 +741,8 @@ pub(crate) use wasm_load_128;
 /// ```
 #[cfg(target_arch = "wasm32")]
 macro_rules! wasm_store_128 {
-    ($dst:expr, $val:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::wasm32::v128_store($dst, $val)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::wasm32::v128_store(core::ptr::from_mut($dst).cast(), $val)
-            }
-        }
-    }};
-    ($slice:expr, $T:ty, $val:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::wasm32::v128_store::<$T>(($slice).try_into().unwrap(), $val)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            let __s = $slice;
-            debug_assert!(core::mem::size_of_val(__s) >= 16);
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::wasm32::v128_store(__s.as_mut_ptr() as *mut _, $val)
-            }
-        }
-    }};
+    ($dst:expr, $val:expr) => {{ archmage::intrinsics::wasm32::v128_store($dst, $val) }};
+    ($slice:expr, $T:ty, $val:expr) => {{ archmage::intrinsics::wasm32::v128_store::<$T>(($slice).try_into().unwrap(), $val) }};
 }
 #[cfg(target_arch = "wasm32")]
 pub(crate) use wasm_store_128;
@@ -1209,23 +824,7 @@ pub(crate) use wasm_storei64;
 // two arches keep a symmetric API. Narrow allow rather than deletion.
 #[allow(unused_macros)]
 macro_rules! neon_st1q_s16 {
-    ($dst:expr, $val:expr) => {{
-        #[cfg(not(feature = "unchecked"))]
-        {
-            archmage::intrinsics::aarch64::vst1q_s16($dst, $val)
-        }
-        #[cfg(feature = "unchecked")]
-        {
-            #[allow(unsafe_code)]
-            // SAFETY: the macro's contract guarantees the pointer is valid
-            // for the full vector width — either a fixed-size array reference
-            // whose type carries the extent, or a slice guarded by the
-            // `size_of_val` debug_assert immediately above.
-            unsafe {
-                core::arch::aarch64::vst1q_s16(($dst).as_mut_ptr(), $val)
-            }
-        }
-    }};
+    ($dst:expr, $val:expr) => {{ archmage::intrinsics::aarch64::vst1q_s16($dst, $val) }};
 }
 #[cfg(target_arch = "aarch64")]
 #[allow(unused_imports)]

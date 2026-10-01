@@ -100,8 +100,14 @@
 //! concurrent tile worker owns. Everything else (`tmp`, `hor`, `sumsq`, `sum`,
 //! `dst`) is a private stack buffer.
 
-#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
-#![cfg_attr(feature = "unchecked", deny(unsafe_code))]
+#![cfg_attr(
+    not(any(feature = "asm", feature = "c-ffi", feature = "partial_asm")),
+    forbid(unsafe_code)
+)]
+#![cfg_attr(
+    any(feature = "asm", feature = "c-ffi", feature = "partial_asm"),
+    deny(unsafe_code)
+)]
 #![allow(unused_imports)]
 #![allow(clippy::too_many_arguments)]
 

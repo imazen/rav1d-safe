@@ -1,7 +1,13 @@
 //! Safe SIMD implementations of motion compensation functions
 #![allow(dead_code)]
-#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
-#![cfg_attr(feature = "unchecked", deny(unsafe_code))]
+#![cfg_attr(
+    not(any(feature = "asm", feature = "c-ffi", feature = "partial_asm")),
+    forbid(unsafe_code)
+)]
+#![cfg_attr(
+    any(feature = "asm", feature = "c-ffi", feature = "partial_asm"),
+    deny(unsafe_code)
+)]
 //!
 //! These replace the hand-written assembly in src/x86/mc_*.asm
 //!

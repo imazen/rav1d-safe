@@ -139,7 +139,7 @@ Optimizations landed (all in safe checked, `#![forbid(unsafe_code)]`):
 Remaining biggest gaps (without unsafe):
 1. **Loopfilter** — `loop_filter_4_8bpc` is fully scalar at 10% of profile vs <1% ASM (biggest single remaining win, ~500-1000 lines of SIMD work)
 2. **msac** entropy decoding inside `decode_coefs` (37% of profile, mostly scalar)
-3. **DisjointMut BorrowTracker** overhead (~9% checked-only; eliminated only by the `unchecked` feature which uses unsafe)
+3. **DisjointMut BorrowTracker** overhead (~12% at t=1, ~35% at t>1 incl. the copy path; removed by the opt-in `untracked` feature, see docs/UNTRACKED_MODE.md)
 4. 32x32 ADST/identity column SIMD (32x32 is mostly dct-only in practice)
 5. 8x8 non-dct_dct transforms (no safe SIMD 2D path, falls back to scalar generic `inv_txfm_add`)
 6. Row-transform pass for dct/adst (stride=1, LLVM may already auto-vectorize)
@@ -165,7 +165,7 @@ Remaining biggest gaps (without unsafe):
    ```
    - `slice.flex()[i]` / `slice.flex()[start..end]` / `slice.flex()[start..]`
    - `slice.flex_mut()[i] = val` / `slice.flex_mut()[start..end]`
-   - Natural `[]` syntax, checked by default, unchecked when `unchecked` feature on
+   - Natural `[]` syntax, always bounds-checked
 
    **`SliceExt` trait** — Simpler single-access API:
    - `slice.at(i)` / `slice.at_mut(i)` — single element
@@ -180,14 +180,14 @@ Remaining biggest gaps (without unsafe):
 
 ## Feature Flag Safety Model
 
-**`forbid(unsafe_code)` is ON by default.** When `asm`, `c-ffi`, or `unchecked` are enabled, it drops to `deny` so modules can use `#[allow(unsafe_code)]` on specific items (FFI wrappers, unchecked slice access, etc).
+**`forbid(unsafe_code)` is ON by default.** When `asm`, `partial_asm`, or `c-ffi` are enabled, it drops to `deny` so modules can use `#[allow(unsafe_code)]` on specific items (FFI wrappers). There is no bounds-unchecked mode: it was removed after measuring 0% (±1.7% noise, both signs) on 4 content types at t=1/4.
 
 ```
-Default (no asm, no c-ffi, no unchecked): #![forbid(unsafe_code)]  — NO exceptions
-asm, c-ffi, or unchecked enabled:         #![deny(unsafe_code)]    — modules can #[allow]
+Default (no asm, partial_asm, c-ffi): #![forbid(unsafe_code)]  — NO exceptions
+asm, partial_asm, or c-ffi enabled:   #![deny(unsafe_code)]    — modules can #[allow]
 ```
 
-This means: **every `#[allow(unsafe_code)]` in the codebase MUST be gated behind `cfg(feature = "asm")`, `cfg(feature = "c-ffi")`, `cfg(feature = "unchecked")`, or `cfg(target_arch)` that excludes the default build.** If an `#[allow(unsafe_code)]` item compiles in the default build, `forbid` will reject it.
+This means: **every `#[allow(unsafe_code)]` in the codebase MUST be gated behind `cfg(feature = "asm")`, `cfg(feature = "c-ffi")`, `cfg(feature = "partial_asm")`, or `cfg(target_arch)` that excludes the default build.** If an `#[allow(unsafe_code)]` item compiles in the default build, `forbid` will reject it.
 
 ## HARD RULES — STOP GOING IN CIRCLES
 
@@ -220,7 +220,7 @@ This means: **every `#[allow(unsafe_code)]` in the codebase MUST be gated behind
 just build          # Safe-SIMD build
 just build-asm      # ASM build
 just test           # Run tests (cargo-nextest + doctests)
-just profile        # Benchmark all 3 modes (asm, checked, unchecked)
+just profile        # Benchmark all 3 modes (asm, tracked, untracked)
 just profile-quick  # Same but 100 iterations
 
 # Dev iteration: `--profile release-thin` gives release codegen with thin LTO —
@@ -367,8 +367,7 @@ All unsafe is now confined to:
 **Archmage conversions complete:** cdef constrain_avx2. msac SSE2 kernels are `#[arcane]` `*_v1` + `*_scalar` twins dispatched via `incant!`; `decode_coefs`/`decode_coefs_class` are `#[autoversion(v3, scalar)]` so inner msac calls resolve to same-tier variants (fully inlined inside `decode_coefs_class_v3`).
 
 **Feature flags:**
-- `unchecked` - Use unchecked slice access in SIMD hot paths (skips bounds checks)
-- `src/safe_simd/pixel_access.rs` - Helper module for checked/unchecked slice access + SIMD macros
+- `src/safe_simd/pixel_access.rs` - Helper module for bounds-checked slice access + SIMD macros
 
 **Writing Clean Safe SIMD (the complete pattern):**
 
@@ -380,7 +379,7 @@ Both are solved without any `unsafe` in user code:
 
 ```rust
 // 1. Module header — forbid unsafe (load/store macros handle it internally):
-#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
+#![cfg_attr(not(any(feature = "asm", feature = "c-ffi", feature = "partial_asm")), forbid(unsafe_code))]
 
 // 2. Import macros from pixel_access:
 use super::pixel_access::{loadu_256, storeu_256, load_256, store_256};
@@ -408,11 +407,10 @@ fn process(token: Desktop64, dst: &mut [u8], src: &[u8], w: usize) {
 
 **Why this works with `forbid(unsafe_code)`:**
 - `#[arcane]` (from archmage crate) handles `#[target_feature]` dispatch via tokens — no manual feature annotations needed
-- `load_256!`/`store_256!` expand to `safe_unaligned_simd` calls (safe, bounds-checked) when `unchecked` is off
+- `load_256!`/`store_256!` expand to `safe_unaligned_simd` calls (safe, bounds-checked)
 - Computation intrinsics (`_mm256_add_epi8`, `_mm256_shuffle_epi8`, etc.) are plain safe functions since Rust 1.93
 - Result: **zero `unsafe` blocks** in the SIMD function body
 
-**When `unchecked` is ON:** macros expand to `unsafe { _mm256_loadu_si256(ptr) }` with `debug_assert!` only — maximum perf, `deny(unsafe_code)` instead of `forbid`.
 
 **Load/Store macros (in `pixel_access.rs`):**
 
@@ -432,8 +430,8 @@ fn process(token: Desktop64, dst: &mut [u8], src: &[u8], w: usize) {
 
 | Helper | Description |
 |--------|-------------|
-| `row_slice(buf, off, len)` | Immutable `&[u8]` — unchecked when feature enabled |
-| `row_slice_mut(buf, off, len)` | Mutable `&mut [u8]` — unchecked when feature enabled |
+| `row_slice(buf, off, len)` | Immutable `&[u8]` |
+| `row_slice_mut(buf, off, len)` | Mutable `&mut [u8]` |
 | `row_slice_u16(buf, off, len)` | Immutable `&[u16]` variant |
 | `row_slice_u16_mut(buf, off, len)` | Mutable `&mut [u16]` variant |
 | `idx(buf, i)` / `idx_mut(buf, i)` | Single element access |
@@ -445,7 +443,7 @@ fn process(token: Desktop64, dst: &mut [u8], src: &[u8], w: usize) {
 3. Replace `unsafe { _mm256_loadu_si256(ptr) }` → `load_256!(&slice[off..off+32], [u8; 32])`
 4. Replace `unsafe { _mm256_storeu_si256(ptr, v) }` → `store_256!(&mut slice[off..off+32], [u8; 32], v)`
 5. Remove `unsafe {}` blocks around computation intrinsics (they're safe since 1.93)
-6. Add `#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]` to module
+6. Add `#![cfg_attr(not(any(feature = "asm", feature = "c-ffi", feature = "partial_asm")), forbid(unsafe_code))]` to module
 7. Gate FFI `extern "C"` wrappers behind `#[cfg(feature = "asm")]`
 
 **Unsafe reduction progress (safe_simd/):**
@@ -738,7 +736,7 @@ cd /home/lilith/work/zenavif
 ### Tile threading: WORKING under forbid(unsafe_code) (v0.5.4)
 
 **Status:** Tile threading (n_fc=1, n_tc>1) works in checked mode. Frame threading (n_fc>1)
-requires `unchecked`.
+requires `untracked` (which `c-ffi`/`asm`/`partial_asm` imply).
 
 **Loop-filter H window ran past the end of a picture row (FIXED, #524, commit 3426ebf):**
 The x86_64 vertical-edge (`is_v == false`) compact read window was sized from the
@@ -803,7 +801,7 @@ bitstream through the heic AVIF decode path. Separate from the CDEF race above.
 
 **Frame threading (n_fc>1) OPEN:** Reference frame guard conflicts between concurrent
 frame contexts (loopfilter mutable vs reference read immutable on the same frame's picture
-buffer). n_fc clamped to 1 without `unchecked`.
+buffer). n_fc clamped to 1 without `untracked`.
 
 Reproducer: `cargo test --release --test reproduce_overlap -- --ignored`
 
@@ -931,8 +929,8 @@ fn test_decoder_thread_cleanup() {
 
 ```
 default:    #![forbid(unsafe_code)] — compiler-enforced, zero unsafe
-  └─> unchecked: get_unchecked in hot paths, debug_assert! bounds checks
-       └─> c-ffi: unsafe extern "C" FFI wrappers, raw pointer conversions
+  └─> untracked (opt-in): no overlap tracking, zero-copy at t>1, bounds checks ON
+       └─> c-ffi: unsafe extern "C" FFI wrappers, raw pointer conversions (implies untracked)
             └─> asm: hand-written x86_64/aarch64 assembly via function pointers
 ```
 
@@ -940,8 +938,8 @@ default:    #![forbid(unsafe_code)] — compiler-enforced, zero unsafe
 ```toml
 [features]
 default = ["bitdepth_8", "bitdepth_16"]
-unchecked = ["rav1d-disjoint-mut/unchecked"]
-c-ffi = ["unchecked"]
+untracked = ["rav1d-disjoint-mut/untracked"]
+c-ffi = ["untracked"]
 asm = ["c-ffi"]
 ```
 

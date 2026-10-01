@@ -3,8 +3,8 @@
 //! Port of the `inv_txfm_add_wht_wht_4x4_8bpc_neon` assembly function
 //! from `src/arm/64/itx.S` to safe Rust NEON intrinsics.
 #![allow(clippy::too_many_arguments)]
-#![cfg_attr(not(feature = "unchecked"), forbid(unsafe_code))]
-#![cfg_attr(feature = "unchecked", deny(unsafe_code))]
+#![cfg_attr(not(any(feature = "asm", feature = "c-ffi", feature = "partial_asm")), forbid(unsafe_code))]
+#![cfg_attr(any(feature = "asm", feature = "c-ffi", feature = "partial_asm"), deny(unsafe_code))]
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;

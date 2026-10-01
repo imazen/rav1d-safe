@@ -5,8 +5,8 @@
 //!
 //! Compare safety levels:
 //! ```bash
-//! cargo bench --bench decode_avif                              # checked (default)
-//! cargo bench --bench decode_avif --features unchecked         # unchecked indexing
+//! cargo bench --bench decode_avif                              # tracked (default)
+//! cargo bench --bench decode_avif --features untracked         # no overlap tracking
 //! cargo bench --bench decode_avif --features asm               # hand-written asm
 //! ```
 

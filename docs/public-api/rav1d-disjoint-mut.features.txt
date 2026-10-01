@@ -1,5 +1,5 @@
 # rav1d-disjoint-mut public API — additions from non-default features
-# features: aligned,instrument,pic-buf,std,zerocopy
+# features: aligned,instrument,pic-buf,std,untracked,zerocopy
 # (regenerated on every `cargo test` by zenutils-apidoc; ZEN_API_DOC=check verifies, =off skips).
 # Encodings: crate-name prefix stripped; auto traits collapse to a
 # count + exceptions; trait impls collapse to one roster line per
@@ -111,5 +111,5 @@ u8: align::ArrayDefault
 ## auto traits
 
 0 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
-align::AlignedVec32<T>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
-align::AlignedVec64<T>: !Freeze !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
+align::AlignedVec32<T>: !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
+align::AlignedVec64<T>: !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe

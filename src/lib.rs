@@ -121,8 +121,9 @@ fn get_num_threads(s: &Rav1dSettings) -> NumThreads {
         cmp::min((n_tc as f64).sqrt().ceil() as usize, 8)
     };
     // Tile threading (n_fc=1) works under forbid(unsafe_code).
-    // Frame threading (n_fc>1) still requires unchecked.
-    #[cfg(not(feature = "unchecked"))]
+    // Frame threading (n_fc>1) needs `untracked`: concurrent frame contexts
+    // legitimately overlap reference-frame guards, which the tracker would reject.
+    #[cfg(not(feature = "untracked"))]
     let n_fc = 1;
     NumThreads { n_fc, n_tc }
 }

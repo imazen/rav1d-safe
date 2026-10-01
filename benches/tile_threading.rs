@@ -3,8 +3,9 @@
 //! Compares 1-thread vs 2-thread vs 4-thread tile decode on real AVIF photos.
 //! Interleaved execution ensures thermal/load parity between configurations.
 //!
-//! Requires `unchecked` feature for multithreading:
-//!   cargo bench --bench tile_threading --no-default-features --features "bitdepth_8,bitdepth_16,unchecked"
+//! Tile threading works in every build; `untracked` removes the tracker and the
+//! copy path and is much faster:
+//!   cargo bench --bench tile_threading --no-default-features --features "bitdepth_8,bitdepth_16,untracked"
 
 use rav1d_safe::src::managed::{CpuLevel, Decoder, Settings};
 use std::path::PathBuf;
