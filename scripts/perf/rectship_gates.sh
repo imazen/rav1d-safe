@@ -87,8 +87,9 @@ for arm in default rect; do
 done
 
 echo "== 4. the measurement arms build AND run ==" >&2
-for feat in __probe_cdef_double __pad_text __pad_small __pad2 __pad3 __pad4 \
-            __pad_far __lf_rect __lf_rect1 __probe_lf_hull __probe_bounds; do
+# __probe_cdef_double, __lf_rect1 and __probe_lf_hull were (removed 2026-10; check out 087242f1 for that arm).
+for feat in __pad_text __pad_small __pad2 __pad3 __pad4 \
+            __pad_far __lf_rect __probe_bounds; do
   if nice -n 19 cargo build --release --example bench_ab_decode --features "$feat" \
        --target-dir "$OUT/tgt" > "$OUT/build_$feat.log" 2>&1; then
     note "build_$feat" rc=0
@@ -116,8 +117,6 @@ run_clippy tracker            -p rav1d-disjoint-mut --all-targets
 run_clippy tracker_nodefault  -p rav1d-disjoint-mut --no-default-features --all-targets
 run_clippy lib                --lib
 run_clippy lib_rect           --lib --features __lf_rect
-run_clippy lib_rect1          --lib --features __lf_rect1
-run_clippy lib_cdefdouble     --lib --features __probe_cdef_double
 run_clippy lib_pad            --lib --features __pad4
 run_clippy lib_padfar         --lib --features __pad_far
 if nice -n 19 cargo fmt --all -- --check > "$OUT/fmt.log" 2>&1; then

@@ -1,6 +1,8 @@
 # The `+1% at t=1` that blocked the rectangle record is CODE PLACEMENT, not the
 # mechanism — measured, and NOT fixable by shrinking, moving or out-of-lining
 
+> **2026-10:** the experiment features, environment variables and `scripts/perf/` drivers this record uses were removed once their winners shipped (see [DIAGNOSTIC_FEATURES.md](DIAGNOSTIC_FEATURES.md#removed-2026-10)). Check out `087242f1` to reproduce the arms described here.
+
 **Read `docs/RECT_RECORDS.md` first.** PR #505 built the exact strided
 rectangle, proved it sound, measured **−1.0% to −1.8% wall at t=8 on 5 of 6
 multi-tile cells**, and left it default-OFF for one reason: **+1.0% to +1.3%

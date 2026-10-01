@@ -3,16 +3,15 @@
 # fail proves nothing, so every path this branch touches gets a mutation that
 # MUST be caught, and the round reports the ones that are not.
 #
-# Four subjects, and the third is the one that makes the headline sound:
+# Three subjects, and the third is the one that makes the headline sound:
 #
 #   1. the restructured DEFAULT per-row path (`fill_threaded`)
 #   2. the rectangle path (`fill_rect`), which #505 gated the same way
 #   3. **the layout pad must NEVER EXECUTE.** The whole finding is that dead
 #      text costs 1.1% at t=1; if the pad ran, it would be measuring work. A
 #      `panic!` planted in `text_pad::unit` must leave the corpus green.
-#   4. the CDEF doubling arm must file EXACTLY the registrations it claims —
-#      removing one of the five `dup_rows` call sites must drop the count by
-#      that site's population and no other number.
+#   (4. the CDEF doubling arm's registration count — that arm,
+#      `__probe_cdef_double`, was (removed 2026-10; check out 087242f1 for that arm).)
 #
 # Every mutation is restored from a backup COPY (never `git checkout --`) and
 # verified byte-exact by sha256 AND `git diff --exit-code`.
@@ -96,27 +95,6 @@ M=$(md5_of "__pad4" 8)
 [ "$M" = "$REF" ] && note pad_never_executes "CONFIRMED (md5 unchanged with panic! planted)" \
                   || note pad_never_executes "PAD RAN OR BUILD BROKE ($M)"
 restore src/loopfilter.rs > "$OUT/sha_lf_after3.txt"
-
-echo "== 4. CDEF doubling arm files exactly what it claims ==" >&2
-nice -n 19 cargo build --release --example probe_tracker \
-  --features "__probe_sites,__probe_cdef_double" --target-dir "$OUT/tgt2" \
-  > "$OUT/build_ps.log" 2>&1
-count() { RAV1D_CDEF_DOUBLE=$1 nice -n 19 "$OUT/tgt2/release/examples/probe_tracker" \
-  "$VEC" 8 3 2>&1 | awk -F'total_per_frame=' '/^SITES/{split($2,a," ");print a[1];exit}'; }
-C0=$(count 0); C1=$(count 1); note cdef_counts "off=$C0 on=$C1 delta=$((C1-C0))"
-backup src/safe_simd/cdef_arm.rs > /dev/null
-python3 - <<'PY'
-p='src/safe_simd/cdef_arm.rs'; s=open(p).read()
-old = "    img.dup_rows::<BitDepth8>(8, 8);\n"
-assert s.count(old) == 1
-open(p,'w').write(s.replace(old, "", 1))
-PY
-nice -n 19 cargo build --release --example probe_tracker \
-  --features "__probe_sites,__probe_cdef_double" --target-dir "$OUT/tgt2" \
-  > "$OUT/build_ps2.log" 2>&1
-C1M=$(count 1)
-note cdef_mut_drop_one_site "on=$C1M delta_vs_full=$((C1M-C1)) (expect the cdef_find_dir site's population)"
-restore src/safe_simd/cdef_arm.rs > "$OUT/sha_cdef_after.txt"
 
 echo "== 5. forbid(unsafe_code) proven ACTIVE ==" >&2
 backup src/picture.rs > /dev/null

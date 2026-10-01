@@ -1,6 +1,8 @@
 # The exact strided-rectangle record: built, sound, live, a small consistent win
 # at t=8 — NULL on the cell it was built for, and a code-size REGRESSION at t=1
 
+> **2026-10:** the experiment features, environment variables and `scripts/perf/` drivers this record uses were removed once their winners shipped (see [DIAGNOSTIC_FEATURES.md](DIAGNOSTIC_FEATURES.md#removed-2026-10)). Check out `087242f1` to reproduce the arms described here.
+
 **Status: NOT the default, and the reasons are measured.** The mechanism this
 round was opened to test — collapsing `LfBlock::fill`'s `h` per-row
 registrations into ONE exact strided-rectangle record, the third shape after the

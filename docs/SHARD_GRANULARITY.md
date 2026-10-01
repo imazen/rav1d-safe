@@ -1,5 +1,7 @@
 # Shard granularity: the ladder re-fitted, and the wide path that was believed dead
 
+> **2026-10:** the experiment features, environment variables and `scripts/perf/` drivers this record uses were removed once their winners shipped (see [DIAGNOSTIC_FEATURES.md](DIAGNOSTIC_FEATURES.md#removed-2026-10)). Check out `087242f1` to reproduce the arms described here.
+
 **Status: a 14.6% measured win on one cell, behind a compile-time arm that is NOT
 flipped, plus two corrections to committed claims and one correction to the
 objective this round was given.** Read §1 and §2 for the mechanism, then §5e —

@@ -14,8 +14,9 @@
 #     filter worker is. That separates "idle pool" from "serial filter tail".
 #
 # The `ttu` arm is the same binary with the borrow tracker compiled out
-# (`__probe_tasktime_untracked`), so the tracker's share of any t=8 CPU inflation
-# is a subtraction rather than an argument.
+# (`--features __probe_tasktime,__probe_untracked`; the old
+# `__probe_tasktime_untracked` shorthand was removed), so the tracker's share of
+# any t=8 CPU inflation is a subtraction rather than an argument.
 #
 # NO `nice` (Darwin maps it to background QoS -> E-cores). Run under `measlock`.
 # NO -C target-cpu=native.

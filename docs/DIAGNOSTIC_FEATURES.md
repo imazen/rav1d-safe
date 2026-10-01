@@ -7,7 +7,7 @@ is a naming convention, not protection against Cargo feature unification:
 check-disabling experiments continue to fail compilation deliberately.
 
 The established public features keep their names: decoder bit depths, `asm`,
-`partial_asm`, `unchecked`, `c-ffi`, `dav1d-compat`, ARM ASM extensions, and
+`partial_asm`, `untracked`, `c-ffi`, `dav1d-compat`, ARM ASM extensions, and
 storage/std adapters in disjoint-mut. Its published `instrument` feature also
 keeps its name to preserve 0.3.x compatibility. This policy prefixes experiments,
 not every supported feature in the crates.
@@ -34,6 +34,31 @@ recorded revisions; their names are not rewritten as though the old runs used
 new flags. Executable current source, CI and consumer templates use the new
 names. Historical scripts requiring removed no-ops run at their recorded commit.
 
+## Current feature inventory
+
+Everything below exists at HEAD. Anything else that older records, scripts or
+benchmark drivers name has been removed; see [Removed 2026-10](#removed-2026-10).
+
+**rav1d-safe (33).** Public: `default`, `bitdepth_8`, `bitdepth_16`,
+`untracked`, `c-ffi`, `dav1d-compat`, `partial_asm`, `asm`, `asm_arm64_dotprod`,
+`asm_arm64_i8mm`, `asm_arm64_sve2`. Internal: `__probe_count`, `__probe_wide`,
+`__probe_usage`, `__probe_sites`, `__probe_bounds`, `__probe_untracked`,
+`__probe_tasktime`, `__probe_x86tier`, `__probe_owned_recon`, `__bisect`,
+`__ablate`, `__simd_test`, `__simd_test_log`, `__lrvarcov`, `__lrpoison`,
+`__pad_text`, `__pad_small`, `__pad_far`, `__pad2`, `__pad3`, `__pad4`,
+`__test_induce_worker_panic`.
+
+**rav1d-disjoint-mut (12).** Public: `default`, `std`, `aligned`, `pic-buf`,
+`instrument`, `untracked`. Internal: `__bench`, `__probe_count`,
+`__probe_wide`, `__probe_usage`, `__probe_sites`, `__probe_bounds`. The Loom
+model is selected by `--cfg disjoint_mut_loom` (not a feature) and runs the
+production tracker with 4 shards instead of 128.
+
+The decoder's `__probe_untracked` is not an alias of its `untracked`: it turns
+off only the disjoint-mut tracker and keeps the decoder's tracked-mode compact
+copy path and frame-thread clamp (the "tracker-off" ceiling the benchmark drivers
+build). `untracked` also switches to zero-copy in-place guards.
+
 ## Consolidation
 
 45 formerly unprefixed decoder experiments are renamed to `__snake_case`, with
@@ -41,22 +66,21 @@ no old unprefixed aliases. Corresponding disjoint-mut names already follow that
 scheme. [The complete rename map](../release/0.6.0/feature-renames.json) records
 individual names. Families are:
 
-- `__probe_*`: observations, contention-wait comparisons and controlled overrides.
-- `__tracker_legacy`, `__shards_*`, `__shard_ident`, `__blockshift_*`, `__bps_*`,
-  `__rpb_*`, `__msb_5`, `__held_row_guards`: alternative tracker/guard policies.
+- `__probe_*`: observations and controlled overrides.
 - `__pad*`: binary-placement controls, distinct from actual optimizations.
 - `__simd_test*`, `__test_induce_worker_panic`, `__lrpoison`, `__lrvarcov`,
   `__ablate`, `__probe_x86tier`: correctness/census diagnostics.
 
-Removed no-ops: decoder `__lf_rect` and `__rows_rect`, disjoint-mut `__rect_mut`.
-The measured winning rectangle paths remain unconditional. `__lf_rect1` still
-selects a real one-shard-only experiment; it no longer depends on a no-op.
+Removed no-ops (0.6.0): decoder `__lf_rect` and `__rows_rect`, disjoint-mut
+`__rect_mut`. The measured winning rectangle paths remain unconditional. The
+alternative tracker/guard policies were removed in 2026-10 (below).
 
 Do not combine these into a feature that enables everything. Counting, changing
 shard placement, forcing panics, and selecting different algorithms answer
 different questions. An umbrella would confound measurements and can combine
-incompatible experiments. In particular, `__probe_untracked`, `__probe_noscan`,
-`__probe_lockonly`, `__probe_tinynop`, and `__probe_addnop` remain compile errors.
+incompatible experiments; `__probe_count` and `__probe_usage`, for example, are
+a deliberate compile error together because `__probe_count` selects a different
+tracker.
 
 ## Environment reads
 
@@ -65,10 +89,13 @@ These are all direct environment-variable reads in production library source:
 | Variable | Required private feature | Ordinary build |
 | --- | --- | --- |
 | `RAV1D_OWNED_RECON` | `__probe_owned_recon` | Never read; owned reconstruction remains eligible, subject to its normal frame checks. |
-| `RAV1D_LF_HULL`, `RAV1D_LF_PERROW`, `RAV1D_LF_DOUBLE` | `__probe_lf_hull` | Never read; all overrides false. |
-| `RAV1D_RECT_HULL` | `__probe_rect_hull` | Never read; override false. |
-| `RAV1D_CDEF_DOUBLE` | `__probe_cdef_double` | Never read; override false. |
-| `RAV1D_PIN_SHIFT` | disjoint-mut `__probe_shiftpin`, forwarded by decoder `__probe_shiftpin` | Never read; normal per-instance placement. |
+
+`RAV1D_LF_HULL`, `RAV1D_LF_PERROW`, `RAV1D_LF_DOUBLE`, `RAV1D_RECT_HULL`,
+`RAV1D_CDEF_DOUBLE` and `RAV1D_PIN_SHIFT` were read only by experiment features
+removed in 2026-10; no build reads them now.
+
+`__bisect` also gates `MC_SCALAR`, `IPRED_SCALAR`, `MCT_PREP_LOG` and
+`RAV1D_LOG` (see its comment in `Cargo.toml`).
 
 Test-harness variables (`RAV1D_ROW_GUARD_CHILD`, `RAV1D_TEST_IVF`,
 `RAV1D_TEST_EXPECTED_HASH`, Loom controls) live only under `cfg(test)` and are
@@ -92,7 +119,46 @@ builds retain their deliberate overrides. This change makes no performance
 claim; the previously measured unchecked slowdown is accepted for release and
 remains disclosed in the release notes.
 
-## Validation of this cleanup
+## Removed 2026-10
+
+Finished A/B experiments whose winner already ships were purged: every
+`cfg(feature = ...)` was resolved to its feature-off (shipped) arm, the other
+arms were deleted, and the features left both manifests. A fingerprint of every
+tracker constant, the block-shift / shard-mask rules over a 600-line input grid,
+`BorrowId` encodings and live registration placement was byte-identical before
+and after, in debug and release. To reproduce any historical arm, check out
+**`087242f1`** (the last commit that has all of them) and build with the
+feature named below.
+
+| Group | Removed features (crate) | Shipped arm kept | Env var it armed |
+| --- | --- | --- | --- |
+| Single-lock A/B tracker | `__tracker_legacy` (both) | sharded tracker; the single-lock tracker survives only as `__probe_count`'s instrumented tracker (`tracker_count.rs`) | |
+| Disabled unsound probes | `__probe_noscan`, `__probe_lockonly`, `__probe_tinynop`, `__probe_addnop` (both; already `compile_error!`) | full tracking | |
+| Shard-sizing simulator | `__probe_shardsim` (both) | none (counter-only) | |
+| Shard count ladder | `__shards_{1,4,8,16,32,64,128,256}` (both) | 128 shards (4 under `cfg(disjoint_mut_loom)`) | |
+| Shard mapping | `__shard_ident` (both) | Fibonacci hash | |
+| Fixed block-shift ladder | `__blockshift_{8,10,13,14,15,16}`, `__blockshift_adaptive` (both) | shift 12 serial / single-tile, adaptive for concurrent multi-tile | |
+| Block-count granularity | `__bps_{quarter,half,1,4,8,blocks}` (both) | `BPS = (2, 1)` + derived rows rule on | |
+| Rows-per-block ladder | `__rpb_{2,8,16}` (both) | `ROWS_PER_BLOCK_MIN = 4` | |
+| Per-plane shift pin | `__probe_shiftpin` (both) | rule-derived shift | `RAV1D_PIN_SHIFT` |
+| Shards per borrow | `__msb_5` (both) | `MAX_SHARDS_PER_BORROW = 4` | |
+| One-shard rectangles | `__rect_1shard` (disjoint-mut), `__lf_rect1` (decoder) | multi-shard rectangle records | |
+| Shard-lock waiting policy | `__probe_lock_{backoff,yield,relax,park}` (both), optional `parking_lot` dep of disjoint-mut | pure spin | |
+| Loop-filter hull/per-row/double | `__probe_lf_hull` (decoder) | per-row (threaded) / hull (serial) reads | `RAV1D_LF_HULL`, `RAV1D_LF_PERROW`, `RAV1D_LF_DOUBLE` |
+| Recon/MC hull | `__probe_rect_hull` (decoder) | per-row guards under tile threading | `RAV1D_RECT_HULL` |
+| CDEF double registration | `__probe_cdef_double` (decoder) | single registration | `RAV1D_CDEF_DOUBLE` |
+| Held row guards | `__held_row_guards` (decoder) | two-pass compact `BlockMut` | |
+| Aliases | disjoint-mut `__probe_untracked` (use `untracked`), decoder `__probe_tasktime_untracked` (use `__probe_tasktime,__probe_untracked`) | | |
+| No-op feature | disjoint-mut `zerocopy` (cast API is now unconditional) | | |
+
+Benchmark records under `benchmarks/` and `audit/` keep their original feature
+names and pinned drivers; they describe the revisions they were measured at.
+The `scripts/perf/` drivers that only built removed arms (`bpsrows_*`,
+`shardgran_*`, `shardsize_{build,gates,miri}`, `shard_sweep.sh`, `c256_*`,
+`rect_gates.sh`) were deleted with them; mixed scripts had the removed arms
+taken out of their lists.
+
+## Validation of the 0.6.0 cleanup
 
 The ordinary and diagnostic owned-reconstruction tests pass with the override
 set to zero. The default decoder regression fixtures, combined probe Clippy,

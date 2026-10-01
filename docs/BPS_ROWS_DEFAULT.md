@@ -1,5 +1,7 @@
 # The derived rows-per-block shard rule, shipped as the default
 
+> **2026-10:** the experiment features, environment variables and `scripts/perf/` drivers this record uses were removed once their winners shipped (see [DIAGNOSTIC_FEATURES.md](DIAGNOSTIC_FEATURES.md#removed-2026-10)). Check out `087242f1` to reproduce the arms described here.
+
 **Status: FLIPPED. A picture plane's tracker block shift is now derived from its
 row stride; the block-COUNT rule it replaced is the `bps-blocks` A/B arm. The
 corpus is bit-identical at t=1 and t=8 on the DEFAULT build, and the cells the

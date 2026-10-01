@@ -1,5 +1,5 @@
 # rav1d-disjoint-mut public API — doc(hidden) items and excluded-feature surface
-# excluded features: __bench,__blockshift_10,__blockshift_13,__blockshift_14,__blockshift_15,__blockshift_16,__blockshift_8,__blockshift_adaptive,__bps_1,__bps_4,__bps_8,__bps_blocks,__bps_half,__bps_quarter,__msb_5,__probe_addnop,__probe_bounds,__probe_count,__probe_lock_backoff,__probe_lock_park,__probe_lock_relax,__probe_lock_yield,__probe_lockonly,__probe_noscan,__probe_shardsim,__probe_shiftpin,__probe_sites,__probe_tinynop,__probe_untracked,__probe_usage,__probe_wide,__rect_1shard,__rpb_16,__rpb_2,__rpb_8,__shard_ident,__shards_1,__shards_128,__shards_16,__shards_256,__shards_32,__shards_4,__shards_64,__shards_8,__tracker_legacy
+# excluded features: __bench,__probe_bounds,__probe_count,__probe_sites,__probe_usage,__probe_wide
 # (regenerated on every `cargo test` by zenutils-apidoc; ZEN_API_DOC=check verifies, =off skips).
 # Encodings: crate-name prefix stripped; auto traits collapse to a
 # count + exceptions; trait impls collapse to one roster line per
@@ -7,7 +7,7 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 
-NOTE: excluded-feature surface (__bench,__blockshift_10,__blockshift_13,__blockshift_14,__blockshift_15,__blockshift_16,__blockshift_8,__blockshift_adaptive,__bps_1,__bps_4,__bps_8,__bps_blocks,__bps_half,__bps_quarter,__msb_5,__probe_addnop,__probe_bounds,__probe_count,__probe_lock_backoff,__probe_lock_park,__probe_lock_relax,__probe_lock_yield,__probe_lockonly,__probe_noscan,__probe_shardsim,__probe_shiftpin,__probe_sites,__probe_tinynop,__probe_untracked,__probe_usage,__probe_wide,__rect_1shard,__rpb_16,__rpb_2,__rpb_8,__shard_ident,__shards_1,__shards_128,__shards_16,__shards_256,__shards_32,__shards_4,__shards_64,__shards_8,__tracker_legacy) not buildable: rustdoc JSON build failed: [1m[91merror[0m[1m: unsound measurement probes are disabled; use a historical benchmark revision[0m
+NOTE: excluded-feature surface (__bench,__probe_bounds,__probe_count,__probe_sites,__probe_usage,__probe_wide) not buildable: rustdoc JSON build failed: [1m[91merror[0m[1m: usage census requires the production sharded tracker[0m
 ## summary
 #
 #   pub types (struct/enum/trait/alias)         2

@@ -9,11 +9,26 @@ Breaking: needs a 0.4.0 bump when released.
 ### Changed (breaking)
 - `AsMutPtr::Target` / `ExternalAsMutPtr::Target` and the container impls now
   require the new `PlainData` trait (`Copy + zerocopy::FromBytes`) instead of
-  plain `Copy`. `zerocopy` is now a required dependency; the `zerocopy` feature
-  is a no-op kept for compatibility.
+  plain `Copy`. `zerocopy` is now a required dependency.
+- The `zerocopy` feature is removed. The guard cast API it gated
+  (`cast_slice`, `mut_slice_as`, ...) is now always available. Manifests that
+  name `features = ["zerocopy"]` must drop it.
+
+### Removed
+- Internal measurement features (outside the supported API): `__tracker_legacy`,
+  `__probe_noscan`, `__probe_lockonly`, `__probe_tinynop`, `__probe_addnop`,
+  `__probe_shardsim`, `__probe_shiftpin`, `__probe_lock_{backoff,yield,relax,park}`,
+  `__shards_{1,4,8,16,32,64,128,256}`, `__shard_ident`,
+  `__blockshift_{8,10,13,14,15,16,adaptive}`, `__bps_{quarter,half,1,4,8,blocks}`,
+  `__rpb_{2,8,16}`, `__msb_5`, `__rect_1shard`, and the `__probe_untracked`
+  alias of `untracked`. Each was an A/B arm whose shipped value was already the
+  default; tracker constants and placement are unchanged. The optional
+  `parking_lot` dependency (used only by `__probe_lock_park`) is gone. The Loom
+  model now gets its 4-shard table from `cfg(disjoint_mut_loom)` instead of
+  `--features __shards_4`.
 
 ### Added
-- Opt-in `untracked` feature (alias `__probe_untracked`): no overlap tracking on
+- Opt-in `untracked` feature: no overlap tracking on
   any instance, bounds checks unchanged. Overlap is UB by design; see the README
   and `PlainData` docs for what is and is not claimed.
 

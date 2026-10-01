@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Cargo feature unification must never SILENTLY make a safe constructor
-# untracked. `untracked` is the one deliberate,
-# opt-in exception; this gate pins exactly where it can come from.
+# untracked. `untracked` is the one deliberate, opt-in exception (the decoder's
+# internal `__probe_untracked` measurement arm also enables it); this gate pins
+# exactly where it can come from.
 #
 #   1. a default build of either crate must NOT enable it;
 #   2. the documented implicit sources must (c-ffi, asm, partial_asm) -- if one

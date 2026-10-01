@@ -1,5 +1,7 @@
 # The bounds map: what a guard reserves, what it touches, and who is next to it
 
+> **2026-10:** the experiment features, environment variables and `scripts/perf/` drivers this record uses were removed once their winners shipped (see [DIAGNOSTIC_FEATURES.md](DIAGNOSTIC_FEATURES.md#removed-2026-10)). Check out `087242f1` to reproduce the arms described here.
+
 `--features __probe_bounds` — throwaway, `__`-gated, absent from `default` and
 from every published feature. Source `crates/rav1d-disjoint-mut/src/bounds_probe.rs`,
 drivers `examples/probe_tracker.rs` and `examples/probe_bounds_corpus.rs`,

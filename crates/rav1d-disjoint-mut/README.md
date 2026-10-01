@@ -180,8 +180,14 @@ The primary API is `index()` / `index_mut()`, which return tracked guards. Prefe
 | `std` | yes | Enables `std::thread::panicking()` for mutable guard poisoning on panic. |
 | `aligned` | no | Aligned newtypes (`Align4`..`Align64`) and `AlignedVec32`/`AlignedVec64` for SIMD-friendly layout. |
 | `pic-buf` | no | `PicBuf`: owned byte buffer with alignment offset for `DisjointMut`. |
-| `zerocopy` | no | Zero-copy typed access via zerocopy's `IntoBytes`/`FromBytes` traits. (zerocopy itself is a required dependency; this feature is a no-op kept for compatibility.) |
+| `instrument` | no | Runtime borrow instrumentation (size histograms, concurrency, contention). Implies `std`. |
 | `untracked` | no | Remove overlap tracking from every instance; bounds checks stay on. Opt-in, UB on overlap by design. See above. |
+
+The zerocopy cast API on guards (`cast_slice`, `mut_slice_as`, ...) is always
+available; zerocopy is a required dependency and the former `zerocopy` feature
+was removed. Features prefixed `__` (`__bench`, `__probe_*`) are internal
+measurement tools, outside the supported API; see the repository's
+`docs/DIAGNOSTIC_FEATURES.md`.
 
 ## `no_std` support
 
@@ -193,8 +199,8 @@ Exclusion and reference validity remain enforced in both configurations.
 ## Running tests under Miri
 
 ```bash
-cargo +nightly miri test -p rav1d-disjoint-mut --features aligned,pic-buf,zerocopy --no-fail-fast
-MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test -p rav1d-disjoint-mut --features aligned,pic-buf,zerocopy --no-fail-fast
+cargo +nightly miri test -p rav1d-disjoint-mut --features aligned,pic-buf --no-fail-fast
+MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test -p rav1d-disjoint-mut --features aligned,pic-buf --no-fail-fast
 ```
 
 ## License

@@ -1,5 +1,7 @@
 # The shard-granularity rung across picture size, and the rule that replaces it
 
+> **2026-10:** the experiment features, environment variables and `scripts/perf/` drivers this record uses were removed once their winners shipped (see [DIAGNOSTIC_FEATURES.md](DIAGNOSTIC_FEATURES.md#removed-2026-10)). Check out `087242f1` to reproduce the arms described here.
+
 > **SUPERSEDED IN PART, 2026-08-11 (PR #503).** The derived rule this round built
 > and left default-off **is now the default**; `bps-blocks` is the arm that
 > reverts to the block-count rule. Two consequences for reading this file:

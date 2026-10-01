@@ -20,17 +20,19 @@ see [the pinned published reproducer](../audit/published-disjoint-mut/README.md)
 Current main contains the pointer-guard fix. AV1-input reachability through the
 published decoder has not been established by that reproducer.
 
-Five measurement features could also disable enforcement beneath the safe
-constructor. They now produce a deliberate compilation error:
-`__probe_untracked`, `__probe_noscan`, `__probe_lockonly`, `__probe_tinynop`, and
-`__probe_addnop`. Their double underscores never protected against Cargo
-feature unification. Historical benchmark revisions retain the original
-experiments. The negative build gate verifies the specific safety error, so an
-unrelated build failure cannot satisfy it.
+Four measurement features could also disable enforcement beneath the safe
+constructor: `__probe_noscan`, `__probe_lockonly`, `__probe_tinynop`, and
+`__probe_addnop`. They were first turned into a deliberate compilation error
+and then removed in 2026-10 (reproduce at `087242f1`). Their double underscores
+never protected against Cargo feature unification. The one remaining way to
+disable tracking is the documented opt-in `untracked` mode
+([UNTRACKED_MODE.md](UNTRACKED_MODE.md)), which `scripts/review-feature-gate.sh`
+pins to its documented sources.
 
 The supported safety matrix must be stated explicitly. This review targets the
 sharded tracker with `std` both enabled and disabled, and the production
-`aligned`, `pic-buf`, and `zerocopy` adapters. Decoder `unchecked`, C callbacks,
+`aligned` and `pic-buf` adapters and the zerocopy cast API (unconditional
+since the `zerocopy` feature was removed in 2026-10). Decoder `unchecked`, C callbacks,
 assembly, experimental trackers, and every probe configuration do not inherit
 a universal proof from those checks. Selecting `dangerously_unchecked` requires
 the caller to supply the exclusion proof that the runtime normally provides.

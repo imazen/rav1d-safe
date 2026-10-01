@@ -4,6 +4,19 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Removed
+- Finished A/B experiment features whose winner already ships, in both crates:
+  the tracker tuning ladders (`__shards_*`, `__blockshift_*`, `__bps_*`,
+  `__rpb_*`, `__msb_5`, `__shard_ident`, `__lf_rect1`/`__rect_1shard`,
+  `__probe_shiftpin`, `__probe_lock_*`, `__tracker_legacy`), the already-disabled
+  unsound probes, and the decoder arms `__probe_lf_hull`, `__probe_rect_hull`,
+  `__probe_cdef_double` and `__held_row_guards` with the environment variables
+  they armed (`RAV1D_LF_HULL`, `RAV1D_LF_PERROW`, `RAV1D_LF_DOUBLE`,
+  `RAV1D_RECT_HULL`, `RAV1D_CDEF_DOUBLE`, `RAV1D_PIN_SHIFT`). Shipped behaviour
+  is unchanged. `rav1d-disjoint-mut`'s no-op `zerocopy` feature is gone (its
+  cast API is unconditional). Reproduce any removed arm at `087242f1`; the full
+  table is in [docs/DIAGNOSTIC_FEATURES.md](docs/DIAGNOSTIC_FEATURES.md).
+
 ### Added
 - Release provenance record mapping all 19 published `rav1d-safe` and
   `rav1d-disjoint-mut` versions to their source commits, with

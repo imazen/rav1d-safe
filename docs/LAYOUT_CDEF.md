@@ -1,6 +1,8 @@
 # The code-placement lottery: can it be removed? And the CDEF rectangle, priced
 # against a MEASURED transfer coefficient rather than its ceiling
 
+> **2026-10:** the experiment features, environment variables and `scripts/perf/` drivers this record uses were removed once their winners shipped (see [DIAGNOSTIC_FEATURES.md](DIAGNOSTIC_FEATURES.md#removed-2026-10)). Check out `087242f1` to reproduce the arms described here.
+
 **Read `docs/RECT_SHIP.md` first.** PR #506 established that the `+0.9..1.3%`
 t=1 cost that kept the rectangle record default-off is **code placement, not
 work**: 4,828 bytes of provably-dead `#[used]` text — zero symbols resized,

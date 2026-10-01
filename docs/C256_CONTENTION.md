@@ -1,6 +1,8 @@
 # `c256x2048` at t=8: both remaining levers measured, both refuted, and the
 # mechanism named with a number
 
+> **2026-10:** the experiment features, environment variables and `scripts/perf/` drivers this record uses were removed once their winners shipped (see [DIAGNOSTIC_FEATURES.md](DIAGNOSTIC_FEATURES.md#removed-2026-10)). Check out `087242f1` to reproduce the arms described here.
+
 **Status: NEGATIVE, and the negative is the deliverable.** The two levers this
 round was opened to test — letting the derived shard rule go FINER than the
 block-count answer, and changing the shard lock's waiting policy — are both

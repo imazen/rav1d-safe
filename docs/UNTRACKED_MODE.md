@@ -90,5 +90,6 @@ removal applies.
   the language's rules.
 * Tests that assert tracker refusals, poisoning or the compact-copy policy are
   gated off under this feature (`cfg(not(feature = "untracked"))`).
-* `__probe_untracked` remains as an alias (tracker off, copy path kept) for the
-  historical benchmark scripts.
+* The decoder's internal `__probe_untracked` remains as the measurement arm
+  "tracker off, copy path kept" (it enables only disjoint-mut's `untracked`);
+  disjoint-mut's own `__probe_untracked` alias was removed in 2026-10.

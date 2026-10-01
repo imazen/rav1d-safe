@@ -50,12 +50,11 @@ nice -n 19 cargo test --lib --release -j 6 > "$OUT/lib_release.log" 2>&1 \
   && note lib_release PASS || { note lib_release FAIL; rc_all=1; }
 nice -n 19 cargo test --lib -j 6 > "$OUT/lib_debug.log" 2>&1 \
   && note lib_debug PASS || { note lib_debug FAIL; rc_all=1; }
-# NOT `--all-features`: `__tracker_legacy` + `__probe_bounds` do not compose and
-# never have (`bounds_probe.rs` calls `BorrowTracker::probe_shard_of`, which the
-# legacy tracker has no counterpart for — broken at the base commit too, and the
-# CI workflow says so in a comment). These are CI's own feature sets.
-for tf in "" "--no-default-features" "--features std,__probe_count,__probe_sites" \
-          "--features __rect_1shard"; do
+# NOT `--all-features`: `__probe_count` + `__probe_bounds` do not compose
+# (`bounds_probe.rs` calls `BorrowTracker::probe_shard_of`, which the
+# single-lock tracker has no counterpart for). These are CI's own feature sets.
+# The `__rect_1shard` leg was (removed 2026-10; check out 087242f1 for that arm).
+for tf in "" "--no-default-features" "--features std,__probe_count,__probe_sites"; do
   tag=$(echo "tracker${tf}" | tr -c 'a-zA-Z0-9' '_')
   # shellcheck disable=SC2086
   if nice -n 19 cargo test -p rav1d-disjoint-mut $tf -j 6 > "$OUT/$tag.log" 2>&1; then
@@ -99,11 +98,12 @@ ALIGN=${ALIGN:-4}
 AF="-C llvm-args=-align-all-functions=$ALIGN"
 run_corpus default     ""    ""
 run_corpus "a${ALIGN}"  "$AF" ""
-run_corpus rect1shard  ""    "__lf_rect1"
+# (the `__lf_rect1` single-shard corpus leg was (removed 2026-10; check out 087242f1 for that arm))
 
 echo "== 4. every measurement arm still builds ==" >&2
-for feat in __rows_rect __probe_cdef_double __pad_text __pad_small __pad2 __pad3 \
-            __pad4 __pad_far __lf_rect __lf_rect1 __probe_lf_hull __probe_bounds; do
+# __probe_cdef_double, __lf_rect1 and __probe_lf_hull were (removed 2026-10; check out 087242f1 for that arm).
+for feat in __rows_rect __pad_text __pad_small __pad2 __pad3 \
+            __pad4 __pad_far __lf_rect __probe_bounds; do
   if nice -n 19 cargo build --release --example bench_ab_decode -j 6 --features "$feat" \
        --target-dir "$OUT/tgt" > "$OUT/build_$feat.log" 2>&1; then
     note "build_$feat" rc=0
@@ -130,8 +130,6 @@ run_clippy() { tag=$1; shift; if nice -n 19 cargo clippy "$@" -j 6 -- -D warning
 run_clippy tracker             -p rav1d-disjoint-mut --all-targets
 run_clippy tracker_nodefault   -p rav1d-disjoint-mut --no-default-features --all-targets
 run_clippy lib                 --lib
-run_clippy lib_rect1shard      --lib --features __lf_rect1
-run_clippy lib_cdefdouble      --lib --features __probe_cdef_double
 # NOT `--all-targets`: it is pre-existing-broken in this repo and fails with 79
 # errors on the BASE commit too (verified 2026-08-11 in a throwaway worktree at
 # 3bed711) — dead code in `src/safe_simd/itx_arm*.rs` plus the `compile_error!`

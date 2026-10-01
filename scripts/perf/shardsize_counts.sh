@@ -40,7 +40,7 @@ IFS=' ' read -r -a TAGS <<< "${TAGS:-plain__probebounds bpshalf__probebounds pla
 
 for tag in "${TAGS[@]}"; do
   b="$BIN/pt_$tag"
-  [ -x "$b" ] || { echo "missing $b (run shardsize_build.sh)" >&2; exit 1; }
+  [ -x "$b" ] || { echo "missing $b (shardsize_build.sh was removed in 2026-10; build the arms at 087242f1)" >&2; exit 1; }
   for cell in "${CELLS[@]}"; do
     IFS=: read -r vec t iters <<< "$cell"
     o="$OUT/${tag}__${vec}__t${t}.txt"

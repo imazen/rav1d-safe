@@ -1,5 +1,7 @@
 # The tiled t=8 scaling deficit, attributed
 
+> **2026-10:** the experiment features, environment variables and `scripts/perf/` drivers this record uses were removed once their winners shipped (see [DIAGNOSTIC_FEATURES.md](DIAGNOSTIC_FEATURES.md#removed-2026-10)). Check out `087242f1` to reproduce the arms described here.
+
 **Status: an attribution, not a fix.** Nothing in `src/`, `lib.rs`, `include/`,
 `crates/` or `Cargo.toml` changed on this branch — only `scripts/perf/`, `docs/`
 and `benchmarks/`. Verified: `git diff b700489..HEAD -- src/ lib.rs include/

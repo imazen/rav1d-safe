@@ -96,9 +96,11 @@ data races. `forbid(unsafe_code)` in a caller cannot repair an unsound dependenc
    implementation if every supported adapter already overrides it. Keep
    negative compile checks for guard lifetimes, variance and Send/Sync;
    reproducing historical trait bounds alone is not enough.
-5. **Separate experiments from the distributable safe abstraction.** Current
-   `__probe_untracked`, `__probe_addnop` and related features can deliberately
-   remove exclusion from safe constructors/accesses. A double underscore does
+5. **Separate experiments from the distributable safe abstraction.** At the
+   time of this review `__probe_untracked`, `__probe_addnop` and related
+   features could deliberately remove exclusion from safe constructors/accesses
+   (the `__probe_addnop` family was removed in 2026-10; `untracked` is now the
+   documented opt-in, see UNTRACKED_MODE.md). A double underscore does
    not protect users from Cargo feature unification. Put these experiments in
    an unpublished test variant or patch; no distributable feature should
    silently turn safe calls into unchecked accesses. Verify the packaged

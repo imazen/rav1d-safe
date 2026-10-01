@@ -6,10 +6,10 @@ import tomllib
 
 root = Path(__file__).resolve().parents[1]
 public = {
-    'rav1d-safe': {'default', 'bitdepth_8', 'bitdepth_16', 'unchecked', 'c-ffi',
+    'rav1d-safe': {'default', 'bitdepth_8', 'bitdepth_16', 'untracked', 'c-ffi',
                    'dav1d-compat', 'partial_asm', 'asm', 'asm_arm64_dotprod',
                    'asm_arm64_i8mm', 'asm_arm64_sve2'},
-    'rav1d-disjoint-mut': {'default', 'std', 'aligned', 'pic-buf', 'zerocopy', 'instrument'},
+    'rav1d-disjoint-mut': {'default', 'std', 'aligned', 'pic-buf', 'instrument', 'untracked'},
 }
 features = {}
 for relative in ['Cargo.toml', 'crates/rav1d-disjoint-mut/Cargo.toml']:

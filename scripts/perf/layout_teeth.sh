@@ -15,10 +15,8 @@
 #      FAIL (it asserts a panic that only a mutable record can raise).
 #   4. the rectangle must actually FIRE at both seams under tile threading in
 #      the DEFAULT build: `__probe_wide`'s `n_rect` must be nonzero with 0
-#      declined. A binary whose rectangle never fires measures nothing, and the
-#      `__lf_rect1` arm (accept ONLY single-shard rectangles) must decode to the
-#      same md5 while declining the multi-shard ones — a refusal is never an
-#      approximation.
+#      declined. A binary whose rectangle never fires measures nothing. (The
+#      `__lf_rect1` single-shard control arm was (removed 2026-10; check out 087242f1 for that arm).)
 #   5. the wide path must stay unreached (`w_shards`/`w_blocks`/`w_full` = 0):
 #      a rectangle that promoted to the wide list would degrade to its hull.
 #   6. `forbid(unsafe_code)` proven ACTIVE, not read.
@@ -55,8 +53,6 @@ md5_of() {  # md5_of <features> <threads>
 
 echo "== control ==" >&2
 REF=$(md5_of "" 8);              note control_default_t8 "$REF"
-REFR=$(md5_of "__lf_rect1" 8);   note control_1shard_t8 "$REFR"
-[ "$REF" = "$REFR" ] && note control_arms_agree OK || { note control_arms_agree MISMATCH; }
 
 echo "== 1. rectangle READ path (DEFAULT): rows reversed ==" >&2
 backup include/dav1d/picture.rs > "$OUT/sha_pic_before.txt"
@@ -119,8 +115,6 @@ wide() { # wide <features>
 }
 wide "__probe_wide" > "$OUT/wide_default.txt"
 note wide_default "$(tr '\n' ' ' < "$OUT/wide_default.txt")"
-wide "__probe_wide,__lf_rect1" > "$OUT/wide_1shard.txt"
-note wide_1shard "$(tr '\n' ' ' < "$OUT/wide_1shard.txt")"
 
 echo "== 6. forbid(unsafe_code) proven ACTIVE ==" >&2
 backup src/picture.rs > /dev/null

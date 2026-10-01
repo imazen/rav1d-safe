@@ -1,5 +1,7 @@
 # The `&mut [u8]` recon-kernel refactor, written
 
+> **2026-10:** the experiment features, environment variables and `scripts/perf/` drivers this record uses were removed once their winners shipped (see [DIAGNOSTIC_FEATURES.md](DIAGNOSTIC_FEATURES.md#removed-2026-10)). Check out `087242f1` to reproduce the arms described here.
+
 Round of 2026-08-09. Base `main` @ `cebb97f`. Branch `perf/mut-recon-kernels`.
 
 PR #481 priced this change and did not write it. This writes it, on a band that
