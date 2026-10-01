@@ -144,14 +144,117 @@ only the ratios**:
 | 4K photo, t=4 | 28.8 | 28.6 | 37.6 (**0.77x, worse**) |
 
 Frame threading is a win on small frames and a loss on big ones (each frame gets
-fewer workers and the working set multiplies); that is why it is opt-in. A size-aware
-automatic choice would be a sensible follow-up.
+fewer workers and the working set multiplies). That is what the size-aware automatic
+choice below is for.
+
+## Size-aware automatic frame delay (2026-10-01, later)
+
+`max_frame_delay == 0` with `threads > 1` now resolves from the stream's frame size
+(managed `Decoder` opens on first data and reads the sequence header; rule in
+`size_aware_frame_delay`, `src/lib.rs`). Evidence, rav1d only, `profile_ivf`,
+3 interleaved rounds, **quiet box** (load ~1), ms/frame and ratio to tile-only (delay 1):
+
+| stream | build | t | d1 (tile) | d2 | d4 | d8 |
+|---|---|--:|---:|---:|---:|---:|
+| 480p inter (40 fr) | untracked | 2 | 3.68 | 2.00 (0.54x) | 2.00 | |
+| | tracked | 2 | 5.53 | 3.00 (0.54x) | 3.00 | |
+| | untracked | 4 | 4.05 | 2.12 (0.52x) | 2.25 (0.56x) | |
+| | tracked | 4 | 6.06 | 3.28 (0.54x) | 4.35 (0.72x) | |
+| 720p, 1 tile | untracked | 4 | 0.79 | 0.51 (0.64x) | 0.61 (0.77x) | 0.61 |
+| | tracked | 4 | 1.28 | 0.87 (0.68x) | 1.05 (0.82x) | 1.05 |
+| | untracked | 8 | 0.82 | 0.61 (0.74x) | 0.66 (0.81x) | 0.85 (1.04x) |
+| | tracked | 8 | 1.27 | 0.97 (0.76x) | 1.09 (0.86x) | 1.21 (0.95x) |
+| 1080p, 1 tile | untracked | 4 | 2.03 | 1.38 (0.68x) | 1.45 (0.72x) | 1.51 |
+| | tracked | 4 | 4.02 | 2.73 (0.68x) | 2.69 (0.67x) | 2.68 |
+| | untracked | 8 | 2.07 | 1.48 (0.72x) | 1.57 (0.76x) | 2.03 (0.98x) |
+| | tracked | 8 | 4.20 | 2.89 (0.69x) | 2.99 (0.71x) | 3.10 (0.74x) |
+| 1080p, 4 tile cols | untracked | 4 | 1.25 | 1.18 (0.94x) | 1.43 (1.14x) | 1.20 |
+| | tracked | 4 | 2.50 | 2.65 (1.06x) | 2.79 (1.12x) | 2.79 |
+| | untracked | 8 | 1.22 | 1.10 (0.90x) | 1.22 (1.00x) | 1.58 (1.29x) |
+| | tracked | 8 | 2.49 | 2.28 (0.91x) | 2.24 (0.90x) | 2.65 (1.06x) |
+| 4K photo (40 fr) | untracked | 4 | 10.7 | 12.3 (**1.15x**) | 12.3 | |
+| | tracked | 4 | 17.3 | 24.5 (**1.42x**) | 24.8 | |
+| | untracked | 8 | 11.2 | 7.34 (**0.65x**) | 7.91 (0.70x) | |
+| | tracked | 8 | 16.0 | 15.9 (0.99x) | 16.2 | |
+| 4K intra IVF (16 fr) | untracked | 4 | 11.3 | 13.3 (1.18x) | 14.3 (1.26x) | |
+| | tracked | 4 | 18.0 | 26.1 (1.45x) | 28.1 (1.56x) | |
+| | untracked | 8 | 11.6 | 9.06 (0.78x) | 9.75 (0.84x) | |
+| | tracked | 8 | 16.7 | 18.0 (1.08x) | 19.5 (1.17x) | |
+
+The 720p/1080p streams are 30-frame panning inter clips cropped from the 4K photo and
+encoded with `aomenc` (`--cpu-used=6 --cq-level=32 --lag-in-frames=0`; the 4-tile one
+with `--tile-columns=2`). Reading it:
+
+- Tile-mode decoding of a single-tile frame below 4K does not use more than a couple
+  of threads (720p/1080p are flat from 4 to 8 threads), so a **second frame in flight
+  gives 0.54-0.76x**; deeper pipelines (d4, d8) add working set and are equal or worse
+  in nearly every row. The cap is **2**.
+- **4K stills** scale in tile mode to 4 threads (37 ms at 1 -> 11 ms at 4 untracked)
+  and then stall (11.2 ms at 8); there a second frame loses 1.15-1.45x at 4 threads
+  and wins 0.65-0.78x at 8, but only untracked (tracked 0.99-1.17x at 8).
+- A 4-tile 1080p frame is the weak case: tile threading already scales, a second frame
+  is neutral untracked and 1.06x worse tracked at 4 threads (0.91x better at 8). The
+  frame header's tile count is not available when the context is opened, so this is
+  accepted rather than special-cased.
+
+The rule: 1 thread -> 1; frames under 6 M luma pixels -> 2; larger -> 1, or 2 for
+`untracked` at 8+ threads. Validated with the live tracker as oracle: 803/803 vectors
+at 2, 4 and 8 threads with `--delay 0` in both the tracked and `untracked` builds
+(small conformance streams now frame-thread at 2 contexts), plus tests
+(`src/managed/frame_delay_tests.rs`, mutation-verified). Not verified above 8 threads;
+the cap of 2 is deliberately not extrapolated.
+
+### Three decoders, each in its default parallelism (auto), after this change
+
+dav1d 1.5.3 (`max_frame_delay=0`), libgav1 `main` (`frame_parallel`), rav1d with the
+size-aware auto delay. Same harness and protocol as above, `FIRST_CPU=0`, 4 rounds x 5
+passes. **The box was heavily shared (load ~20, someone else's 12-thread training jobs on
+cores 4-23) so absolute times are ~1.5x inflated for every decoder and the multi-thread
+rows are noisy: read the ratios.** In particular the tracked build's lock-based tracker
+suffers more under oversubscription than the others. A quiet-box rerun is still owed.
+Median ms/frame, ratio to dav1d in parentheses:
+
+| stream | t | dav1d | libgav1 | rav1d untracked | rav1d default |
+|---|--:|---:|---:|---:|---:|
+| 480p inter (150) | 1 | 2.18 | 4.12 (1.89x) | 6.08 (2.79x) | 8.19 (3.76x) |
+| | 4 | 1.17 | 2.92 (2.51x) | 2.94 (2.52x) | 4.45 (3.82x) |
+| | 8 | 1.25 | 2.59 (2.08x) | 3.28 (2.63x) | 4.78 (3.84x) |
+| 720p (30) | 1 | 0.705 | 1.567 (2.22x) | 1.448 (2.05x) | 2.049 (2.91x) |
+| | 4 | 0.440 | 0.848 (1.93x) | 0.773 (1.75x) | 1.446 (3.28x) |
+| | 8 | 0.611 | 0.863 (1.41x) | 0.944 (1.54x) | 1.764 (2.89x) |
+| 1080p (30) | 1 | 2.054 | 3.561 (1.73x) | 3.783 (1.84x) | 5.390 (2.62x) |
+| | 4 | 1.149 | 2.213 (1.93x) | 2.070 (1.80x) | 4.169 (3.63x) |
+| | 8 | 1.364 | 2.200 (1.61x) | 2.562 (1.88x) | 5.636 (4.13x) |
+| 1080p 4-tile (30) | 1 | 2.061 | 3.614 (1.75x) | 3.952 (1.92x) | 5.697 (2.76x) |
+| | 4 | 1.058 | 1.738 (1.64x) | 1.916 (1.81x) | 5.620 (5.31x) |
+| | 8 | 1.036 | 1.871 (1.81x) | 1.732 (1.67x) | 4.159 (4.02x) |
+| 4K photo (40) | 1 | 36.2 | 66.7 (1.84x) | 61.8 (1.70x) | 61.7 (1.70x) |
+| | 4 | 11.09 | 18.89 (1.70x) | 17.38 (1.57x) | 30.09 (2.71x) |
+| | 8 | 7.18 | 19.05 (2.65x) | 10.97 (1.53x) | 26.98 (3.76x) |
+
+Tile mode only (frame delay 1 for everyone), 4 threads, ratio to dav1d: 720p libgav1
+1.04x, untracked 1.70x, default 2.81x; 1080p libgav1 0.96x, untracked 1.76x, default
+3.53x; 1080p 4-tile libgav1 1.73x, untracked 2.00x, default 4.50x.
+
+What this adds to the earlier picture:
+
+- **rav1d untracked is level with libgav1 or better in auto mode** on 720p/1080p and
+  4K (1.5-1.9x dav1d against libgav1's 1.4-2.7x), and the lead grows with threads on 4K
+  (libgav1 stalls at 19 ms from 4 to 8 threads; untracked reaches 11 ms).
+- In **tile mode** libgav1 is level with dav1d on single-tile 720p/1080p (it spends its
+  threads inside a frame well), and rav1d is 1.7-1.8x behind there: the size-aware
+  frame delay recovers that gap on those streams (untracked 720p 1.28 -> 0.77 ms,
+  1080p 3.37 -> 2.07 ms at 4 threads), but dav1d and libgav1 also gain from frame
+  threading, so the ratio to dav1d stays about 1.7-1.8x in both modes.
+- The tracked default build is 2.6-5.3x dav1d on these streams. The multi-tile 1080p row
+  (5.31x at 4 threads, noisy: min 4.2 ms) is the one case where the new auto delay is
+  slightly worse than tile mode for the tracked build (see the sweep above).
 
 ## Where this points
 
 1. ~~Per-row guard splitting for single-tile frames~~ and
-2. ~~frame threading for tracked builds~~: done, see "What was fixed". Remaining
-   there: a size-aware automatic frame-delay choice (big frames get slower with it).
+2. ~~frame threading for tracked builds~~ and ~~a size-aware automatic frame-delay
+   choice~~: done, see "What was fixed" and "Size-aware automatic frame delay".
 3. **Tracker at 1 thread:** 12-24%; the lock RMW is only a sixth of it, so a serial
    backend needs a different data structure.
 4. Kernel targets for stills unchanged: docs/SAFE_VS_DAV1D.md.

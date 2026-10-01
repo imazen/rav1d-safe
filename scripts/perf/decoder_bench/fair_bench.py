@@ -25,7 +25,7 @@ ap.add_argument('--stream', action='append', required=True, metavar='NAME=FILE.i
 ap.add_argument('--threads', default='1,4')
 ap.add_argument('--mode', choices=['tile', 'auto'], default='tile',
                 help='tile: tile/post-filter threading only (frame delay 1); auto: each decoder default parallelism '
-                     '(frame threading where available; rav1d tracked builds cannot frame-thread)')
+                     '(frame threading where available; rav1d sizes it from the frame size)')
 a = ap.parse_args()
 ROUNDS = int(os.environ.get('ROUNDS', '4')); PASSES = int(os.environ.get('PASSES', '5'))
 FIRST = int(os.environ.get('FIRST_CPU', '2'))

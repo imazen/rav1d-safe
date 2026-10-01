@@ -19,12 +19,23 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   instructions at 2 threads 12.83 G -> 7.87 G (1 thread: 7.30 G). Multi-tile frames
   are unchanged. Validated with the live tracker as oracle: 803/803 vectors at 2/4/8
   threads and 640 stress runs, no overlap panics.
-- Frame threading (`max_frame_delay > 1`) is now available in tracked builds when
-  requested explicitly (480p inter at 4 threads: 8.0 -> 4.3 ms/frame under load).
-  Auto (0) stays tile-only there, so `decode()` does not become asynchronous
-  unasked; `untracked` builds keep the auto default. Validated: 803/803 vectors at
+- Frame threading (`max_frame_delay > 1`) is now available in tracked builds
+  (480p inter at 4 threads: 8.0 -> 4.3 ms/frame under load). Validated: 803/803 vectors at
   (2 threads, delay 2), (4, 3) and (8, 4), 640 stress runs, tracked film-grain
   frame-context test. `decode_md5` gained `--delay N`.
+- **Size-aware automatic frame delay** (managed `Decoder`, `max_frame_delay == 0`,
+  `threads > 1`; tracked and `untracked` builds). The `Decoder` now opens its context on
+  the first `decode()`/`send_packet()` and reads the frame size from the sequence
+  header: two frames in flight below about 6 megapixels, tile threading only above
+  (a second frame only for `untracked` at 8+ threads). Measured at 4 and 8 threads:
+  480p-1080p 0.54-0.76x the time of tile-only decoding; 4K at 4 threads, where a second
+  frame loses (1.15-1.45x), stays at one frame. **Behaviour change:** with `threads > 1`
+  and the delay on auto, tracked builds' `decode()` can now return `None` for a small
+  frame that is still in flight (poll `get_frame()`, `flush()` at the end); set
+  `max_frame_delay = 1` for the previous synchronous behaviour. `Decoder::with_settings`
+  still validates its settings immediately; `c-ffi` `dav1d_open` is unchanged (it cannot
+  see the stream) and keeps the thread-count rule. Pure rule:
+  `size_aware_frame_delay` in `src/lib.rs`, mutation-tested.
 - Enum-valued context arrays (`comp_type`, `filter`, `tx`) and `RefMvsBlock.bs`
   store plain bytes with total decoding (`src/plain.rs`); `SegmentId` is a masked
   byte; the 2-pass frame-threading block store is a `Mutex` per slot.

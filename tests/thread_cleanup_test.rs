@@ -80,8 +80,15 @@ fn test_multi_threaded_cleanup() {
 
         let _ = decoder.decode(&[]);
 
-        // Should have spawned workers
-        let workers = count_worker_threads();
+        // Should have spawned workers. With the frame delay on auto the context
+        // opens inside the first `decode()`, and spawned threads register
+        // themselves asynchronously, so wait for them to appear.
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut workers = count_worker_threads();
+        while workers < 4 && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+            workers = count_worker_threads();
+        }
         assert!(workers >= 4, "Expected at least 4 workers, got {}", workers);
     }
 

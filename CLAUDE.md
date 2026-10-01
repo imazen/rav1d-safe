@@ -803,8 +803,12 @@ bitstream through the heic AVIF decode path. Separate from the CDEF race above.
 because reference-frame guards between concurrent frame contexts were feared to conflict.
 Removing the clamp and running the whole corpus with explicit `max_frame_delay` 2-4 at
 2-8 threads (plus stress runs) produced no overlap panics and no md5 mismatches. Tracked
-builds enable it only on an EXPLICIT `max_frame_delay > 1` (it makes `decode()`
-asynchronous); `untracked` builds keep the auto default. See docs/DECODER_COMPARISON.md.
+builds only get it from the core on an EXPLICIT `max_frame_delay > 1`; the managed
+`Decoder` with `max_frame_delay == 0` and `threads > 1` defers its open to the first
+data and picks the delay from the sequence header's frame size
+(`size_aware_frame_delay` in `src/lib.rs`: 2 below ~6 MP, 1 above, 2 for `untracked` at
+8+ threads on large frames). That makes `decode()` asynchronous for small frames; set
+`max_frame_delay = 1` to avoid it. See docs/DECODER_COMPARISON.md.
 
 Reproducer: `cargo test --release --test reproduce_overlap -- --ignored`
 

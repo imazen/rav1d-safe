@@ -188,14 +188,16 @@ pub struct Settings {
     /// [`flush()`](Decoder::flush) once at end of input — it drains every frame still
     /// owed (in flight or queued in the last chunk) before it resets.
     ///
-    /// Tile threading is always available. Decoding multiple frames in flight
-    /// (frame threading, which scales much better on small frames) is automatic with
-    /// the `untracked` feature; in other builds it is opt-in: set
-    /// [`max_frame_delay`](Self::max_frame_delay) above one, otherwise the delay stays
-    /// at one and `decode()` stays effectively synchronous.
+    /// Tile threading is always available. With `threads > 1` and
+    /// [`max_frame_delay`](Self::max_frame_delay) left at `0`, the decoder also keeps
+    /// frames in flight (frame threading, which scales much better on small frames),
+    /// chosen from the frame size in the stream's first sequence header: two frames
+    /// below about 6 megapixels, and for larger frames (4K stills and video) tile
+    /// threading alone, plus a second frame only with the `untracked` feature at 8 or
+    /// more threads. See [`max_frame_delay`](Self::max_frame_delay). Set it to `1`
+    /// to keep `decode()` synchronous.
     /// For stills, additional workers help mainly when the image has multiple
-    /// tiles. Set [`max_frame_delay`](Self::max_frame_delay) to one for explicit
-    /// single-frame latency measurements.
+    /// tiles.
     pub threads: u32,
 
     /// Apply film grain synthesis during decoding
@@ -224,12 +226,20 @@ pub struct Settings {
 
     /// Maximum number of frames in flight for frame threading.
     ///
-    /// * `0` = auto (default, derived from thread count: `min(sqrt(threads), 8)`)
+    /// * `0` = auto (default). With `threads == 1` this is `1`. With more threads the
+    ///   decoder opens on the first `decode()`/`send_packet()` call and sizes the delay
+    ///   from that data's sequence header: `2` for frames under about 6 megapixels
+    ///   (measured 0.54-0.76x the time of tile threading alone from 480p to 1080p at
+    ///   4 and 8 threads), `1` for larger frames, except `2` at 8+ threads in
+    ///   `untracked` builds (4K tile threading stalls there). Data with no readable
+    ///   sequence header falls back to the core's thread-count rule
+    ///   (`min(sqrt(threads), 8)` in `untracked` builds, `1` otherwise). The choice is
+    ///   made once per `Decoder`, not per stream after a `reset()`.
     /// * `1` = no frame threading (tile parallelism only — ideal for still images)
-    /// * `2+` = up to N frames decoded in parallel
+    /// * `2+` = up to N frames decoded in parallel (capped at `threads`)
     ///
-    /// For still image formats (AVIF, HEIC), set this to `1` to get tile-level
-    /// parallelism without frame threading overhead or async decode behavior.
+    /// For still image formats (AVIF, HEIC) that must not turn `decode()` asynchronous,
+    /// set this to `1` to get tile-level parallelism without frame threading.
     pub max_frame_delay: u32,
 
     /// Enforce strict standard compliance.
@@ -578,7 +588,11 @@ impl std::fmt::Display for CpuLevel {
 /// # }
 /// ```
 pub struct Decoder {
-    ctx: Arc<Rav1dContext>,
+    /// `None` only until the first data arrives, when `max_frame_delay == 0` and
+    /// `threads > 1` (see [`Decoder::ensure_open`]).
+    ctx: Option<Arc<Rav1dContext>>,
+    /// Settings of a context whose open is deferred until the frame size is known.
+    deferred: Option<Rav1dSettings>,
     worker_handles: Vec<std::thread::JoinHandle<()>>,
     /// Cooperative cancellation token (issue #412). Kept here as well as in the
     /// context so that on any decode error we can authoritatively report
@@ -698,15 +712,61 @@ impl Decoder {
         crate::src::cpu::rav1d_set_cpu_flags_mask(settings.cpu_level.to_mask());
 
         let rav1d_settings: Rav1dSettings = settings.into();
+        // With the frame delay left on auto and worker threads, the right number
+        // of frames in flight depends on the frame size, which only the first
+        // sequence header tells. Defer the open until the first data arrives.
+        crate::src::lib::rav1d_validate_settings(&rav1d_settings).map_err(|_| Error::InitFailed)?;
+        if crate::src::lib::frame_delay_depends_on_size(&rav1d_settings) {
+            return Ok(Self {
+                ctx: None,
+                deferred: Some(rav1d_settings),
+                worker_handles: Vec::new(),
+                stop: None,
+                input_ended: false,
+                drained: false,
+            });
+        }
         let (ctx, worker_handles) =
             crate::src::lib::rav1d_open(&rav1d_settings).map_err(|_| Error::InitFailed)?;
         Ok(Self {
-            ctx,
+            ctx: Some(ctx),
+            deferred: None,
             worker_handles,
             stop: None,
             input_ended: false,
             drained: false,
         })
+    }
+
+    /// Opens a deferred context, sizing the frame delay from `first_data` (whole
+    /// OBUs). A buffer without a readable sequence header leaves the core's own
+    /// automatic choice in place.
+    fn ensure_open(&mut self, first_data: Option<&[u8]>) -> Result<()> {
+        let Some(mut settings) = self.deferred.take() else {
+            return Ok(());
+        };
+        if let Some(seq_hdr) =
+            first_data.and_then(|data| crate::src::obu::rav1d_find_sequence_header(data).ok())
+        {
+            settings.max_frame_delay = crate::src::lib::auto_frame_delay_for_size(
+                &settings,
+                seq_hdr.max_width as u32,
+                seq_hdr.max_height as u32,
+            );
+        }
+        let (ctx, worker_handles) = match crate::src::lib::rav1d_open(&settings) {
+            Ok(opened) => opened,
+            Err(_) => {
+                self.deferred = Some(settings);
+                return Err(Error::InitFailed.into());
+            }
+        };
+        if self.stop.is_some() {
+            ctx.set_stop(self.stop.clone());
+        }
+        self.ctx = Some(ctx);
+        self.worker_handles = worker_handles;
+        Ok(())
     }
 
     /// Set (or clear with `None`) a cooperative cancellation token (issue #412).
@@ -736,7 +796,9 @@ impl Decoder {
     /// # }
     /// ```
     pub fn set_stop(&mut self, stop: Option<Arc<dyn Stop>>) {
-        self.ctx.set_stop(stop.clone());
+        if let Some(ctx) = &self.ctx {
+            ctx.set_stop(stop.clone());
+        }
         self.stop = stop;
     }
 
@@ -768,7 +830,11 @@ impl Decoder {
         if packet.is_empty() {
             return Err(Error::InvalidData.into());
         }
-        match crate::src::lib::rav1d_send_data(&self.ctx, &mut packet.inner) {
+        self.ensure_open(packet.inner.data.as_deref())?;
+        let Some(ctx) = &self.ctx else {
+            unreachable!("ensure_open opens the context")
+        };
+        match crate::src::lib::rav1d_send_data(ctx, &mut packet.inner) {
             Ok(()) => Ok(SendStatus::Accepted),
             Err(Rav1dError::EAGAIN) => Ok(SendStatus::ReceivePending),
             Err(e) => Err(self.classify_decode_error(e)),
@@ -796,9 +862,17 @@ impl Decoder {
         // The first get_picture following send_data enters drain mode. A second
         // poll is required after EAGAIN to wait for delayed frame-thread output.
         let attempts = if self.input_ended { 2 } else { 1 };
+        // Nothing was ever sent to a still-deferred context, so it has no frames.
+        let Some(ctx) = &self.ctx else {
+            if self.input_ended {
+                self.drained = true;
+                return Ok(ReceiveStatus::EndOfStream);
+            }
+            return Ok(ReceiveStatus::NeedInput);
+        };
         for _ in 0..attempts {
             let mut pic = Rav1dPicture::default();
-            match crate::src::lib::rav1d_get_picture(&self.ctx, &mut pic) {
+            match crate::src::lib::rav1d_get_picture(ctx, &mut pic) {
                 Ok(()) => return Ok(ReceiveStatus::Frame(Frame { inner: pic })),
                 Err(Rav1dError::EAGAIN) => {}
                 Err(e) => return Err(self.classify_decode_error(e)),
@@ -817,7 +891,9 @@ impl Decoder {
     /// Previously returned frames remain valid. Decoder settings and the stop
     /// token are retained. This is a discard operation, not an output drain.
     pub fn reset(&mut self) {
-        crate::src::lib::rav1d_flush(&self.ctx);
+        if let Some(ctx) = &self.ctx {
+            crate::src::lib::rav1d_flush(ctx);
+        }
         self.input_ended = false;
         self.drained = false;
     }
@@ -874,12 +950,16 @@ impl Decoder {
         // an in-flight frame may be decoded synchronously here, so a fired stop
         // token can surface on this call — route it through the same classifier
         // so it reports `Cancelled`, not the raw decode error.
-        crate::src::lib::rav1d_send_data(&self.ctx, &mut rav1d_data)
+        self.ensure_open(Some(data))?;
+        let Some(ctx) = &self.ctx else {
+            unreachable!("ensure_open opens the context")
+        };
+        crate::src::lib::rav1d_send_data(ctx, &mut rav1d_data)
             .map_err(|e| self.classify_decode_error(e))?;
 
         // Try to get a picture
         let mut pic = Rav1dPicture::default();
-        match crate::src::lib::rav1d_get_picture(&self.ctx, &mut pic) {
+        match crate::src::lib::rav1d_get_picture(ctx, &mut pic) {
             Ok(()) => Ok(Some(Frame { inner: pic })),
             Err(Rav1dError::EAGAIN) => Ok(None),
             Err(e) => Err(self.classify_decode_error(e)),
@@ -944,7 +1024,9 @@ impl Decoder {
 impl Drop for Decoder {
     fn drop(&mut self) {
         // Signal worker threads to exit
-        self.ctx.tell_worker_threads_to_die();
+        if let Some(ctx) = &self.ctx {
+            ctx.tell_worker_threads_to_die();
+        }
 
         // Join all worker threads synchronously
         // This is safe because:
@@ -1752,6 +1834,11 @@ pub fn enabled_features() -> String {
 
     features.join(", ")
 }
+
+// The size-aware automatic frame delay and the deferred open it needs; both builds.
+#[cfg(test)]
+#[path = "managed/frame_delay_tests.rs"]
+mod frame_delay_tests;
 
 // Asserts the compact-copy policy, which `untracked` replaces with zero-copy guards.
 #[cfg(all(test, not(feature = "untracked")))]
