@@ -393,7 +393,11 @@ fn dct8_row_coef_pack(_token: Desktop64, c_lo: i16, c_hi: i16) -> __m256i {
 
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct8_row_pass_i16_simd(_token: Desktop64, coeff_col_major: &[i16; 64]) -> [i32; 64] {
+fn dct8_row_pass_i16_simd<const POST_SHIFT: i32>(
+    _token: Desktop64,
+    coeff_col_major: &[i16; 64],
+    post_rnd: i32,
+) -> [i32; 64] {
     // Layout: coeff_col_major[y + x*8] = element x of row y.
     // We process all 8 rows in parallel — ymm lane K corresponds to row K.
     //
@@ -530,12 +534,23 @@ fn dct8_row_pass_i16_simd(_token: Desktop64, coeff_col_major: &[i16; 64]) -> [i3
     cols[6] = clip(_mm256_sub_epi32(tmp1, t6));
     cols[7] = clip(_mm256_sub_epi32(tmp0, t7));
 
-    // Transpose 8x8 i32 col-major → row-major and store.
+    // Transpose 8x8 i32 col-major → row-major, apply the fused intermediate
+    // (v + rnd) >> POST_SHIFT, and store. Callers' col_clip is provably
+    // redundant when row_clip is the i16 range and POST_SHIFT >= 1 (outputs
+    // stay inside [-16384, 16384]), so it is skipped here.
     let rows = transpose_8x8_i32!(cols);
     let mut out = [0i32; 64];
     for y in 0..8 {
         let arr: &mut [i32; 8] = (&mut out[y * 8..y * 8 + 8]).try_into().unwrap();
-        storeu_256!(arr, [i32; 8], rows[y]);
+        let post_rnd_v = _mm256_set1_epi32(post_rnd);
+        let v = if POST_SHIFT == 0 {
+            rows[y]
+        } else if POST_SHIFT == 1 {
+            _mm256_srai_epi32::<1>(_mm256_add_epi32(rows[y], post_rnd_v))
+        } else {
+            _mm256_srai_epi32::<2>(_mm256_add_epi32(rows[y], post_rnd_v))
+        };
+        storeu_256!(arr, [i32; 8], v);
     }
     out
 }
@@ -1027,7 +1042,11 @@ fn dct16_col_pass_i16(_token: Desktop64, tmp_row_major: &[i32; 256]) -> [i32; 25
 /// The odd half uses 4 pmaddwd pairs for stage 1, then i32 mullo for stage 2.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: &[i16; 256]) -> [i32; 256] {
+fn dct16_row_pass_i16_simd<const POST_SHIFT: i32>(
+    _token: Desktop64,
+    coeff_col_major: &[i16; 256],
+    post_rnd: i32,
+) -> [i32; 256] {
     let mut out = [0i32; 256];
 
     let row_min = i16::MIN as i32;
@@ -1298,7 +1317,10 @@ fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: &[i16; 256]) -> [
             cols[15 - k] = clip(_mm256_sub_epi32(even[k], odd[k]));
         }
 
-        // Transpose 16x8 → 8x16 in 2 chunks of 8 columns, store row-major (stride 16).
+        // Transpose 16x8 → 8x16 in 2 chunks of 8 columns, apply the fused
+        // intermediate (v + rnd) >> POST_SHIFT, and store row-major (stride
+        // 16). The callers' col_clip is redundant for 8bpc (POST_SHIFT >= 1
+        // keeps i16-clipped outputs inside [-16384, 16384]); skipped here.
         for chunk in 0..2u32 {
             let b = (chunk * 8) as usize;
             let chunk_cols: [__m256i; 8] = [
@@ -1315,7 +1337,15 @@ fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: &[i16; 256]) -> [
             for r in 0..8 {
                 let dst_off = (y_base + r) * 16 + b;
                 let arr: &mut [i32; 8] = (&mut out[dst_off..dst_off + 8]).try_into().unwrap();
-                storeu_256!(arr, [i32; 8], rows[r]);
+                let post_rnd_v = _mm256_set1_epi32(post_rnd);
+                let v = if POST_SHIFT == 0 {
+                    rows[r]
+                } else if POST_SHIFT == 1 {
+                    _mm256_srai_epi32::<1>(_mm256_add_epi32(rows[r], post_rnd_v))
+                } else {
+                    _mm256_srai_epi32::<2>(_mm256_add_epi32(rows[r], post_rnd_v))
+                };
+                storeu_256!(arr, [i32; 8], v);
             }
         }
     }
@@ -1338,7 +1368,11 @@ fn dct16_row_pass_i16_simd(_token: Desktop64, coeff_col_major: &[i16; 256]) -> [
 /// `row_min = i16::MIN as i32`, `row_max = i16::MAX as i32`.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn dct32_row_pass_i16_simd(_token: Desktop64, coeff_col_major: &[i16; 1024]) -> [i32; 1024] {
+fn dct32_row_pass_i16_simd<const POST_SHIFT: i32>(
+    _token: Desktop64,
+    coeff_col_major: &[i16; 1024],
+    post_rnd: i32,
+) -> [i32; 1024] {
     let mut out = [0i32; 1024];
     let build_pair = dct8_row_build_pair;
     let coef_pack = dct8_row_coef_pack;
@@ -1904,7 +1938,10 @@ fn dct32_row_pass_i16_simd(_token: Desktop64, coeff_col_major: &[i16; 1024]) -> 
         cols[30] = clip(_mm256_sub_epi32(dct16_o[1], t30a));
         cols[31] = clip(_mm256_sub_epi32(dct16_o[0], t31));
 
-        // Transpose 32x8 -> 8x32 in 4 chunks of 8 columns, store row-major.
+        // Transpose 32x8 -> 8x32 in 4 chunks of 8 columns, apply the fused
+        // intermediate (v + rnd) >> POST_SHIFT, and store row-major. The
+        // callers' col_clip is redundant for 8bpc (row output is i16-clipped
+        // and >>2 keeps it inside [-8192, 8192]); skipped here.
         for chunk in 0..4 {
             let b = chunk * 8;
             let chunk_cols: [__m256i; 8] = [
@@ -1921,7 +1958,15 @@ fn dct32_row_pass_i16_simd(_token: Desktop64, coeff_col_major: &[i16; 1024]) -> 
             for row in 0..8 {
                 let y = y_base + row;
                 let arr: &mut [i32; 8] = (&mut out[y * 32 + b..y * 32 + b + 8]).try_into().unwrap();
-                storeu_256!(arr, [i32; 8], rows[row]);
+                let post_rnd_v = _mm256_set1_epi32(post_rnd);
+                let v = if POST_SHIFT == 0 {
+                    rows[row]
+                } else if POST_SHIFT == 1 {
+                    _mm256_srai_epi32::<1>(_mm256_add_epi32(rows[row], post_rnd_v))
+                } else {
+                    _mm256_srai_epi32::<2>(_mm256_add_epi32(rows[row], post_rnd_v))
+                };
+                storeu_256!(arr, [i32; 8], v);
             }
         }
     }
@@ -4833,3 +4878,6 @@ impl_simd_row_rect_16bpc!(
     8,
     16
 );
+
+// 32-point rows: 32x32 (8 rows per call), tmp stride 32.
+impl_simd_row_rect_16bpc!(simd_row_dct32_16bpc_8rows, dct32_1d_cols8, 32, 8, 32);

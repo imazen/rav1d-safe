@@ -225,3 +225,30 @@ fixed_array[i..i+2].try_into().unwrap())` to one unaligned load + bounds
 check, so the table's 128-entry fill is pure overhead. Lesson: check what a
 `try_into()` pair-load on a *fixed-size* array actually emits before
 "optimizing" the gather; the cheap version is already there.
+
+## §12 — 2026-10-01: itx row-pass fusion + 16bpc SIMD row passes
+
+**Win — fused intermediate shift into the i16-packed row passes.** The square
+DCT_DCT 8bpc paths staged row output through a scratch `[i32; N]`, then ran a
+second elementwise pass applying `(v + rnd) >> shift` + col_clip into `tmp`.
+`dct{8,16,32}_row_pass_i16_simd` now take `const POST_SHIFT: i32` + a scalar
+`post_rnd` and apply the shift at their transpose-store stage, deleting the
+scratch copy loop entirely (128 loads + 128 stores on 32x32, 32+32 on 16x16,
+8+8 on 8x8). The post-shift `col_clip` is provably redundant for 8bpc — row
+output is already clipped to i16 and >>2 keeps it inside [-8192, 8192] — so it
+is dropped (the next stage's i16 pack saturates identically anyway).
+4K intra IVF ×2 decodes: **37.620B → 37.515B Ir (−105M, −0.28%)**; stream
+bit-exact vs dav1d.
+
+**Win — 16bpc 16x16/32x32 DCT_DCT row passes.** Both ran a *scalar* `dct16_1d`
+/`dct32_1d` call per row plus a per-element `Into<i32>` scratch gather. The
+`impl_simd_row_rect_16bpc!` macro already generated `simd_row_dct16_16bpc_8rows`
+(used by the mixed 16x16 16bpc transforms); added the missing
+`simd_row_dct32_16bpc_8rows` instantiation and rewired both inners to process
+8 rows per call through `dct{16,32}_1d_cols8` lanes. 10-bit IVF ×20:
+**−17.7M Ir (−0.93%)** — small because that vector has few large blocks; the
+structural fix matters more on dense high-res 10/12-bit content.
+
+Pattern: when a pass ends in transpose+store, fold the consumer's first
+elementwise stage into the store — don't materialize an intermediate buffer
+just to rescale it.

@@ -1476,28 +1476,16 @@ fn inv_txfm_add_dct_dct_8x8_8bpc_avx2_inner(
     // col_clip_min/max = i16::MIN/MAX
     let _row_clip_min = i16::MIN as i32;
     let _row_clip_max = i16::MAX as i32;
-    let col_clip_min = i16::MIN as i32;
-    let col_clip_max = i16::MAX as i32;
 
     // Load coefficients and convert to i32 row-major
     // Input is column-major: coeff[y + x * 8]
-    let mut tmp = [0i32; 64];
-
-    // i16-packed pmaddwd row pass (T-5 #5: bit-exact proven against scalar reference).
-    {
-        let coeff_arr: &[i16; 64] = coeff.as_slice()[..64].try_into().unwrap();
-        let raw = dct8_row_pass_i16_simd(_token, coeff_arr);
-        // Apply intermediate shift (rnd=1, shift=1 for 8x8) + clip to col range.
-        let rnd_v = _mm256_set1_epi32(1);
-        let col_min_v = _mm256_set1_epi32(col_clip_min);
-        let col_max_v = _mm256_set1_epi32(col_clip_max);
-        for y in 0..8 {
-            let v = loadu_256!(&raw[y * 8..y * 8 + 8], [i32; 8]);
-            let shifted = _mm256_srai_epi32::<1>(_mm256_add_epi32(v, rnd_v));
-            let clipped = _mm256_max_epi32(_mm256_min_epi32(shifted, col_max_v), col_min_v);
-            storeu_256!(&mut tmp[y * 8..y * 8 + 8], [i32; 8], clipped);
-        }
-    }
+    // i16-packed pmaddwd row pass (T-5 #5: bit-exact proven against scalar
+    // reference) with the intermediate (v + 1) >> 1 fused into its store
+    // stage. The col_clip the scalar reference applies here is redundant: row
+    // pass output is already clipped to i16 and >>1 keeps it inside
+    // [-16384, 16384].
+    let coeff_arr: &[i16; 64] = coeff.as_slice()[..64].try_into().unwrap();
+    let tmp = dct8_row_pass_i16_simd::<1>(_token, coeff_arr, 1);
 
     // Column transform: i16-packed pmaddwd (replaces i32 mullo column pass)
     let col_out = dct8_col_pass_i16(_token, &tmp);

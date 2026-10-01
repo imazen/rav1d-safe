@@ -489,22 +489,12 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_avx2_inner(
     let col_clip_min = i16::MIN as i32;
     let col_clip_max = i16::MAX as i32;
 
-    // SIMD row transform via pmaddwd-based dct32_row_pass_i16_simd.
-    // No rect2 for 32x32. Row clips handled internally.
-    // Post-process: round+shift+clip to col range (shift=2, rnd=2).
+    // SIMD row transform via pmaddwd-based dct32_row_pass_i16_simd, with the
+    // intermediate (v + 2) >> 2 fused into its store stage. No rect2 for
+    // 32x32. Row clips handled internally; the caller's col_clip after the
+    // shift is redundant for 8bpc (i16-clipped >>2 stays inside [-8192,8192]).
     let raw_coeff: &[i16; 1024] = coeff.as_slice()[..1024].try_into().unwrap();
-    let mut tmp = dct32_row_pass_i16_simd(_token, raw_coeff);
-    {
-        let rnd_v = _mm256_set1_epi32(2);
-        let col_min_v = _mm256_set1_epi32(col_clip_min);
-        let col_max_v = _mm256_set1_epi32(col_clip_max);
-        for i in (0..1024).step_by(8) {
-            let v = loadu_256!(&tmp[i..i + 8], [i32; 8]);
-            let rounded = _mm256_srai_epi32::<2>(_mm256_add_epi32(v, rnd_v));
-            let clamped = _mm256_max_epi32(_mm256_min_epi32(rounded, col_max_v), col_min_v);
-            storeu_256!(&mut tmp[i..i + 8], [i32; 8], clamped);
-        }
-    }
+    let mut tmp = dct32_row_pass_i16_simd::<2>(_token, raw_coeff, 2);
     // SIMD column transform: 8 columns x 4 chunks
     dct32x32_cols_simd(_token, &mut tmp, col_clip_min, col_clip_max);
     if let Some(t512) = crate::src::cpu::summon_avx512() {
@@ -739,17 +729,27 @@ fn inv_txfm_add_dct_dct_32x32_16bpc_avx2_inner(
     let col_clip_max = !col_clip_min;
 
     let mut tmp = [0i32; 1024];
-    inv_txfm_32x32_inner(
-        &mut tmp,
-        &*coeff,
-        dct32_1d,
-        // Column pass: SIMD below
-        |_, _, _, _| {},
-        row_clip_min,
-        row_clip_max,
-        col_clip_min,
-        col_clip_max,
-    );
+    // Row transform: SIMD, 8 rows per call via dct32_1d_cols8 lanes
+    // (no rect2, rnd=2, shift=2 for 32x32).
+    {
+        let coeff_slice = coeff.as_slice();
+        for y_base in [0usize, 8, 16, 24] {
+            simd_row_dct32_16bpc_8rows(
+                _token,
+                coeff_slice,
+                32,
+                y_base,
+                false,
+                2,
+                2,
+                &mut tmp[..],
+                row_clip_min,
+                row_clip_max,
+                col_clip_min,
+                col_clip_max,
+            );
+        }
+    }
     // SIMD column transform
     dct32x32_cols_simd(_token, &mut tmp, col_clip_min, col_clip_max);
     #[cfg(target_arch = "x86_64")]

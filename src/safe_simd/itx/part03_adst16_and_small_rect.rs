@@ -383,31 +383,12 @@ fn inv_txfm_add_dct_dct_16x16_8bpc_avx2_inner(
     // For 8bpc: row_clip = col_clip = i16 range
     let _row_clip_min = i16::MIN as i32;
     let _row_clip_max = i16::MAX as i32;
-    let col_clip_min = i16::MIN as i32;
-    let col_clip_max = i16::MAX as i32;
-    let mut tmp = [0i32; 256];
-
-    // SIMD row transform via i16-packed pmaddwd DCT-16.
-    {
-        let coeff_arr: &[i16; 256] = coeff.as_slice()[..256].try_into().unwrap();
-        let raw = dct16_row_pass_i16_simd(_token, coeff_arr);
-
-        // Apply rnd=2, shift=2, col_clip (same post-processing as
-        // simd_row_dct16_8bpc_8rows with shift=2, rnd=2).
-        let rnd_v = _mm256_set1_epi32(2);
-        let col_min_v = _mm256_set1_epi32(col_clip_min);
-        let col_max_v = _mm256_set1_epi32(col_clip_max);
-        for y in 0..16 {
-            for chunk in 0..2u32 {
-                let b = (chunk * 8) as usize;
-                let off = y * 16 + b;
-                let v = loadu_256!(&raw[off..off + 8], [i32; 8]);
-                let shifted = _mm256_srai_epi32::<2>(_mm256_add_epi32(v, rnd_v));
-                let clamped = _mm256_max_epi32(_mm256_min_epi32(shifted, col_max_v), col_min_v);
-                storeu_256!(&mut tmp[off..off + 8], [i32; 8], clamped);
-            }
-        }
-    }
+    // SIMD row transform via i16-packed pmaddwd DCT-16, with the intermediate
+    // (v + 2) >> 2 fused into its store stage. The col_clip the scalar
+    // reference applies after the shift is redundant: row output is already
+    // i16-clipped and >>2 keeps it inside [-8192, 8192].
+    let coeff_arr: &[i16; 256] = coeff.as_slice()[..256].try_into().unwrap();
+    let tmp = dct16_row_pass_i16_simd::<2>(_token, coeff_arr, 2);
 
     // Column transform: i16-packed pmaddwd (replaces i32 mullo dct16x16_cols_simd)
     let col_out = dct16_col_pass_i16(_token, &tmp);
@@ -518,20 +499,25 @@ fn inv_txfm_add_dct_dct_16x16_16bpc_avx2_inner(
     let col_clip_max = !col_clip_min;
     let mut tmp = [0i32; 256];
 
-    // Row transform (shift = 2 for 16x16)
-    let rnd = 2;
-    let shift = 2;
-
-    for y in 0..16 {
-        // Load row from column-major
-        let mut scratch = [0i32; 16];
-        for x in 0..16 {
-            scratch[x] = coeff[y + x * 16] as i32;
-        }
-        dct16_1d(&mut scratch[..16], 1, row_clip_min, row_clip_max);
-        // Apply intermediate shift and store row-major
-        for x in 0..16 {
-            tmp[y * 16 + x] = iclip((scratch[x] + rnd) >> shift, col_clip_min, col_clip_max);
+    // Row transform: SIMD, 8 rows per call via dct16_1d_cols8 lanes
+    // (no rect2, rnd=2, shift=2 for 16x16).
+    {
+        let coeff_slice = coeff.as_slice();
+        for y_base in [0usize, 8] {
+            simd_row_dct16_16bpc_8rows(
+                _token,
+                coeff_slice,
+                16,
+                y_base,
+                false,
+                2,
+                2,
+                &mut tmp[..],
+                row_clip_min,
+                row_clip_max,
+                col_clip_min,
+                col_clip_max,
+            );
         }
     }
 
