@@ -221,8 +221,7 @@ fn mask_edges_inter_inner(
         for y in 0..h4 {
             let mask = 1u32 << (by4 + y);
             let sidx = (mask >= 0x10000) as usize;
-            acc[cmp::min(txa[0][0][y][0], l[y]) as usize][sidx] |=
-                (mask >> (sidx << 4)) as u16;
+            acc[cmp::min(txa[0][0][y][0], l[y]) as usize][sidx] |= (mask >> (sidx << 4)) as u16;
         }
         for (lvl, pair) in acc.iter().enumerate() {
             for (sidx, m) in pair.iter().enumerate() {
@@ -241,8 +240,7 @@ fn mask_edges_inter_inner(
         for x in 0..w4 {
             let mask = 1u32 << (bx4 + x);
             let sidx = (mask >= 0x10000) as usize;
-            acc[cmp::min(txa[1][0][0][x], a[x]) as usize][sidx] |=
-                (mask >> (sidx << 4)) as u16;
+            acc[cmp::min(txa[1][0][0][x], a[x]) as usize][sidx] |= (mask >> (sidx << 4)) as u16;
         }
         for (lvl, pair) in acc.iter().enumerate() {
             for (sidx, m) in pair.iter().enumerate() {
