@@ -10,6 +10,7 @@ use crate::src::align::AlignedVec64;
 use crate::src::cpu::CpuFlags;
 use crate::src::disjoint_mut::DisjointMut;
 use crate::src::disjoint_mut::DisjointMutArcSlice;
+#[cfg(feature = "asm")]
 use crate::src::disjoint_mut::DisjointMutGuard;
 use crate::src::disjoint_mut::DisjointMutSlice;
 #[cfg(not(feature = "asm"))]
@@ -495,51 +496,55 @@ impl splat_mv::Fn {
         bh4: usize,
     ) {
         let offset = (b4.y as usize & 31) + 5;
-        let len = bh4;
         let bx4 = b4.x as usize;
-
-        type Guard<'a> = DisjointMutGuard<'a, AlignedVec64<RefMvsBlock>, [RefMvsBlock]>;
-
-        let mut r_guards: [Option<Guard<'_>>; 37] = [const { None }; 37];
-        let r_indices = &rt.r[offset..][..len];
-        let r_guards = &mut r_guards[offset..][..len];
-
-        for i in 0..len {
-            let ri = r_indices[i];
-            if ri < rf.r.len() - R_PAD {
-                let guard = rf.r.index_mut((ri + bx4.., ..bw4));
-                r_guards[i] = Some(guard);
-            }
-        }
+        let r_indices = &rt.r[offset..][..bh4];
 
         cfg_if::cfg_if! {
             if #[cfg(feature = "asm")] {
-                let mut r_ptrs = [ptr::null_mut::<RefMvsBlock>(); 37];
-                let r_ptrs = &mut r_ptrs[offset..][..len];
-                for i in 0..len {
-                    if let Some(ref mut guard) = r_guards[i] {
-                        // SAFETY: The above `index_mut` starts at `ri + bx4`, so we can safely index `bx4` backwards.
-                        let ptr = unsafe { guard.as_mut_ptr().sub(bx4) };
-                        r_ptrs[i] = ptr;
+                type Guard<'a> = DisjointMutGuard<'a, AlignedVec64<RefMvsBlock>, [RefMvsBlock]>;
+
+                // The asm kernel needs every row pointer live across one call,
+                // so rows go through in chunks. The scratch is CHUNK entries, not
+                // the 37-entry worst case: zero-initialising two 37-entry arrays
+                // (guards + pointers) was ~1.5 KB of memset, as two libc calls,
+                // on EVERY call (~1200 calls per 480p inter frame; dav1d: none).
+                const CHUNK: usize = 8;
+                for rows in r_indices.chunks(CHUNK) {
+                    let mut r_guards: [Option<Guard<'_>>; CHUNK] = [const { None }; CHUNK];
+                    let mut r_ptrs = [ptr::null_mut::<RefMvsBlock>(); CHUNK];
+                    for (i, &ri) in rows.iter().enumerate() {
+                        if ri < rf.r.len() - R_PAD {
+                            r_guards[i] = Some(rf.r.index_mut((ri + bx4.., ..bw4)));
+                        }
+                    }
+                    for (i, guard) in r_guards[..rows.len()].iter_mut().enumerate() {
+                        if let Some(guard) = guard {
+                            // SAFETY: The above `index_mut` starts at `ri + bx4`, so we can safely index `bx4` backwards.
+                            r_ptrs[i] = unsafe { guard.as_mut_ptr().sub(bx4) };
+                        }
+                    }
+                    let rr = r_ptrs.as_mut_ptr();
+                    let bx4 = b4.x as _;
+                    let bw4 = bw4 as _;
+                    let bh4 = rows.len() as _;
+                    // SAFETY: Unsafe asm call. `rr` is `rows.len()` elements long,
+                    // and each ptr in `rr` points to at least `bx4 + bw4` elements,
+                    // which is what will be accessed in `splat_mv`.
+                    unsafe { self.get()(rr, rmv, bx4, bw4, bh4) };
+                    // `r_guards` drop here, releasing this chunk's DisjointMut borrows.
+                }
+            } else {
+                // Safe dispatch: fill each row as its guard is taken, no scratch
+                // array. The rows are disjoint, so holding them all at once (as
+                // the asm path must) buys nothing here.
+                for &ri in r_indices {
+                    if ri < rf.r.len() - R_PAD {
+                        let mut guard = rf.r.index_mut((ri + bx4.., ..bw4));
+                        splat_mv_rust(core::iter::once(&mut *guard), rmv);
                     }
                 }
-                let rr = r_ptrs.as_mut_ptr();
-                let bx4 = b4.x as _;
-                let bw4 = bw4 as _;
-                let bh4 = bh4 as _;
-                // SAFETY: Unsafe asm call. `rr` is `bh4` elements long,
-                // and each ptr in `rr` points to at least `bx4 + bw4` elements,
-                // which is what will be accessed in `splat_mv`.
-                unsafe { self.get()(rr, rmv, bx4, bw4, bh4) };
-            } else {
-                // Safe dispatch: fill each guard's slice directly
-                let rr = r_guards.iter_mut().filter_map(|g| {
-                    g.as_mut().map(|guard| &mut **guard)
-                });
-                splat_mv_rust(rr, rmv);
             }
         }
-        // r_guards drop automatically here, releasing DisjointMut borrows
     }
 }
 

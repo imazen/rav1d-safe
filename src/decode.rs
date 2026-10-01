@@ -664,7 +664,7 @@ fn findoddzero(buf: &[u8]) -> bool {
 
 /// ORDER_TAIL[m][k] = the k-th smallest palette index whose bit is not set in
 /// `m`. Lets `order_palette` fill the tail of each 8-entry order permutation
-/// with one fixed-size copy instead of an 8-iteration bit scan.
+/// with one fixed-size (u64) merge instead of an 8-iteration bit scan.
 static ORDER_TAIL: [[u8; 8]; 256] = {
     let mut t = [[0u8; 8]; 256];
     let mut m = 0usize;
@@ -708,11 +708,16 @@ fn order_palette(
 
         assert!(have_left || have_top);
 
+        // The head of this 8-entry order is built in a register (one byte per
+        // `add`) and merged with `ORDER_TAIL` as a u64, so there is no
+        // variable-length slice copy: that lowered to a libc `memcpy` call per
+        // palette pixel (~200k calls per 4K frame, vs ~0 in dav1d's C).
         let mut mask = 0u8;
-        let mut o_idx = 0;
+        let mut head = 0u64;
+        let mut o_idx = 0u32;
         let mut add = |v: u8| {
             assert!(v < u8::BITS as u8);
-            order[o_idx] = v;
+            head |= (v as u64) << (8 * o_idx);
             o_idx += 1;
             mask |= 1 << v;
         };
@@ -750,8 +755,12 @@ fn order_palette(
                 add(tl);
             }
         }
-        let o_idx = mask.count_ones() as usize;
-        order[o_idx..].copy_from_slice(&ORDER_TAIL[mask as usize][..8 - o_idx]);
+        let o_idx = mask.count_ones();
+        let tail = u64::from_le_bytes(ORDER_TAIL[mask as usize]);
+        // Keep only the first `o_idx` head bytes, exactly as the old tail copy
+        // overwrote everything from `o_idx` on.
+        let head = head & ((1u64 << (8 * o_idx)) - 1);
+        *order = (head | (tail << (8 * o_idx))).to_le_bytes();
         have_top = true;
         offset += stride - 1;
     }

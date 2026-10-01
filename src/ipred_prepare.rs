@@ -42,7 +42,15 @@ fn px_copy_n<T: Copy, const N: usize>(dst: &mut [T], src: &[T]) {
 #[inline(always)]
 fn px_copy<T: Copy>(dst: &mut [T], src: &[T], n: usize) {
     match n {
+        // Small edge runs (4-pixel units): without fixed-size arms these fell
+        // through to `copy_from_slice`, i.e. a libc `memcpy` call per run.
+        4 => px_copy_n::<T, 4>(dst, src),
+        8 => px_copy_n::<T, 8>(dst, src),
+        12 => px_copy_n::<T, 12>(dst, src),
         16 => px_copy_n::<T, 16>(dst, src),
+        20 => px_copy_n::<T, 20>(dst, src),
+        24 => px_copy_n::<T, 24>(dst, src),
+        28 => px_copy_n::<T, 28>(dst, src),
         32 => px_copy_n::<T, 32>(dst, src),
         48 => px_copy_n::<T, 48>(dst, src),
         64 => px_copy_n::<T, 64>(dst, src),
