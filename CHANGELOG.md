@@ -4,7 +4,36 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Added
+- Opt-in `untracked` feature (docs/UNTRACKED_MODE.md): no `DisjointMut` overlap
+  tracking and, under tile threading, zero-copy in-place pixel access instead of
+  the compact copy-in / diff-write-back path. Slice bounds checks stay on. On the
+  4K stream: 42.7 -> 37.6 ms/frame at 1 thread, 18.3 -> 11.6 at 4 threads.
+  Overlap is formally UB by design; every `DisjointMut` element is now `PlainData`
+  (all bit patterns valid) so a load is always a valid value. `c-ffi`, `asm` and
+  `partial_asm` imply it. `managed::is_untracked()` reports it.
+- `rav1d-disjoint-mut` 0.4.0 (breaking, see its CHANGELOG): `PlainData` element
+  bound, `untracked`, a poison/empty-range fix and an overflow fix in the cast API.
+- Tools and write-ups for finding where we lose to dav1d:
+  `docs/SAFE_VS_DAV1D.md`, `docs/ASM_VS_DAV1D.md`, `scripts/perf/{cg_lines.py,
+  family_compare.py,libc_call_shim.c}`.
+
+### Changed
+- Enum-valued context arrays (`comp_type`, `filter`, `tx`) and `RefMvsBlock.bs`
+  store plain bytes with total decoding (`src/plain.rs`); `SegmentId` is a masked
+  byte; the 2-pass frame-threading block store is a `Mutex` per slot.
+- Removed per-call libc `memset`/`memcpy` in three hot spots: the `splat_mv`
+  scratch arrays, `order_palette`'s variable-length copy and `px_copy`'s small
+  fall-through (bit-exact on all 803 vectors).
+- Frame threading (`max_frame_delay > 1`) is gated on `untracked` (previously
+  `unchecked`).
+
 ### Removed
+- **Breaking:** the `unchecked` feature. Its bounds-unchecked SIMD loads/stores
+  measured 0% (within -1.7%..+1.3%, both signs) and its tracking removal only
+  covered four `dm_new` call sites. Use `untracked`. `managed::is_unchecked()` is
+  now `is_untracked()`; `include::dav1d::picture::{cdef_double_reads,
+  rect_hull_arm}` are gone.
 - Finished A/B experiment features whose winner already ships, in both crates:
   the tracker tuning ladders (`__shards_*`, `__blockshift_*`, `__bps_*`,
   `__rpb_*`, `__msb_5`, `__shard_ident`, `__lf_rect1`/`__rect_1shard`,
@@ -13,8 +42,8 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   `__probe_cdef_double` and `__held_row_guards` with the environment variables
   they armed (`RAV1D_LF_HULL`, `RAV1D_LF_PERROW`, `RAV1D_LF_DOUBLE`,
   `RAV1D_RECT_HULL`, `RAV1D_CDEF_DOUBLE`, `RAV1D_PIN_SHIFT`). Shipped behaviour
-  is unchanged. `rav1d-disjoint-mut`'s no-op `zerocopy` feature is gone (its
-  cast API is unconditional). Reproduce any removed arm at `087242f1`; the full
+  is unchanged. `rav1d-disjoint-mut`'s `zerocopy` feature is gone (the cast API it gated is now
+  unconditional). Reproduce any removed arm at `087242f1`; the full
   table is in [docs/DIAGNOSTIC_FEATURES.md](docs/DIAGNOSTIC_FEATURES.md).
 
 ### Added

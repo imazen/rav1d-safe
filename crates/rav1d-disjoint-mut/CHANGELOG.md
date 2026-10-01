@@ -2,9 +2,10 @@
 
 All notable changes to `rav1d-disjoint-mut` are documented in this file. Format follows [Keep a Changelog](https://keepachangelog.com/). Versions before `0.3.1` were not changelogged; see git history.
 
-## [Unreleased]
+## [0.4.0] - 2026-10-01
 
-Breaking: needs a 0.4.0 bump when released.
+Breaking release (see "Changed (breaking)" and "Removed"). The 0.3 line continues
+on the `release/disjoint-mut-0.3` branch.
 
 ### Changed (breaking)
 - `AsMutPtr::Target` / `ExternalAsMutPtr::Target` and the container impls now
