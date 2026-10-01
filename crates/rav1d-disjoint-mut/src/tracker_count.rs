@@ -1,10 +1,13 @@
-//! Legacy single-lock borrow tracker (pre-sharding).
+//! Single-lock borrow tracker instrumented by the `__probe_count` contention
+//! probe.
 //!
-//! Kept so the throwaway `__probe_*` decomposition arms from the 2026-08-07
-//! recon (`benchmarks/tracker_decomp_2026-08-07.meta`) stay reproducible: those
-//! arms measure THIS tracker, which is the baseline the sharded one is scored
-//! against. Selected only when a `__probe_*` feature is on; the default build
-//! uses [`crate::tracker_shard`].
+//! This is the pre-sharding tracker (formerly `tracker_legacy.rs`). It stays
+//! because `__probe_count` measures THIS tracker -- the baseline the sharded one
+//! was scored against (`benchmarks/tracker_decomp_2026-08-07.meta`). Selected
+//! only when `__probe_count` is on; every other build uses
+//! [`crate::tracker_shard`]. The un-instrumented `__tracker_legacy` A/B arm and
+//! the `__probe_noscan` / `__probe_lockonly` / `__probe_shardsim` arms were
+//! removed in 2026-10; check out `087242f1` to reproduce them.
 
 use super::*;
 use core::panic::Location;
@@ -24,21 +27,9 @@ impl TinyLock {
         Self(AtomicBool::new(false))
     }
 
-    #[inline(always)]
-    fn lock(&self) -> TinyGuard<'_> {
-        // Fast path: swap is cheaper than compare_exchange for uncontended locks.
-        // On x86_64, `xchg` is simpler than `lock cmpxchg`.
-        if self.0.swap(true, Ordering::Acquire) {
-            // Contended — spin. This should essentially never happen in rav1d.
-            self.lock_slow();
-        }
-        TinyGuard(&self.0)
-    }
-
     /// THROWAWAY probe variant: also reports whether the acquisition was
     /// contended and, if so, how many nanoseconds it spun. The uncontended
     /// fast path takes no clock reading at all, so it is undistorted.
-    #[cfg(feature = "__probe_count")]
     #[inline(always)]
     fn lock_probe(&self) -> (TinyGuard<'_>, u64, bool) {
         if self.0.swap(true, Ordering::Acquire) {
@@ -293,7 +284,6 @@ pub(super) struct BorrowTracker {
     slots: UnsafeCell<BorrowSlots>,
     poisoned: AtomicBool,
     /// THROWAWAY probe: lazily-assigned per-instance stats slot.
-    #[cfg(feature = "__probe_count")]
     probe_slot: core::sync::atomic::AtomicU32,
 }
 
@@ -302,7 +292,7 @@ unsafe impl Send for BorrowTracker {}
 unsafe impl Sync for BorrowTracker {}
 
 impl BorrowTracker {
-    /// The legacy tracker has one exclusion domain regardless of these hints.
+    /// This tracker has one exclusion domain regardless of these hints.
     pub fn configure_parallelism(&mut self, _len: usize, _threads: usize, _tiles: usize) {}
 
     pub fn new(_len: usize) -> Self {
@@ -310,12 +300,11 @@ impl BorrowTracker {
             lock: TinyLock::new(),
             slots: UnsafeCell::new(BorrowSlots::new()),
             poisoned: AtomicBool::new(false),
-            #[cfg(feature = "__probe_count")]
             probe_slot: core::sync::atomic::AtomicU32::new(u32::MAX),
         }
     }
 
-    /// No-op: the legacy tracker's table does not depend on the length.
+    /// No-op: this tracker's table does not depend on the length.
     pub fn reprovision(&mut self, _len: usize) {}
 
     /// No-op: with one lock per instance and no block shift, there is no
@@ -329,7 +318,7 @@ impl BorrowTracker {
     /// tracker is one lock and one 64-slot table per instance, so a registration
     /// costs the same whatever its shape, and the sharded tracker's motivation
     /// (one shard line touched per row) does not exist. Declining keeps the
-    /// legacy A/B arm measuring the tracker it names and nothing else.
+    /// probe measuring the tracker it names and nothing else.
     #[inline(always)]
     pub fn add_rect_immut(
         &self,
@@ -415,70 +404,21 @@ impl BorrowTracker {
     /// Register a mutable borrow. Checks against ALL existing borrows.
     #[inline]
     #[track_caller]
-    #[cfg(not(any(
-        feature = "__probe_count",
-        feature = "__probe_noscan",
-        feature = "__probe_lockonly"
-    )))]
     pub fn add_mut(&self, bounds: &Bounds) -> BorrowId {
-        let start = bounds.range.start;
-        let end = bounds.range.end;
-        if start >= end {
-            return BorrowId(BorrowSlots::EMPTY_SLOT);
-        }
-        self.check_poisoned();
-        let _guard = self.lock.lock();
-        // SAFETY: TinyLock is held, so we have exclusive access to slots.
-        let slots = unsafe { &mut *self.slots.get() };
-        if let Some(existing) = slots.find_overlap_any(start, end) {
-            Self::overlap_panic(start, end, true, existing);
-        }
-        BorrowId(slots.alloc(start, end, true, Location::caller()))
+        self.add_probed(bounds, true)
     }
 
     /// Register an immutable borrow. Only checks against mutable borrows.
     #[inline]
     #[track_caller]
-    #[cfg(not(any(
-        feature = "__probe_count",
-        feature = "__probe_noscan",
-        feature = "__probe_lockonly"
-    )))]
     pub fn add_immut(&self, bounds: &Bounds) -> BorrowId {
-        let start = bounds.range.start;
-        let end = bounds.range.end;
-        if start >= end {
-            return BorrowId(BorrowSlots::EMPTY_SLOT);
-        }
-        self.check_poisoned();
-        let _guard = self.lock.lock();
-        // SAFETY: TinyLock is held, so we have exclusive access to slots.
-        let slots = unsafe { &mut *self.slots.get() };
-        if let Some(existing) = slots.find_overlap_mut(start, end) {
-            Self::overlap_panic(start, end, false, existing);
-        }
-        BorrowId(slots.alloc(start, end, false, Location::caller()))
+        self.add_probed(bounds, false)
     }
 
-    #[cfg(any(
-        feature = "__probe_count",
-        feature = "__probe_noscan",
-        feature = "__probe_lockonly"
-    ))]
-    pub fn add_mut(&self, bounds: &Bounds) -> BorrowId {
-        self.add_probed(bounds, true)
-    }
-
-    /// Shared body of `add_mut` / `add_immut`, with the throwaway probe
-    /// hooks and the noscan / lockonly probe modes folded in so the two
-    /// entry points cannot drift apart.
+    /// Shared body of `add_mut` / `add_immut`, with the throwaway probe hooks
+    /// folded in so the two entry points cannot drift apart.
     #[inline]
     #[track_caller]
-    #[cfg(any(
-        feature = "__probe_count",
-        feature = "__probe_noscan",
-        feature = "__probe_lockonly"
-    ))]
     fn add_probed(&self, bounds: &Bounds, is_mut: bool) -> BorrowId {
         let start = bounds.range.start;
         let end = bounds.range.end;
@@ -487,125 +427,42 @@ impl BorrowTracker {
         }
         self.check_poisoned();
 
-        // Probe mode: take and release the lock, do nothing else. Isolates
-        // raw lock traffic from the scan and from slot bookkeeping.
-        #[cfg(feature = "__probe_lockonly")]
-        {
-            let _guard = self.lock.lock();
-            return BorrowId(BorrowSlots::EMPTY_SLOT);
-        }
-
-        #[cfg(not(feature = "__probe_lockonly"))]
-        {
-            #[cfg(feature = "__probe_count")]
-            let (occupancy, id, wait_ns, contended) = {
-                let (_guard, wait_ns, contended) = self.lock.lock_probe();
-                // SAFETY: TinyLock is held, so we have exclusive access to slots.
-                let slots = unsafe { &mut *self.slots.get() };
-                let occupancy = slots.occupied.count_ones();
-                #[cfg(not(feature = "__probe_noscan"))]
-                {
-                    let hit = if is_mut {
-                        slots.find_overlap_any(start, end)
-                    } else {
-                        slots.find_overlap_mut(start, end)
-                    };
-                    if let Some(existing) = hit {
-                        Self::overlap_panic(start, end, is_mut, existing);
-                    }
-                }
-                let id = slots.alloc(start, end, is_mut, Location::caller());
-                // Guard drops HERE: every counter update below happens
-                // outside the critical section, so the probe cannot inflate
-                // the very lock hold time it is measuring.
-                (occupancy, id, wait_ns, contended)
+        let (occupancy, id, wait_ns, contended) = {
+            let (_guard, wait_ns, contended) = self.lock.lock_probe();
+            // SAFETY: TinyLock is held, so we have exclusive access to slots.
+            let slots = unsafe { &mut *self.slots.get() };
+            let occupancy = slots.occupied.count_ones();
+            let hit = if is_mut {
+                slots.find_overlap_any(start, end)
+            } else {
+                slots.find_overlap_mut(start, end)
             };
-
-            #[cfg(feature = "__probe_count")]
-            {
-                let slot = crate::probe::assign_slot(&self.probe_slot);
-                let spilled = id != BorrowSlots::EMPTY_SLOT && (id as usize) >= INLINE_SLOTS;
-                crate::probe::record_add(
-                    slot,
-                    is_mut,
-                    end,
-                    occupancy,
-                    spilled,
-                    wait_ns,
-                    contended,
-                    Location::caller(),
-                );
-                #[cfg(feature = "__probe_shardsim")]
-                crate::probe::record_shard(
-                    slot,
-                    start,
-                    end,
-                    crate::probe::SLOTS[slot]
-                        .max_end
-                        .load(core::sync::atomic::Ordering::Relaxed),
-                );
-                return BorrowId(id);
+            if let Some(existing) = hit {
+                Self::overlap_panic(start, end, is_mut, existing);
             }
+            let id = slots.alloc(start, end, is_mut, Location::caller());
+            // Guard drops HERE: every counter update below happens
+            // outside the critical section, so the probe cannot inflate
+            // the very lock hold time it is measuring.
+            (occupancy, id, wait_ns, contended)
+        };
 
-            #[cfg(not(feature = "__probe_count"))]
-            {
-                let _guard = self.lock.lock();
-                // SAFETY: TinyLock is held, so we have exclusive access to slots.
-                let slots = unsafe { &mut *self.slots.get() };
-                #[cfg(not(feature = "__probe_noscan"))]
-                {
-                    let hit = if is_mut {
-                        slots.find_overlap_any(start, end)
-                    } else {
-                        slots.find_overlap_mut(start, end)
-                    };
-                    if let Some(existing) = hit {
-                        Self::overlap_panic(start, end, is_mut, existing);
-                    }
-                }
-                BorrowId(slots.alloc(start, end, is_mut, Location::caller()))
-            }
-        }
-    }
-
-    /// Register an immutable borrow. Only checks against mutable borrows.
-    #[inline]
-    #[track_caller]
-    #[cfg(any(
-        feature = "__probe_count",
-        feature = "__probe_noscan",
-        feature = "__probe_lockonly"
-    ))]
-    pub fn add_immut(&self, bounds: &Bounds) -> BorrowId {
-        self.add_probed(bounds, false)
+        let slot = crate::probe::assign_slot(&self.probe_slot);
+        let spilled = id != BorrowSlots::EMPTY_SLOT && (id as usize) >= INLINE_SLOTS;
+        crate::probe::record_add(
+            slot,
+            is_mut,
+            end,
+            occupancy,
+            spilled,
+            wait_ns,
+            contended,
+            Location::caller(),
+        );
+        BorrowId(id)
     }
 
     /// Remove a borrow by slot index. O(1).
-    #[inline]
-    #[cfg(not(any(feature = "__probe_count", feature = "__probe_lockonly")))]
-    pub fn remove(&self, id: BorrowId) {
-        if id.0 == BorrowSlots::EMPTY_SLOT || id == BorrowId::UNCHECKED {
-            return;
-        }
-        let _guard = self.lock.lock();
-        // SAFETY: TinyLock is held, so we have exclusive access to slots.
-        let slots = unsafe { &mut *self.slots.get() };
-        slots.free(id.0);
-    }
-
-    /// THROWAWAY probe variants of `remove`.
-    #[cfg(feature = "__probe_lockonly")]
-    #[inline]
-    pub fn remove(&self, id: BorrowId) {
-        // `add` handed back EMPTY_SLOT for every borrow, so keep the
-        // release-side lock traffic symmetric by hand.
-        if id == BorrowId::UNCHECKED {
-            return;
-        }
-        let _guard = self.lock.lock();
-    }
-
-    #[cfg(all(feature = "__probe_count", not(feature = "__probe_lockonly")))]
     #[inline]
     pub fn remove(&self, id: BorrowId) {
         if id.0 == BorrowSlots::EMPTY_SLOT || id == BorrowId::UNCHECKED {
@@ -623,9 +480,9 @@ impl BorrowTracker {
     }
 }
 
-/// The legacy tracker is a single lock per instance and has no shards, so the
-/// parallelism hint has nothing to size. Present only so the `__probe_*` /
-/// `__tracker_legacy` arms still compile against the same crate surface.
+/// This tracker is a single lock per instance and has no shards, so the
+/// parallelism hint has nothing to size. Present only so `__probe_count` still
+/// compiles against the same crate surface.
 pub fn set_parallelism(_n: usize) {}
 
 /// Likewise: with no shards and no block shift there is nothing for the tile

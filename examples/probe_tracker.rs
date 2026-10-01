@@ -51,8 +51,6 @@ fn main() {
     rav1d_disjoint_mut::probe::reset();
     #[cfg(feature = "__probe_wide")]
     rav1d_disjoint_mut::wide_probe::reset();
-    #[cfg(feature = "__probe_shardsim")]
-    rav1d_disjoint_mut::probe::shard_reset();
     #[cfg(feature = "__probe_sites")]
     rav1d_disjoint_mut::site_probe::reset();
     #[cfg(feature = "__probe_bounds")]
@@ -106,10 +104,6 @@ fn main() {
     #[cfg(feature = "__probe_count")]
     {
         print!("{}", rav1d_disjoint_mut::probe::report(iters));
-    }
-    #[cfg(feature = "__probe_shardsim")]
-    {
-        print!("{}", rav1d_disjoint_mut::probe::shard_report());
     }
     #[cfg(feature = "__probe_sites")]
     {

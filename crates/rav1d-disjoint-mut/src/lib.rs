@@ -80,18 +80,7 @@
 // dead by design in that configuration.
 #![cfg_attr(feature = "untracked", allow(dead_code))]
 
-// Cargo features are additive across dependencies. These historical timing
-// arms must never turn the safe constructor into an unchecked one in a release.
-// Reproduce them at the revisions recorded in docs/OWNERSHIP_MODELS.md.
-#[cfg(any(
-    feature = "__probe_noscan",
-    feature = "__probe_lockonly",
-    feature = "__probe_tinynop",
-    feature = "__probe_addnop"
-))]
-compile_error!("unsound measurement probes are disabled; use a historical benchmark revision");
-
-// `untracked` (alias `__probe_untracked`) is an OPT-IN mode, not a measurement
+// `untracked` is an OPT-IN mode, not a measurement
 // probe: every safe constructor's storage becomes `Unchecked`, so overlap
 // registration is skipped while `get_mut`'s bounds panics still run -- overlap
 // checking off, bounds checking on. Overlapping borrows are then undefined
@@ -100,20 +89,10 @@ compile_error!("unsound measurement probes are disabled; use a historical benchm
 // `partial_asm` features enable it. Never enable it in a library: Cargo feature
 // unification would impose it on every user of this crate.
 
-#[cfg(all(
-    disjoint_mut_loom,
-    any(
-        feature = "__tracker_legacy",
-        feature = "__probe_count",
-        feature = "__probe_lock_park"
-    )
-))]
+#[cfg(all(disjoint_mut_loom, feature = "__probe_count"))]
 compile_error!("Loom must exercise the production sharded tracker and its instrumented spin lock");
 
-#[cfg(all(
-    feature = "__probe_usage",
-    any(feature = "__probe_count", feature = "__tracker_legacy")
-))]
+#[cfg(all(feature = "__probe_usage", feature = "__probe_count"))]
 compile_error!("usage census requires the production sharded tracker");
 
 extern crate alloc;
@@ -373,7 +352,7 @@ impl<T: ?Sized + AsMutPtr> Drop for BorrowCleanup<'_, T> {
     fn drop(&mut self) {
         // This only fires on panic (mem::forget on success path).
         // Poison rather than clean up — the data structure is compromised.
-        // `__probe_untracked`: parent is a const-None, gate the whole block.
+        // `untracked`: parent is a const-None, gate the whole block.
         #[cfg(not(feature = "untracked"))]
         if let Some(parent) = self.parent {
             parent.tracker.get().unwrap().poison();
@@ -1003,7 +982,7 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         I: DisjointMutIndex<[<T as AsMutPtr>::Target]>,
     {
         // The bounds are consumed only by tracker registration — compute them
-        // lazily so unchecked (`__probe_untracked`/`dangerously_unchecked`)
+        // lazily so unchecked (`untracked`/`dangerously_unchecked`)
         // instances skip the conversion and clamp entirely. `__probe_bounds`
         // still needs them on the success path below, so it computes eagerly.
         #[cfg(feature = "__probe_bounds")]
@@ -1521,62 +1500,27 @@ where
 
 /// The default tracker: address-block sharded, so concurrent tile workers stop
 /// serialising on one lock and one cache line.
-#[cfg(not(any(
-    feature = "__probe_count",
-    feature = "__probe_noscan",
-    feature = "__probe_lockonly",
-    feature = "__tracker_legacy"
-)))]
+#[cfg(not(feature = "__probe_count"))]
 mod tracker_cell;
 
-#[cfg(not(any(
-    feature = "__probe_count",
-    feature = "__probe_noscan",
-    feature = "__probe_lockonly",
-    feature = "__tracker_legacy"
-)))]
+#[cfg(not(feature = "__probe_count"))]
 mod tracker_shard;
-#[cfg(not(any(
-    feature = "__probe_count",
-    feature = "__probe_noscan",
-    feature = "__probe_lockonly",
-    feature = "__tracker_legacy"
-)))]
+#[cfg(not(feature = "__probe_count"))]
 use tracker_shard as checked;
 
 /// Wide-path reason counters, when `__probe_wide` is on. See the module docs.
-#[cfg(all(
-    feature = "__probe_wide",
-    not(any(
-        feature = "__probe_count",
-        feature = "__probe_noscan",
-        feature = "__probe_lockonly",
-        feature = "__tracker_legacy"
-    ))
-))]
+#[cfg(all(feature = "__probe_wide", not(feature = "__probe_count")))]
 pub use tracker_shard::wide_probe;
 
-/// The single-lock predecessor, kept only so the throwaway `__probe_*`
-/// decomposition arms (`benchmarks/tracker_decomp_2026-08-07.meta`) remain
-/// reproducible against the tracker they actually measured.
-///
-/// `__tracker_legacy` selects it with no probe hooks at all, which is the
-/// straight A/B baseline arm: same commit, same decoder, only the tracker
-/// differs.
-#[cfg(any(
-    feature = "__probe_count",
-    feature = "__probe_noscan",
-    feature = "__probe_lockonly",
-    feature = "__tracker_legacy"
-))]
-mod tracker_legacy;
-#[cfg(any(
-    feature = "__probe_count",
-    feature = "__probe_noscan",
-    feature = "__probe_lockonly",
-    feature = "__tracker_legacy"
-))]
-use tracker_legacy as checked;
+/// The single-lock predecessor of the sharded tracker, instrumented by the
+/// `__probe_count` contention probe (`benchmarks/tracker_decomp_2026-08-07.meta`
+/// measured it). Selected only by `__probe_count`; every other build uses
+/// [`tracker_shard`]. The pre-2026-10 `__tracker_legacy` A/B arm (this tracker
+/// with no probe hooks) was removed; check out `087242f1` to reproduce it.
+#[cfg(feature = "__probe_count")]
+mod tracker_count;
+#[cfg(feature = "__probe_count")]
+use tracker_count as checked;
 
 /// Declare the decode parallelism to the borrow tracker.
 ///
@@ -1668,7 +1612,7 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointImmutGuard<'a, T, V> 
 ///   inter-row GAPS, which belong to other columns of the same picture rows. Two
 ///   tile workers routinely write the same rows at different columns, so the gap
 ///   reservation turns a genuinely disjoint pair into a false positive. Measured
-///   as decode failures (`__probe_rect_hull`) and, where it does pass, as 2.65x
+///   as decode failures (the since-removed `__probe_rect_hull` arm) and, where it does pass, as 2.65x
 ///   SLOWER. This guard's record covers no gap byte
 ///   (the tracker's `add_rect_immut`, which stores the rectangle exactly).
 /// * The March-2026 strided tracker had an exact record but handed out a
@@ -2172,8 +2116,7 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     /// 2026-08-11: the tracker coarsens from the block-count answer until a
     /// block spans `ROWS_PER_BLOCK_MIN` picture rows. Buffers that never call it
     /// (everything that is not a picture plane — there is no stride to declare)
-    /// keep the block-count rule under every arm, as does the whole build when a
-    /// `__bps_*` ladder rung or `__bps_blocks` is compiled in.
+    /// keep the block-count rule.
     ///
     /// Not sticky: a later [`Self::resize`] re-derives the shift from `len`
     /// alone and drops the hint. That degrades to the shipped rule, which is a

@@ -35,8 +35,6 @@ std = []
 instrument = ["std"]
 # Internal measurement features: opt-in and outside the supported API.
 __probe_count = ["std"]
-__probe_noscan = []
-__probe_lockonly = []
 # Overlap tracking OFF; slice bounds checks stay ON. Overlapping borrows become
 # undefined behaviour in the Rust memory model (aliasing / data races). Every
 # element type is `PlainData`, so a load always yields a VALID value (never an
@@ -57,12 +55,6 @@ __probe_sites = ["std"]
 # registration. Internal diagnostic; absent from `default` and from every supported
 # feature. See src/bounds_probe.rs.
 __probe_bounds = ["std", "__probe_sites"]
-# THROWAWAY: skip tracking on sub-SHARD_MIN_LEN instances. UNSOUND, measurement only.
-__probe_tinynop = []
-# THROWAWAY: keep the add/remove CALL, delete the work. Isolates the call
-# barrier from the tracker's own instructions. UNSOUND -- measurement only.
-__probe_addnop = []
-__probe_shardsim = ["__probe_count"]
 # THROWAWAY: TinyLock spin backoff + scheduler yield, re-tested on the adaptive
 # shard set (the P1 campaign measured it null on the 32-shard base).
 #
@@ -82,7 +74,6 @@ __probe_lock_relax = []
 __probe_lock_park = ["std", "dep:parking_lot"]
 # Sharded-tracker A/B knobs (perf/shard-tracker). Compile-time only; the
 # defaults are the measured winners, see benchmarks/shard_tracker_*.meta.
-__tracker_legacy = []
 __shards_1 = []
 __shards_4 = []
 __shards_8 = []

@@ -2,8 +2,9 @@
 //!
 //! # Why
 //!
-//! The predecessor ([`crate::tracker_legacy`]) is one spin lock plus one 64-slot
-//! record table per [`DisjointMut`](crate::DisjointMut) instance. A 4K frame
+//! The predecessor (`tracker_count.rs`, now built only for `__probe_count`) is
+//! one spin lock plus one 64-slot record table per
+//! [`DisjointMut`](crate::DisjointMut) instance. A 4K frame
 //! registers ~50 M borrows, and on multi-tile content every tile worker funnels
 //! its share of them through the *same* lock and the *same* four parallel
 //! arrays. Measured on an M4 Pro (`benchmarks/tracker_decomp_2026-08-07.meta`):
@@ -1487,12 +1488,6 @@ pub(super) struct BorrowTracker {
     /// Explicit instance policy, retained across resize and stride declarations.
     /// Only `&mut self` may replace it; borrow registration never reads globals.
     local_policy: Option<(usize, usize)>,
-    /// THROWAWAY (`__probe_tinynop`): this instance is shorter than
-    /// [`SHARD_MIN_LEN`]. Set in `new`/`reprovision` beside `mask`, and read
-    /// only to SKIP tracking entirely.
-    /// UNSOUND — measurement only. See [`Self::add`]'s probe arm.
-    #[cfg(feature = "__probe_tinynop")]
-    tiny: bool,
     /// Live wide records. Read while holding **any** shard lock; written only
     /// while holding **every** shard lock.
     wide: TrackerCell<Vec<WideRec>>,
@@ -2050,8 +2045,6 @@ impl BorrowTracker {
             mask: mask_for(len),
             row_stride: 0,
             local_policy: None,
-            #[cfg(feature = "__probe_tinynop")]
-            tiny: len < SHARD_MIN_LEN,
             wide: TrackerCell::new(Vec::new()),
             state: AtomicU32::new(0),
         };
@@ -2109,10 +2102,6 @@ impl BorrowTracker {
         self.row_stride = 0;
         #[cfg(feature = "__probe_usage")]
         crate::usage_probe::policy("resize", len, self.mask, self.shift, 0, 0);
-        #[cfg(feature = "__probe_tinynop")]
-        {
-            self.tiny = len < SHARD_MIN_LEN;
-        }
     }
 
     /// Tell the tracker this buffer's picture row stride in bytes, so the block
@@ -2251,27 +2240,6 @@ impl BorrowTracker {
         self.add::<false>(bounds)
     }
 
-    /// THROWAWAY (`__probe_addnop`): keep the CALL, delete the WORK.
-    ///
-    /// The question this answers: `__probe_untracked` (no tracker at all) is
-    /// 77 ms/frame faster than the tracker at 8bpc t=1, but removing 26
-    /// instructions and two of the three locked RMWs from `add` moved that cell
-    /// 0.3%. Those two facts are only compatible if most of the 77 ms is not
-    /// the tracker's instructions but the fact that a call happens at all —
-    /// 15.6 M opaque calls per frame that clobber every caller-saved register
-    /// and fence the caller's optimizer. This arm keeps the call site, the
-    /// argument setup, the `Option`/`Box` indirection and the clobber, and
-    /// throws away everything inside. If it lands near `base`, no amount of
-    /// shaving inside `add` can reach the ceiling; if it lands near
-    /// `untracked`, the internals really are the cost.
-    #[cfg(feature = "__probe_addnop")]
-    #[inline(never)]
-    fn add<const IS_MUT: bool>(&self, bounds: &Bounds) -> BorrowId {
-        core::hint::black_box(bounds.range.start);
-        BorrowId::UNCHECKED
-    }
-
-    #[cfg(not(feature = "__probe_addnop"))]
     #[inline]
     #[track_caller]
     fn add<const IS_MUT: bool>(&self, bounds: &Bounds) -> BorrowId {
@@ -2289,15 +2257,6 @@ impl BorrowTracker {
         );
         #[cfg(feature = "__probe_sites")]
         crate::site_probe::record(Location::caller(), IS_MUT, end.saturating_sub(start));
-        // THROWAWAY (`__probe_tinynop`): price the sub-`SHARD_MIN_LEN` instance
-        // class — `BlockContext`'s twenty 32-byte arrays and their kin, ~1,027
-        // instances, which `mask_for` keeps single-shard at EVERY thread count.
-        // Nothing else can separate their cost from the picture planes'.
-        // UNSOUND: it stops tracking them.
-        #[cfg(feature = "__probe_tinynop")]
-        if self.tiny {
-            return BorrowId::UNCHECKED;
-        }
         if start >= end {
             // An empty borrow touches no bytes, but a poisoned tracker must still
             // refuse EVERY later access (found by an adversarial review: this
@@ -2316,8 +2275,8 @@ impl BorrowTracker {
         // acquire needs. Skipping them shortens the chain by a dependent L1
         // load plus a multiply before anything else can start.
         //
-        // That matters more than it looks: `__probe_addnop` (keep the call,
-        // delete the body) measured 290.7 ms/frame against 365.0 for the real
+        // That matters more than it looks: the since-removed `__probe_addnop`
+        // arm (keep the call, delete the body) measured 290.7 ms/frame against 365.0 for the real
         // tracker and 287.2 with no tracker at all, at 8bpc t=1 — so the call
         // barrier is 4% of the tracker's cost and the other 96% is this
         // function's own latency. Two earlier attempts to cut its INSTRUCTION

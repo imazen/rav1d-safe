@@ -151,14 +151,9 @@ __pad_far = []
 __pad2 = ["__pad_text"]
 __pad3 = ["__pad2"]
 __pad4 = ["__pad3"]
-__probe_tinynop = ["rav1d-disjoint-mut/__probe_tinynop"]
-__probe_addnop = ["rav1d-disjoint-mut/__probe_addnop"]
-__probe_noscan = ["rav1d-disjoint-mut/__probe_noscan"]
-__probe_lockonly = ["rav1d-disjoint-mut/__probe_lockonly"]
 # Tracking off, copy path kept, bounds checks untouched: the historical tracker-only arm.
 # Historical alias (tracker removed, copy path kept): the old measurement arm.
 __probe_untracked = ["rav1d-disjoint-mut/__probe_untracked"]
-__probe_shardsim = ["__probe_count", "rav1d-disjoint-mut/__probe_shardsim"]
 # Per-worker, per-task-stage timing + a sampled concurrency histogram (P1).
 __probe_tasktime = []
 # __probe_tasktime composed with the tracker removed: the ceiling's task profile.
@@ -169,8 +164,6 @@ __probe_tasktime_untracked = ["__probe_tasktime", "__probe_untracked"]
 
 # Sharded-tracker A/B knobs. Compile-time only; the defaults are the measured
 # winners (benchmarks/shard_tracker_2026-08-07.meta).
-# A/B baseline: the pre-sharding single-lock tracker, no probe hooks.
-__tracker_legacy = ["rav1d-disjoint-mut/__tracker_legacy"]
 __shards_1 = ["rav1d-disjoint-mut/__shards_1"]
 __shards_4 = ["rav1d-disjoint-mut/__shards_4"]
 __shards_8 = ["rav1d-disjoint-mut/__shards_8"]
