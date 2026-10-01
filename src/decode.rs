@@ -141,6 +141,7 @@ use crate::src::pal::Rav1dPalDSPContext;
 use crate::src::picture::Rav1dThreadPicture;
 use crate::src::picture::rav1d_picture_alloc_copy;
 use crate::src::picture::rav1d_thread_picture_alloc;
+use crate::src::plain::CompTypeByte;
 use crate::src::qm::dav1d_qm_tbl;
 use crate::src::recon::debug_block_info;
 use crate::src::refmvs::RefMvsBlock;
@@ -310,8 +311,8 @@ fn read_tx_tree(
 
     if depth < 2 && from > TxfmSize::S4x4 {
         let cat = 2 * (TxfmSize::S64x64 as c_int - t_dim.max as c_int) - depth;
-        let a = ((*f.a[t.a].tx.index(bx4 as usize) as u8) < txw) as c_int;
-        let l = ((t.l.tx.get_mut()[by4 as usize] as u8) < txh) as c_int;
+        let a = ((f.a[t.a].tx.index(bx4 as usize).get() as u8) < txw) as c_int;
+        let l = ((t.l.tx.get_mut()[by4 as usize].get() as u8) < txh) as c_int;
 
         is_split = rav1d_msac_decode_bool_adapt(
             &mut ts_c.msac,
@@ -394,7 +395,7 @@ fn read_tx_tree(
             <16, false>
             l: (&mut t.l, t_dim.h as usize, by4 as usize),
             a: (&f.a[t.a], t_dim.w as usize, bx4 as usize),
-            tx = (tx_for(txh), tx_for(txw)),
+            tx = (tx_for(txh).into(), tx_for(txw).into()),
         }
     };
 }
@@ -845,7 +846,7 @@ fn read_vartx_tree(
                 <32, false>
                 l: (&mut t.l, bh4 as usize, by4 as usize),
                 a: (&f.a[t.a], bw4 as usize, bx4 as usize),
-                tx = (TxfmSize::S4x4, TxfmSize::S4x4),
+                tx = (TxfmSize::S4x4.into(), TxfmSize::S4x4.into()),
             }
         }
     } else if txfm_mode != Rav1dTxfmMode::Switchable || b.skip != 0 {
@@ -856,8 +857,8 @@ fn read_vartx_tree(
                 l: (&mut t.l, bh4 as usize, by4 as usize),
                 a: (&f.a[t.a], bw4 as usize, bx4 as usize),
                 tx = (
-                    TxfmSize::from_repr(b_dim[2 + 1] as _).unwrap(),
-                    TxfmSize::from_repr(b_dim[2 + 0] as _).unwrap()
+                    TxfmSize::from_repr(b_dim[2 + 1] as _).unwrap().into(),
+                    TxfmSize::from_repr(b_dim[2 + 0] as _).unwrap().into()
                 ),
             }
         }
@@ -946,7 +947,7 @@ fn splat_oneref_mv(
                 inter.interintra_type.map(|_| 0).unwrap_or(-1),
             ],
         },
-        bs,
+        bs: bs.into(),
         mf: (mode == GLOBALMV && cmp::min(bw4, bh4) >= 2) as u8 | (mode == NEWMV) as u8 * 2,
     });
 
@@ -968,7 +969,7 @@ fn splat_intrabc_mv(
             mv: [r#ref, Mv::ZERO],
         },
         r#ref: RefMvsRefPair { r#ref: [0, -1] },
-        bs,
+        bs: bs.into(),
         mf: 0,
     });
     c.dsp.refmvs.splat_mv.call(rf, &t.rt, &tmpl, t.b, bw4, bh4);
@@ -993,7 +994,7 @@ fn splat_tworef_mv(
         r#ref: RefMvsRefPair {
             r#ref: [inter.r#ref[0] + 1, inter.r#ref[1] + 1],
         },
-        bs,
+        bs: bs.into(),
         mf: (mode == GLOBALMV_GLOBALMV) as u8 | (1 << mode & 0xbc != 0) as u8 * 2,
     });
     c.dsp.refmvs.splat_mv.call(rf, &t.rt, &tmpl, t.b, bw4, bh4);
@@ -1013,7 +1014,7 @@ fn splat_intraref(
             mv: [Mv::INVALID, Mv::ZERO],
         },
         r#ref: RefMvsRefPair { r#ref: [0, -1] },
-        bs,
+        bs: bs.into(),
         mf: 0,
     });
     c.dsp.refmvs.splat_mv.call(rf, &t.rt, &tmpl, t.b, bw4, bh4);
@@ -1192,11 +1193,12 @@ fn decode_b(
     }
 
     let mut b_mem = Av1Block::default();
+    let mut b_slot;
     let b = if t.frame_thread.pass != 0 {
-        &mut *f
-            .frame_thread
-            .b
-            .index_mut((t.b.y as isize * f.b4_stride + t.b.x as isize) as usize)
+        b_slot = f.frame_thread.b[(t.b.y as isize * f.b4_stride + t.b.x as isize) as usize]
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        &mut *b_slot
     } else {
         &mut b_mem
     };
@@ -1247,13 +1249,13 @@ fn decode_b(
                     let r = &mut *f.rf.r.index_mut(ri..ri + bw4 as usize);
                     for block in r {
                         block.r#ref.r#ref[0] = 0;
-                        block.bs = bs;
+                        block.bs = bs.into();
                     }
                     let rr = &t.rt.r[(t.b.y as usize & 31) + 5..][..bh4 as usize - 1];
                     for r in rr {
                         let block = &mut f.rf.r.index_mut(r + t.b.x as usize + bw4 as usize - 1);
                         block.r#ref.r#ref[0] = 0;
-                        block.bs = bs;
+                        block.bs = bs.into();
                     }
                 }
 
@@ -1310,8 +1312,8 @@ fn decode_b(
                     <32, false>
                     l: (&mut t.l, bh4 as usize, by4 as usize),
                     a: (ta, bw4 as usize, bx4 as usize),
-                    filter[0] = (filter[0], filter[0]),
-                    filter[1] = (filter[1], filter[1]),
+                    filter[0] = (filter[0].into(), filter[0].into()),
+                    filter[1] = (filter[1].into(), filter[1].into()),
                     intra = (0, 0),
                 }
 
@@ -1321,14 +1323,14 @@ fn decode_b(
                     for block in r {
                         block.r#ref.r#ref[0] = inter.r#ref[0] + 1;
                         block.mv.mv[0] = inter.nd.one_d.mv[0];
-                        block.bs = bs;
+                        block.bs = bs.into();
                     }
                     let rr = &t.rt.r[(t.b.y as usize & 31) + 5..][..bh4 as usize - 1];
                     for r in rr {
                         let block = &mut f.rf.r.index_mut(r + t.b.x as usize + bw4 as usize - 1);
                         block.r#ref.r#ref[0] = inter.r#ref[0] + 1;
                         block.mv.mv[0] = inter.nd.one_d.mv[0];
-                        block.bs = bs;
+                        block.bs = bs.into();
                     }
                 }
 
@@ -2029,8 +2031,8 @@ fn decode_b(
                 also |case| { case.set(&mut t.pal_sz_uv[0], if has_chroma { pal_sz[1] } else { 0 }); },
             tx_intra = (t_dim.lh as i8, t_dim.lw as i8),
             tx = (
-                TxfmSize::from_repr(t_dim.lh as _).unwrap(),
-                TxfmSize::from_repr(t_dim.lw as _).unwrap()
+                TxfmSize::from_repr(t_dim.lh as _).unwrap().into(),
+                TxfmSize::from_repr(t_dim.lw as _).unwrap().into()
             ),
             mode = (y_mode_nofilt, y_mode_nofilt),
             pal_sz = (pal_sz[0], pal_sz[0]),
@@ -2044,16 +2046,16 @@ fn decode_b(
                 <32, false>
                 l: (&mut t.l, bh4 as usize, by4 as usize),
                 a: (ta, bw4 as usize, bx4 as usize),
-                comp_type = (None, None),
+                comp_type = (CompTypeByte::default(), CompTypeByte::default()),
                 r#ref[0] = (-1, -1),
                 r#ref[1] = (-1, -1),
                 filter[0] = (
-                    Rav1dFilterMode::N_SWITCHABLE_FILTERS,
-                    Rav1dFilterMode::N_SWITCHABLE_FILTERS
+                    Rav1dFilterMode::N_SWITCHABLE_FILTERS.into(),
+                    Rav1dFilterMode::N_SWITCHABLE_FILTERS.into()
                 ),
                 filter[1] = (
-                    Rav1dFilterMode::N_SWITCHABLE_FILTERS,
-                    Rav1dFilterMode::N_SWITCHABLE_FILTERS
+                    Rav1dFilterMode::N_SWITCHABLE_FILTERS.into(),
+                    Rav1dFilterMode::N_SWITCHABLE_FILTERS.into()
                 ),
             }
         }
@@ -3197,9 +3199,9 @@ fn decode_b(
             skip = (b.skip, b.skip),
             pal_sz = (0, 0),
             tx_intra = (b_dim[2 + 1] as i8, b_dim[2 + 0] as i8),
-            comp_type = (comp_type, comp_type),
-            filter[0] = (filter[0], filter[0]),
-            filter[1] = (filter[1], filter[1]),
+            comp_type = (comp_type.into(), comp_type.into()),
+            filter[0] = (filter[0].into(), filter[0].into()),
+            filter[1] = (filter[1].into(), filter[1].into()),
             mode = (inter_mode, inter_mode),
             r#ref[0] = (r#ref[0], r#ref[0]),
             r#ref[1] = (r#ref[1], r#ref[1]),
@@ -3572,10 +3574,9 @@ fn decode_sb(
                 );
             }
         } else {
-            let b = f
-                .frame_thread
-                .b
-                .index((t.b.y as isize * f.b4_stride + t.b.x as isize) as usize);
+            let b = f.frame_thread.b[(t.b.y as isize * f.b4_stride + t.b.x as isize) as usize]
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             bp = if b.bl == bl {
                 b.bp
             } else {
@@ -3746,10 +3747,9 @@ fn decode_sb(
                 );
             }
         } else {
-            let b = &f
-                .frame_thread
-                .b
-                .index((t.b.y as isize * f.b4_stride + t.b.x as isize) as usize);
+            let b = &f.frame_thread.b[(t.b.y as isize * f.b4_stride + t.b.x as isize) as usize]
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             is_split = b.bl != bl;
         }
 
@@ -3804,10 +3804,9 @@ fn decode_sb(
                 );
             }
         } else {
-            let b = &f
-                .frame_thread
-                .b
-                .index((t.b.y as isize * f.b4_stride + t.b.x as isize) as usize);
+            let b = &f.frame_thread.b[(t.b.y as isize * f.b4_stride + t.b.x as isize) as usize]
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             is_split = b.bl != bl;
         }
 
@@ -3872,12 +3871,12 @@ fn reset_context(ctx: &mut BlockContext, keyframe: bool, pass: c_int) {
     ctx.tx_lpf_y.get_mut().fill(2);
     ctx.tx_lpf_uv.get_mut().fill(1);
     ctx.tx_intra.get_mut().fill(-1);
-    ctx.tx.get_mut().fill(TxfmSize::S64x64);
+    ctx.tx.get_mut().fill(TxfmSize::S64x64.into());
     if !keyframe {
         for r#ref in &mut ctx.r#ref {
             r#ref.get_mut().fill(-1);
         }
-        ctx.comp_type.get_mut().fill(None);
+        ctx.comp_type.get_mut().fill(CompTypeByte::default());
         ctx.mode.get_mut().fill(NEARESTMV);
     }
     ctx.lcoef.get_mut().fill(0x40);
@@ -3885,7 +3884,9 @@ fn reset_context(ctx: &mut BlockContext, keyframe: bool, pass: c_int) {
         ccoef.get_mut().fill(0x40);
     }
     for filter in &mut ctx.filter {
-        filter.get_mut().fill(Rav1dFilterMode::N_SWITCHABLE_FILTERS);
+        filter
+            .get_mut()
+            .fill(Rav1dFilterMode::N_SWITCHABLE_FILTERS.into());
     }
     ctx.seg_pred.get_mut().fill(0);
     ctx.pal_sz.get_mut().fill(0);
@@ -4623,10 +4624,12 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
         f.lf.level.resize_with(level_len, || AtomicU8::new(0));
     }
     if c.fc.len() > 1 {
+        let b_len = num_sb128 as usize * 32 * 32;
         f.frame_thread
             .b
-            .try_resize_with(num_sb128 as usize * 32 * 32, Default::default)
+            .try_reserve(b_len.saturating_sub(f.frame_thread.b.len()))
             .map_err(|_| ENOMEM)?;
+        f.frame_thread.b.resize_with(b_len, Default::default);
     }
 
     f.sr_sb128w = f.sr_cur.p.p.w + 127 >> 7;

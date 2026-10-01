@@ -1504,6 +1504,7 @@ pub fn enabled_features() -> String {
     features.join(", ")
 }
 
-#[cfg(test)]
+// Asserts the compact-copy policy, which `untracked` replaces with zero-copy guards.
+#[cfg(all(test, not(feature = "untracked")))]
 #[path = "managed/frame_tile_tests.rs"]
 mod frame_tile_tests;

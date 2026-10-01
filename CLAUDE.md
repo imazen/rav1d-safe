@@ -241,6 +241,7 @@ QEMU aarch64 `cross test` path stay on `cargo test` (nextest can't host them).
 - `asm` - Use hand-written assembly (default, original rav1d)
 - `bitdepth_8` - 8-bit pixel support
 - `bitdepth_16` - 10/12-bit pixel support
+- `untracked` - opt-in race-tolerant fast mode: no DisjointMut overlap tracking, zero-copy pixel access at t>1, bounds checks stay ON (there is no unchecked variant). Elements must be `PlainData`. See `docs/UNTRACKED_MODE.md`
 
 ## Safe-SIMD Modules
 

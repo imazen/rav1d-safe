@@ -24,6 +24,7 @@ use crate::src::internal::Bxy;
 use crate::src::intra_edge::EdgeFlags;
 use crate::src::levels::BlockSize;
 use crate::src::levels::Mv;
+use crate::src::plain::BlockSizeByte;
 use crate::src::wrap_fn_ptr::wrap_fn_ptr;
 use std::cmp;
 use std::marker::PhantomData;
@@ -31,9 +32,10 @@ use std::mem;
 use std::ptr;
 #[cfg(feature = "asm")]
 use std::slice;
+use zerocopy::FromBytes;
 use zerocopy::FromZeros;
 
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, FromBytes)]
 #[repr(C, packed)]
 pub struct RefMvsTemporalBlock {
     pub mv: Mv,
@@ -41,7 +43,7 @@ pub struct RefMvsTemporalBlock {
 }
 const _: () = assert!(mem::size_of::<RefMvsTemporalBlock>() == 5);
 
-#[derive(Clone, Copy, PartialEq, Eq, FromZeros)]
+#[derive(Clone, Copy, PartialEq, Eq, FromBytes)]
 // In C, this is packed and is 2 bytes.
 // In Rust, being packed and aligned is tricky
 #[repr(C, align(2))]
@@ -56,21 +58,21 @@ impl From<[i8; 2]> for RefMvsRefPair {
     }
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq, FromZeros)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, FromBytes)]
 #[repr(C)]
 pub struct RefMvsMvPair {
     pub mv: [Mv; 2],
 }
 const _: () = assert!(mem::size_of::<RefMvsMvPair>() == 8);
 
-#[derive(Clone, Copy, FromZeros)]
+#[derive(Clone, Copy, FromBytes)]
 // In C, this is packed and is 12 bytes.
 // In Rust, being packed and aligned is tricky
 #[repr(C, align(4))]
 pub struct RefMvsBlock {
     pub mv: RefMvsMvPair,
     pub r#ref: RefMvsRefPair,
-    pub bs: BlockSize,
+    pub bs: BlockSizeByte,
     pub mf: u8,
 }
 const _: () = assert!(mem::size_of::<RefMvsBlock>() == 12);

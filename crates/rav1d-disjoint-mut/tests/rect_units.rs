@@ -15,6 +15,10 @@
 //! controls write through both guards, which Miri would reject if the two
 //! rows or the row and the range actually aliased.
 
+// Every test here observes the overlap tracker (refusals, poisoning, liveness).
+// The `untracked` feature removes it by design; see tests/untracked_mode.rs.
+#![cfg(not(feature = "untracked"))]
+
 use rav1d_disjoint_mut::DisjointMut;
 
 fn buf16() -> DisjointMut<Vec<u16>> {

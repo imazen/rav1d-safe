@@ -1,5 +1,9 @@
 //! The 0.3 constructor contract, including concurrent first use and mutation
 //! before/after initialization. Run with std, no_std, and both Miri models.
+// Every test here observes the overlap tracker (refusals, poisoning, liveness).
+// The `untracked` feature removes it by design; see tests/untracked_mode.rs.
+#![cfg(not(feature = "untracked"))]
+
 use rav1d_disjoint_mut::DisjointMut;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Barrier;

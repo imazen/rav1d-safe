@@ -2,6 +2,10 @@
 //! hull arithmetic or overlap predicates with the implementation. Run natively
 //! and under both Miri models (including with no default features).
 
+// Every test here observes the overlap tracker (refusals, poisoning, liveness).
+// The `untracked` feature removes it by design; see tests/untracked_mode.rs.
+#![cfg(not(feature = "untracked"))]
+
 use rav1d_disjoint_mut::DisjointMut;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 

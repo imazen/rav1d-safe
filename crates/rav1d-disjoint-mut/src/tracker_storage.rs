@@ -14,7 +14,7 @@ pub(super) enum TrackerStorage {
     Lazy(spin::Once<Box<BorrowTracker>>),
 }
 
-#[cfg(all(test, not(disjoint_mut_loom)))]
+#[cfg(all(test, not(disjoint_mut_loom), not(feature = "untracked")))]
 mod tests {
     use super::*;
     use std::sync::Barrier;
@@ -63,7 +63,7 @@ mod tests {
 
 impl TrackerStorage {
     pub(super) const fn new() -> Self {
-        if cfg!(feature = "__probe_untracked") {
+        if cfg!(feature = "untracked") {
             Self::Unchecked
         } else {
             Self::Lazy(spin::Once::new())
@@ -71,7 +71,7 @@ impl TrackerStorage {
     }
 
     pub(super) fn eager(len: usize) -> Self {
-        if cfg!(feature = "__probe_untracked") {
+        if cfg!(feature = "untracked") {
             Self::Unchecked
         } else {
             Self::Eager(Box::new(BorrowTracker::new(len)))
@@ -81,12 +81,12 @@ impl TrackerStorage {
     pub(super) const fn is_checked(&self) -> bool {
         // Under the measurement feature every constructor returns Unchecked;
         // folding `false` here lets callers elide the parent/cleanup work too.
-        !cfg!(feature = "__probe_untracked") && !matches!(self, Self::Unchecked)
+        !cfg!(feature = "untracked") && !matches!(self, Self::Unchecked)
     }
 
     #[inline]
     pub(super) fn get_or_init(&self, len: impl FnOnce() -> usize) -> Option<&BorrowTracker> {
-        if cfg!(feature = "__probe_untracked") {
+        if cfg!(feature = "untracked") {
             return None;
         }
         match self {
@@ -99,7 +99,7 @@ impl TrackerStorage {
     /// Retirement and poisoning must only use an already-published tracker.
     #[inline]
     pub(super) fn get(&self) -> Option<&BorrowTracker> {
-        if cfg!(feature = "__probe_untracked") {
+        if cfg!(feature = "untracked") {
             return None;
         }
         match self {
@@ -113,7 +113,7 @@ impl TrackerStorage {
     /// storage stays lazy; its eventual initializer will read the new length.
     #[inline]
     pub(super) fn get_mut(&mut self) -> Option<&mut BorrowTracker> {
-        if cfg!(feature = "__probe_untracked") {
+        if cfg!(feature = "untracked") {
             return None;
         }
         match self {

@@ -1998,8 +1998,8 @@ mod compact_window {
     /// deliberately over-wide window — the plane worst case the H direction
     /// used before #524 — and requires it to panic.
     ///
-    /// Gated with its twin: `unchecked` removes the tracker this asserts on.
-    #[cfg(not(feature = "unchecked"))]
+    /// Gated with its twin: `unchecked`/`untracked` remove the tracker this asserts on.
+    #[cfg(not(any(feature = "unchecked", feature = "untracked")))]
     #[test]
     fn issue_524_harness_detects_a_window_that_does_lap() {
         use crate::include::common::bitdepth::BitDepth8;

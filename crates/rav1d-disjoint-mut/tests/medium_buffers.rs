@@ -1,6 +1,10 @@
 //! Shared scratch sizes below the former 64K-element sharding threshold.
 //! Keep the public API tests independent of the tracker's placement formula.
 
+// Every test here observes the overlap tracker (refusals, poisoning, liveness).
+// The `untracked` feature removes it by design; see tests/untracked_mode.rs.
+#![cfg(not(feature = "untracked"))]
+
 use rav1d_disjoint_mut::DisjointMut;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Barrier;

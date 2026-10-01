@@ -2080,8 +2080,9 @@ fn obmc<BD: BitDepth>(
                     a_r.mv.mv[0],
                     &f.refp[a_r.r#ref.r#ref[0] as usize - 1],
                     a_r.r#ref.r#ref[0] as usize - 1,
-                    dav1d_filter_2d[*f.a[t.a].filter[1].index((bx4 + x + 1) as usize) as usize]
-                        [*f.a[t.a].filter[0].index((bx4 + x + 1) as usize) as usize],
+                    dav1d_filter_2d
+                        [f.a[t.a].filter[1].index((bx4 + x + 1) as usize).get() as usize]
+                        [f.a[t.a].filter[0].index((bx4 + x + 1) as usize).get() as usize],
                 )?;
                 #[cfg(feature = "c-ffi")]
                 let lap_px: &[BD::Pixel; SCRATCH_LAP_LEN] = lap;
@@ -2118,8 +2119,8 @@ fn obmc<BD: BitDepth>(
                 // ONE array, so two `&mut` borrows at runtime indices cannot
                 // coexist, and neither can outlive into the `mc` call's argument
                 // list.
-                let lf1 = t.l.filter[1].get_mut()[(by4 + y + 1) as usize] as usize;
-                let lf0 = t.l.filter[0].get_mut()[(by4 + y + 1) as usize] as usize;
+                let lf1 = t.l.filter[1].get_mut()[(by4 + y + 1) as usize].get() as usize;
+                let lf0 = t.l.filter[0].get_mut()[(by4 + y + 1) as usize].get() as usize;
                 let left_filter_2d = dav1d_filter_2d[lf1][lf0];
                 let stride_px = ow4 as usize * h_mul as usize;
                 #[cfg(feature = "c-ffi")]
@@ -3407,15 +3408,13 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             if t.frame_thread.pass != 2 {
                                 t.tl_4x4_filter
                             } else {
-                                f.frame_thread
-                                    .b
-                                    .index(
-                                        (t.b.y as usize - 1) * f.b4_stride as usize
-                                            + t.b.x as usize
-                                            - 1,
-                                    )
-                                    .ii
-                                    .filter2d()
+                                f.frame_thread.b[(t.b.y as usize - 1) * f.b4_stride as usize
+                                    + t.b.x as usize
+                                    - 1]
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .ii
+                                .filter2d()
                             },
                         )?;
                     }
@@ -3426,8 +3425,8 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                     // Sequenced into locals: `filter[0]` and `filter[1]` are
                     // elements of ONE array, so two `&mut` borrows at runtime
                     // indices cannot coexist.
-                    let lf1 = t.l.filter[1].get_mut()[by4 as usize] as usize;
-                    let lf0 = t.l.filter[0].get_mut()[by4 as usize] as usize;
+                    let lf1 = t.l.filter[1].get_mut()[by4 as usize].get() as usize;
+                    let lf0 = t.l.filter[0].get_mut()[by4 as usize].get() as usize;
                     let left_filter_2d = dav1d_filter_2d[lf1][lf0];
                     for pl in 0..2 {
                         let r = *f.rf.r.index(r[1] + t.b.x as usize - 1);
@@ -3449,11 +3448,10 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             if t.frame_thread.pass != 2 {
                                 left_filter_2d
                             } else {
-                                f.frame_thread
-                                    .b
-                                    .index(
-                                        t.b.y as usize * f.b4_stride as usize + t.b.x as usize - 1,
-                                    )
+                                f.frame_thread.b
+                                    [t.b.y as usize * f.b4_stride as usize + t.b.x as usize - 1]
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                                     .ii
                                     .filter2d()
                             },
@@ -3463,8 +3461,8 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                 }
                 if bh4 == ss_ver {
                     let top_filter_2d = dav1d_filter_2d
-                        [*f.a[t.a].filter[1].index(bx4 as usize) as usize]
-                        [*f.a[t.a].filter[0].index(bx4 as usize) as usize];
+                        [f.a[t.a].filter[1].index(bx4 as usize).get() as usize]
+                        [f.a[t.a].filter[0].index(bx4 as usize).get() as usize];
                     for pl in 0..2 {
                         let r = *f.rf.r.index(r[0] + t.b.x as usize);
                         mc::<BD>(
@@ -3485,12 +3483,10 @@ pub(crate) fn rav1d_recon_b_inter<BD: BitDepth>(
                             if t.frame_thread.pass != 2 {
                                 top_filter_2d
                             } else {
-                                f.frame_thread
-                                    .b
-                                    .index(
-                                        (t.b.y as usize - 1) * f.b4_stride as usize
-                                            + t.b.x as usize,
-                                    )
+                                f.frame_thread.b
+                                    [(t.b.y as usize - 1) * f.b4_stride as usize + t.b.x as usize]
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
                                     .ii
                                     .filter2d()
                             },

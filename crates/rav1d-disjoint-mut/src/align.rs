@@ -104,7 +104,7 @@ macro_rules! def_align {
         /// `as_mut_slice` is overridden to avoid creating `&Aligned<_, [V; N]>`,
         /// which would be a SharedReadOnly tag covering the inline data — UB
         /// under Stacked Borrows when concurrent mutable guards exist.
-        unsafe impl<V: Copy, const N: usize> ExternalAsMutPtr
+        unsafe impl<V: crate::PlainData, const N: usize> ExternalAsMutPtr
             for aligned::Aligned<aligned::$align_ty, [V; N]>
         {
             type Target = V;
@@ -223,7 +223,7 @@ impl<T: Clone> TryResizable for AlignedVec64<T> {
 /// `as_ptr()` takes `&self` and returns `*const T`, which we cast to `*mut T`.
 /// This avoids the Stacked Borrows hazard of creating `&mut AVec` through
 /// `as_mut_ptr(&mut self)`, which would issue a Unique retag over the heap data.
-unsafe impl<T: Copy> ExternalAsMutPtr for AlignedVec64<T> {
+unsafe impl<T: crate::PlainData> ExternalAsMutPtr for AlignedVec64<T> {
     type Target = T;
 
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut T {
@@ -323,7 +323,7 @@ impl<T: Clone> TryResizable for AlignedVec32<T> {
 }
 
 /// SAFETY: See [`AlignedVec64`]'s impl for rationale.
-unsafe impl<T: Copy> ExternalAsMutPtr for AlignedVec32<T> {
+unsafe impl<T: crate::PlainData> ExternalAsMutPtr for AlignedVec32<T> {
     type Target = T;
 
     unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut T {

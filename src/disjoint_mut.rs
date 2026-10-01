@@ -15,6 +15,7 @@ pub use rav1d_disjoint_mut::DisjointMutGuard;
 pub use rav1d_disjoint_mut::DisjointMutSlice;
 #[cfg(feature = "c-ffi")]
 pub use rav1d_disjoint_mut::ExternalAsMutPtr;
+pub use rav1d_disjoint_mut::PlainData;
 pub use rav1d_disjoint_mut::SliceBounds;
 pub use rav1d_disjoint_mut::TryResizable;
 pub use rav1d_disjoint_mut::TryResizableWith;
@@ -42,7 +43,7 @@ pub fn dm_new<T: AsMutPtr>(val: T) -> DisjointMut<T> {
 
 /// Create a [`DisjointMutArcSlice`] with tracking appropriate for the current build.
 #[cfg(not(feature = "unchecked"))]
-pub fn dm_arc_try_new<T: Copy>(
+pub fn dm_arc_try_new<T: PlainData>(
     n: usize,
     value: T,
 ) -> Result<DisjointMutArcSlice<T>, alloc::collections::TryReserveError> {
@@ -52,7 +53,7 @@ pub fn dm_arc_try_new<T: Copy>(
 /// See checked variant above.
 #[cfg(feature = "unchecked")]
 #[allow(unsafe_code)]
-pub fn dm_arc_try_new<T: Copy>(
+pub fn dm_arc_try_new<T: PlainData>(
     n: usize,
     value: T,
 ) -> Result<DisjointMutArcSlice<T>, alloc::collections::TryReserveError> {

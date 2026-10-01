@@ -4,7 +4,6 @@ use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::src::align::ArrayDefault;
 use crate::src::enum_map::DefaultValue;
 use crate::src::enum_map::EnumKey;
-use crate::src::in_range::InRange;
 use bitflags::bitflags;
 use std::fmt;
 use std::fmt::Display;
@@ -586,22 +585,40 @@ impl Default for Av1BlockIntraInter {
 }
 
 /// Within range `0..`[`SegmentId::COUNT`].
-#[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+///
+/// Stored as a plain byte (every bit pattern is a value) so segment maps can
+/// live in a [`DisjointMut`](crate::src::disjoint_mut::DisjointMut); [`get`](Self::get)
+/// masks, so even a corrupt byte decodes to an in-range id.
+#[derive(
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromBytes,
+    IntoBytes,
+    KnownLayout,
+    Immutable,
+)]
+#[repr(transparent)]
 pub struct SegmentId {
-    id: InRange<u8, 0, { Self::COUNT as u128 - 1 }>,
+    id: u8,
 }
+
+const _: () = assert!(SegmentId::COUNT.is_power_of_two());
 
 impl SegmentId {
     pub const COUNT: usize = 8;
 
     pub fn new(id: u8) -> Option<Self> {
-        Some(Self {
-            id: InRange::new(id)?,
-        })
+        ((id as usize) < Self::COUNT).then_some(Self { id })
     }
 
+    #[inline(always)]
     pub fn get(&self) -> usize {
-        self.id.get() as usize
+        self.id as usize & (Self::COUNT - 1)
     }
 
     pub fn min() -> Self {
@@ -615,7 +632,7 @@ impl SegmentId {
 
 impl Display for SegmentId {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self.id)
+        write!(f, "{}", self.get())
     }
 }
 

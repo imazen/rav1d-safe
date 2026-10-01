@@ -75,6 +75,10 @@
 
 #![no_std]
 #![deny(unsafe_op_in_unsafe_fn)]
+// `untracked` compiles the tracker but never reaches it (every accessor is a
+// compile-time `None`), so its machinery and the guards' bookkeeping fields are
+// dead by design in that configuration.
+#![cfg_attr(feature = "untracked", allow(dead_code))]
 
 // Cargo features are additive across dependencies. These historical timing
 // arms must never turn the safe constructor into an unchecked one in a release.
@@ -203,6 +207,22 @@ pub struct DisjointMut<T: ?Sized + AsMutPtr> {
 
     inner: UnsafeCell<T>,
 }
+
+/// Element types a [`DisjointMut`] may hold: `Copy` and
+/// [`zerocopy::FromBytes`], i.e. EVERY bit pattern is a valid value and there
+/// are no pointers, references or niches.
+///
+/// This is what lets the untracked mode (`untracked` feature) state exactly what
+/// an overlapping access can do. A racing or aliased read of such a type yields
+/// some valid value of that type -- wrong output at worst -- and never an
+/// invalid enum discriminant, a dangling pointer or an out-of-range index
+/// derived from a forged one. Bounds are separately enforced against the
+/// owner's live length, which is never part of the contested bytes. Overlap is
+/// still undefined behaviour in the Rust memory model; this bound confines the
+/// *consequences* to wrong values, and makes that confinement a compile-time
+/// fact rather than a manual audit (cf. upstream rav1d's "checked manually").
+pub trait PlainData: Copy + zerocopy::FromBytes {}
+impl<T: Copy + zerocopy::FromBytes> PlainData for T {}
 
 /// SAFETY: If `T: Send`, then sending `DisjointMut<T>` across threads is safe.
 /// There is no non-`Sync` state that is left on another thread
@@ -343,7 +363,7 @@ impl<T: ?Sized + AsMutPtr> Drop for BorrowCleanup<'_, T> {
         // This only fires on panic (mem::forget on success path).
         // Poison rather than clean up — the data structure is compromised.
         // `__probe_untracked`: parent is a const-None, gate the whole block.
-        #[cfg(not(feature = "__probe_untracked"))]
+        #[cfg(not(feature = "untracked"))]
         if let Some(parent) = self.parent {
             parent.tracker.get().unwrap().poison();
         }
@@ -653,11 +673,11 @@ mod sealed {
     /// By sealing the trait, we ensure only audited impls in this crate exist.
     pub trait Sealed {}
 
-    impl<V: Copy> Sealed for Vec<V> {}
-    impl<V: Copy> Sealed for &mut [V] {}
-    impl<V: Copy, const N: usize> Sealed for [V; N] {}
-    impl<V: Copy> Sealed for [V] {}
-    impl<V: Copy> Sealed for Box<[V]> {}
+    impl<V: super::PlainData> Sealed for Vec<V> {}
+    impl<V: super::PlainData> Sealed for &mut [V] {}
+    impl<V: super::PlainData, const N: usize> Sealed for [V; N] {}
+    impl<V: super::PlainData> Sealed for [V] {}
+    impl<V: super::PlainData> Sealed for Box<[V]> {}
 
     /// Sealing trait for index/range traits.
     ///
@@ -695,7 +715,7 @@ mod sealed {
 /// which requires `Copy` element types. This bound does not permit data races;
 /// exclusion and synchronization must prevent every conflicting data access.
 pub unsafe trait AsMutPtr: sealed::Sealed {
-    type Target: Copy;
+    type Target: PlainData;
 
     /// Convert a mutable pointer to a collection to a mutable pointer to the
     /// underlying slice.
@@ -787,7 +807,7 @@ pub unsafe trait AsMutPtr: sealed::Sealed {
 /// See the `Vec<V>` and `Aligned<A, [V; N]>` implementations in this
 /// crate for reference patterns.
 pub unsafe trait ExternalAsMutPtr {
-    type Target: Copy;
+    type Target: PlainData;
 
     /// Returns a mutable pointer to the first element.
     ///
@@ -1019,15 +1039,19 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         // SAME clamped bounds the tracker saw, so the two instruments reconcile
         // registration for registration.
         #[cfg(feature = "__probe_bounds")]
-        let probe = match parent {
-            Some(_) => bounds_probe::acquire(
+        // Under `untracked` there is no tracker (so `parent` is always `None`) but
+        // the probe's own cross-worker scan is independent of it: that is the
+        // overlap CENSUS for the race-tolerant mode.
+        let probe = if parent.is_some() || cfg!(feature = "untracked") {
+            bounds_probe::acquire(
                 core::panic::Location::caller(),
                 self.as_mut_ptr() as usize,
                 true,
                 bounds.range.start,
                 bounds.range.end,
-            ),
-            None => bounds_probe::Ticket::NONE,
+            )
+        } else {
+            bounds_probe::Ticket::NONE
         };
         DisjointMutGuard {
             slice,
@@ -1078,15 +1102,19 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         let slice = unsafe { NonNull::new_unchecked(index.get_mut(self.as_mut_slice())) };
         mem::forget(cleanup);
         #[cfg(feature = "__probe_bounds")]
-        let probe = match parent {
-            Some(_) => bounds_probe::acquire(
+        // Under `untracked` there is no tracker (so `parent` is always `None`) but
+        // the probe's own cross-worker scan is independent of it: that is the
+        // overlap CENSUS for the race-tolerant mode.
+        let probe = if parent.is_some() || cfg!(feature = "untracked") {
+            bounds_probe::acquire(
                 core::panic::Location::caller(),
                 self.as_mut_ptr() as usize,
                 false,
                 bounds.range.start,
                 bounds.range.end,
-            ),
-            None => bounds_probe::Ticket::NONE,
+            )
+        } else {
+            bounds_probe::Ticket::NONE
         };
         DisjointImmutGuard {
             slice,
@@ -1553,9 +1581,9 @@ use tracker_legacy as checked;
 /// A no-op when the tracker is compiled out.
 #[inline]
 pub fn set_parallelism(n: usize) {
-    #[cfg(feature = "__probe_untracked")]
+    #[cfg(feature = "untracked")]
     let _ = n;
-    #[cfg(not(feature = "__probe_untracked"))]
+    #[cfg(not(feature = "untracked"))]
     checked::set_parallelism(n);
 }
 
@@ -1570,9 +1598,9 @@ pub fn set_parallelism(n: usize) {
 /// Monotone, and a no-op when the tracker is compiled out.
 #[inline]
 pub fn set_tile_concurrency(n: usize) {
-    #[cfg(feature = "__probe_untracked")]
+    #[cfg(feature = "untracked")]
     let _ = n;
-    #[cfg(not(feature = "__probe_untracked"))]
+    #[cfg(not(feature = "untracked"))]
     checked::set_tile_concurrency(n);
 }
 
@@ -1587,7 +1615,7 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointMutGuard<'a, T, V> {
         // concurrency always implies a tracker-observed one.
         #[cfg(feature = "__probe_bounds")]
         bounds_probe::release(self.probe);
-        #[cfg(not(feature = "__probe_untracked"))]
+        #[cfg(not(feature = "untracked"))]
         if let Some(parent) = self.parent {
             let tracker = parent.tracker.get().unwrap();
             // If the thread is panicking while we hold a mutable guard,
@@ -1606,7 +1634,7 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointImmutGuard<'a, T, V> 
     fn drop(&mut self) {
         #[cfg(feature = "__probe_bounds")]
         bounds_probe::release(self.probe);
-        #[cfg(not(feature = "__probe_untracked"))]
+        #[cfg(not(feature = "untracked"))]
         if let Some(parent) = self.parent {
             parent.tracker.get().unwrap().remove(self.borrow_id);
         }
@@ -1704,7 +1732,7 @@ impl<'a, T: ?Sized + AsMutPtr, V> DisjointImmutRectGuard<'a, T, V> {
 
 impl<'a, T: ?Sized + AsMutPtr, V> Drop for DisjointImmutRectGuard<'a, T, V> {
     fn drop(&mut self) {
-        #[cfg(not(feature = "__probe_untracked"))]
+        #[cfg(not(feature = "untracked"))]
         if let Some(parent) = self.parent {
             parent.tracker.get().unwrap().remove(self.borrow_id);
         }
@@ -1787,7 +1815,7 @@ impl<'a, T: ?Sized + AsMutPtr, V> DisjointMutRectGuard<'a, T, V> {
 
 impl<'a, T: ?Sized + AsMutPtr, V> Drop for DisjointMutRectGuard<'a, T, V> {
     fn drop(&mut self) {
-        #[cfg(not(feature = "__probe_untracked"))]
+        #[cfg(not(feature = "untracked"))]
         if let Some(parent) = self.parent {
             let tracker = parent.tracker.get().unwrap();
             // A panic while an exclusive guard is live may leave the data
@@ -2286,7 +2314,7 @@ impl<T: AsMutPtr + ResizableWith> DisjointMut<T> {
 /// allocator, not from the reference we read it through. The `UnsafeCell`
 /// wrapper in `DisjointMut` provides the permission for concurrent writes
 /// to the heap data.
-unsafe impl<V: Copy> AsMutPtr for Vec<V> {
+unsafe impl<V: PlainData> AsMutPtr for Vec<V> {
     type Target = V;
 
     unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
@@ -2310,7 +2338,7 @@ unsafe impl<V: Copy> AsMutPtr for Vec<V> {
 /// without materializing a reference to the full slice. The data is borrowed
 /// from the caller, so creating `&[V]` or `&mut [V]` for metadata lookup would
 /// conflict with outstanding guards under Stacked Borrows.
-unsafe impl<V: Copy> AsMutPtr for &mut [V] {
+unsafe impl<V: PlainData> AsMutPtr for &mut [V] {
     type Target = V;
 
     unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
@@ -2336,7 +2364,7 @@ unsafe impl<V: Copy> AsMutPtr for &mut [V] {
 /// The array data is inline (same allocation as the UnsafeCell), so we
 /// must not create `&[V; N]` or `&[V]` which would conflict with guards.
 /// Length is the compile-time constant `N`.
-unsafe impl<V: Copy, const N: usize> AsMutPtr for [V; N] {
+unsafe impl<V: PlainData, const N: usize> AsMutPtr for [V; N] {
     type Target = V;
 
     unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
@@ -2354,7 +2382,7 @@ unsafe impl<V: Copy, const N: usize> AsMutPtr for [V; N] {
 
 /// SAFETY: Pure pointer operations only — no references created.
 /// Like arrays, the slice data IS the allocation, so `&[V]` would conflict.
-unsafe impl<V: Copy> AsMutPtr for [V] {
+unsafe impl<V: PlainData> AsMutPtr for [V] {
     type Target = V;
 
     unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
@@ -2378,7 +2406,7 @@ unsafe impl<V: Copy> AsMutPtr for [V] {
 ///
 /// This is critical for Stacked Borrows: creating `&[V]` to the heap would
 /// conflict with concurrent `&mut [V]` guards from other threads.
-unsafe impl<V: Copy> AsMutPtr for Box<[V]> {
+unsafe impl<V: PlainData> AsMutPtr for Box<[V]> {
     type Target = V;
 
     unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [Self::Target] {
@@ -2410,13 +2438,13 @@ pub type DisjointMutSlice<T> = DisjointMut<Box<[T]>>;
 /// An `Arc<[_]>` can be created, but adding a [`DisjointMut`] in between
 /// requires boxing since `DisjointMut` has tracking fields.
 #[derive(Clone)]
-pub struct DisjointMutArcSlice<T: Copy> {
+pub struct DisjointMutArcSlice<T: PlainData> {
     /// Use `Deref` instead: `arc_slice.index_mut(0..50)` works directly.
     #[doc(hidden)]
     pub inner: Arc<DisjointMutSlice<T>>,
 }
 
-impl<T: Copy> Deref for DisjointMutArcSlice<T> {
+impl<T: PlainData> Deref for DisjointMutArcSlice<T> {
     type Target = DisjointMutSlice<T>;
 
     #[inline]
@@ -2425,7 +2453,7 @@ impl<T: Copy> Deref for DisjointMutArcSlice<T> {
     }
 }
 
-impl<T: Copy> DisjointMutArcSlice<T> {
+impl<T: PlainData> DisjointMutArcSlice<T> {
     /// Create a new `DisjointMutArcSlice` with `n` elements, all set to `value`.
     ///
     /// Returns `Err` on allocation failure instead of panicking.
@@ -2456,7 +2484,7 @@ impl<T: Copy> DisjointMutArcSlice<T> {
     }
 }
 
-impl<T: Copy> FromIterator<T> for DisjointMutArcSlice<T> {
+impl<T: PlainData> FromIterator<T> for DisjointMutArcSlice<T> {
     fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         let box_slice = iter.into_iter().collect::<Box<[_]>>();
         Self {
@@ -2465,7 +2493,7 @@ impl<T: Copy> FromIterator<T> for DisjointMutArcSlice<T> {
     }
 }
 
-impl<T: Copy> Default for DisjointMutArcSlice<T> {
+impl<T: PlainData> Default for DisjointMutArcSlice<T> {
     fn default() -> Self {
         [].into_iter().collect()
     }
@@ -2660,6 +2688,7 @@ fn test_overlapping_immut() {
     assert_eq!(guard1[2], guard2[0]);
 }
 
+#[cfg(not(feature = "untracked"))]
 #[test]
 #[should_panic]
 fn test_overlapping_mut() {
@@ -2735,6 +2764,7 @@ fn test_dangerously_unchecked_skips_tracking() {
     let _g2 = v.index_mut(25..75); // overlaps with g1 — only safe because this is a test
 }
 
+#[cfg(not(feature = "untracked"))]
 #[test]
 fn test_new_always_tracked() {
     use alloc::vec;

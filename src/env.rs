@@ -21,6 +21,9 @@ use crate::src::levels::TxfmSize;
 use crate::src::levels::TxfmType;
 use crate::src::levels::V_ADST;
 use crate::src::levels::V_FLIPADST;
+use crate::src::plain::CompTypeByte;
+use crate::src::plain::FilterModeByte;
+use crate::src::plain::TxfmSizeByte;
 use crate::src::refmvs::RefMvsCandidate;
 use crate::src::tables::TxfmInfo;
 use std::cmp;
@@ -61,15 +64,15 @@ pub struct BlockContext {
     pub skip: DisjointMut<Align8<[u8; 32]>>,
     pub skip_mode: DisjointMut<Align8<[u8; 32]>>,
     pub intra: DisjointMut<Align8<[u8; 32]>>,
-    pub comp_type: DisjointMut<Align8<[Option<CompInterType>; 32]>>,
+    pub comp_type: DisjointMut<Align8<[CompTypeByte; 32]>>,
     pub r#ref: [DisjointMut<Align8<[i8; 32]>>; 2],
 
     /// No [`Rav1dFilterMode::Switchable`]s here.
     /// TODO(kkysen) split [`Rav1dFilterMode`] into a version without [`Rav1dFilterMode::Switchable`].
-    pub filter: [DisjointMut<Align8<[Rav1dFilterMode; 32]>>; 2],
+    pub filter: [DisjointMut<Align8<[FilterModeByte; 32]>>; 2],
 
     pub tx_intra: DisjointMut<Align8<[i8; 32]>>,
-    pub tx: DisjointMut<Align8<[TxfmSize; 32]>>,
+    pub tx: DisjointMut<Align8<[TxfmSizeByte; 32]>>,
     pub tx_lpf_y: DisjointMut<Align8<[u8; 32]>>,
     pub tx_lpf_uv: DisjointMut<Align8<[u8; 32]>>,
     pub partition: DisjointMut<Align8<[u8; 16]>>,
@@ -205,12 +208,12 @@ pub fn get_filter_ctx(
     let a_filter = filter_of!(
         *a.r#ref[0].index(xb4 as usize),
         *a.r#ref[1].index(xb4 as usize),
-        *a.filter[dir as usize].index(xb4 as usize)
+        a.filter[dir as usize].index(xb4 as usize).get()
     );
     let l_filter = filter_of!(
         lread!(l, r#ref[0], yb4),
         lread!(l, r#ref[1], yb4),
-        lread!(l, filter[dir as usize], yb4)
+        lread!(l, filter[dir as usize], yb4).get()
     );
 
     (comp as u8) * 4
@@ -391,7 +394,7 @@ pub fn get_jnt_comp_ctx(
     let offset = (d0 == d1) as u8;
     macro_rules! jnt_ctx {
         ($comp:expr, $ref0:expr) => {
-            ($comp >= Some(CompInterType::Avg) || $ref0 == 6) as u8
+            ($comp.get() >= Some(CompInterType::Avg) || $ref0 == 6) as u8
         };
     }
     let a_ctx = jnt_ctx!(
@@ -407,7 +410,7 @@ pub fn get_jnt_comp_ctx(
 pub fn get_mask_comp_ctx(a: &BlockContext, l: &mut BlockContext, yb4: c_int, xb4: c_int) -> u8 {
     macro_rules! mask_ctx {
         ($comp:expr, $ref0:expr) => {
-            if $comp >= Some(CompInterType::Seg) {
+            if $comp.get() >= Some(CompInterType::Seg) {
                 1
             } else if $ref0 == 6 {
                 3
@@ -870,7 +873,7 @@ mod left_split_parity {
         let [a_filter, l_filter] = [(a, xb4), (l, yb4)].map(|(al, b4)| {
             if *al.r#ref[0].index(b4 as usize) == r#ref || *al.r#ref[1].index(b4 as usize) == r#ref
             {
-                *al.filter[dir as usize].index(b4 as usize)
+                al.filter[dir as usize].index(b4 as usize).get()
             } else {
                 Rav1dFilterMode::N_SWITCHABLE_FILTERS
             }
@@ -1016,7 +1019,7 @@ mod left_split_parity {
         let d1 = get_poc_diff(order_hint_n_bits, poc as c_int, ref1poc as c_int).abs();
         let offset = (d0 == d1) as u8;
         let [a_ctx, l_ctx] = [(a, xb4), (l, yb4)].map(|(al, b4)| {
-            (*al.comp_type.index(b4 as usize) >= Some(CompInterType::Avg)
+            (al.comp_type.index(b4 as usize).get() >= Some(CompInterType::Avg)
                 || *al.r#ref[0].index(b4 as usize) == 6) as u8
         });
 
@@ -1030,7 +1033,7 @@ mod left_split_parity {
         xb4: c_int,
     ) -> u8 {
         let [a_ctx, l_ctx] = [(a, xb4), (l, yb4)].map(|(al, b4)| {
-            if *al.comp_type.index(b4 as usize) >= Some(CompInterType::Seg) {
+            if al.comp_type.index(b4 as usize).get() >= Some(CompInterType::Seg) {
                 1
             } else if *al.r#ref[0].index(b4 as usize) == 6 {
                 3
@@ -1353,7 +1356,7 @@ mod left_split_parity {
                 comp_type_of(rng.below(5))
             };
             b.intra.get_mut()[i] = is_intra as u8;
-            b.comp_type.get_mut()[i] = comp;
+            b.comp_type.get_mut()[i] = comp.into();
             // -1 is intra; 0..=6 are the seven reference slots.
             b.r#ref[0].get_mut()[i] = if is_intra { -1 } else { rng.below(7) as i8 };
             b.r#ref[1].get_mut()[i] = if comp.is_some() {
@@ -1364,8 +1367,8 @@ mod left_split_parity {
             b.mode.get_mut()[i] = rng.below(N_INTRA_PRED_MODES as u32) as u8;
             b.uvmode.get_mut()[i] = rng.below(N_UV_INTRA_PRED_MODES as u32) as u8;
             b.tx_intra.get_mut()[i] = rng.below(9) as i8 - 1;
-            b.filter[0].get_mut()[i] = filter_of(rng.below(5));
-            b.filter[1].get_mut()[i] = filter_of(rng.below(5));
+            b.filter[0].get_mut()[i] = filter_of(rng.below(5)).into();
+            b.filter[1].get_mut()[i] = filter_of(rng.below(5)).into();
         }
         for i in 0..16 {
             b.partition.get_mut()[i] = rng.below(32) as u8;

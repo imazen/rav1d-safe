@@ -982,10 +982,13 @@ impl Rav1dPictureDataComponent {
     /// allocations install a policy while still exclusively owned.
     #[inline(always)]
     pub(crate) fn uses_row_guards(&self) -> bool {
-        // MEASUREMENT ONLY (`__probe_nocompact`): zero-copy direct guards at t>1.
-        #[cfg(feature = "__probe_nocompact")]
+        // `untracked`: overlap is not tracked, so the compact copy-in/write-back
+        // path (which exists only to avoid reserving overlapping ranges, and to
+        // keep stale copied bytes out of a neighbour's write set) is pure cost.
+        // Take the zero-copy in-place guards at every thread count.
+        #[cfg(feature = "untracked")]
         return false;
-        #[cfg(not(feature = "__probe_nocompact"))]
+        #[cfg(not(feature = "untracked"))]
         self.threading
             .map_or_else(tile_threading_active, |p| p.parallel)
     }
@@ -2883,7 +2886,7 @@ mod tile_threading_latch_tests {
 // `unchecked` build (which `asm` implies) — tracking is compiled out there and
 // the tests' own anti-vacuity assertion correctly fires. Same idiom as
 // src/disjoint_mut.rs:29 and src/safe_simd/pixel_access.rs:451.
-#[cfg(all(test, not(feature = "unchecked")))]
+#[cfg(all(test, not(feature = "unchecked"), not(feature = "untracked")))]
 mod row_guard_policy_tests {
     use super::{
         Rav1dPictureDataComponent, Rav1dPictureDataComponentInner, set_tile_threading,

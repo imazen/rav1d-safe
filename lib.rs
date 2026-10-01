@@ -148,6 +148,7 @@ pub mod src {
     #[cfg_attr(feature = "c-ffi", allow(unsafe_code))]
     pub(crate) mod log;
     pub(crate) mod pixels;
+    pub(crate) mod plain;
     #[cfg(any(feature = "asm", feature = "c-ffi"))]
     #[allow(unsafe_code)]
     pub mod send_sync_non_null;

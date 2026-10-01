@@ -65,6 +65,10 @@
 //! re-took between the two observations cannot be mistaken for one that stayed
 //! live. That direction of error under-reports and never invents.
 
+// Every test here observes the overlap tracker (refusals, poisoning, liveness).
+// The `untracked` feature removes it by design; see tests/untracked_mode.rs.
+#![cfg(not(feature = "untracked"))]
+
 use rav1d_disjoint_mut::DisjointMut;
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::Arc;

@@ -103,6 +103,8 @@ mod tests {
     use std::panic::{AssertUnwindSafe, catch_unwind};
     use zerocopy::IntoBytes;
 
+    // Asserts a tracker refusal; `untracked` has no tracker.
+    #[cfg(not(feature = "untracked"))]
     #[test]
     fn reference_window_reserves_its_full_hull_including_gaps() {
         for stride in [64isize, -64] {

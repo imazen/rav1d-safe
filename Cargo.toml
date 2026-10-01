@@ -95,6 +95,12 @@ default = ["bitdepth_8", "bitdepth_16"]
 # Also disables DisjointMut runtime overlap checking for hot-path
 # instances (PicBuf, ArcSlice) via dangerously_unchecked().
 unchecked = []
+# Race-tolerant fast mode: NO overlap tracking and, under tile threading, zero-copy
+# in-place guards instead of the compact copy-in / diff-write-back path.
+# Slice BOUNDS CHECKS STAY ON. Overlapping access is formally UB, but every
+# `DisjointMut` element is `PlainData` (all bit patterns valid, no pointers), so
+# its only consequence is a wrong value. Opt-in; see docs/UNTRACKED_MODE.md.
+untracked = ["rav1d-disjoint-mut/untracked"]
 
 # Internal measurement features: opt-in, prefixed, and outside the supported API.
 # See docs/DIAGNOSTIC_FEATURES.md for purpose, provenance and environment gates.
@@ -154,10 +160,8 @@ __probe_addnop = ["rav1d-disjoint-mut/__probe_addnop"]
 __probe_noscan = ["rav1d-disjoint-mut/__probe_noscan"]
 __probe_lockonly = ["rav1d-disjoint-mut/__probe_lockonly"]
 # Tracking off, bounds checks untouched (isolates the tracker from `unchecked`).
+# Historical alias (tracker removed, copy path kept): the old measurement arm.
 __probe_untracked = ["rav1d-disjoint-mut/__probe_untracked"]
-# Measurement-only (2026-10-01): with `__probe_untracked`, skip the t>1 compact copy-in/diff-write-back
-# paths and use the zero-copy direct guards, to price the race-tolerant ceiling. NEVER ship.
-__probe_nocompact = []
 __probe_shardsim = ["__probe_count", "rav1d-disjoint-mut/__probe_shardsim"]
 # Per-worker, per-task-stage timing + a sampled concurrency histogram (P1).
 __probe_tasktime = []

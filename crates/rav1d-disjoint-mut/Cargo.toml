@@ -37,7 +37,14 @@ instrument = ["std"]
 __probe_count = ["std"]
 __probe_noscan = []
 __probe_lockonly = []
-__probe_untracked = []
+# Overlap tracking OFF; slice bounds checks stay ON. Overlapping borrows become
+# undefined behaviour in the Rust memory model (aliasing / data races), but every
+# element type is `PlainData`, so the only observable consequence of an overlap is
+# a wrong value -- never an out-of-bounds access, an invalid value or a pointer.
+# See `PlainData` and the crate README. Opt-in; unifies across the whole graph.
+untracked = []
+# Historical alias used by the benchmark scripts.
+__probe_untracked = ["untracked"]
 # Wide-path reason counters. Unlike __probe_count this KEEPS the sharded tracker.
 __probe_wide = ["std"]
 # Thread-local usage census; retains production tracking, diagnostic timings only.
@@ -134,13 +141,14 @@ aligned = ["dep:aligned", "dep:aligned-vec"]
 # PicBuf: owned/borrowed byte buffer for DisjointMut (used by rav1d picture data).
 pic-buf = []
 # Zerocopy cast methods on guards (cast_slice, mut_slice_as, etc.).
-zerocopy = ["dep:zerocopy"]
+# (The crate now depends on zerocopy unconditionally for `PlainData`.)
+zerocopy = []
 
 [dependencies]
 spin = { version = "0.12.3", default-features = false, features = ["once"] }
 aligned = { version = "0.4.3", default-features = false, optional = true }
 aligned-vec = { version = "0.6.4", default-features = false, optional = true }
-zerocopy = { version = "0.8.56", default-features = false, optional = true }
+zerocopy = { version = "0.8.56", default-features = false }
 # MEASUREMENT ARM ONLY (`__probe_lock_park`), never in `default` and never in a
 # published feature: the parking shard-lock A/B. rav1d-safe already depends on
 # parking_lot 0.12, so this adds nothing to the workspace graph.

@@ -661,7 +661,11 @@ pub struct Rav1dFrameContextFrameThread {
     pub next_tile_row: [RelaxedAtomic<i32>; 2],
 
     /// Indexed using `t.b.y * f.b4_stride + t.b.x`.
-    pub b: DisjointMut<Vec<Av1Block>>,
+    ///
+    /// A `Mutex` per slot, not a `DisjointMut`: `Av1Block` is a Rust enum
+    /// (tagged union), so it is not plain data (see `PlainData`), and it is only
+    /// touched by 2-pass frame threading, written by pass 1 and read by pass 2.
+    pub b: Vec<std::sync::Mutex<Av1Block>>,
 
     pub cbi: Vec<RelaxedAtomic<CodedBlockInfo>>,
 
@@ -918,7 +922,6 @@ impl Rav1dFrameData {
         }
         self.rf.r.configure_parallelism(threads, tiles);
         self.rf.rp_proj.configure_parallelism(threads, tiles);
-        self.frame_thread.b.configure_parallelism(threads, tiles);
         self.lowest_pixel_mem.configure_parallelism(threads, tiles);
         self.lf
             .tx_lpf_right_edge
