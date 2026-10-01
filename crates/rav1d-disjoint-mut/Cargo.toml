@@ -72,6 +72,16 @@ criterion = { version = "0.8.2", default-features = false, optional = true }
 [target.'cfg(disjoint_mut_loom)'.dependencies]
 loom = "0.7.2"
 
+# Adversarial tests written by an independent reviewer; they exercise the aligned
+# and PicBuf containers, so they need those features.
+[[test]]
+name = "adversarial_review_default"
+required-features = ["aligned", "pic-buf"]
+
+[[test]]
+name = "adversarial_review_untracked"
+required-features = ["aligned", "pic-buf", "untracked"]
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(disjoint_mut_loom)'] }
 
