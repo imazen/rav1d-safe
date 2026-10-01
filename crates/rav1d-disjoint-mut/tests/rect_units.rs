@@ -120,7 +120,7 @@ fn u16_negative_stride_rect_covers_the_low_row() {
 /// `Vec<u8>` is only 1-byte aligned in principle (and in practice under Miri),
 /// and `index_rect_as::<u16>` correctly REFUSES a misaligned base — which
 /// would turn these controls into a test of the allocator.
-#[cfg(all(feature = "zerocopy", feature = "aligned"))]
+#[cfg(feature = "aligned")]
 fn bytes128() -> DisjointMut<rav1d_disjoint_mut::align::AlignedVec64<u8>> {
     let mut v = rav1d_disjoint_mut::align::AlignedVec64::<u8>::new();
     v.resize(128, 0u8);
@@ -132,7 +132,7 @@ fn bytes128() -> DisjointMut<rav1d_disjoint_mut::align::AlignedVec64<u8>> {
 /// The byte-buffer path the decoder uses is unchanged: a `u16` rectangle over a
 /// `u8` buffer registers `size_of::<u16>()` bytes per element, exactly as
 /// `mut_slice_as::<u16>` does, so the two still meet.
-#[cfg(all(feature = "zerocopy", feature = "aligned"))]
+#[cfg(feature = "aligned")]
 #[test]
 #[should_panic(expected = "overlapping DisjointMut")]
 fn u8_buffer_rect_as_u16_still_collides_with_slice_as_u16() {
@@ -145,7 +145,7 @@ fn u8_buffer_rect_as_u16_still_collides_with_slice_as_u16() {
 }
 
 /// And the byte-buffer control: the gap is free.
-#[cfg(all(feature = "zerocopy", feature = "aligned"))]
+#[cfg(feature = "aligned")]
 #[test]
 fn u8_buffer_rect_as_u16_gap_is_free() {
     let dm = bytes128();

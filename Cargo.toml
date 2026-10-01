@@ -54,7 +54,7 @@ cfg-if = "1.0.4"
 # Cooperative cancellation token (issue #412). no_std trait crate; the `Stop`
 # trait is Send+Sync and object-safe, so we store `Arc<dyn Stop>` in the context.
 enough = "0.4.4"
-rav1d-disjoint-mut = { version = "0.3.2", path = "crates/rav1d-disjoint-mut", default-features = false, features = ["std", "aligned", "pic-buf", "zerocopy"] }
+rav1d-disjoint-mut = { version = "0.3.2", path = "crates/rav1d-disjoint-mut", default-features = false, features = ["std", "aligned", "pic-buf"] }
 libc = { version = "0.2.189", optional = true }
 parking_lot = "0.12.5"
 paste = "1.0.15"
@@ -131,13 +131,13 @@ __pad_far = []
 __pad2 = ["__pad_text"]
 __pad3 = ["__pad2"]
 __pad4 = ["__pad3"]
-# Tracking off, copy path kept, bounds checks untouched: the historical tracker-only arm.
-# Historical alias (tracker removed, copy path kept): the old measurement arm.
-__probe_untracked = ["rav1d-disjoint-mut/__probe_untracked"]
+# Tracker-only ceiling (measurement): overlap tracking OFF in rav1d-disjoint-mut,
+# but the decoder keeps its tracked-mode compact copy path and n_fc clamp. NOT
+# the same as `untracked`, which also switches to zero-copy in-place guards and
+# unlocks frame threading. Used by the "tracker-off" benchmark arms.
+__probe_untracked = ["rav1d-disjoint-mut/untracked"]
 # Per-worker, per-task-stage timing + a sampled concurrency histogram (P1).
 __probe_tasktime = []
-# __probe_tasktime composed with the tracker removed: the ceiling's task profile.
-__probe_tasktime_untracked = ["__probe_tasktime", "__probe_untracked"]
 # (The `probe-nodeblockgate` family that ablated the `check_tile` deblock
 # barrier is gone with the barrier itself — 054e2ed. Its measurements are in
 # benchmarks/p1_scaling_2026-08-07.meta and p1_barrier_2026-08-07.meta.)

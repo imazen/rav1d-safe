@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Cargo feature unification must never SILENTLY make a safe constructor
-# untracked. `untracked` (alias `__probe_untracked`) is the one deliberate,
+# untracked. `untracked` is the one deliberate,
 # opt-in exception; this gate pins exactly where it can come from.
 #
 #   1. a default build of either crate must NOT enable it;

@@ -25,7 +25,7 @@ root = Path(__file__).resolve().parent.parent
 os.chdir(root)
 args.output = args.output.resolve()
 args.output.mkdir(parents=True, exist_ok=True)
-features = "aligned,pic-buf,zerocopy"
+features = "aligned,pic-buf"
 package = ["-p", "rav1d-disjoint-mut"]
 gates = []
 

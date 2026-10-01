@@ -139,7 +139,6 @@ use core::fmt::Display;
 use core::fmt::Formatter;
 use core::marker::PhantomData;
 use core::mem;
-#[cfg(feature = "zerocopy")]
 use core::mem::ManuallyDrop;
 use core::ops::Deref;
 use core::ops::DerefMut;
@@ -153,13 +152,9 @@ use core::ops::RangeToInclusive;
 use core::ptr;
 use core::ptr::NonNull;
 use core::ptr::addr_of_mut;
-#[cfg(feature = "zerocopy")]
 use zerocopy::FromBytes;
-#[cfg(feature = "zerocopy")]
 use zerocopy::Immutable;
-#[cfg(feature = "zerocopy")]
 use zerocopy::IntoBytes;
-#[cfg(feature = "zerocopy")]
 use zerocopy::KnownLayout;
 
 // =============================================================================
@@ -431,7 +426,6 @@ pub struct DisjointMutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
 /// unchanged** — `mut_from_bytes` still decides, and this only moves where the
 /// panic is built. A 10-bit-only cost, since at one byte per pixel the whole
 /// cast folds away.
-#[cfg(feature = "zerocopy")]
 #[cold]
 #[inline(never)]
 #[track_caller]
@@ -446,7 +440,6 @@ fn cast_slice_failed<V>(bytes: usize, addr: usize) -> ! {
     );
 }
 
-#[cfg(feature = "zerocopy")]
 impl<'a, T: AsMutPtr> DisjointMutGuard<'a, T, [u8]> {
     #[inline] // Inline to see alignment to potentially elide checks.
     fn cast_slice<V: IntoBytes + FromBytes + KnownLayout>(self) -> DisjointMutGuard<'a, T, [V]> {
@@ -592,7 +585,6 @@ pub struct DisjointImmutGuard<'a, T: ?Sized + AsMutPtr, V: ?Sized> {
     pub(crate) probe: bounds_probe::Ticket,
 }
 
-#[cfg(feature = "zerocopy")]
 impl<'a, T: AsMutPtr> DisjointImmutGuard<'a, T, [u8]> {
     #[inline]
     fn cast_slice<V: FromBytes + KnownLayout + Immutable>(self) -> DisjointImmutGuard<'a, T, [V]> {
@@ -1121,7 +1113,6 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
 // Zerocopy cast methods (for u8 buffers → typed access)
 // =============================================================================
 
-#[cfg(feature = "zerocopy")]
 impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
     /// Check that a casted slice has the expected length.
     #[inline]
@@ -1996,7 +1987,6 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     }
 }
 
-#[cfg(feature = "zerocopy")]
 impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
     /// [`Self::index_rect`] with the rows handed back as `&[V]`, for a `V` every
     /// bit pattern of which is valid — the same soundness class as

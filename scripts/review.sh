@@ -9,7 +9,7 @@ logs="${REVIEW_LOG_DIR:-$HOME/tmp/rav1d-review-2026-09-05/logs}"
 mkdir -p "$logs"
 mode="${1:-help}"
 if (( $# )); then shift; fi
-features=aligned,pic-buf,zerocopy
+features=aligned,pic-buf
 case "$mode" in
   disjoint) cmd=(cargo test -p rav1d-disjoint-mut --features "$features" --no-fail-fast) ;;
   no-std) cmd=(cargo test -p rav1d-disjoint-mut --no-default-features --no-fail-fast) ;;

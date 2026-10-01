@@ -42,8 +42,6 @@ __probe_count = ["std"]
 # itself is not removed. See `PlainData` and the crate README. Opt-in; unifies
 # across the whole dependency graph.
 untracked = []
-# Historical alias used by the benchmark scripts.
-__probe_untracked = ["untracked"]
 # Wide-path reason counters. Unlike __probe_count this KEEPS the sharded tracker.
 __probe_wide = ["std"]
 # Thread-local usage census; retains production tracking, diagnostic timings only.
@@ -59,9 +57,6 @@ __probe_bounds = ["std", "__probe_sites"]
 aligned = ["dep:aligned", "dep:aligned-vec"]
 # PicBuf: owned/borrowed byte buffer for DisjointMut (used by rav1d picture data).
 pic-buf = []
-# Zerocopy cast methods on guards (cast_slice, mut_slice_as, etc.).
-# (The crate now depends on zerocopy unconditionally for `PlainData`.)
-zerocopy = []
 
 [dependencies]
 spin = { version = "0.12.3", default-features = false, features = ["once"] }

@@ -199,7 +199,7 @@ fn extreme_rectangle_geometry_never_wraps_into_an_accepted_view() {
     assert!(dm.index(..).iter().all(|&x| x == 5));
 }
 
-#[cfg(all(feature = "zerocopy", feature = "aligned"))]
+#[cfg(feature = "aligned")]
 #[test]
 fn typed_views_and_byte_views_agree_at_inclusive_endpoints() {
     use rav1d_disjoint_mut::align::AlignedVec64;

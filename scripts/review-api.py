@@ -22,7 +22,9 @@ for crate, versions, features in [
     for version in versions:
         manifest = root / 'Cargo.toml' if version == 'current' else releases / f'{crate}-{version}' / 'Cargo.toml'
         cmd = ['cargo', '+nightly', 'public-api', '--manifest-path', str(manifest), '-p', crate, '--omit', 'blanket-impls', '--color', 'never']
-        if features: cmd += ['--features', features]
+        # `zerocopy` became a no-op in 0.3.2 and was removed after it; the
+        # published versions still need it to expose their cast API.
+        if features: cmd += ['--features', features if version != 'current' else features.replace(',zerocopy', '')]
         name = f'{crate}-{version}'
         start = time.monotonic()
         with (out / f'{name}.txt').open('w') as stdout, (out / f'{name}.log').open('w') as stderr:
