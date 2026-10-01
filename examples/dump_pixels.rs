@@ -59,12 +59,30 @@ fn dump_frame(frame: &Frame, out: &mut impl Write) -> io::Result<()> {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Usage: {} <input.ivf>", args[0]);
-        std::process::exit(1);
+    let mut it = args.iter().skip(1);
+    let mut level: Option<rav1d_safe::src::managed::CpuLevel> = None;
+    let mut input = None;
+    while let Some(a) = it.next() {
+        if a == "--level" {
+            use rav1d_safe::src::managed::CpuLevel as L;
+            level = Some(match it.next().map(|s| s.as_str()) {
+                Some("scalar") => L::Scalar,
+                Some("v2") => L::X86V2,
+                Some("v3") => L::X86V3,
+                Some("v4") => L::X86V4,
+                Some("native") => L::Native,
+                other => panic!("--level needs scalar|v2|v3|v4|native, got {other:?}"),
+            });
+        } else {
+            input = Some(a.clone());
+        }
     }
+    let Some(input) = input else {
+        eprintln!("Usage: {} [--level L] <input.ivf>", args[0]);
+        std::process::exit(1);
+    };
 
-    let data = fs::read(&args[1]).expect("Failed to read input");
+    let data = fs::read(&input).expect("Failed to read input");
     let is_ivf = data.len() >= 4 && &data[0..4] == b"DKIF";
     let is_annexb = !is_ivf && {
         let f = data.first().copied().unwrap_or(0);
@@ -74,6 +92,9 @@ fn main() {
     let mut settings = Settings::default();
     settings.threads = 1;
     settings.apply_grain = false;
+    if let Some(l) = level {
+        settings.cpu_level = l;
+    }
     let mut decoder = Decoder::with_settings(settings).expect("decoder creation failed");
     let mut out = io::stdout().lock();
     let mut frame_count = 0u32;
