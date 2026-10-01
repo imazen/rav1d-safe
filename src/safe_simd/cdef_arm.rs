@@ -231,7 +231,6 @@ fn padding_8bpc(
     } else {
         w
     };
-    dst.dup_rows::<BitDepth8>(read_w, h);
     dst.for_rows::<BitDepth8, _>(read_w, h, |y, src| {
         let row_offset = TMP_OFFSET + y * TMP_STRIDE;
         widen_row(&mut tmp[row_offset..], src, read_w);
@@ -347,7 +346,6 @@ fn padding_16bpc(
     } else {
         w
     };
-    dst.dup_rows::<BitDepth16>(read_w, h);
     dst.for_rows::<BitDepth16, _>(read_w, h, |y, src| {
         let row_offset = TMP_OFFSET + y * TMP_STRIDE;
         copy_row_u16(&mut tmp[row_offset..], src, read_w);
@@ -666,7 +664,6 @@ fn cdef_filter_block_8bpc_neon<const W: usize, const H: usize, const PRI: bool, 
     let sec_threshold = vdupq_n_u16(p.sec_threshold);
     let sec_neg_shift = vdupq_n_s16(p.sec_neg_shift);
 
-    dst.dup_rows_mut::<BitDepth8>(W, H);
     dst.for_rows_mut::<BitDepth8, _>(W, H, |y, dst_row| {
         let base = TMP_OFFSET + y * TMP_STRIDE;
         // `px` comes from `tmp`, not from a second read of `dst`: `padding_*`
@@ -821,7 +818,6 @@ fn cdef_filter_block_16bpc_neon<
     let sec_threshold = vdupq_n_u16(p.sec_threshold);
     let sec_neg_shift = vdupq_n_s16(p.sec_neg_shift);
 
-    dst.dup_rows_mut::<BitDepth16>(W, H);
     dst.for_rows_mut::<BitDepth16, _>(W, H, |y, dst_row| {
         let base = TMP_OFFSET + y * TMP_STRIDE;
         // `px` from `tmp` — see the note in the 8bpc kernel.
@@ -1264,7 +1260,6 @@ fn cdef_find_dir_8bpc_neon(_token: Arm64, img: PicOffset, variance: &mut c_uint)
 
     let c128 = vdupq_n_s16(128);
     let mut rows = [vdupq_n_s16(0); 8];
-    img.dup_rows::<BitDepth8>(8, 8);
     img.for_rows::<BitDepth8, _>(8, 8, |y, px| {
         let v = safe_simd::vld1_u8(<&[u8; 8]>::try_from(&px[..8]).unwrap());
         rows[y] = vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(v)), c128);
@@ -1285,7 +1280,6 @@ fn cdef_find_dir_16bpc_neon(
     let c128 = vdupq_n_s16(128);
     let neg_shift = vdupq_n_s16(-(bitdepth_min_8 as i16));
     let mut rows = [vdupq_n_s16(0); 8];
-    img.dup_rows::<BitDepth16>(8, 8);
     img.for_rows::<BitDepth16, _>(8, 8, |y, row| {
         let px = safe_simd::vld1q_u16(<&[u16; 8]>::try_from(&row[..8]).unwrap());
         rows[y] = vsubq_s16(vreinterpretq_s16_u16(vshlq_u16(px, neg_shift)), c128);

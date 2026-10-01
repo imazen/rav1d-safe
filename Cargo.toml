@@ -109,19 +109,6 @@ __probe_sites = ["rav1d-disjoint-mut/__probe_sites"]
 # registration. Absent from `default` and from every published feature.
 # See crates/rav1d-disjoint-mut/src/bounds_probe.rs.
 __probe_bounds = ["__probe_sites", "rav1d-disjoint-mut/__probe_bounds"]
-# Measurement-only: arms `RAV1D_LF_HULL=1`, which makes the loop filter take one
-# strided-hull read guard instead of `h` per-row ones under tile threading.
-# Absent from `default` and from every published feature. See
-# `src/loopfilter.rs::lf_hull_reads` and docs/MUT_RECON_KERNELS.md section 10.
-__probe_lf_hull = []
-# Measurement-only: arms `RAV1D_RECT_HULL=1`, which makes the RECON/MC block
-# helpers (`block_mut`, `with_pixel_guard_immut`) take ONE strided-hull guard
-# under tile threading instead of `h` per-row ones. It exists to FALSIFY the
-# bounds map's strided-rectangle prediction: the map says the hull collides with
-# a concurrently-live foreign WRITE at these sites, so this arm must produce
-# decode errors. A silent pass would mean the instrument is lying.
-# Absent from `default` and from every published feature.
-__probe_rect_hull = []
 # Same-binary owned-band A/B override; ordinary builds never consult the env.
 __probe_owned_recon = []
 # Triage knobs (measurement/debugging only): arms env vars that force scalar
@@ -129,11 +116,6 @@ __probe_owned_recon = []
 # plus `MCT_PREP_LOG=1` call-shape logging and `RAV1D_LOG=1` managed-API
 # stderr logging. Default builds contain stubs: no env read, no atomic.
 __bisect = []
-# MARGINAL-PRICE ARM for the CDEF registration population (measurement only):
-# arms `RAV1D_CDEF_DOUBLE=1`, which takes every CDEF per-row registration TWICE
-# in ONE binary — the LF_DOUBLE shape, applied to the five sites
-# docs/RECT_RECORDS.md §7b named. See `picture::cdef_double_reads`.
-__probe_cdef_double = []
 # LAYOUT-NOISE CONTROL (measurement only): never-executed `__text` emitted from
 # src/loopfilter.rs, so every hot symbol keeps a byte-identical instruction
 # stream and only its ADDRESS moves. This is the control the rectangle round did
@@ -159,11 +141,6 @@ __probe_tasktime_untracked = ["__probe_tasktime", "__probe_untracked"]
 # (The `probe-nodeblockgate` family that ablated the `check_tile` deblock
 # barrier is gone with the barrier itself — 054e2ed. Its measurements are in
 # benchmarks/p1_scaling_2026-08-07.meta and p1_barrier_2026-08-07.meta.)
-
-# A/B: BlockMut holds its per-row MUTABLE guards across the kernel instead of
-# taking immutable ones to read and mutable ones to write back (2h -> h
-# registrations). MEASURED NULL — see the doc comment on `block_mut_held`.
-__held_row_guards = []
 
 # Internal test feature (double underscore is a convention): arms a
 # one-shot worker-thread panic so tests can prove a worker death surfaces as a
