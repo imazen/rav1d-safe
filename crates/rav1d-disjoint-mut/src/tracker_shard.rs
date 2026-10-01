@@ -2649,6 +2649,84 @@ fn wide_loc() -> Option<&'static Location<'static>> {
 
 #[cfg(all(test, not(disjoint_mut_loom)))]
 mod tests {
+
+    /// Pins every SHIPPED tracker constant and policy decision.
+    ///
+    /// The tracker's tuning knobs were once Cargo features (shard count, block
+    /// shift, blocks-per-shard, rows-per-block, ...); they were collapsed to the
+    /// measured winners in 2026-10, which an independent review verified
+    /// byte-for-byte. It also found that mutating most of them (BLOCK_SHIFT,
+    /// ROWS_PER_BLOCK_MIN, MAX_SHARDS_PER_BORROW, MIN_BLOCKS, MAX_RECT_ROWS,
+    /// SLOTS, the hash) failed no test. This test makes a change to any of them
+    /// a deliberate act: update the expected values together with a measurement
+    /// (see docs/DIAGNOSTIC_FEATURES.md "Removed 2026-10").
+    #[test]
+    fn shipped_constants_and_policy_are_pinned() {
+        assert_eq!(N_SHARDS, 128);
+        assert_eq!(SHARDS_CONCURRENT, 128);
+        assert_eq!(SHARDS_SERIAL, 1);
+        assert_eq!(BLOCK_SHIFT, 12);
+        assert_eq!(SLOTS, 7);
+        assert_eq!(MAX_SHARDS_PER_BORROW, 4);
+        assert_eq!(MAX_BLOCKS_SCAN, 64);
+        assert_eq!(MAX_RECT_ROWS, 64);
+        assert_eq!(BPS, (2, 1));
+        assert_eq!(ROWS_PER_BLOCK_MIN, 4);
+        assert_eq!(MIN_BLOCKS, 32);
+        assert_eq!(SHARD_MIN_LEN, 1024);
+
+        // Which instances get sharded.
+        assert_eq!(mask_for_policy(SHARD_MIN_LEN - 1, 128), 0);
+        assert_eq!(mask_for_policy(SHARD_MIN_LEN, 128), 127);
+        assert_eq!(mask_for_policy(1 << 24, 1), 0);
+
+        // Block-shift decisions: a 3840x2160 plane, a 4K-ish 8K plane, small
+        // buffers, serial / single-tile / single-shard fall-backs.
+        for (len, shards, tiles, want) in [
+            (8_294_400usize, 128usize, 8usize, 14u32),
+            (8_294_400, 128, 1, 12),
+            (8_294_400, 1, 8, 12),
+            (1024, 128, 8, 6),
+            (100_000, 128, 2, 8),
+            (33_177_600, 128, 8, 16),
+        ] {
+            assert_eq!(
+                block_shift_rule(len, shards, tiles),
+                want,
+                "shift({len},{shards},{tiles})"
+            );
+        }
+        // The rows rule on top (stride in bytes).
+        for (stride, want) in [
+            (0usize, 14u32),
+            (3840, 14),
+            (4096, 14),
+            (7680, 15),
+            (8192, 15),
+        ] {
+            assert_eq!(
+                block_shift_rule_rows(8_294_400, 128, 8, stride),
+                want,
+                "rows stride {stride}"
+            );
+        }
+
+        // The shard hash (multiplicative, >> 40, masked).
+        for (block, want) in [
+            (0usize, 0usize),
+            (1, 121),
+            (2, 115),
+            (3, 109),
+            (7, 84),
+            (100, 12),
+            (12345, 98),
+            (1 << 20, 116),
+            (usize::MAX >> 8, 6),
+        ] {
+            assert_eq!(shard_of(block, 127), want, "shard_of({block})");
+        }
+    }
+
     use super::*;
 
     #[test]

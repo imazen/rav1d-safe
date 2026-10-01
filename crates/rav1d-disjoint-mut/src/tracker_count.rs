@@ -402,8 +402,10 @@ impl BorrowTracker {
     }
 
     /// Register a mutable borrow. Checks against ALL existing borrows.
-    #[inline]
-    #[track_caller]
+    ///
+    /// Deliberately NO `#[inline]`/`#[track_caller]` (unlike `add_immut`): that
+    /// is the shape of the original single-lock tracker this probe build
+    /// reproduces, and adding them changed the probe's attribution and timing.
     pub fn add_mut(&self, bounds: &Bounds) -> BorrowId {
         self.add_probed(bounds, true)
     }

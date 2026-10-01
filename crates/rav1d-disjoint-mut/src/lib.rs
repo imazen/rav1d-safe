@@ -1172,7 +1172,7 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
     where
         V: IntoBytes + FromBytes + KnownLayout,
     {
-        self.index_mut((index..index + 1).mul(mem::size_of::<V>()))
+        self.index_mut(element_range(index).mul(mem::size_of::<V>()))
             .cast()
     }
 
@@ -1200,7 +1200,7 @@ impl<T: AsMutPtr<Target = u8>> DisjointMut<T> {
     where
         V: FromBytes + KnownLayout + Immutable,
     {
-        self.index((index..index + 1).mul(mem::size_of::<V>()))
+        self.index(element_range(index).mul(mem::size_of::<V>()))
             .cast()
     }
 }
@@ -1239,43 +1239,83 @@ pub trait TranslateRange: sealed::IndexLike {
     fn mul(&self, by: usize) -> Self;
 }
 
+/// Overflow-checked byte-offset arithmetic for [`TranslateRange`].
+///
+/// A range scaled by an element size must never wrap: in release builds an
+/// unchecked `*` silently yields a DIFFERENT, valid-looking range (e.g.
+/// `(usize::MAX / 4 + 1)..(usize::MAX / 4 + 2)` scaled by 4 wraps to bytes
+/// `0..4`), so the cast would return a view of element 0 instead of refusing.
+#[track_caller]
+#[inline]
+fn scale(n: usize, by: usize) -> usize {
+    n.checked_mul(by)
+        .expect("DisjointMut: element range overflows usize when converted to bytes")
+}
+
+/// The one-element range `index..index + 1`, refusing `index == usize::MAX`
+/// (whose `+ 1` would wrap to an EMPTY range in release builds).
+#[track_caller]
+#[inline]
+fn element_range(index: usize) -> Range<usize> {
+    index
+        ..index
+            .checked_add(1)
+            .expect("DisjointMut: element index overflows usize")
+}
+
+/// `(end + 1) * by - 1`: the last byte of the last element of an inclusive range.
+#[track_caller]
+#[inline]
+fn scale_inclusive_end(end: usize, by: usize) -> usize {
+    end.checked_add(1)
+        .and_then(|n| n.checked_mul(by))
+        .and_then(|n| n.checked_sub(1))
+        .expect("DisjointMut: inclusive element range overflows usize when converted to bytes")
+}
+
 impl TranslateRange for usize {
+    #[track_caller]
     fn mul(&self, by: usize) -> Self {
-        *self * by
+        scale(*self, by)
     }
 }
 
 impl TranslateRange for Range<usize> {
+    #[track_caller]
     fn mul(&self, by: usize) -> Self {
-        self.start * by..self.end * by
+        scale(self.start, by)..scale(self.end, by)
     }
 }
 
 impl TranslateRange for RangeFrom<usize> {
+    #[track_caller]
     fn mul(&self, by: usize) -> Self {
-        self.start * by..
+        scale(self.start, by)..
     }
 }
 
 impl TranslateRange for RangeInclusive<usize> {
+    #[track_caller]
     fn mul(&self, by: usize) -> Self {
         // 3..=5 with by=4 means elements 3,4,5 → bytes 12..=23 (not 12..=20).
         // Each element occupies `by` bytes, so the inclusive end in bytes is
         // one past the last element's start: (end + 1) * by - 1.
-        *self.start() * by..=(*self.end() + 1) * by - 1
+        scale(*self.start(), by)..=scale_inclusive_end(*self.end(), by)
     }
 }
 
 impl TranslateRange for RangeTo<usize> {
+    #[track_caller]
     fn mul(&self, by: usize) -> Self {
-        ..self.end * by
+        ..scale(self.end, by)
     }
 }
 
 impl TranslateRange for RangeToInclusive<usize> {
+    #[track_caller]
     fn mul(&self, by: usize) -> Self {
         // ..=5 with by=4 means elements 0..=5 → bytes 0..=23 (not 0..=20).
-        ..=(self.end + 1) * by - 1
+        ..=scale_inclusive_end(self.end, by)
     }
 }
 
@@ -1286,8 +1326,9 @@ impl TranslateRange for RangeFull {
 }
 
 impl TranslateRange for (RangeFrom<usize>, RangeTo<usize>) {
+    #[track_caller]
     fn mul(&self, by: usize) -> Self {
-        (self.0.start * by.., ..self.1.end * by)
+        (scale(self.0.start, by).., ..scale(self.1.end, by))
     }
 }
 

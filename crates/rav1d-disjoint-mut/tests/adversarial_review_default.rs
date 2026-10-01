@@ -225,9 +225,9 @@ fn zerocopy_misaligned_cast_panics_not_ub() {
         "misaligned u16 cast -> {:?}",
         r.as_ref().map_err(|_| "panic")
     );
-    assert!(r.is_err() || backing_is_even_aligned(&backing));
+    assert!(r.is_err() || backing_is_odd_aligned(&backing));
 }
-fn backing_is_even_aligned(b: &[u8; 16]) -> bool {
+fn backing_is_odd_aligned(b: &[u8; 16]) -> bool {
     (b.as_ptr() as usize) % 2 == 1
 }
 

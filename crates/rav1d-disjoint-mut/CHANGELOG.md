@@ -36,6 +36,12 @@ Breaking: needs a 0.4.0 bump when released.
 - A poisoned `DisjointMut` now also refuses empty-range borrows (the empty-range
   early return in the tracker skipped the poison check). Found by an independent
   adversarial review.
+- The zerocopy cast API (`slice_as`, `mut_slice_as`, `element_as`,
+  `mut_element_as`) now refuses byte-range overflow: scaling an element range by
+  the element size used unchecked `*`/`+`, so in RELEASE builds a huge range such
+  as `(usize::MAX/4+1)..(usize::MAX/4+2)` of `u32` wrapped to bytes `0..4` and
+  silently returned a view of element 0 (no UB, but a wrong view from a safe
+  API); debug builds already panicked. Found by the same review.
 
 ## [0.3.2] - 2026-09-08
 
