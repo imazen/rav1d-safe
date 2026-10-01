@@ -55,7 +55,7 @@ elif args.group == "miri-focused":
             *[arg for target in targets for arg in ["--test", target]]], {"MIRIFLAGS": flags})
         add(f"miri-{model}-no-std-focused", ["cargo", "+nightly", "miri", "test", *package, "--no-default-features", "--test", "const_constructor"], {"MIRIFLAGS": flags})
 elif args.group == "loom":
-    add("loom", ["cargo", "test", *package, "--features", "__shards_4", "--lib", "loom_protocol", "--", "--test-threads=1"],
+    add("loom", ["cargo", "test", *package, "--lib", "loom_protocol", "--", "--test-threads=1"],
         {"RUSTFLAGS": "--cfg disjoint_mut_loom", "CARGO_TARGET_DIR": str(root / "target/review-loom")})
     add("safe-feature-boundary", ["bash", "scripts/review-feature-gate.sh"])
 elif args.group == "semver":

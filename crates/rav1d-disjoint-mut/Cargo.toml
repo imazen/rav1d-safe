@@ -55,79 +55,6 @@ __probe_sites = ["std"]
 # registration. Internal diagnostic; absent from `default` and from every supported
 # feature. See src/bounds_probe.rs.
 __probe_bounds = ["std", "__probe_sites"]
-# THROWAWAY: TinyLock spin backoff + scheduler yield, re-tested on the adaptive
-# shard set (the P1 campaign measured it null on the 32-shard base).
-#
-# The four arms below are ONE ladder over the shard lock's WAITING policy, and
-# they exist because both prior nulls were measured where `lock_slow` is not the
-# top symbol. On `c256x2048` at t=8 it is 3.2-4.8% of busy self time, which is a
-# different regime — see the doc comment on `TinyLock` and docs/C256_CONTENTION.md.
-#   __probe_lock_backoff  spin 64, then yield_now, repeat
-#   __probe_lock_yield    yield_now on EVERY iteration (deschedule immediately)
-#   __probe_lock_relax    exponential pause BETWEEN loads, never yields
-#   __probe_lock_park     parking_lot::RawMutex — bounded spin, then a real park
-# `__probe_lock_park` is size-neutral (AtomicU8 vs AtomicBool), so the arm moves
-# the waiting policy and nothing else.
-__probe_lock_backoff = ["std"]
-__probe_lock_yield = ["std"]
-__probe_lock_relax = []
-__probe_lock_park = ["std", "dep:parking_lot"]
-# Sharded-tracker A/B knobs (perf/shard-tracker). Compile-time only; the
-# defaults are the measured winners, see benchmarks/shard_tracker_*.meta.
-__shards_1 = []
-__shards_4 = []
-__shards_8 = []
-__shards_16 = []
-__shards_32 = []
-__shards_64 = []
-__shards_128 = []
-__shards_256 = []
-__shard_ident = []
-__blockshift_8 = []
-__blockshift_10 = []
-__blockshift_13 = []
-__blockshift_14 = []
-__blockshift_15 = []
-__blockshift_16 = []
-__blockshift_adaptive = []
-# Adaptive-shift GRANULARITY ladder: blocks per shard the rule aims for, as a
-# rational so a rung can be COARSER than the default (fewer blocks than shards).
-# `__bps_half` is one shift coarser than the default 2/1, `__bps_4` one finer.
-# Re-swept 2026-08-10 scored on TAIL concurrency, not only whole-frame wall --
-# see the doc comment on `BPS` in src/tracker_shard.rs.
-#
-# SELECTING ANY RUNG TURNS THE DERIVED ROWS-PER-BLOCK RULE OFF (see
-# `ROWS_RULE_ACTIVE`), so a rung measures the constant it names and nothing else.
-__bps_quarter = []
-__bps_half = []
-__bps_1 = []
-__bps_4 = []
-__bps_8 = []
-# The ladder's CENTRE rung, i.e. the block-count rule that shipped before
-# 2026-08-11: BPS stays (2,1) and the derived rows-per-block rule is off. This is
-# the BASE arm to difference the default against; the derived rule needs no
-# feature because it IS the default. See `ROWS_PER_BLOCK_MIN` in
-# src/tracker_shard.rs and benchmarks/bps_rows_default_2026-08-11.meta.
-__bps_blocks = []
-# The ladder for the SHIPPED constant: picture ROWS a block must span. Default 4.
-# (The `__bps_*` rungs re-fit the block-COUNT rule this replaced, so they cannot
-# answer "is 4 right?" — see `ROWS_PER_BLOCK_MIN`.)
-__rpb_2 = []
-__rpb_8 = []
-__rpb_16 = []
-# THROWAWAY: pin a declared-stride buffer's block shift from RAV1D_PIN_SHIFT
-# ("<stride>:<shift>,..."), so a factorial over PER-PLANE shifts can be measured.
-# The rows rule and the ladder both move luma and chroma together, so the grid
-# they span cannot separate the planes. Internal diagnostic only; absent from supported feature closures.
-__probe_shiftpin = ["std"]
-# Raise MAX_SHARDS_PER_BORROW from 4 to 5, which needs BorrowId's (shard, slot)
-# pairs narrowed from 12 bits to `log2(N_SHARDS) + 3`. A/B arm; see the const.
-__msb_5 = []
-# THROWAWAY: accept a strided-rectangle record ONLY when its hull lands in ONE
-# shard, so the arm measures the record-count cut WITHOUT the multi-shard lock
-# traffic (`add` takes n locks and `remove_multi` n more, against a per-row
-# guard's one `try_lock` and one lock-free store). See `add_rect`.
-__rect_1shard = []
 # Aligned newtypes (Align4..64) and AlignedVec32/64 for SIMD-friendly layout.
 aligned = ["dep:aligned", "dep:aligned-vec"]
 # PicBuf: owned/borrowed byte buffer for DisjointMut (used by rav1d picture data).
@@ -141,10 +68,6 @@ spin = { version = "0.12.3", default-features = false, features = ["once"] }
 aligned = { version = "0.4.3", default-features = false, optional = true }
 aligned-vec = { version = "0.6.4", default-features = false, optional = true }
 zerocopy = { version = "0.8.56", default-features = false }
-# MEASUREMENT ARM ONLY (`__probe_lock_park`), never in `default` and never in a
-# published feature: the parking shard-lock A/B. rav1d-safe already depends on
-# parking_lot 0.12, so this adds nothing to the workspace graph.
-parking_lot = { version = "0.12.5", optional = true }
 
 criterion = { version = "0.8.2", default-features = false, optional = true }
 

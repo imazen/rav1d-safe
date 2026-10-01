@@ -22,7 +22,8 @@
 //! every other thread's line).
 //!
 //! * The buffer is cut into `1 << shift`-byte blocks — a per-instance shift
-//!   under `__blockshift_adaptive`, the [`BLOCK_SHIFT`] constant otherwise.
+//!   chosen by [`block_shift_for`] / [`block_shift_rule_rows`], which falls
+//!   back to the [`BLOCK_SHIFT`] constant for a serial or single-tile decode.
 //! * `shard(block)` is a multiplicative hash of the block index.
 //! * A borrow `R` registers its **exact** interval `[R.start, R.end)` — not a
 //!   clipped piece — in every shard that `R`'s blocks map to, and checks for
@@ -66,7 +67,7 @@
 use super::tracker_cell::Cell as TrackerCell;
 use super::*;
 use core::panic::Location;
-#[cfg(all(not(disjoint_mut_loom), not(feature = "__probe_lock_park")))]
+#[cfg(not(disjoint_mut_loom))]
 use core::sync::atomic::AtomicBool;
 use core::sync::atomic::Ordering;
 #[cfg(not(disjoint_mut_loom))]
@@ -75,7 +76,9 @@ use core::sync::atomic::{AtomicU8, AtomicU32, AtomicUsize};
 use loom::sync::atomic::{AtomicU8, AtomicU32, AtomicUsize};
 
 // =============================================================================
-// Tunables (compile-time A/B knobs — see benchmarks/shard_tracker_*.meta)
+// Tunables (the measured winners — see benchmarks/shard_tracker_*.meta; the
+// compile-time A/B ladders that chose them were removed in 2026-10 and can be
+// re-run by checking out 087242f1)
 // =============================================================================
 
 /// Shards per instance. Power of two.
@@ -103,10 +106,10 @@ use loom::sync::atomic::{AtomicU8, AtomicU32, AtomicUsize};
 /// In the final interleaved sweep (median of 9, tracker boxed) 32 shards costs
 /// nothing single-threaded on 8-bit content — 600.7 ms against the legacy
 /// tracker's 602.3 — while running 5.1x faster at t=8. 64 is 1-5% better again
-/// at t=4/t=8 for ~3% at t=1 and ~7 MB of RSS, and is available as
-/// `__shards_64`. 256 is not offered: at 32 KiB per instance it overflowed a
-/// worker stack while constructing a `DisjointMut` back when the array was
-/// inline, and even boxed it was already past the point of diminishing returns.
+/// at t=4/t=8 for ~3% at t=1 and ~7 MB of RSS. 256 at 32 KiB per instance
+/// overflowed a worker stack while constructing a `DisjointMut` back when the
+/// array was inline, and even boxed it was already past the point of
+/// diminishing returns.
 ///
 /// **Re-measured 2026-08-07, and the default moved 32 -> 128**
 /// (`benchmarks/p3_inversion_2026-08-07.meta`). The table above was taken
@@ -127,91 +130,19 @@ use loom::sync::atomic::{AtomicU8, AtomicU32, AtomicUsize};
 /// them ACTIVE measured 528.0 ms, indistinguishable from using all 128 — it is
 /// the wide path holding every shard it is given. `SHARDS_SERIAL` and
 /// [`BorrowTracker::active`] are what make the two columns independent.
-//
-// The cascade is priority-ordered rather than a set of independent `cfg`s, so
-// enabling two knobs at once (`--all-features`) still compiles instead of
-// defining the constant twice.
-#[cfg(feature = "__shards_1")]
-pub(super) const N_SHARDS: usize = 1;
-#[cfg(all(feature = "__shards_4", not(feature = "__shards_1")))]
-pub(super) const N_SHARDS: usize = 4;
-#[cfg(all(
-    feature = "__shards_8",
-    not(any(feature = "__shards_1", feature = "__shards_4"))
-))]
-pub(super) const N_SHARDS: usize = 8;
-#[cfg(all(
-    feature = "__shards_16",
-    not(any(feature = "__shards_1", feature = "__shards_4", feature = "__shards_8"))
-))]
-pub(super) const N_SHARDS: usize = 16;
-#[cfg(all(
-    feature = "__shards_32",
-    not(any(
-        feature = "__shards_1",
-        feature = "__shards_4",
-        feature = "__shards_8",
-        feature = "__shards_16"
-    ))
-))]
-pub(super) const N_SHARDS: usize = 32;
-#[cfg(all(
-    feature = "__shards_64",
-    not(any(
-        feature = "__shards_1",
-        feature = "__shards_4",
-        feature = "__shards_8",
-        feature = "__shards_16",
-        feature = "__shards_32"
-    ))
-))]
-pub(super) const N_SHARDS: usize = 64;
-#[cfg(all(
-    feature = "__shards_128",
-    not(any(
-        feature = "__shards_1",
-        feature = "__shards_4",
-        feature = "__shards_8",
-        feature = "__shards_16",
-        feature = "__shards_32",
-        feature = "__shards_64"
-    ))
-))]
-pub(super) const N_SHARDS: usize = 128;
-/// 256 shards: MEASURED WORSE AT EVERY THREAD COUNT, kept only as an A/B rung.
 ///
-/// The 128 default was chosen while the `check_tile` deblock barrier still
-/// capped achieved occupancy at 2.86 of 8, so "more shards for less collision"
-/// was worth re-testing once occupancy reached 7.14. It is not: v4k_8tile 8bpc,
-/// M4 Pro, interleaved median of 5 on an idle box, against the default
-/// (`benchmarks/scaling_shards_2026-08-08.tsv`), holding the block shift at 14
-/// so only the table size moves — t=1 1.0730, t=4 1.0594, t=8 1.0295. The
-/// bigger table costs more than the collisions it removes, which is the same
-/// verdict the original 32/64/128/256 ladder reached for a different reason.
-#[cfg(all(
-    feature = "__shards_256",
-    not(any(
-        feature = "__shards_1",
-        feature = "__shards_4",
-        feature = "__shards_8",
-        feature = "__shards_16",
-        feature = "__shards_32",
-        feature = "__shards_64",
-        feature = "__shards_128"
-    ))
-))]
-pub(super) const N_SHARDS: usize = 256;
-#[cfg(not(any(
-    feature = "__shards_1",
-    feature = "__shards_4",
-    feature = "__shards_8",
-    feature = "__shards_16",
-    feature = "__shards_32",
-    feature = "__shards_64",
-    feature = "__shards_128",
-    feature = "__shards_256"
-)))]
+/// 256 shards then measured WORSE AT EVERY THREAD COUNT once the `check_tile`
+/// deblock barrier was gone (v4k_8tile 8bpc, M4 Pro, interleaved median of 5
+/// against 128 at a block shift of 14: t=1 1.0730, t=4 1.0594, t=8 1.0295 —
+/// `benchmarks/scaling_shards_2026-08-08.tsv`). The bigger table costs more than
+/// the collisions it removes.
+///
+/// The Loom model (`--cfg disjoint_mut_loom`) uses 4 shards so its state space
+/// stays small; it runs the same algorithm over a smaller table.
+#[cfg(not(disjoint_mut_loom))]
 pub(super) const N_SHARDS: usize = 128;
+#[cfg(disjoint_mut_loom)]
+pub(super) const N_SHARDS: usize = 4;
 
 /// `log2` of the block size in elements.
 ///
@@ -243,8 +174,7 @@ pub(super) const N_SHARDS: usize = 128;
 /// ```
 ///
 /// So: chosen by measurement, not by the tile-geometry argument, which the
-/// measurement does not support. Shift 8 and 10 remain available as
-/// `__blockshift_8` / `__blockshift_10` if a different tiling ever inverts this.
+/// measurement does not support.
 ///
 /// **Re-opened 2026-08-08, and the ladder does NOT stop at 12**
 /// (`benchmarks/tracker_blockshift_2026-08-08.meta`). The 8/10/12 screening
@@ -276,57 +206,11 @@ pub(super) const N_SHARDS: usize = 128;
 /// stride is twice as wide, which is the observation
 /// [`block_shift_for`] turns into a rule.
 ///
-/// The fixed values stay available as `__blockshift_13/14/15/16`, but a CONSTANT
-/// is the wrong shape: the shift that makes a 4K plane's rows share a block
-/// turns a 64 KiB buffer into one block and one lock. Prefer
-/// `__blockshift_adaptive`.
-#[cfg(feature = "__blockshift_8")]
-const BLOCK_SHIFT: u32 = 8;
-#[cfg(all(feature = "__blockshift_10", not(feature = "__blockshift_8")))]
-const BLOCK_SHIFT: u32 = 10;
-#[cfg(all(
-    feature = "__blockshift_13",
-    not(any(feature = "__blockshift_8", feature = "__blockshift_10"))
-))]
-const BLOCK_SHIFT: u32 = 13;
-#[cfg(all(
-    feature = "__blockshift_14",
-    not(any(
-        feature = "__blockshift_8",
-        feature = "__blockshift_10",
-        feature = "__blockshift_13"
-    ))
-))]
-const BLOCK_SHIFT: u32 = 14;
-#[cfg(all(
-    feature = "__blockshift_16",
-    not(any(
-        feature = "__blockshift_8",
-        feature = "__blockshift_10",
-        feature = "__blockshift_13",
-        feature = "__blockshift_14"
-    ))
-))]
-const BLOCK_SHIFT: u32 = 16;
-#[cfg(all(
-    feature = "__blockshift_15",
-    not(any(
-        feature = "__blockshift_8",
-        feature = "__blockshift_10",
-        feature = "__blockshift_13",
-        feature = "__blockshift_14",
-        feature = "__blockshift_16"
-    ))
-))]
-const BLOCK_SHIFT: u32 = 15;
-#[cfg(not(any(
-    feature = "__blockshift_8",
-    feature = "__blockshift_10",
-    feature = "__blockshift_13",
-    feature = "__blockshift_14",
-    feature = "__blockshift_15",
-    feature = "__blockshift_16"
-)))]
+/// A CONSTANT is the wrong shape for a concurrent decode: the shift that makes
+/// a 4K plane's rows share a block turns a 64 KiB buffer into one block and one
+/// lock. So this constant is only the serial / single-tile shift, and a
+/// concurrent multi-tile decode takes the per-instance adaptive shift instead
+/// ([`block_shift_for`], [`block_shift_rule_rows`]).
 const BLOCK_SHIFT: u32 = 12;
 
 /// Records per shard. Sized so a shard is exactly one 128-byte cache line.
@@ -437,9 +321,10 @@ fn here() -> Loc {
 /// `KIND_BITS + N_BITS + PAIR_BITS * MAX_SHARDS_PER_BORROW <= 64` — pinned by a
 /// const assert below. At the 12-bit pair the id shipped with, 4 pairs fit and 5
 /// do not; narrowing the pair to `log2(N_SHARDS) + 3` (10 bits at the default
-/// 128 shards) buys the fifth. `__msb_5` is that arm.
+/// 128 shards) buys the fifth.
 ///
-/// Why an arm at all: the strided-2D record's refuting quantity is
+/// Why it was an A/B arm (`__msb_5`, removed in 2026-10): the strided-2D
+/// record's refuting quantity is
 /// `pct_row_wide` — the fraction of would-be 2-D registrations that exceed this
 /// cap — measured 0.54%-70.59% per site
 /// (`benchmarks/strided_2d_2026-08-10.meta` §4). If a cap raise collapses that,
@@ -447,9 +332,6 @@ fn here() -> Loc {
 /// registrations) can go. Measure `__probe_wide` and the `eval_rect` cap columns
 /// BEFORE timing anything: under the shipped per-row scheme a wide promotion is
 /// rare, so a cap raise can only pay through the counterfactual.
-#[cfg(feature = "__msb_5")]
-const MAX_SHARDS_PER_BORROW: usize = 5;
-#[cfg(not(feature = "__msb_5"))]
 const MAX_SHARDS_PER_BORROW: usize = 4;
 
 /// Blocks scanned before giving up and going wide. Bounds the fast path's work
@@ -531,8 +413,9 @@ pub mod wide_probe {
         let mut out = std::string::String::new();
         let w = WIDE_SHARDS.load(Relaxed) + WIDE_BLOCKS.load(Relaxed) + WIDE_FULL.load(Relaxed);
         // Absolute counts only. There is deliberately no denominator: see
-        // `N_ADD`. `const_shift` is the compile-time constant and is NOT what
-        // an `__blockshift_adaptive` build uses — that one is per instance.
+        // `N_ADD`. `const_shift` is the serial / single-tile constant and is
+        // NOT what a concurrent multi-tile decode uses — that one is per
+        // instance.
         let _ = writeln!(
             out,
             "WIDEHDR\tconst_shift\tslow\tmulti\tw_shards\tw_blocks\tw_full\twide_total\tcontended\tlockslow\tspins\tn_rect\tn_rect_declined\tn_rect_multi"
@@ -596,53 +479,19 @@ pub mod wide_probe {
 /// reentrant** — every multi-shard operation in this module depends on that
 /// being remembered, hence the ascending acquisition order.
 ///
-/// # The waiting policy is an A/B axis, and it is NOT settled
+/// # The waiting policy
 ///
-/// `docs/AGENT_BRIEF.md` §6 records "TinyLock backoff: null, measured twice",
-/// and both of those measurements were taken where contention is ~0.02% of
-/// registrations. On `c256x2048` at t=8 the same lock spends **1.136 CPU
-/// ms/frame** in [`Self::lock_slow`], which is a different regime, so the arms
-/// below re-open the question THERE rather than overwrite the earlier null.
-/// See `docs/C256_CONTENTION.md`.
-///
-/// **CORRECTION 2026-08-13 — the "~0.02%" above is the WRONG COUNTER.** It is
-/// `wide_probe::N_SLOW`, i.e. a count of `BorrowTracker::add_slow` (the
-/// poisoned / live-wide-record / multi-block path), divided by the registration
-/// population and quoted as a contention rate; the 23,009-per-6-frame figure it
-/// came from is an `add_slow` count in
-/// `benchmarks/verify_compose2_2026-08-08.meta:278`. Counted directly on the
-/// same vector (`v4k_8tile` 8bpc t=8, `--features probe-lockstats`): 45,401,450
-/// lock acquisitions/frame, ~27,800 of them contended = **0.061% of
-/// acquisitions, 0.122% of registrations** — six times, against a different
-/// denominator. `benchmarks/park_not_spin_2026-08-09.{meta,lockstats*.tsv}`
-/// (PR #471, landed by the triage round). This does not disturb the 0.264%
-/// contended-acquisition figure for `c256x2048` t=8 in
-/// `docs/TILED_SCALING.md`, which is a different cell and was counted directly.
-///
-/// **And the axis is still not settled at every thread count.** The four arms
-/// below are null on `c256x2048` t=8 (#504) and #471 measured them null at
-/// t=1/2/4/8 on `v4k_8tile` too — but #471 measured **0.955 / 0.960 at t=16**,
-/// the one cell on that host where threads exceed cores, and #504's own
-/// not-measured list ends with `t=16`. Oversubscription is unrefuted.
-///
-/// | feature | waiting policy |
-/// |---|---|
-/// | (default) | pure relaxed-load spin, never yields |
-/// | `__probe_lock_backoff` | spin 64, then `yield_now`, repeat |
-/// | `__probe_lock_yield` | `yield_now` on every iteration |
-/// | `__probe_lock_relax` | exponential pause BETWEEN loads, never yields |
-/// | `__probe_lock_park` | `parking_lot::RawMutex` — spins, then genuinely parks |
-///
-/// `__probe_lock_relax` is the only one of the four that changes how often a
-/// waiter TOUCHES the line rather than what it does between touches, and it
-/// exists because a spin iteration here was measured at **~627 ns** against
-/// 7.6 ns for `spin_loop()` on an idle core — the cost is the relaxed load
-/// pulling a line the holder is hammering, so a waiter that reads less often
-/// may let the holder finish sooner.
-#[cfg(all(not(disjoint_mut_loom), not(feature = "__probe_lock_park")))]
+/// A pure relaxed-load spin that never yields. Four alternative waiting
+/// policies — spin-then-yield (`__probe_lock_backoff`), yield on every
+/// iteration (`__probe_lock_yield`), exponential pause between loads
+/// (`__probe_lock_relax`) and `parking_lot::RawMutex` (`__probe_lock_park`) —
+/// measured null on `c256x2048` t=8 (#504) and on `v4k_8tile` at t=1/2/4/8
+/// (#471). #471 measured 0.955 / 0.960 at t=16, the one cell where threads
+/// exceeded cores, which was never refuted. See `docs/C256_CONTENTION.md`.
+#[cfg(not(disjoint_mut_loom))]
 struct TinyLock(AtomicBool);
 
-#[cfg(all(not(disjoint_mut_loom), not(feature = "__probe_lock_park")))]
+#[cfg(not(disjoint_mut_loom))]
 impl TinyLock {
     const fn new() -> Self {
         Self(AtomicBool::new(false))
@@ -674,10 +523,6 @@ impl TinyLock {
     fn lock_slow(&self) {
         #[cfg(feature = "__probe_wide")]
         let wait_start = std::time::Instant::now();
-        #[cfg(feature = "__probe_lock_backoff")]
-        let mut spins = 0u32;
-        #[cfg(feature = "__probe_lock_relax")]
-        let mut pause = 1u32;
         // Total spin iterations for THIS wait, published once at the end so the
         // counter costs one relaxed RMW per wait rather than one per spin.
         #[cfg(feature = "__probe_wide")]
@@ -690,27 +535,7 @@ impl TinyLock {
                 {
                     total += 1;
                 }
-                #[cfg(not(any(feature = "__probe_lock_yield", feature = "__probe_lock_relax")))]
                 core::hint::spin_loop();
-                #[cfg(feature = "__probe_lock_yield")]
-                std::thread::yield_now();
-                #[cfg(feature = "__probe_lock_relax")]
-                {
-                    // Pause `pause` times BETWEEN loads, doubling up to a cap,
-                    // so a waiter stops pulling the line away from the holder.
-                    for _ in 0..pause {
-                        core::hint::spin_loop();
-                    }
-                    pause = (pause * 2).min(64);
-                }
-                #[cfg(feature = "__probe_lock_backoff")]
-                {
-                    spins += 1;
-                    if spins >= 64 {
-                        spins = 0;
-                        std::thread::yield_now();
-                    }
-                }
             }
             if !self.0.swap(true, Ordering::Acquire) {
                 #[cfg(feature = "__probe_wide")]
@@ -788,54 +613,6 @@ impl TinyLock {
         // before dropping it, so the next holder cannot race this cell access.
         let guard = unsafe { (*self.held.get()).take().expect("unlock without lock") };
         drop(guard);
-    }
-}
-
-/// THROWAWAY arm (`__probe_lock_park`): the same one-byte shard lock, but a
-/// waiter PARKS instead of spinning.
-///
-/// `parking_lot::RawMutex` is an `AtomicU8`, so this is size- and
-/// layout-neutral against [`TinyLock`]'s `AtomicBool` — the arm changes the
-/// waiting policy and nothing else, which is what makes it a clean A/B against
-/// a pure spin. It already does a bounded adaptive spin before parking, so it
-/// is the "spin then really sleep" end of the ladder that `__probe_lock_yield`
-/// (deschedule immediately) and `__probe_lock_backoff` (spin 64, then yield)
-/// bracket.
-///
-/// Measurement only; absent from `default` and from every published feature.
-#[cfg(feature = "__probe_lock_park")]
-struct TinyLock(parking_lot::RawMutex);
-
-#[cfg(feature = "__probe_lock_park")]
-impl TinyLock {
-    const fn new() -> Self {
-        Self(<parking_lot::RawMutex as parking_lot::lock_api::RawMutex>::INIT)
-    }
-
-    #[inline(always)]
-    fn lock(&self) {
-        use parking_lot::lock_api::RawMutex as _;
-        #[cfg(feature = "__probe_wide")]
-        if self.0.is_locked() {
-            wide_probe::N_LOCKSLOW.fetch_add(1, Ordering::Relaxed);
-        }
-        self.0.lock();
-    }
-
-    #[inline(always)]
-    fn try_lock(&self) -> bool {
-        use parking_lot::lock_api::RawMutex as _;
-        self.0.try_lock()
-    }
-
-    #[inline(always)]
-    fn unlock(&self) {
-        use parking_lot::lock_api::RawMutex as _;
-        // SAFETY: every caller reached here through `lock`/`try_lock` returning
-        // success on this same lock and has not unlocked it since — the same
-        // obligation the spin implementation's `store(false)` carries, made
-        // explicit by `RawMutex`'s signature.
-        unsafe { self.0.unlock() }
     }
 }
 
@@ -1554,8 +1331,9 @@ unsafe impl Sync for BorrowTracker {}
 /// the shard utilisation on every small buffer, which is the wrong trade for a
 /// rule that has to hold at all sizes.
 ///
-/// **Re-opened 2026-08-10 on a different OBJECTIVE, and that is the point of
-/// the `__bps_*` ladder below.** The value 2 was fitted against WHOLE-FRAME
+/// **Re-opened 2026-08-10 on a different OBJECTIVE** (the `__bps_*` ladder,
+/// removed in 2026-10).
+/// The value 2 was fitted against WHOLE-FRAME
 /// WALL on `v4k_8tile`. The tiled t=8 attribution
 /// (`docs/TILED_SCALING.md` §4, §7 item 1) then found that 42.2% / 32.4% of the
 /// t=8 wall gap is IDLE CORES, most of it in the post-tile filter TAIL — and a
@@ -1565,52 +1343,17 @@ unsafe impl Sync for BorrowTracker {}
 /// shard. So the ladder is re-swept scored on tail concurrency as well as on
 /// wall. `benchmarks/shard_granularity_2026-08-10.*`.
 ///
-/// The ratio is a rational so the ladder can go BELOW one block per shard
-/// (coarser blocks than the default), which a `usize` count cannot express.
-/// `__bps_half` = 1/2 is one shift COARSER than the default, `__bps_4` = 4/1 is
-/// one shift FINER. Rungs are `__`-gated A/B arms.
+/// The ratio is kept as a rational `(blocks, shards)` so a re-fit can go BELOW
+/// one block per shard (coarser blocks than the default), which a `usize` count
+/// cannot express.
 ///
 /// **This is no longer the shipped rule for a picture plane (2026-08-11).** The
 /// size sweep measured a block COUNT to be the wrong shape and the default is
 /// now [`block_shift_rule_rows`], which coarsens from here until a block spans
 /// [`ROWS_PER_BLOCK_MIN`] picture rows. `BPS` still decides
-/// 1. the **base** the derived rule starts from and never goes finer than;
+/// 1. the **base** the derived rule starts from and never goes finer than; and
 /// 2. the shift for every buffer with **no declared stride** (everything that
-///    is not a picture plane); and
-/// 3. the shift for the whole build when a rung is compiled in — selecting any
-///    `__bps_*` rung, or `__bps_blocks`, turns the derived rule OFF so the
-///    ladder stays a clean re-fit instrument. See [`ROWS_RULE_ACTIVE`].
-#[cfg(feature = "__bps_quarter")]
-const BPS: (usize, usize) = (1, 4);
-#[cfg(all(feature = "__bps_half", not(feature = "__bps_quarter")))]
-const BPS: (usize, usize) = (1, 2);
-#[cfg(all(
-    feature = "__bps_1",
-    not(any(feature = "__bps_quarter", feature = "__bps_half"))
-))]
-const BPS: (usize, usize) = (1, 1);
-#[cfg(all(
-    feature = "__bps_4",
-    not(any(feature = "__bps_quarter", feature = "__bps_half", feature = "__bps_1"))
-))]
-const BPS: (usize, usize) = (4, 1);
-#[cfg(all(
-    feature = "__bps_8",
-    not(any(
-        feature = "__bps_quarter",
-        feature = "__bps_half",
-        feature = "__bps_1",
-        feature = "__bps_4"
-    ))
-))]
-const BPS: (usize, usize) = (8, 1);
-#[cfg(not(any(
-    feature = "__bps_quarter",
-    feature = "__bps_half",
-    feature = "__bps_1",
-    feature = "__bps_4",
-    feature = "__bps_8"
-)))]
+///    is not a picture plane).
 const BPS: (usize, usize) = (2, 1);
 
 /// Blocks the adaptive rule aims to split an instance into, i.e.
@@ -1622,30 +1365,10 @@ const TARGET_BLOCKS: usize = {
 };
 
 // =============================================================================
-// The rows-per-block rule — a DERIVED shift, not a rung. THE DEFAULT since
-// 2026-08-11 (PR #503); `__bps_blocks` is the arm that reverts to the old
-// block-count rule.
+// The rows-per-block rule — a DERIVED shift. THE DEFAULT since 2026-08-11
+// (PR #503); `__bps_blocks` was the arm that reverted to the old block-count
+// rule.
 // =============================================================================
-
-/// Whether the derived rows-per-block rule decides a strided buffer's shift.
-///
-/// **On unless a rung is compiled in.** The `__bps_*` ladder and `__bps_blocks`
-/// are A/B instruments for re-fitting the block-COUNT rule, so a rung means
-/// "give me exactly that constant" — mixing a rung with the derived rule would
-/// measure neither. `__bps_blocks` is the ladder's centre rung, i.e. the rule
-/// that shipped before this one, and is the base arm any re-measurement of the
-/// default must be differenced against.
-///
-/// SOUND EITHER WAY: the block shift is a locality knob, never a correctness
-/// one (see the module's soundness note and [`block_shift_for`]).
-const ROWS_RULE_ACTIVE: bool = !cfg!(any(
-    feature = "__bps_blocks",
-    feature = "__bps_quarter",
-    feature = "__bps_half",
-    feature = "__bps_1",
-    feature = "__bps_4",
-    feature = "__bps_8"
-));
 
 /// Picture rows a block should span, once the buffer's stride is known.
 ///
@@ -1679,20 +1402,9 @@ const ROWS_RULE_ACTIVE: bool = !cfg!(any(
 /// coarse side of it by one step.
 ///
 /// **Fitted on that grid with no held-out size, and that is a stated weakness of
-/// the shipped value** (`docs/SHARD_SIZE_SWEEP.md` §1). `__rpb_2` / `__rpb_8` /
-/// `__rpb_16` are the ladder for re-fitting THIS constant — the `__bps_*` rungs
-/// re-fit the block-COUNT rule, which is the thing this replaced, so they are
-/// the wrong instrument for the question. `__bps_blocks` is the base arm.
-#[cfg(feature = "__rpb_2")]
-const ROWS_PER_BLOCK_MIN: usize = 2;
-#[cfg(all(feature = "__rpb_8", not(feature = "__rpb_2")))]
-const ROWS_PER_BLOCK_MIN: usize = 8;
-#[cfg(all(
-    feature = "__rpb_16",
-    not(any(feature = "__rpb_2", feature = "__rpb_8"))
-))]
-const ROWS_PER_BLOCK_MIN: usize = 16;
-#[cfg(not(any(feature = "__rpb_2", feature = "__rpb_8", feature = "__rpb_16")))]
+/// the shipped value** (`docs/SHARD_SIZE_SWEEP.md` §1). The `__rpb_2` /
+/// `__rpb_8` / `__rpb_16` ladder that re-fit THIS constant was removed in
+/// 2026-10; check out `087242f1` to re-run it.
 const ROWS_PER_BLOCK_MIN: usize = 4;
 
 /// Floor on how many blocks a buffer keeps, whatever the rows target asks for.
@@ -1700,7 +1412,7 @@ const ROWS_PER_BLOCK_MIN: usize = 4;
 /// Coarsening is NOT free: it trades "one borrow touching several shard lines"
 /// for "several borrows landing on one shard", and the second cost grows as the
 /// block count falls towards the worker count. 32 is the coarsest block count
-/// the sweep measured to still be a win — `__bps_quarter` cuts the 1024x192 and
+/// the sweep measured to still be a win — the `__bps_quarter` rung cut the 1024x192 and
 /// 1024x384 planes into 34 and 51 blocks and reads 0.78x and 0.74x wall — so
 /// this stops a shorter picture than the sweep contains from going past the last
 /// point with evidence. It is a MEASURED bound, not a safety one; every value
@@ -1737,26 +1449,19 @@ fn block_shift_for(len: usize) -> u32 {
 /// which makes an ordering-dependent test of the gate impossible).
 #[inline]
 fn block_shift_rule(len: usize, shards: usize, tiles: usize) -> u32 {
-    // A fixed rung, if one was selected, wins everywhere.
-    if FIXED_SHIFT_SELECTED {
+    // Serial decode keeps the old constant. The adaptive shift's whole benefit
+    // is cross-core shard-line traffic, which a single thread does not have,
+    // and the single-thread column of the ladder is flat-to-slightly-adverse.
+    // Same split, for the same reason, as SHARDS_SERIAL vs SHARDS_CONCURRENT —
+    // and read at the same moment, so an instance built before
+    // `set_parallelism` simply keeps the serial value, exactly like `mask`.
+    //
+    // Threads are necessary but NOT sufficient: a single-tile frame on eight
+    // threads is concurrent, and the coarse shift measured 3.08% SLOWER there
+    // while measuring 39% faster on the eight-tile frame at the same thread
+    // count. See `set_tile_concurrency`.
+    if shards < SHARDS_CONCURRENT || tiles < 2 {
         return BLOCK_SHIFT;
-    }
-    if !ADAPTIVE_WHEN_SERIAL {
-        // Serial decode keeps the old constant. The adaptive shift's whole
-        // benefit is cross-core shard-line traffic, which a single thread does
-        // not have, and the single-thread column of the ladder is
-        // flat-to-slightly-adverse. Same split, for the same reason, as
-        // SHARDS_SERIAL vs SHARDS_CONCURRENT — and read at the same moment, so
-        // an instance built before `set_parallelism` simply keeps the serial
-        // value, exactly like `mask`.
-        //
-        // Threads are necessary but NOT sufficient: a single-tile frame on
-        // eight threads is concurrent, and the coarse shift measured 3.08%
-        // SLOWER there while measuring 39% faster on the eight-tile frame at
-        // the same thread count. See `set_tile_concurrency`.
-        if shards < SHARDS_CONCURRENT || tiles < 2 {
-            return BLOCK_SHIFT;
-        }
     }
     let target = TARGET_BLOCKS as u64;
     let want = (len as u64 / target.max(1)).max(1);
@@ -1770,8 +1475,7 @@ fn block_shift_rule(len: usize, shards: usize, tiles: usize) -> u32 {
 /// Never FINER than the block-count rule — only coarser, and only far enough to
 /// put [`ROWS_PER_BLOCK_MIN`] picture rows in a block, and only while the buffer
 /// still holds [`MIN_BLOCKS`] blocks. A buffer with no declared stride keeps the
-/// block-count rule exactly, so nothing outside the picture planes moves; so
-/// does every buffer when a ladder rung is compiled in ([`ROWS_RULE_ACTIVE`]).
+/// block-count rule exactly, so nothing outside the picture planes moves.
 ///
 /// SOUND FOR ANY VALUE, for the same reason the block-count rule is: the "no
 /// missed overlap" argument needs only that both registrants of a shared byte
@@ -1781,14 +1485,14 @@ fn block_shift_rule(len: usize, shards: usize, tiles: usize) -> u32 {
 #[inline]
 fn block_shift_rule_rows(len: usize, shards: usize, tiles: usize, stride: usize) -> u32 {
     let base = block_shift_rule(len, shards, tiles);
-    if stride == 0 || FIXED_SHIFT_SELECTED || !ROWS_RULE_ACTIVE {
+    if stride == 0 {
         return base;
     }
     // The SAME gates the block-count rule uses, restated rather than inferred
     // from `base` (a size whose adaptive shift happens to equal `BLOCK_SHIFT` is
     // not a disarmed one). Arming this rule can therefore never arm a case the
     // plain rule leaves disarmed.
-    if !ADAPTIVE_WHEN_SERIAL && (shards < SHARDS_CONCURRENT || tiles < 2) {
+    if shards < SHARDS_CONCURRENT || tiles < 2 {
         return base;
     }
     // Smallest shift with `2^shift >= ROWS_PER_BLOCK_MIN * stride`, i.e.
@@ -1805,58 +1509,6 @@ fn block_shift_rule_rows(len: usize, shards: usize, tiles: usize, stride: usize)
     let cap_shift = u64::BITS - 1 - cap_want.leading_zeros();
     base.max(rows_shift.min(cap_shift)).clamp(6, 24)
 }
-
-/// THROWAWAY (`__probe_shiftpin`): pin a declared-stride buffer's block shift
-/// from the environment, so a factorial over PER-PLANE shifts can be measured.
-///
-/// `RAV1D_PIN_SHIFT="1088:13,512:11"` — a comma-separated `stride:shift` list,
-/// matched on the row stride the picture allocator declares. A stride not named
-/// keeps the ordinary rule, and no variable at all leaves everything alone.
-///
-/// It exists because the rows rule and the `__bps_*` ladder move LUMA and CHROMA
-/// together in a fixed pattern, so the grid they span cannot separate the two —
-/// and the size sweep's one unexplained cell (512x576, where the derived rule
-/// reads 0.995 between two rungs that read 0.927/0.930) is exactly a question
-/// about whether the two planes' shifts interact.
-///
-/// SOUND FOR ANY VALUE, for the same reason every other shift choice is: both
-/// registrants of a shared byte read the same live `shift`, which moves only
-/// from `&mut self`. This is a measurement instrument, not a shipping knob, and
-/// it is `__`-gated and absent from every published feature.
-#[cfg(feature = "__probe_shiftpin")]
-fn pinned_shift(stride: usize) -> Option<u32> {
-    use std::sync::OnceLock;
-    static PINS: OnceLock<Vec<(usize, u32)>> = OnceLock::new();
-    let pins = PINS.get_or_init(|| {
-        let Ok(spec) = std::env::var("RAV1D_PIN_SHIFT") else {
-            return Vec::new();
-        };
-        spec.split(',')
-            .filter_map(|kv| {
-                let (k, v) = kv.split_once(':')?;
-                Some((k.trim().parse().ok()?, v.trim().parse::<u32>().ok()?))
-            })
-            .collect()
-    });
-    pins.iter()
-        .find(|(s, _)| *s == stride)
-        .map(|(_, sh)| (*sh).clamp(6, 24))
-}
-
-/// True when one of the fixed `blockshift-*` rungs was selected, in which case
-/// [`block_shift_for`] hands back [`BLOCK_SHIFT`] and nothing adapts.
-const FIXED_SHIFT_SELECTED: bool = cfg!(any(
-    feature = "__blockshift_8",
-    feature = "__blockshift_10",
-    feature = "__blockshift_13",
-    feature = "__blockshift_14",
-    feature = "__blockshift_15",
-    feature = "__blockshift_16"
-));
-
-/// `__blockshift_adaptive` forces the adaptive shift even for a serial decode.
-/// Only useful for A/B-ing the single-thread column; the default is off.
-const ADAPTIVE_WHEN_SERIAL: bool = cfg!(feature = "__blockshift_adaptive");
 
 /// Instances below this many elements get a single shard.
 ///
@@ -1877,32 +1529,16 @@ const SHARD_MIN_LEN: usize = 1024;
 /// *high* bits mixes the low block bits (the x position within a picture row)
 /// into the shard index, which is what separates concurrent tile columns.
 ///
-/// `__shard_ident` swaps in the identity instead — see the A/B note there. Any
-/// pure function of the block index is equally SOUND: the "no missed overlap"
+/// Any pure function of the block index is equally SOUND: the "no missed overlap"
 /// argument only needs `shard(b)` to agree for both registrants of a shared
-/// block, which any function does. The choice is purely locality vs collision.
-#[cfg(not(feature = "__shard_ident"))]
+/// block, which any function does. The choice is purely locality vs collision;
+/// the identity mapping (`__shard_ident`) was the A/B alternative.
 #[inline(always)]
 fn shard_of(block: usize, mask: usize) -> usize {
     // The second `&` is with a constant, which is what lets LLVM prove the
     // result indexes `[Shard; N_SHARDS]` in bounds. `mask` alone is a runtime
     // value it cannot bound.
     ((((block as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)) >> 40) as usize & mask) & (N_SHARDS - 1)
-}
-
-/// Identity shard mapping: consecutive blocks land on consecutive shards.
-///
-/// The hypothesis this arm tests: a `w x h` compact read registers `h` row
-/// intervals whose block indices are consecutive-ish (at 4K a 3840-byte row
-/// against a 4096-byte block advances the index by ~1), so under the identity
-/// they occupy `h` ADJACENT 128-byte shard lines — one prefetchable 2 KiB run —
-/// instead of `h` lines scattered over the instance's whole 16 KiB table.
-/// The cost is that two tile columns on the same picture row, which differ by
-/// at most one block index, can no longer be separated by the hash.
-#[cfg(feature = "__shard_ident")]
-#[inline(always)]
-fn shard_of(block: usize, mask: usize) -> usize {
-    (block & mask) & (N_SHARDS - 1)
 }
 
 /// `active_shards() - 1` when the buffer is worth spreading, else `0`.
@@ -2075,10 +1711,6 @@ impl BorrowTracker {
         self.local_policy = Some((shards, tiles));
         self.mask = mask_for_policy(len, shards);
         self.shift = block_shift_rule_rows(len, shards, tiles, self.row_stride);
-        #[cfg(feature = "__probe_shiftpin")]
-        if let Some(pinned) = pinned_shift(self.row_stride) {
-            self.shift = pinned;
-        }
         #[cfg(feature = "__probe_usage")]
         crate::usage_probe::policy("configure", len, self.mask, self.shift, self.row_stride, 0);
     }
@@ -2112,21 +1744,15 @@ impl BorrowTracker {
     /// guard can access storage or retire through the old mapping.
     ///
     /// **This decides the shipped block shift for every picture plane** since
-    /// 2026-08-11; before that it was a no-op feeding an A/B arm. It reverts to
-    /// re-deriving [`block_shift_for`]'s answer — i.e. changes nothing — when a
-    /// ladder rung is compiled in ([`ROWS_RULE_ACTIVE`]) or the caller has no
-    /// stride to declare.
+    /// 2026-08-11; before that it was a no-op feeding an A/B arm. It re-derives
+    /// [`block_shift_for`]'s answer — i.e. changes nothing — when the caller
+    /// has no stride to declare.
     #[inline]
     pub fn set_row_stride(&mut self, len: usize, stride: usize) {
         // Stored regardless of which shift rule wins below: it is what makes a
         // rectangle record's geometry derivable, and that is independent of the
         // block size.
         self.row_stride = stride;
-        #[cfg(feature = "__probe_shiftpin")]
-        if let Some(pinned) = pinned_shift(stride) {
-            self.shift = pinned;
-            return;
-        }
         let (shards, tiles) = self.policy();
         self.shift = block_shift_rule_rows(len, shards, tiles, stride);
         #[cfg(feature = "__probe_usage")]
@@ -2750,20 +2376,6 @@ impl BorrowTracker {
             }
             n = k;
             set[..n].sort_unstable();
-        }
-        // THROWAWAY (`__rect_1shard`): accept ONLY rectangles that land in one
-        // shard. A one-shard rectangle is strictly cheaper than the per-row
-        // registrations it replaces — one `try_lock` on `add`, one lock-free
-        // store on `remove`, exactly what a single per-row guard costs — whereas
-        // a 2-shard one pays two locks on `add` and two more in `remove_multi`
-        // against the per-row scheme's lock-FREE release. This arm separates the
-        // record-count effect from the lock-traffic effect instead of measuring
-        // their sum.
-        #[cfg(feature = "__rect_1shard")]
-        if n != 1 {
-            #[cfg(feature = "__probe_wide")]
-            wide_probe::N_RECT_DECLINED.fetch_add(1, Ordering::Relaxed);
-            return None;
         }
         #[cfg(feature = "__probe_sites")]
         crate::site_probe::record(Location::caller(), IS_MUT, span);
@@ -3405,17 +3017,6 @@ mod tests {
     /// The sizes below are real: a 4K 8-bit luma plane, its chroma planes, the
     /// same at 10-bit, a 1024x1024 plane, and a buffer just over
     /// `SHARD_MIN_LEN`.
-    // Not applicable when a fixed rung is compiled in — `block_shift_for` then
-    // hands back the constant by design, which the last assertion below pins
-    // from the other side. Gated on the CONFIG, not skipped at runtime.
-    #[cfg(not(any(
-        feature = "__blockshift_8",
-        feature = "__blockshift_10",
-        feature = "__blockshift_13",
-        feature = "__blockshift_14",
-        feature = "__blockshift_15",
-        feature = "__blockshift_16"
-    )))]
     #[test]
     fn adaptive_shift_keeps_the_block_count_near_target() {
         // This test is about the RULE, not about the gate, so it drives
@@ -3439,8 +3040,7 @@ mod tests {
                 "len {len}: shift {shift} gives {nblocks} blocks, target {target}"
             );
         }
-        // The invariant the RATIO exists for, and it has to hold at every rung
-        // of the `__bps_*` ladder: the 8-bit and 10-bit 4K luma planes land on
+        // The invariant the RATIO exists for: the 8-bit and 10-bit 4K luma planes land on
         // the same PICTURE ROWS PER BLOCK, because a 10-bit plane is twice the
         // bytes AND twice the stride, so a rule keyed on `len` tracks the stride
         // for free.
@@ -3450,35 +3050,24 @@ mod tests {
             "rows/block must match across bit depth at BPS {BPS:?}"
         );
         // A small buffer must NOT be handed the 4K plane's shift, which would
-        // collapse it onto one or two shards. Relative, so it is a real
-        // assertion at every rung rather than a constant that only fits one.
+        // collapse it onto one or two shards.
         assert!(sh(64 * 1024) < sh(2 * 3840 * 2160));
-        // The DEFAULT rung's two measured shifts, pinned by value: the fixed
-        // ladder (`benchmarks/tracker_blockshift_2026-08-08.meta`) measured 14
+        // The two measured shifts, pinned by value: the fixed ladder
+        // (`benchmarks/tracker_blockshift_2026-08-08.meta`) measured 14
         // joint-best for the 8-bit 4K plane and 15 within 1.2% of best for its
-        // 10-bit twin, and this is what stops a ladder rung silently becoming
-        // the shipped default.
-        if BPS == (2, 1) {
-            assert_eq!(sh(3840 * 2160), 14);
-            assert_eq!(sh(2 * 3840 * 2160), 15);
-            assert_eq!((1usize << sh(3840 * 2160)) / 3840, 4);
-        }
+        // 10-bit twin.
+        assert_eq!(BPS, (2, 1));
+        assert_eq!(sh(3840 * 2160), 14);
+        assert_eq!(sh(2 * 3840 * 2160), 15);
+        assert_eq!((1usize << sh(3840 * 2160)) / 3840, 4);
     }
 
-    /// The other side of the gate: with a fixed rung compiled in, nothing
-    /// adapts and every buffer gets the constant.
+    /// The rule must actually be doing something: two very different buffers
+    /// must not get the same shift.
     #[test]
-    fn a_fixed_rung_overrides_the_adaptive_rule() {
+    fn the_adaptive_rule_is_not_inert() {
         let sh = |len: usize| block_shift_rule(len, SHARDS_CONCURRENT, 8);
-        if FIXED_SHIFT_SELECTED {
-            for len in [64 * 1024, 1024 * 1024, 3840 * 2160, 2 * 3840 * 2160] {
-                assert_eq!(sh(len), BLOCK_SHIFT, "len {len}");
-            }
-        } else {
-            // No rung selected: the rule must actually be doing something, i.e.
-            // two very different buffers must not get the same shift.
-            assert_ne!(sh(64 * 1024), sh(2 * 3840 * 2160));
-        }
+        assert_ne!(sh(64 * 1024), sh(2 * 3840 * 2160));
     }
 
     /// A single-tile frame must NOT get the coarse shift, however many threads
@@ -3488,15 +3077,6 @@ mod tests {
     /// t=8 cost +3.08% from the adaptive shift while v4k_8tile at t=8 gained
     /// 39% from it, same thread count. Thread parallelism alone cannot tell
     /// those two apart, so `block_shift_for` reads both latches.
-    #[cfg(not(any(
-        feature = "__blockshift_8",
-        feature = "__blockshift_10",
-        feature = "__blockshift_13",
-        feature = "__blockshift_14",
-        feature = "__blockshift_15",
-        feature = "__blockshift_16",
-        feature = "__blockshift_adaptive"
-    )))]
     #[test]
     fn one_tile_does_not_get_the_coarse_shift() {
         const LEN: usize = 2 * 3840 * 2160;
@@ -3507,9 +3087,7 @@ mod tests {
         // Both: adapt. And this must be a real change, or the test is vacuous.
         let adapted = block_shift_rule(LEN, SHARDS_CONCURRENT, 8);
         assert_ne!(adapted, BLOCK_SHIFT);
-        if BPS == (2, 1) {
-            assert_eq!(adapted, 15);
-        }
+        assert_eq!(adapted, 15);
         // Two tiles is already "multi-tile"; the gate is a threshold, not a
         // proportion.
         assert_eq!(block_shift_rule(LEN, SHARDS_CONCURRENT, 2), adapted);
@@ -3525,23 +3103,6 @@ mod tests {
     ///
     /// This test is about the RULE, so it drives it with both concurrency facts
     /// declared, like its block-count sibling above.
-    // Gated on the CONFIG, never skipped at runtime: a compiled-in rung turns
-    // the derived rule off by design, and `a_rung_disables_the_derived_rule`
-    // below is the assertion for that side. Both configs assert something.
-    #[cfg(not(any(
-        feature = "__bps_blocks",
-        feature = "__bps_quarter",
-        feature = "__bps_half",
-        feature = "__bps_1",
-        feature = "__bps_4",
-        feature = "__bps_8",
-        feature = "__blockshift_8",
-        feature = "__blockshift_10",
-        feature = "__blockshift_13",
-        feature = "__blockshift_14",
-        feature = "__blockshift_15",
-        feature = "__blockshift_16"
-    )))]
     #[test]
     fn rows_rule_targets_picture_rows_not_block_count() {
         fn plane(w: usize, h: usize, hbd: u32) -> (usize, usize) {
@@ -3609,9 +3170,8 @@ mod tests {
             (128, 2048),
             (1024, 2048),
             // Narrow enough that the unclamped rows target stays finer than the
-            // block rule even at `__rpb_16`: that needs `aligned_h > 256 * R`,
-            // and without a cell like this the anti-vacuity check below FAILS at
-            // the coarse rungs — which is the check doing its job, not a bug.
+            // block rule even at a rows target of 16 (the old `__rpb_16` rung):
+            // that needs `aligned_h > 256 * R`.
             (128, 8192),
         ] {
             for hbd in [0, 1] {
@@ -3666,13 +3226,11 @@ mod tests {
     }
 
     /// The SEAM, not the rule: declaring a stride must actually install the
-    /// derived shift on the tracker in the DEFAULT build, and must install the
-    /// block-count one when a ladder rung is compiled in.
+    /// derived shift on the tracker.
     ///
     /// The rule's own test above drives [`block_shift_rule_rows`] directly, so
     /// it stays green if [`BorrowTracker::set_row_stride`] is re-gated back into
-    /// a no-op — which is exactly what this change reverses, so it needs its own
-    /// assertion. Both configs assert; neither skips.
+    /// a no-op, so this needs its own assertion.
     ///
     /// Process-state note: the two latches are monotone process-globals and
     /// other tests in this module already raise them, so this test raises them
@@ -3696,19 +3254,12 @@ mod tests {
             "set_row_stride did not install the derived shift"
         );
         assert_eq!(from_len, block_shift_rule(LEN, shards, tiles));
-        if ROWS_RULE_ACTIVE {
-            assert!(
-                t.shift > from_len,
-                "the default build must coarsen 1024x576 past the block-count \
-                 rule ({from_len}), got {}",
-                t.shift
-            );
-        } else {
-            assert_eq!(
-                t.shift, from_len,
-                "a compiled-in rung must leave the block-count shift alone"
-            );
-        }
+        assert!(
+            t.shift > from_len,
+            "the default build must coarsen 1024x576 past the block-count \
+             rule ({from_len}), got {}",
+            t.shift
+        );
     }
 
     /// Distinct shards a strided access maps to, i.e. the number of cache lines
@@ -3738,8 +3289,8 @@ mod tests {
     /// grouped index IS the block index at a shift `k` coarser. Anything that
     /// depends only on an access's SHARD SET (`pct_row_wide`, the shard lines a
     /// strided read touches, the `MAX_SHARDS_PER_BORROW` promotion door) is
-    /// therefore already covered by the `__bps_*` rungs, and a separate run
-    /// mapping cannot reach a point the ladder does not.
+    /// therefore already covered by the block-granularity ladder, and a
+    /// separate run mapping cannot reach a point the ladder does not.
     ///
     /// What this test pins is the CONSEQUENCE for the worst strided shape in the
     /// decoder — `rav1d_prepare_intra_edges`' one-byte-wide left column, 16 rows
@@ -3755,9 +3306,6 @@ mod tests {
     /// and among 16 blocks in 128 shards any decent hash collides about once
     /// (birthday: `C(16,2)/128 = 0.94`). So the ladder — not the mapping — is
     /// where the shard set is decided, which is exactly the claim above.
-    /// `__shard_ident` is the arm that changes the mapping's LOCALITY rather than
-    /// its cardinality, and it is excluded here for that reason.
-    #[cfg(not(feature = "__shard_ident"))]
     #[test]
     fn coarser_blocks_collapse_a_strided_access_onto_fewer_shards() {
         // 16 rows, 1 byte each, 3840-byte stride: the 4K left-column read.
@@ -4026,15 +3574,6 @@ mod tests {
         t
     }
 
-    /// Whether a rectangle can span more than one shard in THIS build.
-    ///
-    /// Two configurations say no, for different reasons, and the tests below
-    /// assert the corresponding behaviour in BOTH directions rather than
-    /// skipping: `__rect_1shard` declines a multi-shard rectangle by design (it
-    /// is the arm that isolates the record-count effect from the lock traffic),
-    /// and `__shards_1` has only one shard to land in.
-    const MULTI_SHARD_RECTS: bool = !cfg!(feature = "__rect_1shard") && N_SHARDS > 1;
-
     /// The multi-shard rectangle path is REACHED by the grid below, and a
     /// single-shard one is too. Without this, `add_rect`'s sort/lock/scan loop
     /// could be dead code in every test and nothing would say so.
@@ -4048,28 +3587,14 @@ mod tests {
         assert_eq!(one.pairs(), 1, "a rectangle inside one block is one shard");
         t.remove(one);
         // Straddling a block boundary: two blocks, and `shard_of` is a
-        // multiplicative hash, so two distinct shards — unless this build cannot
-        // have those, in which case the SAME rectangle must be handled the way
-        // that build promises, which is also an assertion.
+        // multiplicative hash, so two distinct shards.
         let lo = bs - s;
-        let many = t.add_rect_immut(lo, 16, 4, s);
-        if MULTI_SHARD_RECTS {
-            let many = many.expect("representable");
-            assert!(
-                many.pairs() > 1,
-                "a rectangle straddling a block boundary must register in >1 shard"
-            );
-            t.remove(many);
-        } else if N_SHARDS == 1 {
-            let many = many.expect("one shard: every rectangle is single-shard");
-            assert_eq!(many.pairs(), 1);
-            t.remove(many);
-        } else {
-            assert!(
-                many.is_none(),
-                "__rect_1shard must DECLINE a multi-shard rectangle, not widen it"
-            );
-        }
+        let many = t.add_rect_immut(lo, 16, 4, s).expect("representable");
+        assert!(
+            many.pairs() > 1,
+            "a rectangle straddling a block boundary must register in >1 shard"
+        );
+        t.remove(many);
     }
 
     /// The registration a rectangle replaces, as a control: `rows` plain per-row
@@ -4186,14 +3711,7 @@ mod tests {
     /// The rectangle-vs-rectangle predicate against the byte-set oracle, over a
     /// grid of offsets and row counts, run through the REAL tracker so that the
     /// shard selection is exercised too.
-    ///
-    /// Excluded under `__rect_1shard`: that arm declines part of the grid by
-    /// design, so the test would be measuring its coverage rather than the
-    /// predicate. The predicate itself is covered feature-free by
-    /// `rect_hit_range_matches_a_brute_force_byte_set_oracle`, and the arm's
-    /// declining behaviour by `rect_registrations_reach_both_...`.
     #[test]
-    #[cfg(not(feature = "__rect_1shard"))]
     fn rect_vs_rect_agrees_with_the_byte_set_oracle_through_the_tracker() {
         const LEN: usize = 1 << 20;
         let s = 64usize;
@@ -4267,14 +3785,7 @@ mod tests {
 
     /// A rectangle whose hull straddles a block boundary registers in every
     /// shard the hull maps to, so an overlap in the LATER block is still caught.
-    ///
-    /// Excluded under `__rect_1shard`, which declines such a rectangle outright —
-    /// there is no multi-shard record for it to detect through, and
-    /// `rect_registrations_reach_both_...` asserts that decline. Excluded under
-    /// `__shards_1` for the opposite reason: with one shard there is no "later
-    /// shard" and `same_block_overlap_is_caught` already covers it.
     #[test]
-    #[cfg(all(not(feature = "__rect_1shard"), not(feature = "__shards_1")))]
     #[should_panic(expected = "overlapping DisjointMut")]
     fn rect_overlap_in_a_later_block_is_caught() {
         const LEN: usize = 1 << 20;
@@ -4319,48 +3830,27 @@ mod tests {
         //
         // `mask == 0` instances skip the block arithmetic entirely — every block
         // is shard 0, so no span can promote — which is why this half needs more
-        // than one shard. `__rect_1shard` declines every multi-block hull for its
-        // own reason, which `rect_registrations_reach_both_...` asserts.
+        // than one shard.
         let wide_s = 1024usize;
         let tw = rect_tracker(LEN, wide_s);
         let bs = 1usize << tw.block_shift();
         let rows = (MAX_SHARDS_PER_BORROW * bs) / wide_s + 2;
-        if MULTI_SHARD_RECTS {
-            assert!(
-                rows <= MAX_RECT_ROWS,
-                "the >{MAX_SHARDS_PER_BORROW}-block case must be reachable: \
-                 rows={rows} bs={bs} stride={wide_s}"
-            );
-            assert!(
-                tw.add_rect_immut(0, 16, rows, wide_s).is_none(),
-                "a {rows}-row hull spans more than {MAX_SHARDS_PER_BORROW} blocks of {bs}"
-            );
-            // ...and one row fewer than the cap needs still registers, so the
-            // assertion above is not passing for an unrelated reason.
-            let ok_rows = (MAX_SHARDS_PER_BORROW - 1) * bs / wide_s;
-            let id = tw
-                .add_rect_immut(0, 16, ok_rows, wide_s)
-                .expect("just inside the cap");
-            tw.remove(id);
-        } else if N_SHARDS == 1 {
-            // One shard: `add_rect`'s `mask == 0` fast path skips the block
-            // arithmetic entirely, because every block maps to shard 0 and no
-            // span can promote. So a multi-BLOCK hull is representable here, and
-            // asserting that is the point. (`bs` is the whole buffer at one
-            // shard, so the >cap-blocks case does not exist to be tested.)
-            let tall = MAX_RECT_ROWS.min(8);
-            let id = tw
-                .add_rect_immut(0, 16, tall, wide_s)
-                .expect("one shard: no span can promote");
-            assert_eq!(id.pairs(), 1);
-            tw.remove(id);
-        } else {
-            assert!(
-                tw.add_rect_immut(0, 16, rows.min(MAX_RECT_ROWS), wide_s)
-                    .is_none(),
-                "__rect_1shard must decline a multi-block hull"
-            );
-        }
+        assert!(
+            rows <= MAX_RECT_ROWS,
+            "the >{MAX_SHARDS_PER_BORROW}-block case must be reachable: \
+             rows={rows} bs={bs} stride={wide_s}"
+        );
+        assert!(
+            tw.add_rect_immut(0, 16, rows, wide_s).is_none(),
+            "a {rows}-row hull spans more than {MAX_SHARDS_PER_BORROW} blocks of {bs}"
+        );
+        // ...and one row fewer than the cap needs still registers, so the
+        // assertion above is not passing for an unrelated reason.
+        let ok_rows = (MAX_SHARDS_PER_BORROW - 1) * bs / wide_s;
+        let id = tw
+            .add_rect_immut(0, 16, ok_rows, wide_s)
+            .expect("just inside the cap");
+        tw.remove(id);
         // And the representable one still works, so the assertions above are not
         // all failing for one shared reason.
         let id = t.add_rect_immut(0, 16, 4, s).expect("representable");

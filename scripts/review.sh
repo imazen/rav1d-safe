@@ -14,7 +14,7 @@ case "$mode" in
   disjoint) cmd=(cargo test -p rav1d-disjoint-mut --features "$features" --no-fail-fast) ;;
   no-std) cmd=(cargo test -p rav1d-disjoint-mut --no-default-features --no-fail-fast) ;;
   loom)
-    cmd=(cargo test -p rav1d-disjoint-mut --features __shards_4 --lib "${LOOM_TEST_FILTER:-loom_protocol}" -- --test-threads=1)
+    cmd=(cargo test -p rav1d-disjoint-mut --lib "${LOOM_TEST_FILTER:-loom_protocol}" -- --test-threads=1)
     ;;
   miri-stacked|miri-tree)
     export MIRIFLAGS=""

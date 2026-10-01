@@ -35,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test -p rav1d-disjoint-mut --features __shards_4 --lib loom_protocol -- --test-threads=1
+      - run: cargo test -p rav1d-disjoint-mut --lib loom_protocol -- --test-threads=1
         env:
           RUSTFLAGS: --cfg disjoint_mut_loom
           CARGO_TARGET_DIR: target/loom
@@ -51,14 +51,11 @@ jobs:
         features: ["", "--no-default-features"]
         args: [""]
         include:
-          # NOT `--all-features`. Several `__probe_*` features are throwaway
-          # measurement instruments that DELIBERATELY disable tracking
-          # (`__probe_untracked` sets `tracker: None`; `__probe_addnop` keeps
-          # the call and deletes the work; `__probe_noscan`/`__probe_tinynop`
-          # likewise). Enabling them all at once selects mutually exclusive
-          # trackers, so `test_new_always_tracked` and `test_overlapping_mut`
-          # fail BY CONSTRUCTION -- that leg was red on main and could never
-          # have been green. It tested a configuration nothing ships.
+          # NOT `--all-features`. `untracked` deliberately disables overlap
+          # tracking, and `__probe_count` selects a different (single-lock)
+          # tracker than `__probe_usage` requires, so enabling everything at
+          # once builds a configuration nothing ships (`test_new_always_tracked`
+          # and `test_overlapping_mut` fail BY CONSTRUCTION under `untracked`).
           # This enables the sound COUNTING probes instead, which is the
           # coverage the leg was presumably meant to give.
           #
