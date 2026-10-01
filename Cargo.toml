@@ -77,6 +77,7 @@ md5 = "0.8.1"
 zenbench = "0.1.9"
 zenavif-parse = { version = "0.6.2", features = ["eager"] }
 miniz_oxide = "0.8"
+pprof = { version = "0.15.0", features = ["flamegraph"] }
 
 # tango-bench uses native shared memory and process APIs unavailable on wasm32
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]

@@ -123,6 +123,19 @@ fn main() {
     let decoded = decode_ivf_frames(&frames);
     eprintln!("Frames decoded per iteration: {}", decoded);
 
+    // `RAV1D_PPROF=<path>`: signal-based sampling (pprof, SIGPROF + libunwind
+    // backtrace — no perf/PMU needed, works under perf_event_paranoid=4).
+    // Writes <path>.svg flamegraph and <path>.collapsed folded stacks covering
+    // the timed loop only.
+    let pprof_path = std::env::var("RAV1D_PPROF").ok();
+    let pprof_guard = pprof_path.as_ref().map(|_| {
+        pprof::ProfilerGuardBuilder::default()
+            .frequency(999)
+            .blocklist(&["libc", "ld", "pthread", "vdso"])
+            .build()
+            .expect("pprof guard")
+    });
+
     // Timed runs
     let label = std::env::var("RAV1D_LABEL").unwrap_or_else(|_| "run".into());
     let mut last = 0.0f64;
@@ -139,4 +152,35 @@ fn main() {
         println!("RESULT\t{label}\t{rep}\t{iterations}\t{decoded}\t{per_frame:.6}");
     }
     eprintln!("{label}: {last:.4} ms/frame");
+
+    if let (Some(path), Some(guard)) = (pprof_path, pprof_guard) {
+        let report = guard.report().build().expect("pprof report");
+        // Folded stacks: `root;...;leaf N` — same convention as inferno's
+        // stackcollapse, so existing diff tooling works on it.
+        let mut collapsed = std::io::BufWriter::new(
+            File::create(format!("{path}.collapsed")).expect("create collapsed"),
+        );
+        use std::io::Write;
+        for (frames, count) in report.data.iter() {
+            let stack: Vec<String> = frames
+                .frames
+                .iter()
+                .rev()
+                .flat_map(|sf| sf.iter().rev().map(|s| s.name()))
+                .collect();
+            if !stack.is_empty() {
+                writeln!(
+                    collapsed,
+                    "thread={};{} {}",
+                    frames.thread_name_or_id(),
+                    stack.join(";"),
+                    count
+                )
+                .unwrap();
+            }
+        }
+        let mut svg = File::create(format!("{path}.svg")).expect("create svg");
+        report.flamegraph(&mut svg).expect("flamegraph");
+        eprintln!("pprof: wrote {path}.svg + {path}.collapsed");
+    }
 }

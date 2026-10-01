@@ -252,3 +252,59 @@ structural fix matters more on dense high-res 10/12-bit content.
 Pattern: when a pass ends in transpose+store, fold the consumer's first
 elementwise stage into the store — don't materialize an intermediate buffer
 just to rescale it.
+
+## §13 — 2026-10-01: wall-clock sampling vs instruction counting (instrument cross-check)
+
+`perf_event_paranoid=4` blocks the PMU outright on this box (samply/perf both
+dead). Two samplers now live in `scripts/perf/` that work anyway:
+
+- `RAV1D_PPROF=/tmp/x ./profile_ivf file N` — in-process SIGPROF sampling
+  (pprof crate, libunwind backtraces). Writes `x.svg` + `x.collapsed`
+  (inferno-compatible folded stacks). Full call-tree attribution.
+- `ptrace_sample.py <dur> <tick_ms> <skip_ms> <out> <cmd...>` — fork+ATTACH
+  leaf-PC sampler; the tracee is our child so yama scope-1 allows it. Works
+  on ANY binary (used on the `--features asm` arm, whose vendored nasm
+  objects carry full `dav1d_*` symbols — the stripped system libdav1d does
+  not). Symbolization must translate `rip−map_start+map_offset` through the
+  ELF LOAD phdrs (`p_vaddr ≠ p_offset` in rustc output ⇒ naive file-offset
+  lookup attributes every PC to the fn ~4KB earlier — symptom: impossible
+  `BitDepth16` hits on an 8bpc stream).
+
+**Same stream (intra_4k.ivf), same decode loop, wall-clock leaf distribution:**
+
+| family | safe wall% | asm-arm wall% | ms/f safe | ms/f asm | per-frame ratio |
+|---|---|---|---|---|---|
+| msac entropy | 37.4 | 48.9 | 16.5 | 11.7 | **1.4×** |
+| lpf | 13.4 | 10.2 | 5.9 | 2.4 | 2.4× |
+| ipred | 12.3 | 7.2 | 5.4 | 1.7 | 3.2× |
+| itx | 8.1 | 1.0 | 3.6 | 0.2 | **14.7×** |
+| tracker/guards | 11.6 | 15.3 | 5.1 | 3.7 | 1.4× |
+| spine/other | 17.2 | 17.3 | 7.6 | 4.1 | 1.8× |
+
+(asm-arm 23.8ms/f vs safe 44.1ms/f; leaf-only attribution, ~6k+3.5k samples)
+
+**What sampling changed vs the Ir inventory:**
+
+1. **msac is the #1 wall item on BOTH sides** — dav1d's own
+   `msac_decode_symbol_adapt4_sse2` alone eats 21.8% of the asm arm's wall.
+   Entropy decode is a shared serial-dependency bottleneck; our branchless
+   scalar adapt4 (inlined into `decode_coefs_class_v3`, ~19% leaf) is NOT the
+   special gap Ir suggested — dav1d spends the same share in asm.
+2. **itx is the worst RELATIVE kernel gap** (14.7× per frame) even though its
+   Ir gap (+2.1B) ranked below lpf — dav1d's itx is nearly free (0.2ms/f)
+   while ours is 3.6ms/f. Leaf-level: our `itxfm`+transform inners vs
+   dav1d's fused register-resident butterflies.
+3. **Tracker/guard tax ≈ 11.6% wall** — atomics and bounds machinery that Ir
+   under-counts (each atomic op is 1 instruction but ~20-cycle latency). It's
+   ~15% of the asm arm too (shared spine) — pure structural overhead dav1d
+   lacks entirely.
+4. Ir family *ratios* were directionally right for lpf/ipred (13×/3× Ir →
+   2.4×/3.2× wall) but Ir massively over-weighted SIMD kernels' share of the
+   total: SIMD retires at high IPC, so instruction-count gaps compress ~3-5×
+   in wall time, while scalar serial code (msac, tracker) compresses the
+   other way.
+
+**Dispatch note:** dav1d picks `avx512icl` kernels on this Zen4; our safe
+side runs `avx2_inner` for most of lpf/ipred — `CpuFlags::AVX512ICL` *is*
+granted (full ICL set present incl. gfni/vaes/vpclmulqdq); it's a coverage
+gap (no v4 inners), not a detection bug.
