@@ -982,6 +982,10 @@ impl Rav1dPictureDataComponent {
     /// allocations install a policy while still exclusively owned.
     #[inline(always)]
     pub(crate) fn uses_row_guards(&self) -> bool {
+        // MEASUREMENT ONLY (`__probe_nocompact`): zero-copy direct guards at t>1.
+        #[cfg(feature = "__probe_nocompact")]
+        return false;
+        #[cfg(not(feature = "__probe_nocompact"))]
         self.threading
             .map_or_else(tile_threading_active, |p| p.parallel)
     }

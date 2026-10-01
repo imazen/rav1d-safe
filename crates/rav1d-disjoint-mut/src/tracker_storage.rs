@@ -79,11 +79,16 @@ impl TrackerStorage {
     }
 
     pub(super) const fn is_checked(&self) -> bool {
-        !matches!(self, Self::Unchecked)
+        // Under the measurement feature every constructor returns Unchecked;
+        // folding `false` here lets callers elide the parent/cleanup work too.
+        !cfg!(feature = "__probe_untracked") && !matches!(self, Self::Unchecked)
     }
 
     #[inline]
     pub(super) fn get_or_init(&self, len: impl FnOnce() -> usize) -> Option<&BorrowTracker> {
+        if cfg!(feature = "__probe_untracked") {
+            return None;
+        }
         match self {
             Self::Unchecked => None,
             Self::Eager(tracker) => Some(tracker),
@@ -94,6 +99,9 @@ impl TrackerStorage {
     /// Retirement and poisoning must only use an already-published tracker.
     #[inline]
     pub(super) fn get(&self) -> Option<&BorrowTracker> {
+        if cfg!(feature = "__probe_untracked") {
+            return None;
+        }
         match self {
             Self::Unchecked => None,
             Self::Eager(tracker) => Some(tracker),
@@ -105,6 +113,9 @@ impl TrackerStorage {
     /// storage stays lazy; its eventual initializer will read the new length.
     #[inline]
     pub(super) fn get_mut(&mut self) -> Option<&mut BorrowTracker> {
+        if cfg!(feature = "__probe_untracked") {
+            return None;
+        }
         match self {
             Self::Unchecked => None,
             Self::Eager(tracker) => Some(tracker),

@@ -155,6 +155,9 @@ __probe_noscan = ["rav1d-disjoint-mut/__probe_noscan"]
 __probe_lockonly = ["rav1d-disjoint-mut/__probe_lockonly"]
 # Tracking off, bounds checks untouched (isolates the tracker from `unchecked`).
 __probe_untracked = ["rav1d-disjoint-mut/__probe_untracked"]
+# Measurement-only (2026-10-01): with `__probe_untracked`, skip the t>1 compact copy-in/diff-write-back
+# paths and use the zero-copy direct guards, to price the race-tolerant ceiling. NEVER ship.
+__probe_nocompact = []
 __probe_shardsim = ["__probe_count", "rav1d-disjoint-mut/__probe_shardsim"]
 # Per-worker, per-task-stage timing + a sampled concurrency histogram (P1).
 __probe_tasktime = []

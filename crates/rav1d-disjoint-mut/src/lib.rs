@@ -342,6 +342,8 @@ impl<T: ?Sized + AsMutPtr> Drop for BorrowCleanup<'_, T> {
     fn drop(&mut self) {
         // This only fires on panic (mem::forget on success path).
         // Poison rather than clean up — the data structure is compromised.
+        // `__probe_untracked`: parent is a const-None, gate the whole block.
+        #[cfg(not(feature = "__probe_untracked"))]
         if let Some(parent) = self.parent {
             parent.tracker.get().unwrap().poison();
         }
@@ -969,19 +971,33 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         I: Into<Bounds> + Clone,
         I: DisjointMutIndex<[<T as AsMutPtr>::Target]>,
     {
-        let mut bounds: Bounds = index.clone().into();
-        // Clamp an open-ended range (`index(..)`, `index(n..)` — both encode
-        // their end as `usize::MAX`) to the real length. Sound: if the range
-        // really did run past the end, `get_mut` below panics and poisons, so
-        // no borrow of `len..end` can be missed. Without this the tracker would
-        // see an astronomically long span and take its all-shard slow path.
-        // `as_mut_slice` is called again below, so this costs nothing.
-        clamp_bounds(&mut bounds, self.as_mut_slice().len());
+        // The bounds are consumed only by tracker registration — compute them
+        // lazily so unchecked (`__probe_untracked`/`dangerously_unchecked`)
+        // instances skip the conversion and clamp entirely. `__probe_bounds`
+        // still needs them on the success path below, so it computes eagerly.
+        #[cfg(feature = "__probe_bounds")]
+        let mut bounds: Bounds = {
+            let mut b: Bounds = index.clone().into();
+            clamp_bounds(&mut b, self.as_mut_slice().len());
+            b
+        };
         // Register the borrow BEFORE creating the reference.
         // This prevents a TOCTOU gap where two threads could both create
         // references to overlapping ranges before either registers.
         let borrow_id = match self.tracker() {
-            Some(tracker) => tracker.add_mut(&bounds),
+            Some(tracker) => {
+                #[cfg(not(feature = "__probe_bounds"))]
+                let mut bounds: Bounds = index.clone().into();
+                // Clamp an open-ended range (`index(..)`, `index(n..)` — both
+                // encode their end as `usize::MAX`) to the real length. Sound:
+                // if the range really did run past the end, `get_mut` below
+                // panics and poisons, so no borrow of `len..end` can be missed.
+                // Without this the tracker would see an astronomically long
+                // span and take its all-shard slow path.
+                #[cfg(not(feature = "__probe_bounds"))]
+                clamp_bounds(&mut bounds, self.as_mut_slice().len());
+                tracker.add_mut(&bounds)
+            }
             None => checked::BorrowId::UNCHECKED,
         };
         let parent = self.is_checked().then_some(self);
@@ -1035,11 +1051,23 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
         I: Into<Bounds> + Clone,
         I: DisjointMutIndex<[<T as AsMutPtr>::Target]>,
     {
-        let mut bounds: Bounds = index.clone().into();
-        // See `index_mut` for why the clamp is here and why it is sound.
-        clamp_bounds(&mut bounds, self.as_mut_slice().len());
+        // Lazily computed — see `index_mut` for why the bounds are only
+        // needed when a tracker exists.
+        #[cfg(feature = "__probe_bounds")]
+        let mut bounds: Bounds = {
+            let mut b: Bounds = index.clone().into();
+            clamp_bounds(&mut b, self.as_mut_slice().len());
+            b
+        };
         let borrow_id = match self.tracker() {
-            Some(tracker) => tracker.add_immut(&bounds),
+            Some(tracker) => {
+                #[cfg(not(feature = "__probe_bounds"))]
+                let mut bounds: Bounds = index.clone().into();
+                // See `index_mut` for why the clamp is here and why it is sound.
+                #[cfg(not(feature = "__probe_bounds"))]
+                clamp_bounds(&mut bounds, self.as_mut_slice().len());
+                tracker.add_immut(&bounds)
+            }
             None => checked::BorrowId::UNCHECKED,
         };
         let parent = self.is_checked().then_some(self);
@@ -1559,6 +1587,7 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointMutGuard<'a, T, V> {
         // concurrency always implies a tracker-observed one.
         #[cfg(feature = "__probe_bounds")]
         bounds_probe::release(self.probe);
+        #[cfg(not(feature = "__probe_untracked"))]
         if let Some(parent) = self.parent {
             let tracker = parent.tracker.get().unwrap();
             // If the thread is panicking while we hold a mutable guard,
@@ -1577,6 +1606,7 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> Drop for DisjointImmutGuard<'a, T, V> 
     fn drop(&mut self) {
         #[cfg(feature = "__probe_bounds")]
         bounds_probe::release(self.probe);
+        #[cfg(not(feature = "__probe_untracked"))]
         if let Some(parent) = self.parent {
             parent.tracker.get().unwrap().remove(self.borrow_id);
         }
@@ -1674,6 +1704,7 @@ impl<'a, T: ?Sized + AsMutPtr, V> DisjointImmutRectGuard<'a, T, V> {
 
 impl<'a, T: ?Sized + AsMutPtr, V> Drop for DisjointImmutRectGuard<'a, T, V> {
     fn drop(&mut self) {
+        #[cfg(not(feature = "__probe_untracked"))]
         if let Some(parent) = self.parent {
             parent.tracker.get().unwrap().remove(self.borrow_id);
         }
@@ -1756,6 +1787,7 @@ impl<'a, T: ?Sized + AsMutPtr, V> DisjointMutRectGuard<'a, T, V> {
 
 impl<'a, T: ?Sized + AsMutPtr, V> Drop for DisjointMutRectGuard<'a, T, V> {
     fn drop(&mut self) {
+        #[cfg(not(feature = "__probe_untracked"))]
         if let Some(parent) = self.parent {
             let tracker = parent.tracker.get().unwrap();
             // A panic while an exclusive guard is live may leave the data
