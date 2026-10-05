@@ -772,6 +772,15 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
         return false;
     }
 
+    // The wasm kernels index rows as `y * stride` from the start of the
+    // block slice and ignore `BlockMut::base` — on a negative-stride picture
+    // that writes the block vertically flipped (still in-bounds, so a silent
+    // corruption, not a panic). Bail to the scalar fallback, which uses the
+    // signed stride. Mirrors the x86 dispatch's bail.
+    if dst.stride() < 0 {
+        return false;
+    }
+
     match BD::BPC {
         BPC::BPC8 => {
             // Reinterpret coeff as &mut [i16] via zerocopy
@@ -783,7 +792,11 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             // `WithOffset::block_mut`.
             let mut block = dst.block_mut::<BD>(w, h);
             let byte_stride_u = block.byte_stride().unsigned_abs();
-            let dst_u8: &mut [u8] = block.as_mut_bytes();
+            // Narrow to the block hull, `(h-1)*stride + w` bytes, so each
+            // kernel's per-row accesses are provably in-bounds (the Pic arm
+            // is already hull-sized; `Own` hands out the band tail).
+            let dst_u8: &mut [u8] =
+                &mut block.as_mut_bytes()[..(h - 1) * byte_stride_u + w];
 
             match txfm {
                 TxfmSize::S4x4 => {
@@ -806,7 +819,10 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
             // `WithOffset::block_mut`.
             let mut block = dst.block_mut::<BD>(w, h);
             let byte_stride_u = block.byte_stride().unsigned_abs();
-            let dst_bytes: &mut [u8] = block.as_mut_bytes();
+            // Same hull narrowing as the 8bpc arm, in bytes before the u16
+            // reinterpretation: `(h-1)*stride + w*2`.
+            let dst_bytes: &mut [u8] =
+                &mut block.as_mut_bytes()[..(h - 1) * byte_stride_u + w * 2];
             let dst_u16: &mut [u16] = zerocopy::FromBytes::mut_from_bytes(dst_bytes)
                 .expect("dst alignment/size mismatch for u16 reinterpretation");
             let stride_u16 = byte_stride_u / 2;
