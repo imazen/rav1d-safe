@@ -1589,13 +1589,15 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
                 h,
                 pxstride * ps as isize,
             );
-            // ONE exact strided-rectangle
-            // record instead of `h` per-row ones, the `LfBlock::fill_rect`
-            // mechanism applied at this seam. `None` is a REFUSAL — no declared
-            // stride, a stride mismatch, `w > stride`, `h > MAX_RECT_ROWS`, a
-            // hull spanning more than `MAX_SHARDS_PER_BORROW` blocks, a full
-            // shard, or a live wide record — and then the per-row loop below
-            // runs exactly as it did before rectangles existed. Nothing is ever
+            // Exact strided-rectangle records
+            // instead of `h` per-row ones, the `LfBlock::fill_rect` mechanism
+            // applied at this seam, banded at 8 rows so a TALL window stays
+            // under `MAX_SHARDS_PER_BORROW` blocks whenever the adaptive block
+            // rule has armed (a block then holds at least ROWS_PER_BLOCK_MIN
+            // = 4 picture rows). `index_rect`'s `None` is a REFUSAL — no
+            // declared stride, a stride mismatch, `w > stride`, a full shard,
+            // or a live wide record — and that band falls back to per-row
+            // guards, exactly as before rectangles existed. Nothing is ever
             // rounded up to make a rectangle fit.
             //
             // Sound here for the reason it is sound in `LfBlock::fill_threaded`
@@ -1604,20 +1606,30 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             // the same picture rows, the routine case) is neither reserved
             // against nor reported, and `DisjointImmutRectGuard` never
             // materialises a reference wider than one row.
-            if let Some(rect) =
-                self.data
-                    .dm()
-                    .index_rect_as::<BD::Pixel>(self.offset, w, h, pxstride)
-            {
-                for row in 0..h {
-                    f(row, rect.row(row));
+            let mut row0 = 0usize;
+            while row0 < h {
+                let band = (h - row0).min(8);
+                let lo = self
+                    .offset
+                    .wrapping_add_signed(row0 as isize * pxstride);
+                if let Some(rect) =
+                    self.data
+                        .dm()
+                        .index_rect_as::<BD::Pixel>(lo, w, band, pxstride)
+                {
+                    for r in 0..band {
+                        f(row0 + r, rect.row(r));
+                    }
+                } else {
+                    for r in 0..band {
+                        let off = self
+                            .offset
+                            .wrapping_add_signed((row0 + r) as isize * pxstride);
+                        let guard = self.data.slice::<BD, _>((off.., ..w));
+                        f(row0 + r, &guard);
+                    }
                 }
-                return;
-            }
-            for row in 0..h {
-                let off = self.offset.wrapping_add_signed(row as isize * pxstride);
-                let guard = self.data.slice::<BD, _>((off.., ..w));
-                f(row, &guard);
+                row0 += band;
             }
             return;
         }
@@ -1660,26 +1672,37 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
                 h,
                 pxstride * ps as isize,
             );
-            // The write side: ONE exact
-            // MUTABLE rectangle record instead of `h` per-row ones. Same
-            // refusal list, same soundness argument as the read side above,
-            // plus: `DisjointMutRectGuard::row_mut` takes `&mut self`, so at
-            // most one row reference is live at a time and no `&mut [_]` wider
-            // than one row is ever created.
-            if let Some(mut rect) =
-                self.data
-                    .dm()
-                    .index_rect_mut_as::<BD::Pixel>(self.offset, w, h, pxstride)
-            {
-                for row in 0..h {
-                    f(row, rect.row_mut(row));
+            // The write side: mutable
+            // rectangle records instead of `h` per-row ones, banded like the
+            // read side so a tall window stays under `MAX_SHARDS_PER_BORROW`
+            // blocks. Same refusal list, same soundness argument as the read
+            // side above, plus: `DisjointMutRectGuard::row_mut` takes
+            // `&mut self`, so at most one row reference is live at a time and
+            // no `&mut [_]` wider than one row is ever created.
+            let mut row0 = 0usize;
+            while row0 < h {
+                let band = (h - row0).min(8);
+                let lo = self
+                    .offset
+                    .wrapping_add_signed(row0 as isize * pxstride);
+                if let Some(mut rect) =
+                    self.data
+                        .dm()
+                        .index_rect_mut_as::<BD::Pixel>(lo, w, band, pxstride)
+                {
+                    for r in 0..band {
+                        f(row0 + r, rect.row_mut(r));
+                    }
+                } else {
+                    for r in 0..band {
+                        let off = self
+                            .offset
+                            .wrapping_add_signed((row0 + r) as isize * pxstride);
+                        let mut guard = self.data.slice_mut::<BD, _>((off.., ..w));
+                        f(row0 + r, &mut guard);
+                    }
                 }
-                return;
-            }
-            for row in 0..h {
-                let off = self.offset.wrapping_add_signed(row as isize * pxstride);
-                let mut guard = self.data.slice_mut::<BD, _>((off.., ..w));
-                f(row, &mut guard);
+                row0 += band;
             }
             return;
         }
@@ -1774,15 +1797,46 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             h,
             pxstride * pixel_size as isize,
         );
-        for row in 0..h {
-            let row_off = if pxstride >= 0 {
-                self.offset + row * abs_stride
+        // Strided-RECTANGLE records instead of `h` per-row ones — the
+        // `for_rows` shape applied to the copy-out. A record covers only the
+        // rows' `w`-element segments, so a concurrent writer in an inter-row
+        // gap is neither reserved against nor reported.
+        //
+        // Tall windows don't fit one record: the tracker picks the shard set
+        // from the rect's HULL — `(rows - 1) * stride + seg` — and refuses once
+        // that spans more than `MAX_SHARDS_PER_BORROW` blocks. The 8-row band
+        // keeps the hull under that limit whenever the adaptive block rule has
+        // armed (a block then holds at least ROWS_PER_BLOCK_MIN = 4 picture
+        // rows, so 8 rows occupy at most 3 blocks); `h <= 8` collapses to the
+        // single-shot case. `None` is still a refusal (undeclared stride,
+        // a stride mismatch, a full shard, or a live wide record) — the row
+        // loop then runs exactly as before rectangles existed.
+        let mut row0 = 0usize;
+        while row0 < h {
+            let band = (h - row0).min(8);
+            let lo = self.offset.wrapping_add_signed(row0 as isize * pxstride);
+            if let Some(rect) =
+                self.data
+                    .dm()
+                    .index_rect_as::<BD::Pixel>(lo, w, band, pxstride)
+            {
+                for r in 0..band {
+                    buf[(row0 + r) * byte_stride..][..byte_stride]
+                        .copy_from_slice(rect.row(r).as_bytes());
+                }
             } else {
-                self.offset - row * abs_stride
-            };
-            let guard = self.data.slice::<BD, _>((row_off.., ..w));
-            buf[row * byte_stride..][..byte_stride]
-                .copy_from_slice(&guard.as_bytes()[..byte_stride]);
+                for r in 0..band {
+                    let row_off = if pxstride >= 0 {
+                        self.offset + (row0 + r) * abs_stride
+                    } else {
+                        self.offset - (row0 + r) * abs_stride
+                    };
+                    let guard = self.data.slice::<BD, _>((row_off.., ..w));
+                    buf[(row0 + r) * byte_stride..][..byte_stride]
+                        .copy_from_slice(&guard.as_bytes()[..byte_stride]);
+                }
+            }
+            row0 += band;
         }
         (buf, byte_stride)
     }
@@ -1843,15 +1897,40 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             h,
             pxstride * pixel_size as isize,
         );
-        for row in 0..h {
-            let row_off = if pxstride >= 0 {
-                self.offset + row * abs_stride
+        // The write side: mutable rectangle records over the same row
+        // segments, banded exactly like `compact_read_per_row` so a tall
+        // window's hull stays under `MAX_SHARDS_PER_BORROW` blocks. Sound for
+        // this caller — which rewrites EVERY pixel in the window — for the
+        // `for_rows_mut` reason: the records cover exactly the segments
+        // written, no wider. (`compact_write_back_per_row_diff` must NOT take
+        // this path: its whole point is mutably guarding only the modified
+        // spans, so unchanged tap rows stay unclaimed.)
+        let mut row0 = 0usize;
+        while row0 < h {
+            let band = (h - row0).min(8);
+            let lo = self.offset.wrapping_add_signed(row0 as isize * pxstride);
+            if let Some(mut rect) =
+                self.data
+                    .dm()
+                    .index_rect_mut_as::<BD::Pixel>(lo, w, band, pxstride)
+            {
+                for r in 0..band {
+                    rect.row_mut(r).as_mut_bytes()[..byte_stride]
+                        .copy_from_slice(&buf[(row0 + r) * byte_stride..][..byte_stride]);
+                }
             } else {
-                self.offset - row * abs_stride
-            };
-            let mut guard = self.data.slice_mut::<BD, _>((row_off.., ..w));
-            guard.as_mut_bytes()[..byte_stride]
-                .copy_from_slice(&buf[row * byte_stride..][..byte_stride]);
+                for r in 0..band {
+                    let row_off = if pxstride >= 0 {
+                        self.offset + (row0 + r) * abs_stride
+                    } else {
+                        self.offset - (row0 + r) * abs_stride
+                    };
+                    let mut guard = self.data.slice_mut::<BD, _>((row_off.., ..w));
+                    guard.as_mut_bytes()[..byte_stride]
+                        .copy_from_slice(&buf[(row0 + r) * byte_stride..][..byte_stride]);
+                }
+            }
+            row0 += band;
         }
     }
 

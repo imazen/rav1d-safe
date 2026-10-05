@@ -360,3 +360,41 @@ stream but confirmed-check-free and defensive). asm arm ~65.4 ms/frame ⇒
 ipred v4x parity 7/7 + z2 bounds crash tests, cross-tier MD5 identical at
 scalar/v2/v3/v4/native, `decode_permutations` 19/19, `gen_cover`,
 aarch64 + wasm32 `cargo check`.
+
+### 2026-09 — MT tracker traffic: banded rectangle records
+
+Context: the DisjointMut `add` path is already latency-tuned (documented
+above); the remaining lever is FEWER REGISTRATIONS. `__probe_sites` on
+`photo-4k-t8` at t=4 put `compact_read_per_row`'s per-row immut borrows at
+**54.6% of all registrations** (1.68M/frame, mean extent 14 B — the
+loopfilter's MT compact read does `h` row-guards per window, ~117k windows
+per frame).
+
+**Change (`include/dav1d/picture.rs`):** `compact_read_per_row`,
+`compact_write_back_per_row`, `for_rows` and `for_rows_mut` now register
+`DisjointMut::index_rect{,_mut}` records — ONE tracker record per row-band
+instead of one per row. Bands are 8 rows so a tall window's *hull* stays
+under `MAX_SHARDS_PER_BORROW` blocks whenever the adaptive block rule has
+armed (a block then holds >= ROWS_PER_BLOCK_MIN = 4 picture rows); `h <= 8`
+collapses to the single-rect case; `None` still falls back to per-row.
+`compact_write_back_per_row_diff` is deliberately untouched — mutably
+guarding unmodified tap rows is exactly what zenavif#30 removed.
+
+Registrations/frame: 3.08M → 1.62M (−47%). photo-4k-t8 ms/frame:
+t=1 92.9 → 90.5, t=4 38.5 → 38.2, **t=8 27.1 → 24.9 (−8.1%)**.
+asm at t=8 is ~14.1 — the tracked/untracked tax at t=8 went 1.49× → 1.37×.
+
+Measured dead ends alongside: per-call `summon()` is a relaxed atomic load
++ flag test (~a few cycles) — caching tokens is not worth plumbing. The
+`*_diff` write-back must NOT take a rect record (see above).
+
+**Verification:** `tile_threading_overlap`, `reproduce_overlap`,
+`decode_concurrent_md5`, `mt_stress`, `flush_drains`, `cancellation`,
+`worker_panic_recovery`, `filmgrain_threads` 24/24 (incl. the ignored
+reproducers under `--run-ignored all`); row-guard policy tests incl.
+`for_rows_mut_never_reserves_an_inter_row_gap_when_tile_threading_is_on`;
+photo/map-4k-t8 bit-exact at t=1 and t=8 vs dav1d MD5; 140-frame clip
+identical at t1 / t8d1 / t8d8; `gen_cover`, aarch64 + wasm32 checks.
+
+Note: `probe_sites_ivf` (`--features __probe_sites`/`__probe_wide`) added —
+the IVF sibling of `probe_tracker`, for the stills corpus.
