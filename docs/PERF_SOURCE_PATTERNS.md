@@ -308,3 +308,55 @@ dead). Two samplers now live in `scripts/perf/` that work anyway:
 side runs `avx2_inner` for most of lpf/ipred — `CpuFlags::AVX512ICL` *is*
 granted (full ICL set present incl. gfni/vaes/vpclmulqdq); it's a coverage
 gap (no v4 inners), not a detection bug.
+
+## §14 — 2026-10-05: dispatch-level hull slicing for with_block_mut kernels (itx + ipred)
+
+**Pattern:** kernels that receive `(dst, base, stride)` and address rows as
+`dst[base + y*stride + x]` get ONE upfront slice to the block hull
+`(h-1)*stride + w` at the dispatch boundary. Inside, every per-row/per-chunk
+access becomes `y*stride + x <= (h-1)*stride + w` — provable via umax — so
+LLVM elides the checked `try_into`/slice-create per row instead of once per
+SIMD store on a runtime-offset index into the whole picture tail.
+
+**Applied (safe build, `#![forbid(unsafe_code)]` intact):**
+
+- `itxfm_dispatch_{8,16}bpc` (`safe_simd/itx/part10_dispatch.rs`): hoisted
+  `TxfmSize::to_wh` to function scope; the `arcane!`/`dc_only` call sites now
+  pass `&mut dst[base..base + hull]` (u16 elements for 16bpc,
+  `hull = (h-1)*(byte_stride/2) + w`). Post-change profile: no `index_mut`/
+  `try_into` leaves under any `__arcane_inv_txfm_*` inner.
+- `intra_pred_dispatch` (`safe_simd/ipred.rs`): same rebase inside the
+  `with_block_mut` closure — `(bytes, base, stride)` →
+  `(&mut dst[base..base+hull], 0, stride)` for positive strides. For the
+  negative-stride arm the hull already starts at the last row
+  (`base = (h-1)*|stride|`), so the transform is a no-op there; kernels keep
+  signed `dst_base + y*stride` addressing and stay correct.
+- `ipred` v4x inners (smooth/smooth_v/smooth_h/z1/z2): per-row `dst` narrowed
+  to `row[..width]`, `topleft` edge slices narrowed once, z1/z2's
+  tmp-store+`copy_from_slice` tail replaced by direct `storeu_256!` for
+  full-width chunks (tmp retained only for partial tails), `ebuf`/`tbuf`
+  edge fills switched to `copy_from_slice`. `index_mut<u8>` leaf stacks
+  under the smooth/z2 inners disappeared from the post-change profile.
+
+**Bug found while hull-checking the itx dispatch:** the arcane itx path had
+no negative-stride gate — on a negative-stride picture the unsigned
+`stride_u` walk goes upward from a `base` that is `(h-1)*|stride|`, i.e.
+past the hull end (guaranteed panic for h>1, slice-check or kernel-side).
+Both `itxfm_dispatch_{8,16}bpc` now `return false` on `stride_i < 0` so the
+call falls back to `itxfm_add_scalar_fallback`, which uses signed
+`pxstride`/`wrapping_add_signed` correctly. 16bpc gained a `stride_i` param
+to see the sign. (Decoder-owned pictures are always positive-stride; the
+path is only reachable through c-ffi consumer buffers, but panic→correct
+decode is a strict improvement and protects the new `base + hull` slice.)
+
+**Measured (photo-4k-min.ivf, 3840x2160 intra, t=1):**
+safe 94.2 → ~91.5 ms/frame (≈ −2.7ms, mostly the ipred in-kernel row
+narrowing + direct stores; the itx/ipred dispatch hull is sub-noise on this
+stream but confirmed-check-free and defensive). asm arm ~65.4 ms/frame ⇒
+**~1.40×** (was ~1.44×).
+
+**Verification:** mixed-parity dispatch tests 23/23 + itx suite 44/44
+(incl. the "write outside block" sentinel over stride>w + nonzero offset),
+ipred v4x parity 7/7 + z2 bounds crash tests, cross-tier MD5 identical at
+scalar/v2/v3/v4/native, `decode_permutations` 19/19, `gen_cover`,
+aarch64 + wasm32 `cargo check`.

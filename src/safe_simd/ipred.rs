@@ -997,6 +997,10 @@ fn ipred_smooth_8bpc_avx512_inner(
     let topleft = topleft.flex();
     let weights_hor = &dav1d_sm_weights[width..][..width];
     let weights_ver = &dav1d_sm_weights[height..][..height];
+    // Slice the top edge once: `top[x]` is the predictor for column x, so the
+    // per-chunk loads below become provably in-bounds under `x + 16 <= width`
+    // (PERF_SOURCE_PATTERNS: slice once outside hot loops).
+    let top = &topleft[tl_off + 1..tl_off + 1 + width];
     let right_val = topleft[tl_off + width] as i32;
     let bottom_val = topleft[tl_off - height] as i32;
     let right_vec = _mm512_set1_epi32(right_val);
@@ -1007,6 +1011,7 @@ fn ipred_smooth_8bpc_avx512_inner(
 
     for y in 0..height {
         let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let row = &mut dst[row_off..row_off + width];
         let left_val = topleft[tl_off - y - 1] as i32;
         let left_vec = _mm512_set1_epi32(left_val);
         let w_v = weights_ver[y] as i32;
@@ -1016,7 +1021,7 @@ fn ipred_smooth_8bpc_avx512_inner(
         let mut x = 0;
         while x + 16 <= width {
             // Load 16 top pixels → i32
-            let top_bytes = loadu_128!(&topleft[tl_off + 1 + x..tl_off + 1 + x + 16], [u8; 16]);
+            let top_bytes = loadu_128!(&top[x..x + 16], [u8; 16]);
             let top = _mm512_cvtepu8_epi32(top_bytes);
 
             // Load 16 horizontal weights → i32
@@ -1038,15 +1043,14 @@ fn ipred_smooth_8bpc_avx512_inner(
 
             let clamped = _mm512_max_epi32(result, zero_512);
             let result_u8: __m128i = _mm512_cvtusepi32_epi8(clamped);
-            storeu_128!(&mut dst[row_off + x..row_off + x + 16], [u8; 16], result_u8);
+            storeu_128!(&mut row[x..x + 16], [u8; 16], result_u8);
 
             x += 16;
         }
 
         // Scalar fallback
-        let row = &mut dst[row_off..][..width];
         while x < width {
-            let top_val = topleft[tl_off + 1 + x] as i32;
+            let top_val = top[x] as i32;
             let w_h = weights_hor[x] as i32;
             let pred =
                 w_v * top_val + (256 - w_v) * bottom_val + w_h * left_val + (256 - w_h) * right_val;
@@ -1072,6 +1076,8 @@ fn ipred_smooth_v_8bpc_avx512_inner(
     let mut dst = dst.flex_mut();
     let topleft = topleft.flex();
     let weights_ver = &dav1d_sm_weights[height..][..height];
+    // Slice once so `x + 16 <= width` proves the per-chunk loads in-bounds.
+    let top = &topleft[tl_off + 1..tl_off + 1 + width];
     let bottom_val = topleft[tl_off - height] as i32;
     let bottom_vec = _mm512_set1_epi32(bottom_val);
     let rounding = _mm512_set1_epi32(128);
@@ -1080,13 +1086,14 @@ fn ipred_smooth_v_8bpc_avx512_inner(
 
     for y in 0..height {
         let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let row = &mut dst[row_off..row_off + width];
         let w_v = weights_ver[y] as i32;
         let w_v_vec = _mm512_set1_epi32(w_v);
         let w_v_inv = _mm512_sub_epi32(c256, w_v_vec);
 
         let mut x = 0;
         while x + 16 <= width {
-            let top_bytes = loadu_128!(&topleft[tl_off + 1 + x..tl_off + 1 + x + 16], [u8; 16]);
+            let top_bytes = loadu_128!(&top[x..x + 16], [u8; 16]);
             let top = _mm512_cvtepu8_epi32(top_bytes);
 
             let pred = _mm512_add_epi32(
@@ -1097,14 +1104,13 @@ fn ipred_smooth_v_8bpc_avx512_inner(
 
             let clamped = _mm512_max_epi32(result, zero_512);
             let result_u8: __m128i = _mm512_cvtusepi32_epi8(clamped);
-            storeu_128!(&mut dst[row_off + x..row_off + x + 16], [u8; 16], result_u8);
+            storeu_128!(&mut row[x..x + 16], [u8; 16], result_u8);
 
             x += 16;
         }
 
-        let row = &mut dst[row_off..][..width];
         while x < width {
-            let top_val = topleft[tl_off + 1 + x] as i32;
+            let top_val = top[x] as i32;
             let pred = w_v * top_val + (256 - w_v) * bottom_val;
             row[x] = ((pred + 128) >> 8) as u8;
             x += 1;
@@ -1136,6 +1142,7 @@ fn ipred_smooth_h_8bpc_avx512_inner(
 
     for y in 0..height {
         let row_off = (dst_base as isize + y as isize * stride) as usize;
+        let row = &mut dst[row_off..row_off + width];
         let left_val = topleft[tl_off - y - 1] as i32;
         let left_vec = _mm512_set1_epi32(left_val);
 
@@ -1153,12 +1160,11 @@ fn ipred_smooth_h_8bpc_avx512_inner(
 
             let clamped = _mm512_max_epi32(result, zero_512);
             let result_u8: __m128i = _mm512_cvtusepi32_epi8(clamped);
-            storeu_128!(&mut dst[row_off + x..row_off + x + 16], [u8; 16], result_u8);
+            storeu_128!(&mut row[x..x + 16], [u8; 16], result_u8);
 
             x += 16;
         }
 
-        let row = &mut dst[row_off..][..width];
         while x < width {
             let w_h = weights_hor[x] as i32;
             let pred = w_h * left_val + (256 - w_h) * right_val;
@@ -2280,9 +2286,7 @@ fn ipred_z1_8bpc_v4x_inner(
     let edge_len = (max_base_x + 1).min(128);
     let mut ebuf = [0u8; 128];
     let top_f = top.flex();
-    for i in 0..edge_len {
-        ebuf[i] = top_f[i];
-    }
+    ebuf[..edge_len].copy_from_slice(&top_f[..edge_len]);
     let fill_val = top_f[max_base_x.min(127)];
     for b in ebuf.iter_mut().skip(edge_len) {
         *b = fill_val;
@@ -2312,6 +2316,10 @@ fn ipred_z1_8bpc_v4x_inner(
         let frac_pair = _mm512_set1_epi16(((frac as i32) << 8 | inv_frac as i32) as i16);
 
         let row_off = (dst_base as isize + y as isize * stride) as usize;
+        // One row slice: every store below lands at `x < width`, so the
+        // per-chunk bounds checks fold to this one (PERF_SOURCE_PATTERNS:
+        // slice once outside hot loops).
+        let row = &mut dst[row_off..row_off + width];
         let base0 = (xpos >> 6) as usize;
 
         if base_inc == 1 {
@@ -2335,10 +2343,14 @@ fn ipred_z1_8bpc_v4x_inner(
                 // Saturating unsigned narrow 32xu16 -> 32xu8, lane-order preserving.
                 let out32 = _mm512_cvtusepi16_epi8(r);
 
-                let n = (width - x).min(32);
-                let mut tmp = [0u8; 32];
-                storeu_256!((&mut tmp), [u8; 32], out32);
-                dst[row_off + x..row_off + x + n].copy_from_slice(&tmp[..n]);
+                if x + 32 <= width {
+                    storeu_256!(&mut row[x..x + 32], [u8; 32], out32);
+                } else {
+                    let n = width - x;
+                    let mut tmp = [0u8; 32];
+                    storeu_256!((&mut tmp), [u8; 32], out32);
+                    row[x..x + n].copy_from_slice(&tmp[..n]);
+                }
                 x += 32;
             }
         } else {
@@ -2350,11 +2362,11 @@ fn ipred_z1_8bpc_v4x_inner(
                     let t0 = top_f[base] as i32;
                     let t1 = top_f[base + 1] as i32;
                     let v = t0 * inv_frac as i32 + t1 * frac as i32;
-                    dst[row_off + x] = ((v + 32) >> 6) as u8;
+                    row[x] = ((v + 32) >> 6) as u8;
                 } else {
                     let fv = top_f[max_base_x];
                     for xx in x..width {
-                        dst[row_off + xx] = fv;
+                        row[xx] = fv;
                     }
                     break;
                 }
@@ -3118,9 +3130,7 @@ fn ipred_z2_8bpc_v4x_inner(
     // are harmless (they are never stored — bounded by `top_k_max`).
     let top_k_max = edge_len - 1 - edge_tl; // = 64
     let mut tbuf = [0u8; 128];
-    for k in 0..=top_k_max {
-        tbuf[k] = edge[edge_tl + k];
-    }
+    tbuf[..=top_k_max].copy_from_slice(&edge[edge_tl..edge_tl + top_k_max + 1]);
     let top_lo = loadu_512!((&tbuf[0..64]), [u8; 64]);
     let top_hi = loadu_512!((&tbuf[64..128]), [u8; 64]);
     // Pair-gather pattern: bytes 2p/2p+1 select edge samples base+p and
@@ -3136,6 +3146,10 @@ fn ipred_z2_8bpc_v4x_inner(
         let inv_frac_x = (64 - frac_x) as i16;
 
         let row_off = (dst_base as isize + y as isize * stride) as usize;
+        // One row slice: every access below is at `x < width`, so the
+        // per-element and per-chunk bounds checks fold to this one
+        // (PERF_SOURCE_PATTERNS: slice once outside hot loops).
+        let row = &mut dst[row_off..row_off + width];
 
         let left_count = if base_x0 >= 0 {
             0usize
@@ -3157,7 +3171,7 @@ fn ipred_z2_8bpc_v4x_inner(
             let l0 = edge[l0_idx] as i32;
             let l1 = edge[l1_idx] as i32;
             let v = l0 * inv_frac_y + l1 * frac_y;
-            dst[row_off + x] = ((v + 32) >> 6) as u8;
+            row[x] = ((v + 32) >> 6) as u8;
             x += 1;
         }
 
@@ -3182,9 +3196,7 @@ fn ipred_z2_8bpc_v4x_inner(
                 let r = _mm512_srai_epi16::<6>(sum);
                 let out32 = _mm512_cvtusepi16_epi8(r);
 
-                let mut tmp = [0u8; 32];
-                storeu_256!((&mut tmp), [u8; 32], out32);
-                dst[row_off + x..row_off + x + 32].copy_from_slice(&tmp);
+                storeu_256!(&mut row[x..x + 32], [u8; 32], out32);
                 x += 32;
             }
         }
@@ -3200,7 +3212,7 @@ fn ipred_z2_8bpc_v4x_inner(
             let t0 = edge[idx] as i32;
             let t1 = edge[idx + 1] as i32;
             let v = t0 * inv_frac_x as i32 + t1 * frac_x as i32;
-            dst[row_off + x] = ((v + 32) >> 6) as u8;
+            row[x] = ((v + 32) >> 6) as u8;
             x += 1;
         }
     }
@@ -6237,6 +6249,25 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
     let tl_bytes: &[u8] = topleft.as_bytes();
 
     dst.with_block_mut::<BD, _>(w, h, |dst_bytes, dst_base_bytes, byte_stride| {
+        // Rebase `dst` to the block's contiguous hull, `(h-1)*|stride| + w`
+        // bytes, so each kernel's per-row `dst[row_off..]` slice creation is
+        // provable (PERF_SOURCE_PATTERNS §1). `dst_base` stays an absolute
+        // row-0 offset inside the narrower slice, so `dst_base + y*stride`
+        // addressing is unchanged for every kernel. On a negative stride the
+        // hull already starts at the last row (`base = (h-1)*|stride|`), so
+        // this is a no-op there.
+        let w_bytes = w * core::mem::size_of::<BD::Pixel>();
+        let (dst_bytes, dst_base_bytes) = if byte_stride >= 0 {
+            let hull = (h - 1) * byte_stride as usize + w_bytes;
+            (&mut dst_bytes[dst_base_bytes..dst_base_bytes + hull], 0usize)
+        } else {
+            let abs = (-byte_stride) as usize;
+            let lo = dst_base_bytes - (h - 1) * abs;
+            (
+                &mut dst_bytes[lo..dst_base_bytes + w_bytes],
+                (h - 1) * abs,
+            )
+        };
         match (BD::BPC, mode) {
             (BPC::BPC8, 0) => {
                 if let Some(t512) = avx512_token {
@@ -7902,6 +7933,91 @@ mod v4x_dir_tests {
                         );
                     }
                 }
+            }
+        }
+    }
+
+    /// `ipred_smooth{,_v,_h}_8bpc_avx512_inner` (Server64) against the AVX2
+    /// `ipred_smooth{,_v,_h}_8bpc_inner` reference, byte-for-byte over every
+    /// AV1 block dim — including the sub-16 and non-multiple-of-16 widths
+    /// that exercise the scalar tail after the row-slice refactor.
+    #[test]
+    fn smooth_avx512_matches_avx2() {
+        let _tok_lock = archmage::testing::lock_token_testing();
+        let Some(t4) = crate::src::cpu::summon_avx512() else {
+            eprintln!("smooth_avx512_matches_avx2: Server64 unavailable, skipping");
+            return;
+        };
+        let t3 = crate::src::cpu::summon_avx2().expect("avx2");
+        let (tl, tl_off) = make_topleft();
+        let stride = 64isize;
+        // Every AV1 block dimension, plus widths below/at the 16-lane
+        // boundary where the tail path runs.
+        let dims = [
+            (4usize, 4usize),
+            (4, 8),
+            (8, 4),
+            (8, 8),
+            (8, 16),
+            (16, 8),
+            (16, 16),
+            (16, 32),
+            (32, 16),
+            (32, 32),
+            (32, 64),
+            (64, 32),
+            (64, 64),
+            (4, 16),
+            (16, 4),
+            (4, 32),
+            (32, 4),
+            (4, 64),
+            (64, 4),
+            (8, 32),
+            (32, 8),
+            (8, 64),
+            (64, 8),
+            (16, 64),
+            (64, 16),
+        ];
+        for &(w, h) in &dims {
+            for kind in 0u8..3 {
+                let mut dst_a = vec![7u8; 64 * 64];
+                let mut dst_b = vec![7u8; 64 * 64];
+                match kind {
+                    0 => {
+                        ipred_smooth_8bpc_inner(
+                            t3, &mut dst_a, 0, stride, &tl, tl_off, w, h,
+                        );
+                        ipred_smooth_8bpc_avx512_inner(
+                            t4, &mut dst_b, 0, stride, &tl, tl_off, w, h,
+                        );
+                    }
+                    1 => {
+                        ipred_smooth_v_8bpc_inner(
+                            t3, &mut dst_a, 0, stride, &tl, tl_off, w, h,
+                        );
+                        ipred_smooth_v_8bpc_avx512_inner(
+                            t4, &mut dst_b, 0, stride, &tl, tl_off, w, h,
+                        );
+                    }
+                    _ => {
+                        ipred_smooth_h_8bpc_inner(
+                            t3, &mut dst_a, 0, stride, &tl, tl_off, w, h,
+                        );
+                        ipred_smooth_h_8bpc_avx512_inner(
+                            t4, &mut dst_b, 0, stride, &tl, tl_off, w, h,
+                        );
+                    }
+                }
+                assert_block_eq(
+                    &dst_a,
+                    &dst_b,
+                    w,
+                    h,
+                    64,
+                    &format!("smooth kind={kind} w={w} h={h}"),
+                );
             }
         }
     }

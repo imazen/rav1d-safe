@@ -432,26 +432,42 @@ fn itxfm_dispatch_8bpc(
 ) -> bool {
     use crate::src::levels::TxfmSize;
 
+    let txfm = match TxfmSize::from_repr(tx_size) {
+        Some(t) => t,
+        None => return false,
+    };
+    let (w, h) = txfm.to_wh();
+
+    // The arcane kernels (and `dc_only_add`) walk `y * stride_u` upward from
+    // row 0 — that only addresses the block when the stride is positive (or
+    // the buffer is compact). On a negative-stride picture the hull starts at
+    // the LAST row with `base = (h-1)*|stride|` and rows descend in memory;
+    // bail to `itxfm_add_scalar_fallback`, which uses the signed stride.
+    if stride_i < 0 {
+        return false;
+    }
+
     // DC-only fast path: DCT_DCT with eob == 0. Mirrors the scalar shortcut
     // in `src/itx.rs:89-105`.
     if eob == 0 && tx_type == DCT_DCT {
-        let txfm = match TxfmSize::from_repr(tx_size) {
-            Some(t) => t,
-            None => return false,
-        };
-        let (w, h) = txfm.to_wh();
         let rect2 = w * 2 == h || h * 2 == w;
         let shift = dc_only_shift(w, h);
         let dc = dc_only_compute(coeff[0] as i32, rect2, shift);
         coeff[0] = 0;
-        dc_only_add_8bpc(token, &mut dst[base..], stride_u, w, h, dc);
+        let hull = (h - 1) * stride_u + w;
+        dc_only_add_8bpc(token, &mut dst[base..base + hull], stride_u, w, h, dc);
         return true;
     }
 
-    // Arcane functions: dst starts at pixel (base=0 for positive stride)
+    // Arcane functions: dst starts at pixel (base=0 for positive stride).
+    // Narrow the slice to exactly the block hull — every per-row access
+    // inside the kernels is `y * stride + x` with `y < h` and `x < w`, so a
+    // `(h-1)*stride + w` slice makes each in-kernel bound check provable and
+    // elidable (PERF_SOURCE_PATTERNS §1). The check happens once here.
     macro_rules! arcane {
         ($func:ident) => {{
-            $func(token, &mut dst[base..], stride_u, coeff, eob, bdmax);
+            let hull = (h - 1) * stride_u + w;
+            $func(token, &mut dst[base..base + hull], stride_u, coeff, eob, bdmax);
             return true;
         }};
     }
@@ -675,7 +691,6 @@ fn itxfm_dispatch_8bpc(
 
 /// 16bpc dispatch: calls inner SIMD functions directly with slices.
 /// All arcane functions take (token, dst: &mut [u16], byte_stride: usize, coeff, eob, bdmax).
-/// WHT takes (dst: &mut [u16], base, px_stride: isize, coeff, eob, bdmax).
 #[cfg(not(feature = "asm"))]
 #[cfg(target_arch = "x86_64")]
 #[allow(non_upper_case_globals)]
@@ -686,6 +701,7 @@ fn itxfm_dispatch_16bpc(
     dst: &mut [u16],
     base: usize,
     byte_stride: usize,
+    stride_i: isize,
     coeff_i16: &mut [i16],
     eob: i32,
     bdmax: i32,
@@ -699,28 +715,38 @@ fn itxfm_dispatch_16bpc(
         zerocopy::FromBytes::mut_from_bytes(zerocopy::IntoBytes::as_mut_bytes(coeff_i16))
             .expect("coeff alignment/size mismatch for i32 reinterpretation");
 
+    let txfm = match TxfmSize::from_repr(tx_size) {
+        Some(t) => t,
+        None => return false,
+    };
+    let (w, h) = txfm.to_wh();
+
+    // Same negative-stride bail as the 8bpc dispatch — the arcane kernels
+    // address rows upward from row 0.
+    if stride_i < 0 {
+        return false;
+    }
+
     // DC-only fast path: DCT_DCT with eob == 0. Mirrors the scalar shortcut
     // in `src/itx.rs:89-105`.
     if eob == 0 && tx_type == DCT_DCT {
-        let txfm = match TxfmSize::from_repr(tx_size) {
-            Some(t) => t,
-            None => return false,
-        };
-        let (w, h) = txfm.to_wh();
         let rect2 = w * 2 == h || h * 2 == w;
         let shift = dc_only_shift(w, h);
         let dc = dc_only_compute(coeff[0], rect2, shift);
         coeff[0] = 0;
         // Convert byte_stride to u16 pixel stride
         let px_stride = byte_stride / 2;
-        dc_only_add_16bpc(token, &mut dst[base..], px_stride, w, h, dc, bdmax);
+        let hull = (h - 1) * px_stride + w;
+        dc_only_add_16bpc(token, &mut dst[base..base + hull], px_stride, w, h, dc, bdmax);
         return true;
     }
 
-    // Arcane 16bpc functions take byte_stride as usize
+    // Arcane 16bpc functions take byte_stride as usize. Same hull narrowing
+    // as the 8bpc dispatch, in u16 elements (kernels divide byte_stride by 2).
     macro_rules! arcane {
         ($func:ident) => {{
-            $func(token, &mut dst[base..], byte_stride, coeff, eob, bdmax);
+            let hull = (h - 1) * (byte_stride / 2) + w;
+            $func(token, &mut dst[base..base + hull], byte_stride, coeff, eob, bdmax);
             return true;
         }};
     }
@@ -1055,6 +1081,7 @@ pub fn itxfm_add_dispatch<BD: BitDepth>(
                     dst_u16,
                     offset / 2,
                     stride.unsigned_abs(),
+                    stride,
                     coeff_i16,
                     eob,
                     bd_c,
