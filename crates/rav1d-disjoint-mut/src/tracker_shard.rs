@@ -497,9 +497,15 @@ impl TinyLock {
         Self(AtomicBool::new(false))
     }
 
+    // `#[track_caller]` under the site probe so `Location::caller()` inside the
+    // contended arm resolves to the REGISTRATION callsite (forwarded through
+    // every `#[track_caller]` add path), not this file's line. Probe-only.
     #[inline(always)]
+    #[cfg_attr(feature = "__probe_sites", track_caller)]
     fn lock(&self) {
         if self.0.swap(true, Ordering::Acquire) {
+            #[cfg(feature = "__probe_sites")]
+            crate::site_probe::record_contended(core::panic::Location::caller());
             self.lock_slow();
         }
     }

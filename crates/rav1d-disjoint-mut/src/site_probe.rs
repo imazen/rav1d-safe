@@ -32,6 +32,10 @@ pub struct Site {
     /// extent is derivable (the coarsening question is "few big" vs "many
     /// small", which a bare count cannot answer).
     bytes: AtomicU64,
+    /// Contended lock acquisitions attributed to this site: `TinyLock`'s
+    /// `#[track_caller]` forwards the decode callsite through the add chain,
+    /// so this counts the site's own contention share, not the lock's.
+    n_cont: AtomicU64,
 }
 
 impl Site {
@@ -41,6 +45,7 @@ impl Site {
             n_mut: AtomicU64::new(0),
             n_immut: AtomicU64::new(0),
             bytes: AtomicU64::new(0),
+            n_cont: AtomicU64::new(0),
         }
     }
 }
@@ -100,6 +105,28 @@ pub fn record(loc: &'static Location<'static>, is_mut: bool, len: usize) {
     }
 }
 
+/// Bump a site's contended-acquisition count. Called from `TinyLock::lock`'s
+/// `#[track_caller]` arm, so `loc` is the original registration callsite. The
+/// slot was already claimed by `record` at the `add` entry, so a miss is just
+/// a lost count — no point allocating on the cold path.
+#[cold]
+#[inline(never)]
+pub fn record_contended(loc: &'static Location<'static>) {
+    let key = loc as *const Location<'static> as usize;
+    let mut h = (key.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 40) & (CAP - 1);
+    for _ in 0..64 {
+        let cur = SITES[h].key.load(Relaxed);
+        if cur == key {
+            SITES[h].n_cont.fetch_add(1, Relaxed);
+            return;
+        }
+        if cur == 0 {
+            return;
+        }
+        h = (h + 1) & (CAP - 1);
+    }
+}
+
 /// Zeroes the COUNTERS but keeps the key→slot assignment, so a reset between a
 /// warmup decode and the timed decodes does not re-race the CAS.
 pub fn reset() {
@@ -107,6 +134,7 @@ pub fn reset() {
         s.n_mut.store(0, Relaxed);
         s.n_immut.store(0, Relaxed);
         s.bytes.store(0, Relaxed);
+        s.n_cont.store(0, Relaxed);
     }
     LOST.store(0, Relaxed);
 }
@@ -117,7 +145,7 @@ pub fn reset() {
 pub fn report(frames: u64) -> String {
     use std::fmt::Write as _;
     let f = frames.max(1) as f64;
-    let mut rows: Vec<(u64, u64, u64, String)> = Vec::new();
+    let mut rows: Vec<(u64, u64, u64, u64, String)> = Vec::new();
     let mut total = 0u64;
     let names = NAMES.lock().ok();
     for s in SITES.iter() {
@@ -136,7 +164,7 @@ pub fn report(frames: u64) -> String {
             .and_then(|n| n.iter().find(|(k, _)| *k == key))
             .map(|(_, l)| std::format!("{}:{}:{}", l.file(), l.line(), l.column()))
             .unwrap_or_else(|| std::format!("?{key:#x}"));
-        rows.push((m + i, m, s.bytes.load(Relaxed), where_));
+        rows.push((m + i, m, s.bytes.load(Relaxed), s.n_cont.load(Relaxed), where_));
     }
     // Descending by call count. `sort_by_key` + `Reverse` is the same stable
     // sort as the reversed comparator it replaces, ties included.
@@ -149,18 +177,19 @@ pub fn report(frames: u64) -> String {
         rows.len(),
         LOST.load(Relaxed)
     );
-    let _ = writeln!(out, "#site\tper_frame\tmut\timmut\tmean_bytes\twhere");
+    let _ = writeln!(out, "#site\tper_frame\tmut\timmut\tmean_bytes\tcont\twhere");
     let mut cum = 0u64;
-    for (n, m, b, w) in rows.iter() {
+    for (n, m, b, c, w) in rows.iter() {
         cum += n;
         let _ = writeln!(
             out,
-            "SITE\t{:.0}\t{:.0}\t{:.0}\t{:.1}\t{:.1}%\t{}",
+            "SITE\t{:.0}\t{:.0}\t{:.0}\t{:.1}\t{:.1}%\t{}\t{}",
             *n as f64 / f,
             *m as f64 / f,
             (*n - *m) as f64 / f,
             *b as f64 / *n as f64,
             100.0 * cum as f64 / total as f64,
+            c,
             w
         );
     }
