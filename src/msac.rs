@@ -526,7 +526,7 @@ fn ctx_norm(s: &mut MsacContext, dif: EcWin, rng: c_uint) {
     }
 }
 
-#[inline(always)]
+#[inline(never)]
 #[cfg_attr(
     all(asm_msac, any(target_feature = "sse2", target_feature = "neon")),
     allow(dead_code)
@@ -549,6 +549,7 @@ fn rav1d_msac_decode_bool_equi_rust(s: &mut MsacContext) -> bool {
     all(asm_msac, any(target_feature = "sse2", target_feature = "neon")),
     allow(dead_code)
 )]
+#[inline(never)]
 fn rav1d_msac_decode_bool_rust(s: &mut MsacContext, f: c_uint) -> bool {
     let r = s.rng;
     let mut dif = s.dif;
@@ -656,6 +657,7 @@ unsafe extern "C" fn rav1d_msac_decode_symbol_adapt_c(
     all(asm_msac, any(target_feature = "sse2", target_feature = "neon")),
     allow(dead_code)
 )]
+#[inline(never)]
 fn rav1d_msac_decode_bool_adapt_rust(s: &mut MsacContext, cdf: &mut [u16; 2]) -> bool {
     let bit = rav1d_msac_decode_bool(s, cdf[0] as c_uint);
     if likely(s.allow_update_cdf()) {
@@ -667,7 +669,7 @@ fn rav1d_msac_decode_bool_adapt_rust(s: &mut MsacContext, cdf: &mut [u16; 2]) ->
 }
 
 /// Return value is in the range `0..=15`.
-#[inline(always)]
+#[inline(never)]
 #[cfg_attr(
     all(asm_msac, any(target_feature = "sse2", target_feature = "neon")),
     allow(dead_code)
@@ -698,7 +700,7 @@ fn rav1d_msac_decode_hi_tok_rust(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 
 /// Eliminates branch misprediction from the serial comparison loop by
 /// computing all v values and counting matches branchlessly.
 #[cfg(not(asm_msac))]
-#[inline(always)]
+#[inline(never)]
 fn rav1d_msac_decode_symbol_adapt4_branchless(
     s: &mut MsacContext,
     cdf: &mut [u16],

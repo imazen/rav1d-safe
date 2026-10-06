@@ -541,3 +541,47 @@ geometry changes.
 jj snapshot: `pkqmsurt` 4a4d8a25 (reverted onto `lvkxwnoz` baseline);
 the plumbing is recoverable from that change's evolog if a batch record
 API ever lands in rav1d-disjoint-mut.
+
+## §19 msac state-residency experiments — dead end (2026-10-06)
+
+Attribution run (`perf record` on release-thin, photo-4k-t8 30-frame IVF,
+t1) put the entropy-decode family at ~57% of wall: `decode_coefs_class_v3`
+37.3% + `decode_coefs` wrapper 12.4% + chroma class 3.5% + msac leaf
+helpers ~3.6%. The same Rust body in the asm build measured 19.6ms vs
+30.8ms safe — the ~11ms delta is inside the safe msac leaves, not the
+loop itself.
+
+Hypothesis: `dif`/`rng`/`cnt` round-trip through `ts_c.msac` fields on
+every symbol because `cdf` pointers derive from the same `ts_c`
+allocation (inbounds-GEP alias analysis can't disambiguate dynamic
+indexing into the same object). Two structural fixes tried:
+
+1. **`#[inline(never)]` on the six leaf fns** (bool/bool_equi/bool_adapt/
+   hi_tok/adapt4_branchless/symbol_adapt_rust) — replicates the asm
+   build's call-boundary shape. Result: 86.7→87.6ms vs ~83ms baseline —
+   **~5% slower**. Call overhead + forced materialization costs more
+   than the smaller inlined body saves. asm's shape isn't what makes it
+   fast.
+
+2. **Detached `MsacState` locals** — `dif/rng/cnt/pos/upd + data:&[u8]`
+   hoisted out of `ts_c.msac` into a caller-frame struct at fn entry,
+   leaves ported to `_state` twins, by-value `#[cold]` refill so the
+   state never escapes. Disasm confirmed promotion worked (per-symbol
+   `0x35xx` field traffic gone — only detach/attach prologue remains).
+   Result: 93.1→93.3ms vs 82.9→83.3ms — **~12% slower**. The loop was
+   already register-bound (16 GPRs vs ~10 live loop values); adding 7
+   always-live state values spilled more than the eliminated
+   store-forwards saved. The field round-trips were effectively free —
+   Zen4 forwards L1 stack stores at ~4-6 cycle latency, and keeping the
+   state in registers costs more than that in spill traffic.
+
+Conclusion: msac field-materialization is not the safe-vs-asm delta.
+Remaining candidate: per-symbol codegen inside the leaf bodies
+(bounds checks on dynamic `cdf` slices, the branchless-v-computation
+shape vs dav1d's asm layout). Fixed-array `&mut [u16; N]` cdf params are
+the cheap next probe — CDF tables are statically `[u16; 4]`/`[u16; 8]`
+shaped so the len checks should fold — but expectations are low given
+how reg-bound the loop measured.
+
+jj: experiment `qxtytmvn` (reverted onto `nkztonrv`); both variants
+recoverable from that change's evolog.
