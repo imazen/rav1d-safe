@@ -466,3 +466,41 @@ Lesson: when a shared context's ownership is per-worker, push the guard
 to the outermost scope whose accesses are all to the worker's own slot —
 each hoist multiplies the saving (12 field regs → 1 element reg → 1
 element reg per *sb*, amortized over ~250 blocks).
+
+## §17 — 2026-11-06: loopfilter registration floor — measured dead ends
+
+After §16 the census (photo-4k-t8, `__probe_sites`, t=8) was ~519k
+regs/frame dominated by the loopfilter compact path:
+`compact_write_back_per_row_diff` ~274k mut + `compact_read_per_row`
+~216k immut. Three variants measured, all reverted:
+
+1. **Diff write-back run-merge** (`index_rect_mut` per run of
+   consecutive rows with identical changed spans): regs 274k → 172k but
+   photo-4k-t8 t8 +3-4% vs interleaved baseline. `add_rect` serially
+   blocking-`lock()`s every shard in the record's hull (up to
+   MAX_SHARDS_PER_BORROW=4) + `find_from_rect` per shard; a 1-2 row rect
+   costs ≥ the per-row `add` it replaces, and ragged fm masks make most
+   runs 1-2 rows. CLAIMS were exact (changed pixels only).
+2. **Band 8→12 on the banded helpers** (for_rows, for_rows_mut,
+   compact_read_per_row, compact_write_back_per_row, with retry-at-8 on
+   decline): regs 216k → 160k immut but ~+1-3% at t4/t8 on 2k/4k/map/8k
+   alike — a 12-row hull spans ~4 blocks vs ~3 at 8 rows, so each record
+   does MORE blocking shard work and convoys harder under contention.
+   Fewer-fatter ≈ same total shard-ops with worse tail behavior.
+3. **Union-box write-back** (one rect per ≤12-row band covering the
+   bounding box of changed rows/cols): regs 274k → 73k, fastest census,
+   REJECTED on soundness — the box covers pixels between non-fired
+   group strips / non-fired row bands, which are read-but-not-written
+   tap-class pixels. Claiming those mutably is exactly the zenavif#30
+   defect (concurrent foreign readers legitimately touch them). Passed
+   the overlap battery, but that is a timing race, not a proof.
+
+The tracker floor on this path is real: writes must stay ⊆ the changed
+set (any widening is #30-class), and the read window is already
+mask-derived exact. Further progress needs a different mechanism —
+fewer *windows* (run coalescing at the dispatch level) or kernels that
+report their write set so the pristine copy + diff + per-pixel guard
+disappear, not bigger records.
+
+jj snapshot of the rejected variants: `wyuksnsu` (union-box + band-12);
+the span-merge alone is recoverable from `jj file annotate` history.
