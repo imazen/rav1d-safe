@@ -504,3 +504,40 @@ disappear, not bigger records.
 
 jj snapshot of the rejected variants: `wyuksnsu` (union-box + band-12);
 the span-merge alone is recoverable from `jj file annotate` history.
+
+## §18 — 2026-11-07: kernel-reported write masks — measured dead end (reverted)
+
+§17's suggested mechanism, implemented in full: all 8bpc SIMD loopfilter
+cores/kernels return a per-lane `u32` mask (the `movemask & live_lanes`
+the early-outs already computed), packed6/packed16 report their lane
+masks, the 8 inner fns accumulate a per-group `wrote` bitmask,
+`lf_writable_rects` emits store-extent rects only for groups whose mask
+is nonzero, and `compact_write_back_rects` row-projects those rects into
+per-row `slice_mut` claims — deleting the pristine copy + diff scan
+entirely.
+
+Measured (interleaved A/B vs `ee577396`, tracked build, 30 iters × 3):
+
+- photo-4k-t8: t1 wash, t4 +1.6%, t8 +1%
+- photo-2k-t8: t4 +3%, t8 +3%
+- map-4k-t8: t4 +5%, t8 +5%
+- census (map-4k): write-site claims 272k → **1.54M** mut (row-projection
+  of ~4-12 extent-rows per wrote group; `wrote` correctly suppressed
+  ~13% of claims but the shape is dominated by record count)
+
+**Untracked control** (claims compile to no-ops): map-4k t8 NEW ~21.4
+vs OLD ~23.4 — deleting pristine+diff *did* save real CPU, and photo-4k
+was neutral. So the mechanism works; it just can't pay the tracker bill
+it creates. The diff write-back already emits the minimum claim set the
+tracker can express (only actually-changed spans); every alternative
+shape — rects, rows-of-rects, extents — produces MORE records and loses.
+
+Combined with §17 this closes the question: under the current tracker
+API there is no legal claim shape cheaper than the diff's. Breaking the
+~490k/frame loopfilter floor needs a tracker-level mechanism instead
+(batch multi-span records, or zero-cost records), not decoder-side
+geometry changes.
+
+jj snapshot: `pkqmsurt` 4a4d8a25 (reverted onto `lvkxwnoz` baseline);
+the plumbing is recoverable from that change's evolog if a batch record
+API ever lands in rav1d-disjoint-mut.
