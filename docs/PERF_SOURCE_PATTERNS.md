@@ -441,3 +441,28 @@ guard at :1225, node writeback at :3864). `t.a` is constant within a
 `decode_sb` tree, so threading `ta` down the recursion could collapse
 them to ~#tiles·sbrows — needs guard-lifetime care around the
 `index_mut`-vs-`index` sequencing.
+
+## §16 — 2026-11-05: hoist the `f.a` guard to the `decode_sb` root
+
+After §15, `f.a` still took ~131k acquisitions/frame — one per partition
+NODE (`decode_sb` ctx read, `decode_b` guard, node writeback). `t.a` is
+constant across a whole `decode_sb` tree (it advances per sb128 column,
+outside the recursion), so the element guard now lives at the `decode_sb`
+ROOT and `ta: &mut BlockContext` is threaded through `decode_sb`'s
+recursion into `decode_b` and on into the recon/read helpers.
+
+Regs/frame: 650k → 519k; `f.a` is now ONE site — the root `index_mut`,
+510 acquires/frame (≈ #sb128·tiles). Partition ctx reads inside need no
+tracker record at all (the `&mut` element reborrows as `&` for free).
+
+photo-4k-t8 ms/frame (release, medians): t=1 94.4 → 82.5 (−13%),
+t=4 37.9 → 29.6 (−22%), t=8 25.5–29.7 → 21.6 — now BELOW its old noise
+floor; tracked/untracked at t=8 went 1.49× → 1.14×. Longer guard hold
+(one sb ≈ whole block tree) is safe because the tracker panics on
+conflict rather than blocking — no deadlock surface — and tile workers
+own disjoint `t.a` slots.
+
+Lesson: when a shared context's ownership is per-worker, push the guard
+to the outermost scope whose accesses are all to the worker's own slot —
+each hoist multiplies the saving (12 field regs → 1 element reg → 1
+element reg per *sb*, amortized over ~250 blocks).

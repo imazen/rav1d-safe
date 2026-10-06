@@ -1189,6 +1189,7 @@ fn decode_b(
     t: &mut Rav1dTaskContext,
     f: &Rav1dFrameData,
     pass: &mut FrameThreadPassState,
+    ta: &mut BlockContext,
     bl: BlockLevel,
     bs: BlockSize,
     bp: BlockPartition,
@@ -1219,11 +1220,8 @@ fn decode_b(
     };
 
     let ts = &f.ts[t.ts];
-    // One element-granularity guard covers every above-context read and write
-    // for this block: `t.a` names this tile worker's own `f.a` slot, so the
-    // borrow can never conflict (see [`Rav1dFrameData::a`]).
-    let mut ta_guard = f.a.index_mut(t.a as usize..t.a as usize + 1);
-    let ta = &mut ta_guard[0];
+    // `ta` borrows this tile worker's `f.a[t.a]` element guard, acquired once
+    // per superblock in `decode_sb` — see [`Rav1dFrameData::a`].
     let bd_fn = f.bd_fn();
     let b_dim = bs.dimensions();
     let bx4 = t.b.x & 31;
@@ -3518,6 +3516,7 @@ fn decode_sb(
     t: &mut Rav1dTaskContext,
     f: &Rav1dFrameData,
     pass: &mut FrameThreadPassState,
+    ta: &mut BlockContext,
     bl: BlockLevel,
     edge_index: EdgeIndex,
 ) -> Result<(), ()> {
@@ -3539,6 +3538,7 @@ fn decode_sb(
             t,
             f,
             pass,
+            ta,
             next_bl,
             intra_edge.branch(sb128, edge_index).split[0],
         );
@@ -3559,10 +3559,9 @@ fn decode_sb(
             }
             bx8 = (t.b.x & 31) >> 1;
             by8 = (t.b.y & 31) >> 1;
-            // `f.a` is bound for `t.a`, so the ABOVE context borrow precedes
-            // the LEFT one's mutable borrow.
-            let ta_guard = f.a.index(t.a as usize..t.a as usize + 1);
-            let ta = &ta_guard[0];
+            // `ta` borrows this worker's `f.a[t.a]` element (acquired once per
+            // superblock at the `decode_sb` root), so the ABOVE read needs no
+            // tracker record and precedes the LEFT one's mutable borrow.
             Some((get_partition_ctx(ta, &mut t.l, bl, by8, bx8), &mut **ts_c))
         }
         FrameThreadPassState::Second => None,
@@ -3609,20 +3608,20 @@ fn decode_sb(
         match bp {
             BlockPartition::None => {
                 let node = intra_edge.node(sb128, edge_index);
-                decode_b(c, t, f, pass, bl, b[0], bp, node.o)?;
+                decode_b(c, t, f, pass, ta, bl, b[0], bp, node.o)?;
             }
             BlockPartition::H => {
                 let node = intra_edge.node(sb128, edge_index);
-                decode_b(c, t, f, pass, bl, b[0], bp, node.h[0])?;
+                decode_b(c, t, f, pass, ta, bl, b[0], bp, node.h[0])?;
                 t.b.y += hsz;
-                decode_b(c, t, f, pass, bl, b[0], bp, node.h[1])?;
+                decode_b(c, t, f, pass, ta, bl, b[0], bp, node.h[1])?;
                 t.b.y -= hsz;
             }
             BlockPartition::V => {
                 let node = intra_edge.node(sb128, edge_index);
-                decode_b(c, t, f, pass, bl, b[0], bp, node.v[0])?;
+                decode_b(c, t, f, pass, ta, bl, b[0], bp, node.v[0])?;
                 t.b.x += hsz;
-                decode_b(c, t, f, pass, bl, b[0], bp, node.v[1])?;
+                decode_b(c, t, f, pass, ta, bl, b[0], bp, node.v[1])?;
                 t.b.x -= hsz;
             }
             BlockPartition::Split => {
@@ -3635,6 +3634,7 @@ fn decode_sb(
                             t,
                             f,
                             pass,
+                            ta,
                             bl,
                             BlockSize::Bs4x4,
                             bp,
@@ -3642,13 +3642,13 @@ fn decode_sb(
                         )?;
                         let tl_filter = t.tl_4x4_filter;
                         t.b.x += 1;
-                        decode_b(c, t, f, pass, bl, BlockSize::Bs4x4, bp, tip.split[0])?;
+                        decode_b(c, t, f, pass, ta, bl, BlockSize::Bs4x4, bp, tip.split[0])?;
                         t.b.x -= 1;
                         t.b.y += 1;
-                        decode_b(c, t, f, pass, bl, BlockSize::Bs4x4, bp, tip.split[1])?;
+                        decode_b(c, t, f, pass, ta, bl, BlockSize::Bs4x4, bp, tip.split[1])?;
                         t.b.x += 1;
                         t.tl_4x4_filter = tl_filter;
-                        decode_b(c, t, f, pass, bl, BlockSize::Bs4x4, bp, tip.split[2])?;
+                        decode_b(c, t, f, pass, ta, bl, BlockSize::Bs4x4, bp, tip.split[2])?;
                         t.b.x -= 1;
                         t.b.y -= 1;
                         if cfg!(target_arch = "x86_64") && t.frame_thread.pass != 0 {
@@ -3664,14 +3664,14 @@ fn decode_sb(
                     }
                     Some(next_bl) => {
                         let branch = intra_edge.branch(sb128, edge_index);
-                        decode_sb(c, t, f, pass, next_bl, branch.split[0])?;
+                        decode_sb(c, t, f, pass, ta, next_bl, branch.split[0])?;
                         t.b.x += hsz;
-                        decode_sb(c, t, f, pass, next_bl, branch.split[1])?;
+                        decode_sb(c, t, f, pass, ta, next_bl, branch.split[1])?;
                         t.b.x -= hsz;
                         t.b.y += hsz;
-                        decode_sb(c, t, f, pass, next_bl, branch.split[2])?;
+                        decode_sb(c, t, f, pass, ta, next_bl, branch.split[2])?;
                         t.b.x += hsz;
-                        decode_sb(c, t, f, pass, next_bl, branch.split[3])?;
+                        decode_sb(c, t, f, pass, ta, next_bl, branch.split[3])?;
                         t.b.x -= hsz;
                         t.b.y -= hsz;
                     }
@@ -3679,69 +3679,89 @@ fn decode_sb(
             }
             BlockPartition::TopSplit => {
                 let node = intra_edge.node(sb128, edge_index);
-                decode_b(c, t, f, pass, bl, b[0], bp, EdgeFlags::ALL_TR_AND_BL)?;
+                decode_b(c, t, f, pass, ta, bl, b[0], bp, EdgeFlags::ALL_TR_AND_BL)?;
                 t.b.x += hsz;
-                decode_b(c, t, f, pass, bl, b[0], bp, node.v[1])?;
+                decode_b(c, t, f, pass, ta, bl, b[0], bp, node.v[1])?;
                 t.b.x -= hsz;
                 t.b.y += hsz;
-                decode_b(c, t, f, pass, bl, b[1], bp, node.h[1])?;
+                decode_b(c, t, f, pass, ta, bl, b[1], bp, node.h[1])?;
                 t.b.y -= hsz;
             }
             BlockPartition::BottomSplit => {
                 let node = intra_edge.node(sb128, edge_index);
-                decode_b(c, t, f, pass, bl, b[0], bp, node.h[0])?;
+                decode_b(c, t, f, pass, ta, bl, b[0], bp, node.h[0])?;
                 t.b.y += hsz;
-                decode_b(c, t, f, pass, bl, b[1], bp, node.v[0])?;
+                decode_b(c, t, f, pass, ta, bl, b[1], bp, node.v[0])?;
                 t.b.x += hsz;
-                decode_b(c, t, f, pass, bl, b[1], bp, EdgeFlags::empty())?;
+                decode_b(c, t, f, pass, ta, bl, b[1], bp, EdgeFlags::empty())?;
                 t.b.x -= hsz;
                 t.b.y -= hsz;
             }
             BlockPartition::LeftSplit => {
                 let node = intra_edge.node(sb128, edge_index);
-                decode_b(c, t, f, pass, bl, b[0], bp, EdgeFlags::ALL_TR_AND_BL)?;
+                decode_b(c, t, f, pass, ta, bl, b[0], bp, EdgeFlags::ALL_TR_AND_BL)?;
                 t.b.y += hsz;
-                decode_b(c, t, f, pass, bl, b[0], bp, node.h[1])?;
+                decode_b(c, t, f, pass, ta, bl, b[0], bp, node.h[1])?;
                 t.b.y -= hsz;
                 t.b.x += hsz;
-                decode_b(c, t, f, pass, bl, b[1], bp, node.v[1])?;
+                decode_b(c, t, f, pass, ta, bl, b[1], bp, node.v[1])?;
                 t.b.x -= hsz;
             }
             BlockPartition::RightSplit => {
                 let node = intra_edge.node(sb128, edge_index);
-                decode_b(c, t, f, pass, bl, b[0], bp, node.v[0])?;
+                decode_b(c, t, f, pass, ta, bl, b[0], bp, node.v[0])?;
                 t.b.x += hsz;
-                decode_b(c, t, f, pass, bl, b[1], bp, node.h[0])?;
+                decode_b(c, t, f, pass, ta, bl, b[1], bp, node.h[0])?;
                 t.b.y += hsz;
-                decode_b(c, t, f, pass, bl, b[1], bp, EdgeFlags::empty())?;
+                decode_b(c, t, f, pass, ta, bl, b[1], bp, EdgeFlags::empty())?;
                 t.b.y -= hsz;
                 t.b.x -= hsz;
             }
             BlockPartition::H4 => {
                 let branch = intra_edge.branch(sb128, edge_index);
                 let node = &branch.node;
-                decode_b(c, t, f, pass, bl, b[0], bp, node.h[0])?;
+                decode_b(c, t, f, pass, ta, bl, b[0], bp, node.h[0])?;
                 t.b.y += hsz >> 1;
-                decode_b(c, t, f, pass, bl, b[0], bp, branch.h4)?;
+                decode_b(c, t, f, pass, ta, bl, b[0], bp, branch.h4)?;
                 t.b.y += hsz >> 1;
-                decode_b(c, t, f, pass, bl, b[0], bp, EdgeFlags::ALL_LEFT_HAS_BOTTOM)?;
+                decode_b(
+                    c,
+                    t,
+                    f,
+                    pass,
+                    ta,
+                    bl,
+                    b[0],
+                    bp,
+                    EdgeFlags::ALL_LEFT_HAS_BOTTOM,
+                )?;
                 t.b.y += hsz >> 1;
                 if t.b.y < f.bh {
-                    decode_b(c, t, f, pass, bl, b[0], bp, node.h[1])?;
+                    decode_b(c, t, f, pass, ta, bl, b[0], bp, node.h[1])?;
                 }
                 t.b.y -= hsz * 3 >> 1;
             }
             BlockPartition::V4 => {
                 let branch = intra_edge.branch(sb128, edge_index);
                 let node = &branch.node;
-                decode_b(c, t, f, pass, bl, b[0], bp, node.v[0])?;
+                decode_b(c, t, f, pass, ta, bl, b[0], bp, node.v[0])?;
                 t.b.x += hsz >> 1;
-                decode_b(c, t, f, pass, bl, b[0], bp, branch.v4)?;
+                decode_b(c, t, f, pass, ta, bl, b[0], bp, branch.v4)?;
                 t.b.x += hsz >> 1;
-                decode_b(c, t, f, pass, bl, b[0], bp, EdgeFlags::ALL_TOP_HAS_RIGHT)?;
+                decode_b(
+                    c,
+                    t,
+                    f,
+                    pass,
+                    ta,
+                    bl,
+                    b[0],
+                    bp,
+                    EdgeFlags::ALL_TOP_HAS_RIGHT,
+                )?;
                 t.b.x += hsz >> 1;
                 if t.b.x < f.bw {
-                    decode_b(c, t, f, pass, bl, b[0], bp, node.v[1])?;
+                    decode_b(c, t, f, pass, ta, bl, b[0], bp, node.v[1])?;
                 }
                 t.b.x -= hsz * 3 >> 1;
             }
@@ -3781,9 +3801,9 @@ fn decode_sb(
         if is_split {
             let branch = intra_edge.branch(sb128, edge_index);
             bp = BlockPartition::Split;
-            decode_sb(c, t, f, pass, next_bl, branch.split[0])?;
+            decode_sb(c, t, f, pass, ta, next_bl, branch.split[0])?;
             t.b.x += hsz;
-            decode_sb(c, t, f, pass, next_bl, branch.split[1])?;
+            decode_sb(c, t, f, pass, ta, next_bl, branch.split[1])?;
             t.b.x -= hsz;
         } else {
             let node = intra_edge.node(sb128, edge_index);
@@ -3793,6 +3813,7 @@ fn decode_sb(
                 t,
                 f,
                 pass,
+                ta,
                 bl,
                 dav1d_block_sizes[bl as usize][bp as usize][0],
                 bp,
@@ -3838,9 +3859,9 @@ fn decode_sb(
         if is_split {
             let branch = intra_edge.branch(sb128, edge_index);
             bp = BlockPartition::Split;
-            decode_sb(c, t, f, pass, next_bl, branch.split[0])?;
+            decode_sb(c, t, f, pass, ta, next_bl, branch.split[0])?;
             t.b.y += hsz;
-            decode_sb(c, t, f, pass, next_bl, branch.split[2])?;
+            decode_sb(c, t, f, pass, ta, next_bl, branch.split[2])?;
             t.b.y -= hsz;
         } else {
             let node = intra_edge.node(sb128, edge_index);
@@ -3850,6 +3871,7 @@ fn decode_sb(
                 t,
                 f,
                 pass,
+                ta,
                 bl,
                 dav1d_block_sizes[bl as usize][bp as usize][0],
                 bp,
@@ -3861,11 +3883,10 @@ fn decode_sb(
     if matches!(pass, FrameThreadPassState::First(_))
         && (bp != BlockPartition::Split || bl == BlockLevel::Bl8x8)
     {
-        let mut ta_guard = f.a.index_mut(t.a as usize..t.a as usize + 1);
         case_set_al! {
             <16, false>
             l: (&mut t.l, hsz as usize, by8 as usize),
-            a: (&mut ta_guard[0], hsz as usize, bx8 as usize),
+            a: (ta, hsz as usize, bx8 as usize),
             partition = (
                 dav1d_al_part_ctx[1][bl as usize][bp as usize],
                 dav1d_al_part_ctx[0][bl as usize][bp as usize]
@@ -4230,11 +4251,13 @@ pub(crate) fn rav1d_decode_tile_sbrow(
             if c.flush.load(Ordering::Acquire) {
                 return Err(());
             }
+            let mut ta_guard = f.a.index_mut(t.a as usize..t.a as usize + 1);
             decode_sb(
                 c,
                 t,
                 f,
                 &mut FrameThreadPassState::Second,
+                &mut ta_guard[0],
                 root_bl,
                 EdgeIndex::root(),
             )?;
@@ -4346,11 +4369,13 @@ pub(crate) fn rav1d_decode_tile_sbrow(
                 read_restoration_info(ts, &mut lr, p, frame_type, debug_block_info!(f, t.b));
             }
         }
+        let mut ta_guard = f.a.index_mut(t.a as usize..t.a as usize + 1);
         decode_sb(
             c,
             t,
             f,
             &mut FrameThreadPassState::First(&mut f.ts[t.ts].context.try_lock().unwrap()),
+            &mut ta_guard[0],
             root_bl,
             EdgeIndex::root(),
         )?;
