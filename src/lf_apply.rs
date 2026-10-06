@@ -607,7 +607,11 @@ pub(crate) fn rav1d_loopfilter_sbrow_cols<BD: BitDepth>(
 
     // fix lpf strength at tile row boundaries
     if start_of_tile_row != 0 {
-        let mut a = &f.a[(f.sb128w * (start_of_tile_row - 1)) as usize..];
+        let a_guard = f.a.index(
+            (f.sb128w * (start_of_tile_row - 1)) as usize
+                ..(f.sb128w * (start_of_tile_row - 1) + f.sb128w) as usize,
+        );
+        let mut a = &a_guard[..];
         for x in 0..f.sb128w {
             let y_vmask = &lflvl[x as usize].filter_y[1][starty4 as usize];
             let w = cmp::min(32, f.w4 - (x << 5)) as u32;
@@ -620,7 +624,7 @@ pub(crate) fn rav1d_loopfilter_sbrow_cols<BD: BitDepth>(
                 y_vmask[2][sidx].update(|it| it & !smask);
                 y_vmask[1][sidx].update(|it| it & !smask);
                 y_vmask[0][sidx].update(|it| it & !smask);
-                y_vmask[cmp::min(idx, *a[0].tx_lpf_y.index(i as usize) as usize)][sidx]
+                y_vmask[cmp::min(idx, a[0].tx_lpf_y[i as usize] as usize)][sidx]
                     .update(|it| it | smask);
             }
             if f.cur.p.layout != Rav1dPixelLayout::I400 {
@@ -633,7 +637,7 @@ pub(crate) fn rav1d_loopfilter_sbrow_cols<BD: BitDepth>(
                     let idx = (uv_vmask[1][sidx].get() & smask != 0) as usize;
                     uv_vmask[1][sidx].update(|it| it & !smask);
                     uv_vmask[0][sidx].update(|it| it & !smask);
-                    uv_vmask[cmp::min(idx, *a[0].tx_lpf_uv.index(i as usize) as usize)][sidx]
+                    uv_vmask[cmp::min(idx, a[0].tx_lpf_uv[i as usize] as usize)][sidx]
                         .update(|it| it | smask);
                 }
             }

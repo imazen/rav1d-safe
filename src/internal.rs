@@ -895,7 +895,12 @@ pub(crate) struct Rav1dFrameData {
     pub sr_sb128w: c_int,
     pub dq: [[[RelaxedAtomic<u16>; 2]; 3]; SegmentId::COUNT], /* [SegmentId::COUNT][3 plane][2 dc/ac] */
     pub qm: [[Option<&'static [u8]>; 3]; 19],                 /* [3 plane][19] */
-    pub a: Vec<BlockContext>,                                 /* len = w*tile_rows */
+    /// Above-context, tracked at ELEMENT granularity: one
+    /// `DisjointMut<BlockContext>` per tile-column slot. Tile workers own
+    /// disjoint `t.a` elements, so a per-block `index_mut(t.a..t.a + 1)`
+    /// guard is provably conflict-free and replaces ~12 per-field
+    /// registrations per block with one.
+    pub a: DisjointMut<Vec<BlockContext>>, /* len = w*tile_rows */
     pub rf: RefMvsFrame,
     pub jnt_weights: [[u8; 7]; 7],
     pub bitdepth_max: c_int,

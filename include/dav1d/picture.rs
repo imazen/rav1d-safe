@@ -1609,13 +1609,11 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             let mut row0 = 0usize;
             while row0 < h {
                 let band = (h - row0).min(8);
-                let lo = self
-                    .offset
-                    .wrapping_add_signed(row0 as isize * pxstride);
-                if let Some(rect) =
-                    self.data
-                        .dm()
-                        .index_rect_as::<BD::Pixel>(lo, w, band, pxstride)
+                let lo = self.offset.wrapping_add_signed(row0 as isize * pxstride);
+                if let Some(rect) = self
+                    .data
+                    .dm()
+                    .index_rect_as::<BD::Pixel>(lo, w, band, pxstride)
                 {
                     for r in 0..band {
                         f(row0 + r, rect.row(r));
@@ -1682,13 +1680,11 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             let mut row0 = 0usize;
             while row0 < h {
                 let band = (h - row0).min(8);
-                let lo = self
-                    .offset
-                    .wrapping_add_signed(row0 as isize * pxstride);
-                if let Some(mut rect) =
-                    self.data
-                        .dm()
-                        .index_rect_mut_as::<BD::Pixel>(lo, w, band, pxstride)
+                let lo = self.offset.wrapping_add_signed(row0 as isize * pxstride);
+                if let Some(mut rect) = self
+                    .data
+                    .dm()
+                    .index_rect_mut_as::<BD::Pixel>(lo, w, band, pxstride)
                 {
                     for r in 0..band {
                         f(row0 + r, rect.row_mut(r));
@@ -1815,10 +1811,10 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         while row0 < h {
             let band = (h - row0).min(8);
             let lo = self.offset.wrapping_add_signed(row0 as isize * pxstride);
-            if let Some(rect) =
-                self.data
-                    .dm()
-                    .index_rect_as::<BD::Pixel>(lo, w, band, pxstride)
+            if let Some(rect) = self
+                .data
+                .dm()
+                .index_rect_as::<BD::Pixel>(lo, w, band, pxstride)
             {
                 for r in 0..band {
                     buf[(row0 + r) * byte_stride..][..byte_stride]
@@ -1909,10 +1905,10 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         while row0 < h {
             let band = (h - row0).min(8);
             let lo = self.offset.wrapping_add_signed(row0 as isize * pxstride);
-            if let Some(mut rect) =
-                self.data
-                    .dm()
-                    .index_rect_mut_as::<BD::Pixel>(lo, w, band, pxstride)
+            if let Some(mut rect) = self
+                .data
+                .dm()
+                .index_rect_mut_as::<BD::Pixel>(lo, w, band, pxstride)
             {
                 for r in 0..band {
                     rect.row_mut(r).as_mut_bytes()[..byte_stride]

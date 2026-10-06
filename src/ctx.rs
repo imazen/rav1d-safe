@@ -38,11 +38,7 @@
 //! * is far simpler than the `case_set*` implementation, consisting of a `match` and array writes
 //!
 //! [`BlockContext`]: crate::src::env::BlockContext
-use crate::src::disjoint_mut::AsMutPtr;
-use crate::src::disjoint_mut::DisjointMut;
 use std::iter::zip;
-use std::ops::Deref;
-use std::ops::DerefMut;
 
 /// Perform a `memset` optimized for lengths that are small powers of 2.
 ///
@@ -86,55 +82,6 @@ impl<const UP_TO: usize, const WITH_DEFAULT: bool> CaseSetter<UP_TO, WITH_DEFAUL
     #[inline]
     pub fn set<T: Clone + Copy>(&self, buf: &mut [T], val: T) {
         small_memset::<T, UP_TO, WITH_DEFAULT>(&mut buf[self.offset..][..self.len], val);
-    }
-
-    /// # Safety
-    ///
-    /// Caller must ensure that no elements of the written range are concurrently
-    /// borrowed (immutably or mutably) at all during the call to `set_disjoint`.
-    ///
-    /// The `__probe_sites` `track_caller` is a MEASUREMENT-ONLY attribute. Without
-    /// it every one of the ~40 `set_disjoint` call sites in `decode.rs` /
-    /// `recon.rs` reports as the single location `ctx.rs:99:27`, which is why
-    /// the campaign's census could say "43.9% of all registrations" and not say
-    /// *which* line. With it, `Location::caller()` propagates through to the
-    /// closure body's own line. It is absent from the default build (and from
-    /// every published feature), so the shipped code pays nothing for it.
-    #[inline]
-    #[cfg_attr(feature = "__probe_sites", track_caller)]
-    pub fn set_disjoint<T, V>(&self, buf: &DisjointMut<T>, val: V)
-    where
-        T: AsMutPtr<Target = V>,
-        V: Clone + Copy,
-    {
-        let mut buf = buf.index_mut(self.offset..self.offset + self.len);
-        small_memset::<V, UP_TO, WITH_DEFAULT>(&mut *buf, val);
-    }
-
-    /// [`Self::set_disjoint`] for a buffer the caller holds EXCLUSIVELY.
-    ///
-    /// Same bytes, same [`small_memset`], same offset/len arithmetic. The only
-    /// difference is that no borrow is registered with the tracker, because
-    /// `&mut DisjointMut<T>` already proves — by borrowck, at compile time —
-    /// the property the tracker would check at run time. This is the #482
-    /// ownership model applied to a context array instead of a picture band:
-    /// exclusion becomes a static fact with no runtime record.
-    ///
-    /// It is NOT interchangeable with [`Self::set_disjoint`]. `set_disjoint`
-    /// takes `&DisjointMut`, so it composes with any number of other concurrent
-    /// borrows of the same buffer; this one demands `&mut`, so the compiler
-    /// refuses it wherever the buffer is genuinely shared. Reach for it only
-    /// where the exclusive reference is obtainable — for a `Rav1dTaskContext`
-    /// field, which no other worker can name, it is.
-    #[inline(always)]
-    pub fn set_exclusive<T, V>(&self, buf: &mut DisjointMut<T>, val: V)
-    where
-        T: AsMutPtr<Target = V> + DerefMut,
-        <T as Deref>::Target: AsMut<[V]>,
-        V: Clone + Copy,
-    {
-        let buf = &mut buf.get_mut().as_mut()[self.offset..self.offset + self.len];
-        small_memset::<V, UP_TO, WITH_DEFAULT>(buf, val);
     }
 }
 
@@ -242,14 +189,16 @@ macro_rules! case_set_al {
     ) => {{
         // LEFT: exclusive, untracked. `&mut` is the whole point.
         $crate::src::ctx::CaseSet::<$UP, $WD>::one((), $llen, $loff, |case, ()| {
-            let l = $l;
-            $( case.set_exclusive(&mut l.$f $([$fi])?, $lv); )*
+            let l = &mut *$l;
+            $( case.set(&mut l.$f $([$fi])? [..], $lv); )*
             $( { let $lc = case; $lextra } )?
         });
-        // ABOVE: shared across tile workers, so tracked exactly as before.
+        // ABOVE: `a` is a `&mut BlockContext` borrowed from the per-block
+        // `f.a` ELEMENT guard (tile workers own disjoint `t.a` slots), so
+        // these writes need no per-field tracker record either.
         $crate::src::ctx::CaseSet::<$UP, $WD>::one((), $alen, $aoff, |case, ()| {
-            let a = $a;
-            $( case.set_disjoint(&a.$f $([$fi])?, $av); )*
+            let a = &mut *$a;
+            $( case.set(&mut a.$f $([$fi])? [..], $av); )*
             $( { let $ac = case; $aextra } )?
         });
     }};

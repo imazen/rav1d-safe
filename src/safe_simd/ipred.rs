@@ -6259,14 +6259,14 @@ pub fn intra_pred_dispatch<BD: BitDepth>(
         let w_bytes = w * core::mem::size_of::<BD::Pixel>();
         let (dst_bytes, dst_base_bytes) = if byte_stride >= 0 {
             let hull = (h - 1) * byte_stride as usize + w_bytes;
-            (&mut dst_bytes[dst_base_bytes..dst_base_bytes + hull], 0usize)
+            (
+                &mut dst_bytes[dst_base_bytes..dst_base_bytes + hull],
+                0usize,
+            )
         } else {
             let abs = (-byte_stride) as usize;
             let lo = dst_base_bytes - (h - 1) * abs;
-            (
-                &mut dst_bytes[lo..dst_base_bytes + w_bytes],
-                (h - 1) * abs,
-            )
+            (&mut dst_bytes[lo..dst_base_bytes + w_bytes], (h - 1) * abs)
         };
         match (BD::BPC, mode) {
             (BPC::BPC8, 0) => {
@@ -7986,25 +7986,19 @@ mod v4x_dir_tests {
                 let mut dst_b = vec![7u8; 64 * 64];
                 match kind {
                     0 => {
-                        ipred_smooth_8bpc_inner(
-                            t3, &mut dst_a, 0, stride, &tl, tl_off, w, h,
-                        );
+                        ipred_smooth_8bpc_inner(t3, &mut dst_a, 0, stride, &tl, tl_off, w, h);
                         ipred_smooth_8bpc_avx512_inner(
                             t4, &mut dst_b, 0, stride, &tl, tl_off, w, h,
                         );
                     }
                     1 => {
-                        ipred_smooth_v_8bpc_inner(
-                            t3, &mut dst_a, 0, stride, &tl, tl_off, w, h,
-                        );
+                        ipred_smooth_v_8bpc_inner(t3, &mut dst_a, 0, stride, &tl, tl_off, w, h);
                         ipred_smooth_v_8bpc_avx512_inner(
                             t4, &mut dst_b, 0, stride, &tl, tl_off, w, h,
                         );
                     }
                     _ => {
-                        ipred_smooth_h_8bpc_inner(
-                            t3, &mut dst_a, 0, stride, &tl, tl_off, w, h,
-                        );
+                        ipred_smooth_h_8bpc_inner(t3, &mut dst_a, 0, stride, &tl, tl_off, w, h);
                         ipred_smooth_h_8bpc_avx512_inner(
                             t4, &mut dst_b, 0, stride, &tl, tl_off, w, h,
                         );

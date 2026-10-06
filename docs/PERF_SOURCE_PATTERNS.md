@@ -398,3 +398,46 @@ identical at t1 / t8d1 / t8d8; `gen_cover`, aarch64 + wasm32 checks.
 
 Note: `probe_sites_ivf` (`--features __probe_sites`/`__probe_wide`) added —
 the IVF sibling of `probe_tracker`, for the stills corpus.
+
+## §15 — 2026-11-05: element-granularity `f.a` (one ctx guard per block, not per field)
+
+`BlockContext` had 16 fields each wrapped in `DisjointMut`, so every
+above-context read/write registered a whole shard trip — ~800k of the
+1.62M records/frame left after §14, including pathological single-byte
+reads (`filter[0].index(x).get()`).
+
+**Change:** fields are now plain arrays; `f.a` itself became
+`DisjointMut<Vec<BlockContext>>`. `decode_b` holds one
+`index_mut(t.a..t.a+1)` guard for the block's whole body and threads
+`ta: &mut BlockContext` into the recon/read helpers; `decode_sb`'s
+partition-ctx read/writeback use short-scoped element borrows;
+`lf_apply`'s tile-row-boundary fix reads an EXACTLY-sb128w element
+window — the earlier `index(row-1..)` unbounded tail collided with a
+live `decode_b` element guard (the field-level trackers never collided
+because disjoint byte ranges inside an element coexisted; element
+granularity makes over-wide ranges fatal, not just wasteful).
+`case_set_al!`'s above arm is now plain `&mut` slices like the left arm.
+`BlockContext` derives `Copy` + zerocopy (`FromBytes`/`IntoBytes`/
+`KnownLayout`/`Immutable`) for `Vec<BlockContext>: AsMutPtr`; `Align8`
+wrappers dropped.
+
+Safety argument is identical to before, hoisted: `t.a` is the
+worker-owned tile-column slot, elements are disjoint across concurrent
+workers, and the tracker panics loudly on any mistake (observed during
+development — the `lf_apply` tail over-borrow). Frame-MT pass-2 uses
+`off_2pass` elements, also disjoint.
+
+Registrations/frame: 1.62M → 650k (−60%); `f.a` is now 3 sites /
+~131k acquires. photo-4k-t8 ms/frame (release): t=1 94.4 → 82.7 (−12%),
+t=4 37.9 → 31.5 (−17%), t=8 neutral inside its ±15% run-to-run band.
+
+Iteration loop added: `scripts/quick_gate.sh` (~16s warm) — release-thin
+build, 1-frame t1+t8 md5s vs dav1d sidecars, tier identity, frame-MT
+delay1-vs-8, row-guard lib tests, 5-iter probe.
+
+Next lever visible in the post-change census: the remaining ~131k `f.a`
+acquires are per-partition-NODE (`decode_sb` ctx read at :3562, `decode_b`
+guard at :1225, node writeback at :3864). `t.a` is constant within a
+`decode_sb` tree, so threading `ta` down the recursion could collapse
+them to ~#tiles·sbrows — needs guard-lifetime care around the
+`index_mut`-vs-`index` sequencing.

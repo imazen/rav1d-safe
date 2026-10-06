@@ -226,6 +226,16 @@ just profile-quick  # Same but 100 iterations
 # Dev iteration: `--profile release-thin` gives release codegen with thin LTO —
 # ~13s rebuilds vs ~25s under fat LTO, decode speed parity (measured 429ms vs
 # 427ms on test22.obu, within noise). Shipped artifacts stay on release's fat LTO.
+
+# Fast ownership/MT smoke: `bash scripts/quick_gate.sh` (~16s warm) — release-thin
+# build, 1-frame t1+t8 decodes vs dav1d sidecars on the 2k/4k stills (catches
+# tracker overlap panics + bit-exactness), CPU-tier identity, frame-MT delay1 vs
+# delay8 self-consistency, row-guard lib tests, and a 5-iter timing probe.
+# Overrides: STILLS=<dir>, BENCH=0, TESTS=0. NOT a substitute for the full gate.
+
+# Timing noise: single-frame stills at t8 swing ~±15% run-to-run on a quiet box
+# (25.5–29.7ms observed back-to-back). Compare t8 on medians of >=3 runs or use
+# t1/t4 which are much stabler; never bench a __probe_* build against clean.
 ```
 
 **Tests run under `cargo-nextest`** (process-per-test). Use `cargo nextest run

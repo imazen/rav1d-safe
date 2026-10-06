@@ -83,10 +83,10 @@ fn smooth(m: u8) -> c_int {
 /// `&Rav1dFrameData`, so its reads stay tracked.
 #[inline]
 pub fn sm_flag(b: &BlockContext, idx: usize) -> c_int {
-    if *b.intra.index(idx) == 0 {
+    if b.intra[idx] == 0 {
         return 0;
     }
-    smooth(*b.mode.index(idx))
+    smooth(b.mode[idx])
 }
 
 /// The LEFT neighbour's smooth flag — `t.l`, a field of the worker's own
@@ -95,22 +95,22 @@ pub fn sm_flag(b: &BlockContext, idx: usize) -> c_int {
 /// [`crate::src::env::BlockContext`] and `docs/OWNERSHIP_MODELS.md` §7e.
 #[inline]
 pub fn sm_flag_left(b: &mut BlockContext, idx: usize) -> c_int {
-    if b.intra.get_mut()[idx] == 0 {
+    if b.intra[idx] == 0 {
         return 0;
     }
-    smooth(b.mode.get_mut()[idx])
+    smooth(b.mode[idx])
 }
 
 /// See [`sm_flag`].
 #[inline]
 pub fn sm_uv_flag(b: &BlockContext, idx: usize) -> c_int {
-    smooth(*b.uvmode.index(idx))
+    smooth(b.uvmode[idx])
 }
 
 /// See [`sm_flag_left`].
 #[inline]
 pub fn sm_uv_flag_left(b: &mut BlockContext, idx: usize) -> c_int {
-    smooth(b.uvmode.get_mut()[idx])
+    smooth(b.uvmode[idx])
 }
 
 static av1_mode_conv: [[[IntraPredMode; 2 /* have_top */]; 2 /* have_left */]; N_INTRA_PRED_MODES] = {

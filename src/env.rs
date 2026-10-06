@@ -4,8 +4,6 @@ use crate::include::dav1d::headers::Rav1dFilterMode;
 use crate::include::dav1d::headers::Rav1dFrameHeader;
 use crate::include::dav1d::headers::Rav1dWarpedMotionParams;
 use crate::include::dav1d::headers::Rav1dWarpedMotionType;
-use crate::src::align::Align8;
-use crate::src::disjoint_mut::DisjointMut;
 use crate::src::disjoint_mut::DisjointMutSlice;
 use crate::src::internal::Bxy;
 use crate::src::levels::BlockLevel;
@@ -30,6 +28,7 @@ use std::cmp;
 use std::cmp::Ordering;
 use std::ffi::c_int;
 use std::ffi::c_uint;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 /// Read one element of the LEFT neighbour context, exclusively.
 ///
@@ -48,36 +47,37 @@ use std::ffi::c_uint;
 /// The extent is unchanged — this removes a record, never widens one.
 macro_rules! lread {
     ($l:expr, $field:ident [$k:expr], $i:expr) => {
-        $l.$field[$k].get_mut()[$i as usize]
+        $l.$field[$k][$i as usize]
     };
     ($l:expr, $field:ident, $i:expr) => {
-        $l.$field.get_mut()[$i as usize]
+        $l.$field[$i as usize]
     };
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Default, FromBytes, IntoBytes, KnownLayout, Immutable)]
+#[repr(C)]
 pub struct BlockContext {
-    pub mode: DisjointMut<Align8<[u8; 32]>>,
-    pub lcoef: DisjointMut<Align8<[u8; 32]>>,
-    pub ccoef: [DisjointMut<Align8<[u8; 32]>>; 2],
-    pub seg_pred: DisjointMut<Align8<[u8; 32]>>,
-    pub skip: DisjointMut<Align8<[u8; 32]>>,
-    pub skip_mode: DisjointMut<Align8<[u8; 32]>>,
-    pub intra: DisjointMut<Align8<[u8; 32]>>,
-    pub comp_type: DisjointMut<Align8<[CompTypeByte; 32]>>,
-    pub r#ref: [DisjointMut<Align8<[i8; 32]>>; 2],
+    pub mode: [u8; 32],
+    pub lcoef: [u8; 32],
+    pub ccoef: [[u8; 32]; 2],
+    pub seg_pred: [u8; 32],
+    pub skip: [u8; 32],
+    pub skip_mode: [u8; 32],
+    pub intra: [u8; 32],
+    pub comp_type: [CompTypeByte; 32],
+    pub r#ref: [[i8; 32]; 2],
 
     /// No [`Rav1dFilterMode::Switchable`]s here.
     /// TODO(kkysen) split [`Rav1dFilterMode`] into a version without [`Rav1dFilterMode::Switchable`].
-    pub filter: [DisjointMut<Align8<[FilterModeByte; 32]>>; 2],
+    pub filter: [[FilterModeByte; 32]; 2],
 
-    pub tx_intra: DisjointMut<Align8<[i8; 32]>>,
-    pub tx: DisjointMut<Align8<[TxfmSizeByte; 32]>>,
-    pub tx_lpf_y: DisjointMut<Align8<[u8; 32]>>,
-    pub tx_lpf_uv: DisjointMut<Align8<[u8; 32]>>,
-    pub partition: DisjointMut<Align8<[u8; 16]>>,
-    pub uvmode: DisjointMut<Align8<[u8; 32]>>,
-    pub pal_sz: DisjointMut<Align8<[u8; 32]>>,
+    pub tx_intra: [i8; 32],
+    pub tx: [TxfmSizeByte; 32],
+    pub tx_lpf_y: [u8; 32],
+    pub tx_lpf_uv: [u8; 32],
+    pub partition: [u8; 16],
+    pub uvmode: [u8; 32],
+    pub pal_sz: [u8; 32],
 }
 
 #[inline]
@@ -91,14 +91,14 @@ pub fn get_intra_ctx(
 ) -> u8 {
     if have_left {
         if have_top {
-            let ctx = lread!(l, intra, yb4) + *a.intra.index(xb4 as usize);
+            let ctx = lread!(l, intra, yb4) + a.intra[xb4 as usize];
             ctx + (ctx == 2) as u8
         } else {
             lread!(l, intra, yb4) * 2
         }
     } else {
         if have_top {
-            *a.intra.index(xb4 as usize) * 2
+            a.intra[xb4 as usize] * 2
         } else {
             0
         }
@@ -114,7 +114,7 @@ pub fn get_tx_ctx(
     xb4: c_int,
 ) -> u8 {
     (lread!(l, tx_intra, yb4) as i32 >= max_tx.lh as i32) as u8
-        + (*a.tx_intra.index(xb4 as usize) as i32 >= max_tx.lw as i32) as u8
+        + (a.tx_intra[xb4 as usize] as i32 >= max_tx.lw as i32) as u8
 }
 
 #[inline]
@@ -129,7 +129,7 @@ pub fn get_partition_ctx(
     // but the BlockLevel enum represents the variants numerically in the opposite order
     // (128x128 = 0, 8x8 = 4). The shift reverses the ordering.
     let has_bl = |x| (x >> (4 - bl as u8)) & 1;
-    has_bl(*a.partition.index(xb8 as usize)) + 2 * has_bl(lread!(l, partition, yb8))
+    has_bl(a.partition[xb8 as usize]) + 2 * has_bl(lread!(l, partition, yb8))
 }
 
 #[inline]
@@ -206,9 +206,9 @@ pub fn get_filter_ctx(
         };
     }
     let a_filter = filter_of!(
-        *a.r#ref[0].index(xb4 as usize),
-        *a.r#ref[1].index(xb4 as usize),
-        a.filter[dir as usize].index(xb4 as usize).get()
+        a.r#ref[0][xb4 as usize],
+        a.r#ref[1][xb4 as usize],
+        a.filter[dir as usize][xb4 as usize].get()
     );
     let l_filter = filter_of!(
         lread!(l, r#ref[0], yb4),
@@ -239,7 +239,7 @@ pub fn get_comp_ctx(
 ) -> u8 {
     if have_top {
         if have_left {
-            if a.comp_type.index(xb4 as usize).is_some() {
+            if a.comp_type[xb4 as usize].is_some() {
                 if lread!(l, comp_type, yb4).is_some() {
                     4
                 } else {
@@ -248,15 +248,15 @@ pub fn get_comp_ctx(
                 }
             } else if lread!(l, comp_type, yb4).is_some() {
                 // 4U means intra (-1) or bwd (>= 4)
-                2 + (*a.r#ref[0].index(xb4 as usize) as c_uint >= 4) as u8
+                2 + (a.r#ref[0][xb4 as usize] as c_uint >= 4) as u8
             } else {
-                ((lread!(l, r#ref[0], yb4) >= 4) ^ (*a.r#ref[0].index(xb4 as usize) >= 4)) as u8
+                ((lread!(l, r#ref[0], yb4) >= 4) ^ (a.r#ref[0][xb4 as usize] >= 4)) as u8
             }
         } else {
-            if a.comp_type.index(xb4 as usize).is_some() {
+            if a.comp_type[xb4 as usize].is_some() {
                 3
             } else {
-                (*a.r#ref[0].index(xb4 as usize) >= 4) as u8
+                (a.r#ref[0][xb4 as usize] >= 4) as u8
             }
         }
     } else if have_left {
@@ -286,7 +286,7 @@ pub fn get_comp_dir_ctx(
     // form; only the LEFT arm's reads change from `index()` to `get_mut()`.
     macro_rules! uni_comp_a {
         ($off:expr) => {
-            (*a.r#ref[0].index($off as usize) < 4) == (*a.r#ref[1].index($off as usize) < 4)
+            (a.r#ref[0][$off as usize] < 4) == (a.r#ref[1][$off as usize] < 4)
         };
     }
     macro_rules! uni_comp_l {
@@ -296,7 +296,7 @@ pub fn get_comp_dir_ctx(
     }
 
     if have_top && have_left {
-        let a_intra = *a.intra.index(xb4 as usize) != 0;
+        let a_intra = a.intra[xb4 as usize] != 0;
         let l_intra = lread!(l, intra, yb4) != 0;
 
         if a_intra && l_intra {
@@ -310,16 +310,16 @@ pub fn get_comp_dir_ctx(
                 }
                 return 1 + 2 * uni_comp_l!(yb4) as u8;
             } else {
-                if a.comp_type.index(xb4 as usize).is_none() {
+                if a.comp_type[xb4 as usize].is_none() {
                     return 2;
                 }
                 return 1 + 2 * uni_comp_a!(xb4) as u8;
             }
         }
 
-        let a_comp = a.comp_type.index(xb4 as usize).is_some();
+        let a_comp = a.comp_type[xb4 as usize].is_some();
         let l_comp = lread!(l, comp_type, yb4).is_some();
-        let a_ref0 = *a.r#ref[0].index(xb4 as usize);
+        let a_ref0 = a.r#ref[0][xb4 as usize];
         let l_ref0 = lread!(l, r#ref[0], yb4);
 
         if !a_comp && !l_comp {
@@ -356,10 +356,10 @@ pub fn get_comp_dir_ctx(
         }
         return 4 * uni_comp_l!(yb4) as u8;
     } else if have_top {
-        if *a.intra.index(xb4 as usize) != 0 {
+        if a.intra[xb4 as usize] != 0 {
             return 2;
         }
-        if a.comp_type.index(xb4 as usize).is_none() {
+        if a.comp_type[xb4 as usize].is_none() {
             return 2;
         }
         return 4 * uni_comp_a!(xb4) as u8;
@@ -397,10 +397,7 @@ pub fn get_jnt_comp_ctx(
             ($comp.get() >= Some(CompInterType::Avg) || $ref0 == 6) as u8
         };
     }
-    let a_ctx = jnt_ctx!(
-        *a.comp_type.index(xb4 as usize),
-        *a.r#ref[0].index(xb4 as usize)
-    );
+    let a_ctx = jnt_ctx!(a.comp_type[xb4 as usize], a.r#ref[0][xb4 as usize]);
     let l_ctx = jnt_ctx!(lread!(l, comp_type, yb4), lread!(l, r#ref[0], yb4));
 
     3 * offset + a_ctx + l_ctx
@@ -419,10 +416,7 @@ pub fn get_mask_comp_ctx(a: &BlockContext, l: &mut BlockContext, yb4: c_int, xb4
             }
         };
     }
-    let a_ctx = mask_ctx!(
-        *a.comp_type.index(xb4 as usize),
-        *a.r#ref[0].index(xb4 as usize)
-    );
+    let a_ctx = mask_ctx!(a.comp_type[xb4 as usize], a.r#ref[0][xb4 as usize]);
     let l_ctx = mask_ctx!(lread!(l, comp_type, yb4), lread!(l, r#ref[0], yb4));
 
     cmp::min(a_ctx + l_ctx, 5)
@@ -448,10 +442,10 @@ pub fn av1_get_ref_ctx(
 ) -> u8 {
     let mut cnt = [0; 2];
 
-    if have_top && *a.intra.index(xb4 as usize) == 0 {
-        cnt[(*a.r#ref[0].index(xb4 as usize) >= 4) as usize] += 1;
-        if a.comp_type.index(xb4 as usize).is_some() {
-            cnt[(*a.r#ref[1].index(xb4 as usize) >= 4) as usize] += 1;
+    if have_top && a.intra[xb4 as usize] == 0 {
+        cnt[(a.r#ref[0][xb4 as usize] >= 4) as usize] += 1;
+        if a.comp_type[xb4 as usize].is_some() {
+            cnt[(a.r#ref[1][xb4 as usize] >= 4) as usize] += 1;
         }
     }
 
@@ -476,13 +470,13 @@ pub fn av1_get_fwd_ref_ctx(
 ) -> u8 {
     let mut cnt = [0; 4];
 
-    if have_top && *a.intra.index(xb4 as usize) == 0 {
-        let ref0 = *a.r#ref[0].index(xb4 as usize);
+    if have_top && a.intra[xb4 as usize] == 0 {
+        let ref0 = a.r#ref[0][xb4 as usize];
         if ref0 < 4 {
             cnt[ref0 as usize] += 1;
         }
-        let ref1 = *a.r#ref[1].index(xb4 as usize);
-        if a.comp_type.index(xb4 as usize).is_some() && ref1 < 4 {
+        let ref1 = a.r#ref[1][xb4 as usize];
+        if a.comp_type[xb4 as usize].is_some() && ref1 < 4 {
             cnt[ref1 as usize] += 1;
         }
     }
@@ -515,13 +509,13 @@ pub fn av1_get_fwd_ref_1_ctx(
 ) -> u8 {
     let mut cnt = [0; 2];
 
-    if have_top && *a.intra.index(xb4 as usize) == 0 {
-        let ref0 = *a.r#ref[0].index(xb4 as usize);
+    if have_top && a.intra[xb4 as usize] == 0 {
+        let ref0 = a.r#ref[0][xb4 as usize];
         if ref0 < 2 {
             cnt[ref0 as usize] += 1;
         }
-        let ref1 = *a.r#ref[1].index(xb4 as usize);
-        if a.comp_type.index(xb4 as usize).is_some() && ref1 < 2 {
+        let ref1 = a.r#ref[1][xb4 as usize];
+        if a.comp_type[xb4 as usize].is_some() && ref1 < 2 {
             cnt[ref1 as usize] += 1;
         }
     }
@@ -551,13 +545,13 @@ pub fn av1_get_fwd_ref_2_ctx(
 ) -> u8 {
     let mut cnt = [0; 2];
 
-    if have_top && *a.intra.index(xb4 as usize) == 0 {
-        let ref0 = *a.r#ref[0].index(xb4 as usize);
+    if have_top && a.intra[xb4 as usize] == 0 {
+        let ref0 = a.r#ref[0][xb4 as usize];
         if (ref0 ^ 2) < 2 {
             cnt[(ref0 - 2) as usize] += 1;
         }
-        let ref1 = *a.r#ref[1].index(xb4 as usize);
-        if a.comp_type.index(xb4 as usize).is_some() && (ref1 ^ 2) < 2 {
+        let ref1 = a.r#ref[1][xb4 as usize];
+        if a.comp_type[xb4 as usize].is_some() && (ref1 ^ 2) < 2 {
             cnt[(ref1 - 2) as usize] += 1;
         }
     }
@@ -587,13 +581,13 @@ pub fn av1_get_bwd_ref_ctx(
 ) -> u8 {
     let mut cnt = [0; 3];
 
-    if have_top && *a.intra.index(xb4 as usize) == 0 {
-        let ref0 = *a.r#ref[0].index(xb4 as usize);
+    if have_top && a.intra[xb4 as usize] == 0 {
+        let ref0 = a.r#ref[0][xb4 as usize];
         if ref0 >= 4 {
             cnt[(ref0 - 4) as usize] += 1;
         }
-        let ref1 = *a.r#ref[1].index(xb4 as usize);
-        if a.comp_type.index(xb4 as usize).is_some() && ref1 >= 4 {
+        let ref1 = a.r#ref[1][xb4 as usize];
+        if a.comp_type[xb4 as usize].is_some() && ref1 >= 4 {
             cnt[(ref1 - 4) as usize] += 1;
         }
     }
@@ -625,13 +619,13 @@ pub fn av1_get_bwd_ref_1_ctx(
 ) -> u8 {
     let mut cnt = [0; 3];
 
-    if have_top && *a.intra.index(xb4 as usize) == 0 {
-        let ref0 = *a.r#ref[0].index(xb4 as usize);
+    if have_top && a.intra[xb4 as usize] == 0 {
+        let ref0 = a.r#ref[0][xb4 as usize];
         if ref0 >= 4 {
             cnt[(ref0 - 4) as usize] += 1;
         }
-        let ref1 = *a.r#ref[1].index(xb4 as usize);
-        if a.comp_type.index(xb4 as usize).is_some() && ref1 >= 4 {
+        let ref1 = a.r#ref[1][xb4 as usize];
+        if a.comp_type[xb4 as usize].is_some() && ref1 >= 4 {
             cnt[(ref1 - 4) as usize] += 1;
         }
     }
@@ -661,12 +655,12 @@ pub fn av1_get_uni_p1_ctx(
 ) -> u8 {
     let mut cnt = [0; 3];
 
-    if have_top && *a.intra.index(xb4 as usize) == 0 {
-        if let Some(cnt) = cnt.get_mut((*a.r#ref[0].index(xb4 as usize) - 1) as usize) {
+    if have_top && a.intra[xb4 as usize] == 0 {
+        if let Some(cnt) = cnt.get_mut((a.r#ref[0][xb4 as usize] - 1) as usize) {
             *cnt += 1;
         }
-        if a.comp_type.index(xb4 as usize).is_some() {
-            if let Some(cnt) = cnt.get_mut((*a.r#ref[1].index(xb4 as usize) - 1) as usize) {
+        if a.comp_type[xb4 as usize].is_some() {
+            if let Some(cnt) = cnt.get_mut((a.r#ref[1][xb4 as usize] - 1) as usize) {
                 *cnt += 1;
             }
         }
@@ -822,14 +816,14 @@ mod left_split_parity {
     ) -> u8 {
         if have_left {
             if have_top {
-                let ctx = *l.intra.index(yb4 as usize) + *a.intra.index(xb4 as usize);
+                let ctx = l.intra[yb4 as usize] + a.intra[xb4 as usize];
                 ctx + (ctx == 2) as u8
             } else {
-                *l.intra.index(yb4 as usize) * 2
+                l.intra[yb4 as usize] * 2
             }
         } else {
             if have_top {
-                *a.intra.index(xb4 as usize) * 2
+                a.intra[xb4 as usize] * 2
             } else {
                 0
             }
@@ -843,8 +837,8 @@ mod left_split_parity {
         yb4: c_int,
         xb4: c_int,
     ) -> u8 {
-        (*l.tx_intra.index(yb4 as usize) as i32 >= max_tx.lh as i32) as u8
-            + (*a.tx_intra.index(xb4 as usize) as i32 >= max_tx.lw as i32) as u8
+        (l.tx_intra[yb4 as usize] as i32 >= max_tx.lh as i32) as u8
+            + (a.tx_intra[xb4 as usize] as i32 >= max_tx.lw as i32) as u8
     }
 
     pub fn base_get_partition_ctx(
@@ -858,7 +852,7 @@ mod left_split_parity {
         // but the BlockLevel enum represents the variants numerically in the opposite order
         // (128x128 = 0, 8x8 = 4). The shift reverses the ordering.
         let has_bl = |x| (x >> (4 - bl as u8)) & 1;
-        has_bl(*a.partition.index(xb8 as usize)) + 2 * has_bl(*l.partition.index(yb8 as usize))
+        has_bl(a.partition[xb8 as usize]) + 2 * has_bl(l.partition[yb8 as usize])
     }
 
     pub fn base_get_filter_ctx(
@@ -871,9 +865,8 @@ mod left_split_parity {
         xb4: c_int,
     ) -> u8 {
         let [a_filter, l_filter] = [(a, xb4), (l, yb4)].map(|(al, b4)| {
-            if *al.r#ref[0].index(b4 as usize) == r#ref || *al.r#ref[1].index(b4 as usize) == r#ref
-            {
-                al.filter[dir as usize].index(b4 as usize).get()
+            if al.r#ref[0][b4 as usize] == r#ref || al.r#ref[1][b4 as usize] == r#ref {
+                al.filter[dir as usize][b4 as usize].get()
             } else {
                 Rav1dFilterMode::N_SWITCHABLE_FILTERS
             }
@@ -901,32 +894,31 @@ mod left_split_parity {
     ) -> u8 {
         if have_top {
             if have_left {
-                if a.comp_type.index(xb4 as usize).is_some() {
-                    if l.comp_type.index(yb4 as usize).is_some() {
+                if a.comp_type[xb4 as usize].is_some() {
+                    if l.comp_type[yb4 as usize].is_some() {
                         4
                     } else {
                         // 4U means intra (-1) or bwd (>= 4)
-                        2 + (*l.r#ref[0].index(yb4 as usize) as c_uint >= 4) as u8
+                        2 + (l.r#ref[0][yb4 as usize] as c_uint >= 4) as u8
                     }
-                } else if l.comp_type.index(yb4 as usize).is_some() {
+                } else if l.comp_type[yb4 as usize].is_some() {
                     // 4U means intra (-1) or bwd (>= 4)
-                    2 + (*a.r#ref[0].index(xb4 as usize) as c_uint >= 4) as u8
+                    2 + (a.r#ref[0][xb4 as usize] as c_uint >= 4) as u8
                 } else {
-                    ((*l.r#ref[0].index(yb4 as usize) >= 4)
-                        ^ (*a.r#ref[0].index(xb4 as usize) >= 4)) as u8
+                    ((l.r#ref[0][yb4 as usize] >= 4) ^ (a.r#ref[0][xb4 as usize] >= 4)) as u8
                 }
             } else {
-                if a.comp_type.index(xb4 as usize).is_some() {
+                if a.comp_type[xb4 as usize].is_some() {
                     3
                 } else {
-                    (*a.r#ref[0].index(xb4 as usize) >= 4) as u8
+                    (a.r#ref[0][xb4 as usize] >= 4) as u8
                 }
             }
         } else if have_left {
-            if l.comp_type.index(yb4 as usize).is_some() {
+            if l.comp_type[yb4 as usize].is_some() {
                 3
             } else {
-                (*l.r#ref[0].index(yb4 as usize) >= 4) as u8
+                (l.r#ref[0][yb4 as usize] >= 4) as u8
             }
         } else {
             1
@@ -942,12 +934,12 @@ mod left_split_parity {
         have_left: bool,
     ) -> u8 {
         let has_uni_comp = |edge: &BlockContext, off| {
-            (*edge.r#ref[0].index(off as usize) < 4) == (*edge.r#ref[1].index(off as usize) < 4)
+            (edge.r#ref[0][off as usize] < 4) == (edge.r#ref[1][off as usize] < 4)
         };
 
         if have_top && have_left {
-            let a_intra = *a.intra.index(xb4 as usize) != 0;
-            let l_intra = *l.intra.index(yb4 as usize) != 0;
+            let a_intra = a.intra[xb4 as usize] != 0;
+            let l_intra = l.intra[yb4 as usize] != 0;
 
             if a_intra && l_intra {
                 return 2;
@@ -956,16 +948,16 @@ mod left_split_parity {
                 let edge = if a_intra { &l } else { &a };
                 let off = if a_intra { yb4 } else { xb4 };
 
-                if edge.comp_type.index(off as usize).is_none() {
+                if edge.comp_type[off as usize].is_none() {
                     return 2;
                 }
                 return 1 + 2 * has_uni_comp(edge, off) as u8;
             }
 
-            let a_comp = a.comp_type.index(xb4 as usize).is_some();
-            let l_comp = l.comp_type.index(yb4 as usize).is_some();
-            let a_ref0 = *a.r#ref[0].index(xb4 as usize);
-            let l_ref0 = *l.r#ref[0].index(yb4 as usize);
+            let a_comp = a.comp_type[xb4 as usize].is_some();
+            let l_comp = l.comp_type[yb4 as usize].is_some();
+            let a_ref0 = a.r#ref[0][xb4 as usize];
+            let l_ref0 = l.r#ref[0][yb4 as usize];
 
             if !a_comp && !l_comp {
                 return 1 + 2 * ((a_ref0 >= 4) == (l_ref0 >= 4)) as u8;
@@ -993,10 +985,10 @@ mod left_split_parity {
             let edge = if have_left { l } else { a };
             let off = if have_left { yb4 } else { xb4 };
 
-            if *edge.intra.index(off as usize) != 0 {
+            if edge.intra[off as usize] != 0 {
                 return 2;
             }
-            if edge.comp_type.index(off as usize).is_none() {
+            if edge.comp_type[off as usize].is_none() {
                 return 2;
             }
             return 4 * has_uni_comp(&edge, off) as u8;
@@ -1019,8 +1011,8 @@ mod left_split_parity {
         let d1 = get_poc_diff(order_hint_n_bits, poc as c_int, ref1poc as c_int).abs();
         let offset = (d0 == d1) as u8;
         let [a_ctx, l_ctx] = [(a, xb4), (l, yb4)].map(|(al, b4)| {
-            (al.comp_type.index(b4 as usize).get() >= Some(CompInterType::Avg)
-                || *al.r#ref[0].index(b4 as usize) == 6) as u8
+            (al.comp_type[b4 as usize].get() >= Some(CompInterType::Avg)
+                || al.r#ref[0][b4 as usize] == 6) as u8
         });
 
         3 * offset + a_ctx + l_ctx
@@ -1033,9 +1025,9 @@ mod left_split_parity {
         xb4: c_int,
     ) -> u8 {
         let [a_ctx, l_ctx] = [(a, xb4), (l, yb4)].map(|(al, b4)| {
-            if al.comp_type.index(b4 as usize).get() >= Some(CompInterType::Seg) {
+            if al.comp_type[b4 as usize].get() >= Some(CompInterType::Seg) {
                 1
-            } else if *al.r#ref[0].index(b4 as usize) == 6 {
+            } else if al.r#ref[0][b4 as usize] == 6 {
                 3
             } else {
                 0
@@ -1055,17 +1047,17 @@ mod left_split_parity {
     ) -> u8 {
         let mut cnt = [0; 2];
 
-        if have_top && *a.intra.index(xb4 as usize) == 0 {
-            cnt[(*a.r#ref[0].index(xb4 as usize) >= 4) as usize] += 1;
-            if a.comp_type.index(xb4 as usize).is_some() {
-                cnt[(*a.r#ref[1].index(xb4 as usize) >= 4) as usize] += 1;
+        if have_top && a.intra[xb4 as usize] == 0 {
+            cnt[(a.r#ref[0][xb4 as usize] >= 4) as usize] += 1;
+            if a.comp_type[xb4 as usize].is_some() {
+                cnt[(a.r#ref[1][xb4 as usize] >= 4) as usize] += 1;
             }
         }
 
-        if have_left && *l.intra.index(yb4 as usize) == 0 {
-            cnt[(*l.r#ref[0].index(yb4 as usize) >= 4) as usize] += 1;
-            if l.comp_type.index(yb4 as usize).is_some() {
-                cnt[(*l.r#ref[1].index(yb4 as usize) >= 4) as usize] += 1;
+        if have_left && l.intra[yb4 as usize] == 0 {
+            cnt[(l.r#ref[0][yb4 as usize] >= 4) as usize] += 1;
+            if l.comp_type[yb4 as usize].is_some() {
+                cnt[(l.r#ref[1][yb4 as usize] >= 4) as usize] += 1;
             }
         }
 
@@ -1082,24 +1074,24 @@ mod left_split_parity {
     ) -> u8 {
         let mut cnt = [0; 4];
 
-        if have_top && *a.intra.index(xb4 as usize) == 0 {
-            let ref0 = *a.r#ref[0].index(xb4 as usize);
+        if have_top && a.intra[xb4 as usize] == 0 {
+            let ref0 = a.r#ref[0][xb4 as usize];
             if ref0 < 4 {
                 cnt[ref0 as usize] += 1;
             }
-            let ref1 = *a.r#ref[1].index(xb4 as usize);
-            if a.comp_type.index(xb4 as usize).is_some() && ref1 < 4 {
+            let ref1 = a.r#ref[1][xb4 as usize];
+            if a.comp_type[xb4 as usize].is_some() && ref1 < 4 {
                 cnt[ref1 as usize] += 1;
             }
         }
 
-        if have_left && *l.intra.index(yb4 as usize) == 0 {
-            let ref0 = *l.r#ref[0].index(yb4 as usize);
+        if have_left && l.intra[yb4 as usize] == 0 {
+            let ref0 = l.r#ref[0][yb4 as usize];
             if ref0 < 4 {
                 cnt[ref0 as usize] += 1;
             }
-            let ref1 = *l.r#ref[1].index(yb4 as usize);
-            if l.comp_type.index(yb4 as usize).is_some() && ref1 < 4 {
+            let ref1 = l.r#ref[1][yb4 as usize];
+            if l.comp_type[yb4 as usize].is_some() && ref1 < 4 {
                 cnt[ref1 as usize] += 1;
             }
         }
@@ -1120,24 +1112,24 @@ mod left_split_parity {
     ) -> u8 {
         let mut cnt = [0; 2];
 
-        if have_top && *a.intra.index(xb4 as usize) == 0 {
-            let ref0 = *a.r#ref[0].index(xb4 as usize);
+        if have_top && a.intra[xb4 as usize] == 0 {
+            let ref0 = a.r#ref[0][xb4 as usize];
             if ref0 < 2 {
                 cnt[ref0 as usize] += 1;
             }
-            let ref1 = *a.r#ref[1].index(xb4 as usize);
-            if a.comp_type.index(xb4 as usize).is_some() && ref1 < 2 {
+            let ref1 = a.r#ref[1][xb4 as usize];
+            if a.comp_type[xb4 as usize].is_some() && ref1 < 2 {
                 cnt[ref1 as usize] += 1;
             }
         }
 
-        if have_left && *l.intra.index(yb4 as usize) == 0 {
-            let ref0 = *l.r#ref[0].index(yb4 as usize);
+        if have_left && l.intra[yb4 as usize] == 0 {
+            let ref0 = l.r#ref[0][yb4 as usize];
             if ref0 < 2 {
                 cnt[ref0 as usize] += 1;
             }
-            let ref1 = *l.r#ref[1].index(yb4 as usize);
-            if l.comp_type.index(yb4 as usize).is_some() && ref1 < 2 {
+            let ref1 = l.r#ref[1][yb4 as usize];
+            if l.comp_type[yb4 as usize].is_some() && ref1 < 2 {
                 cnt[ref1 as usize] += 1;
             }
         }
@@ -1155,24 +1147,24 @@ mod left_split_parity {
     ) -> u8 {
         let mut cnt = [0; 2];
 
-        if have_top && *a.intra.index(xb4 as usize) == 0 {
-            let ref0 = *a.r#ref[0].index(xb4 as usize);
+        if have_top && a.intra[xb4 as usize] == 0 {
+            let ref0 = a.r#ref[0][xb4 as usize];
             if (ref0 ^ 2) < 2 {
                 cnt[(ref0 - 2) as usize] += 1;
             }
-            let ref1 = *a.r#ref[1].index(xb4 as usize);
-            if a.comp_type.index(xb4 as usize).is_some() && (ref1 ^ 2) < 2 {
+            let ref1 = a.r#ref[1][xb4 as usize];
+            if a.comp_type[xb4 as usize].is_some() && (ref1 ^ 2) < 2 {
                 cnt[(ref1 - 2) as usize] += 1;
             }
         }
 
-        if have_left && *l.intra.index(yb4 as usize) == 0 {
-            let ref0 = *l.r#ref[0].index(yb4 as usize);
+        if have_left && l.intra[yb4 as usize] == 0 {
+            let ref0 = l.r#ref[0][yb4 as usize];
             if (ref0 ^ 2) < 2 {
                 cnt[(ref0 - 2) as usize] += 1;
             }
-            let ref1 = *l.r#ref[1].index(yb4 as usize);
-            if l.comp_type.index(yb4 as usize).is_some() && (ref1 ^ 2) < 2 {
+            let ref1 = l.r#ref[1][yb4 as usize];
+            if l.comp_type[yb4 as usize].is_some() && (ref1 ^ 2) < 2 {
                 cnt[(ref1 - 2) as usize] += 1;
             }
         }
@@ -1190,24 +1182,24 @@ mod left_split_parity {
     ) -> u8 {
         let mut cnt = [0; 3];
 
-        if have_top && *a.intra.index(xb4 as usize) == 0 {
-            let ref0 = *a.r#ref[0].index(xb4 as usize);
+        if have_top && a.intra[xb4 as usize] == 0 {
+            let ref0 = a.r#ref[0][xb4 as usize];
             if ref0 >= 4 {
                 cnt[(ref0 - 4) as usize] += 1;
             }
-            let ref1 = *a.r#ref[1].index(xb4 as usize);
-            if a.comp_type.index(xb4 as usize).is_some() && ref1 >= 4 {
+            let ref1 = a.r#ref[1][xb4 as usize];
+            if a.comp_type[xb4 as usize].is_some() && ref1 >= 4 {
                 cnt[(ref1 - 4) as usize] += 1;
             }
         }
 
-        if have_left && *l.intra.index(yb4 as usize) == 0 {
-            let ref0 = *l.r#ref[0].index(yb4 as usize);
+        if have_left && l.intra[yb4 as usize] == 0 {
+            let ref0 = l.r#ref[0][yb4 as usize];
             if ref0 >= 4 {
                 cnt[(ref0 - 4) as usize] += 1;
             }
-            let ref1 = *l.r#ref[1].index(yb4 as usize);
-            if l.comp_type.index(yb4 as usize).is_some() && ref1 >= 4 {
+            let ref1 = l.r#ref[1][yb4 as usize];
+            if l.comp_type[yb4 as usize].is_some() && ref1 >= 4 {
                 cnt[(ref1 - 4) as usize] += 1;
             }
         }
@@ -1227,24 +1219,24 @@ mod left_split_parity {
     ) -> u8 {
         let mut cnt = [0; 3];
 
-        if have_top && *a.intra.index(xb4 as usize) == 0 {
-            let ref0 = *a.r#ref[0].index(xb4 as usize);
+        if have_top && a.intra[xb4 as usize] == 0 {
+            let ref0 = a.r#ref[0][xb4 as usize];
             if ref0 >= 4 {
                 cnt[(ref0 - 4) as usize] += 1;
             }
-            let ref1 = *a.r#ref[1].index(xb4 as usize);
-            if a.comp_type.index(xb4 as usize).is_some() && ref1 >= 4 {
+            let ref1 = a.r#ref[1][xb4 as usize];
+            if a.comp_type[xb4 as usize].is_some() && ref1 >= 4 {
                 cnt[(ref1 - 4) as usize] += 1;
             }
         }
 
-        if have_left && *l.intra.index(yb4 as usize) == 0 {
-            let ref0 = *l.r#ref[0].index(yb4 as usize);
+        if have_left && l.intra[yb4 as usize] == 0 {
+            let ref0 = l.r#ref[0][yb4 as usize];
             if ref0 >= 4 {
                 cnt[(ref0 - 4) as usize] += 1;
             }
-            let ref1 = *l.r#ref[1].index(yb4 as usize);
-            if l.comp_type.index(yb4 as usize).is_some() && ref1 >= 4 {
+            let ref1 = l.r#ref[1][yb4 as usize];
+            if l.comp_type[yb4 as usize].is_some() && ref1 >= 4 {
                 cnt[(ref1 - 4) as usize] += 1;
             }
         }
@@ -1262,23 +1254,23 @@ mod left_split_parity {
     ) -> u8 {
         let mut cnt = [0; 3];
 
-        if have_top && *a.intra.index(xb4 as usize) == 0 {
-            if let Some(cnt) = cnt.get_mut((*a.r#ref[0].index(xb4 as usize) - 1) as usize) {
+        if have_top && a.intra[xb4 as usize] == 0 {
+            if let Some(cnt) = cnt.get_mut((a.r#ref[0][xb4 as usize] - 1) as usize) {
                 *cnt += 1;
             }
-            if a.comp_type.index(xb4 as usize).is_some() {
-                if let Some(cnt) = cnt.get_mut((*a.r#ref[1].index(xb4 as usize) - 1) as usize) {
+            if a.comp_type[xb4 as usize].is_some() {
+                if let Some(cnt) = cnt.get_mut((a.r#ref[1][xb4 as usize] - 1) as usize) {
                     *cnt += 1;
                 }
             }
         }
 
-        if have_left && *l.intra.index(yb4 as usize) == 0 {
-            if let Some(cnt) = cnt.get_mut((*l.r#ref[0].index(yb4 as usize) - 1) as usize) {
+        if have_left && l.intra[yb4 as usize] == 0 {
+            if let Some(cnt) = cnt.get_mut((l.r#ref[0][yb4 as usize] - 1) as usize) {
                 *cnt += 1;
             }
-            if l.comp_type.index(yb4 as usize).is_some() {
-                if let Some(cnt) = cnt.get_mut((*l.r#ref[1].index(yb4 as usize) - 1) as usize) {
+            if l.comp_type[yb4 as usize].is_some() {
+                if let Some(cnt) = cnt.get_mut((l.r#ref[1][yb4 as usize] - 1) as usize) {
                     *cnt += 1;
                 }
             }
@@ -1355,23 +1347,23 @@ mod left_split_parity {
             } else {
                 comp_type_of(rng.below(5))
             };
-            b.intra.get_mut()[i] = is_intra as u8;
-            b.comp_type.get_mut()[i] = comp.into();
+            b.intra[i] = is_intra as u8;
+            b.comp_type[i] = comp.into();
             // -1 is intra; 0..=6 are the seven reference slots.
-            b.r#ref[0].get_mut()[i] = if is_intra { -1 } else { rng.below(7) as i8 };
-            b.r#ref[1].get_mut()[i] = if comp.is_some() {
+            b.r#ref[0][i] = if is_intra { -1 } else { rng.below(7) as i8 };
+            b.r#ref[1][i] = if comp.is_some() {
                 rng.below(7) as i8
             } else {
                 -1
             };
-            b.mode.get_mut()[i] = rng.below(N_INTRA_PRED_MODES as u32) as u8;
-            b.uvmode.get_mut()[i] = rng.below(N_UV_INTRA_PRED_MODES as u32) as u8;
-            b.tx_intra.get_mut()[i] = rng.below(9) as i8 - 1;
-            b.filter[0].get_mut()[i] = filter_of(rng.below(5)).into();
-            b.filter[1].get_mut()[i] = filter_of(rng.below(5)).into();
+            b.mode[i] = rng.below(N_INTRA_PRED_MODES as u32) as u8;
+            b.uvmode[i] = rng.below(N_UV_INTRA_PRED_MODES as u32) as u8;
+            b.tx_intra[i] = rng.below(9) as i8 - 1;
+            b.filter[0][i] = filter_of(rng.below(5)).into();
+            b.filter[1][i] = filter_of(rng.below(5)).into();
         }
         for i in 0..16 {
-            b.partition.get_mut()[i] = rng.below(32) as u8;
+            b.partition[i] = rng.below(32) as u8;
         }
         b
     }
@@ -1414,18 +1406,18 @@ mod left_split_parity {
             let l_ref = {
                 let mut c = BlockContext::default();
                 for i in 0..32 {
-                    c.intra.get_mut()[i] = l.intra.get_mut()[i];
-                    c.mode.get_mut()[i] = l.mode.get_mut()[i];
-                    c.uvmode.get_mut()[i] = l.uvmode.get_mut()[i];
-                    c.tx_intra.get_mut()[i] = l.tx_intra.get_mut()[i];
-                    c.comp_type.get_mut()[i] = l.comp_type.get_mut()[i];
-                    c.r#ref[0].get_mut()[i] = l.r#ref[0].get_mut()[i];
-                    c.r#ref[1].get_mut()[i] = l.r#ref[1].get_mut()[i];
-                    c.filter[0].get_mut()[i] = l.filter[0].get_mut()[i];
-                    c.filter[1].get_mut()[i] = l.filter[1].get_mut()[i];
+                    c.intra[i] = l.intra[i];
+                    c.mode[i] = l.mode[i];
+                    c.uvmode[i] = l.uvmode[i];
+                    c.tx_intra[i] = l.tx_intra[i];
+                    c.comp_type[i] = l.comp_type[i];
+                    c.r#ref[0][i] = l.r#ref[0][i];
+                    c.r#ref[1][i] = l.r#ref[1][i];
+                    c.filter[0][i] = l.filter[0][i];
+                    c.filter[1][i] = l.filter[1][i];
                 }
                 for i in 0..16 {
-                    c.partition.get_mut()[i] = l.partition.get_mut()[i];
+                    c.partition[i] = l.partition[i];
                 }
                 c
             };

@@ -296,6 +296,7 @@ fn read_tx_tree(
     t: &mut Rav1dTaskContext,
     f: &Rav1dFrameData,
     ts_c: &mut Rav1dTileStateContext,
+    ta: &mut BlockContext,
     from: TxfmSize,
     depth: c_int,
     masks: &mut [u16; 2],
@@ -311,8 +312,8 @@ fn read_tx_tree(
 
     if depth < 2 && from > TxfmSize::S4x4 {
         let cat = 2 * (TxfmSize::S64x64 as c_int - t_dim.max as c_int) - depth;
-        let a = ((f.a[t.a].tx.index(bx4 as usize).get() as u8) < txw) as c_int;
-        let l = ((t.l.tx.get_mut()[by4 as usize].get() as u8) < txh) as c_int;
+        let a = ((ta.tx[bx4 as usize].get() as u8) < txw) as c_int;
+        let l = ((t.l.tx[by4 as usize].get() as u8) < txh) as c_int;
 
         is_split = rav1d_msac_decode_bool_adapt(
             &mut ts_c.msac,
@@ -334,6 +335,7 @@ fn read_tx_tree(
             t,
             f,
             ts_c,
+            ta,
             sub,
             depth + 1,
             masks,
@@ -346,6 +348,7 @@ fn read_tx_tree(
                 t,
                 f,
                 ts_c,
+                ta,
                 sub,
                 depth + 1,
                 masks,
@@ -360,6 +363,7 @@ fn read_tx_tree(
                 t,
                 f,
                 ts_c,
+                ta,
                 sub,
                 depth + 1,
                 masks,
@@ -372,6 +376,7 @@ fn read_tx_tree(
                     t,
                     f,
                     ts_c,
+                    ta,
                     sub,
                     depth + 1,
                     masks,
@@ -394,7 +399,7 @@ fn read_tx_tree(
         case_set_al! {
             <16, false>
             l: (&mut t.l, t_dim.h as usize, by4 as usize),
-            a: (&f.a[t.a], t_dim.w as usize, bx4 as usize),
+            a: (ta, t_dim.w as usize, bx4 as usize),
             tx = (tx_for(txh).into(), tx_for(txw).into()),
         }
     };
@@ -831,6 +836,7 @@ fn read_vartx_tree(
     t: &mut Rav1dTaskContext,
     f: &Rav1dFrameData,
     ts_c: &mut Rav1dTileStateContext,
+    ta: &mut BlockContext,
     b: &Av1Block,
     bs: BlockSize,
     bx4: c_int,
@@ -854,7 +860,7 @@ fn read_vartx_tree(
             case_set_al! {
                 <32, false>
                 l: (&mut t.l, bh4 as usize, by4 as usize),
-                a: (&f.a[t.a], bw4 as usize, bx4 as usize),
+                a: (ta, bw4 as usize, bx4 as usize),
                 tx = (TxfmSize::S4x4.into(), TxfmSize::S4x4.into()),
             }
         }
@@ -864,7 +870,7 @@ fn read_vartx_tree(
             case_set_al! {
                 <32, false>
                 l: (&mut t.l, bh4 as usize, by4 as usize),
-                a: (&f.a[t.a], bw4 as usize, bx4 as usize),
+                a: (ta, bw4 as usize, bx4 as usize),
                 tx = (
                     TxfmSize::from_repr(b_dim[2 + 1] as _).unwrap().into(),
                     TxfmSize::from_repr(b_dim[2 + 0] as _).unwrap().into()
@@ -881,7 +887,7 @@ fn read_vartx_tree(
         debug_assert_eq!(bw4 % w, 0);
         for y_off in 0..bh4 / h {
             for x_off in 0..bw4 / w {
-                read_tx_tree(t, f, ts_c, max_ytx, 0, &mut tx_split, x_off, y_off);
+                read_tx_tree(t, f, ts_c, ta, max_ytx, 0, &mut tx_split, x_off, y_off);
                 // contexts are updated inside read_tx_tree()
                 t.b.x += w as c_int;
             }
@@ -1213,7 +1219,11 @@ fn decode_b(
     };
 
     let ts = &f.ts[t.ts];
-    let ta = &f.a[t.a];
+    // One element-granularity guard covers every above-context read and write
+    // for this block: `t.a` names this tile worker's own `f.a` slot, so the
+    // borrow can never conflict (see [`Rav1dFrameData::a`]).
+    let mut ta_guard = f.a.index_mut(t.a as usize..t.a as usize + 1);
+    let ta = &mut ta_guard[0];
     let bd_fn = f.bd_fn();
     let b_dim = bs.dimensions();
     let bx4 = t.b.x & 31;
@@ -1238,7 +1248,7 @@ fn decode_b(
     let FrameThreadPassState::First(ts_c) = pass else {
         match &b.ii {
             Av1BlockIntraInter::Intra(intra) => {
-                (bd_fn.recon_b_intra)(f, t, None, bs, intra_edge_flags, b, intra);
+                (bd_fn.recon_b_intra)(f, t, ta, None, bs, intra_edge_flags, b, intra);
 
                 let y_mode = intra.y_mode;
                 let y_mode_nofilt = if y_mode == FILTER_PRED {
@@ -1314,7 +1324,7 @@ fn decode_b(
                     }
                 }
 
-                (bd_fn.recon_b_inter)(f, t, None, bs, b, inter)?;
+                (bd_fn.recon_b_inter)(f, t, ta, None, bs, b, inter)?;
 
                 let filter = &dav1d_filter_dir[inter.filter2d as usize];
                 case_set_al! {
@@ -1383,7 +1393,7 @@ fn decode_b(
             seg = Some(&frame_hdr.segmentation.seg_data.d[b.seg_id.get()]);
         } else if frame_hdr.segmentation.seg_data.preskip != 0 {
             if frame_hdr.segmentation.temporal != 0 && {
-                let index = *ta.seg_pred.index(bx4 as usize) + t.l.seg_pred.get_mut()[by4 as usize];
+                let index = ta.seg_pred[bx4 as usize] + t.l.seg_pred[by4 as usize];
                 seg_pred = rav1d_msac_decode_bool_adapt(
                     &mut ts_c.msac,
                     &mut ts_c.cdf.mi.seg_pred[index as usize],
@@ -1460,7 +1470,7 @@ fn decode_b(
         && frame_hdr.skip_mode.enabled != 0
         && cmp::min(bw4, bh4) > 1
     {
-        let smctx = *ta.skip_mode.index(bx4 as usize) + t.l.skip_mode.get_mut()[by4 as usize];
+        let smctx = ta.skip_mode[bx4 as usize] + t.l.skip_mode[by4 as usize];
         b.skip_mode = rav1d_msac_decode_bool_adapt(
             &mut ts_c.msac,
             &mut ts_c.cdf.mi.skip_mode[smctx as usize],
@@ -1476,7 +1486,7 @@ fn decode_b(
     if b.skip_mode != 0 || seg.map(|seg| seg.skip != 0).unwrap_or(false) {
         b.skip = 1;
     } else {
-        let sctx = *ta.skip.index(bx4 as usize) + t.l.skip.get_mut()[by4 as usize];
+        let sctx = ta.skip[bx4 as usize] + t.l.skip[by4 as usize];
         b.skip =
             rav1d_msac_decode_bool_adapt(&mut ts_c.msac, &mut ts_c.cdf.m.skip[sctx as usize]) as u8;
         if debug_block_info!(f, t.b) {
@@ -1490,7 +1500,7 @@ fn decode_b(
         && frame_hdr.segmentation.seg_data.preskip == 0
     {
         if b.skip == 0 && frame_hdr.segmentation.temporal != 0 && {
-            let index = *ta.seg_pred.index(bx4 as usize) + t.l.seg_pred.get_mut()[by4 as usize];
+            let index = ta.seg_pred[bx4 as usize] + t.l.seg_pred[by4 as usize];
             seg_pred = rav1d_msac_decode_bool_adapt(
                 &mut ts_c.msac,
                 &mut ts_c.cdf.mi.seg_pred[index as usize],
@@ -1716,9 +1726,8 @@ fn decode_b(
         let ymode_cdf = if frame_hdr.frame_type.is_inter_or_switch() {
             &mut ts_c.cdf.mi.y_mode[dav1d_ymode_size_context[bs as usize] as usize]
         } else {
-            &mut ts_c.cdf.kfym
-                [dav1d_intra_mode_context[*ta.mode.index(bx4 as usize) as usize] as usize]
-                [dav1d_intra_mode_context[t.l.mode.get_mut()[by4 as usize] as usize] as usize]
+            &mut ts_c.cdf.kfym[dav1d_intra_mode_context[ta.mode[bx4 as usize] as usize] as usize]
+                [dav1d_intra_mode_context[t.l.mode[by4 as usize] as usize] as usize]
         };
         let y_mode = rav1d_msac_decode_symbol_adapt16(
             &mut ts_c.msac,
@@ -1809,8 +1818,8 @@ fn decode_b(
         if frame_hdr.allow_screen_content_tools && cmp::max(bw4, bh4) <= 16 && bw4 + bh4 >= 4 {
             let sz_ctx = b_dim[2] + b_dim[3] - 2;
             if y_mode == DC_PRED {
-                let pal_ctx = (*ta.pal_sz.index(bx4 as usize) > 0) as usize
-                    + (t.l.pal_sz.get_mut()[by4 as usize] > 0) as usize;
+                let pal_ctx = (ta.pal_sz[bx4 as usize] > 0) as usize
+                    + (t.l.pal_sz[by4 as usize] > 0) as usize;
                 let use_y_pal = rav1d_msac_decode_bool_adapt(
                     &mut ts_c.msac,
                     &mut ts_c.cdf.m.pal_y[sz_ctx as usize][pal_ctx],
@@ -1823,6 +1832,7 @@ fn decode_b(
                         t,
                         f,
                         ts_c,
+                        ta,
                         false,
                         sz_ctx,
                         bx4 as usize,
@@ -1842,7 +1852,8 @@ fn decode_b(
                 }
                 if use_uv_pal {
                     // see aomedia bug 2183 for why we use luma coordinates
-                    pal_sz[1] = (bd_fn.read_pal_uv)(t, f, ts_c, sz_ctx, bx4 as usize, by4 as usize);
+                    pal_sz[1] =
+                        (bd_fn.read_pal_uv)(t, f, ts_c, ta, sz_ctx, bx4 as usize, by4 as usize);
                 }
             }
         }
@@ -1985,9 +1996,9 @@ fn decode_b(
 
         // reconstruction
         if t.frame_thread.pass == 1 {
-            (bd_fn.read_coef_blocks)(f, t, ts_c, bs, b);
+            (bd_fn.read_coef_blocks)(f, t, ta, ts_c, bs, b);
         } else {
-            (bd_fn.recon_b_intra)(f, t, Some(ts_c), bs, intra_edge_flags, b, &intra);
+            (bd_fn.recon_b_intra)(f, t, ta, Some(ts_c), bs, intra_edge_flags, b, &intra);
         }
 
         if f.frame_hdr().loopfilter.level_y != [0, 0] {
@@ -2009,13 +2020,13 @@ fn decode_b(
                 tx,
                 b.uvtx,
                 f.cur.p.layout,
-                &mut ta.tx_lpf_y.index_mut((bx4 as usize.., ..bw4 as usize)),
+                &mut ta.tx_lpf_y[bx4 as usize..bx4 as usize + bw4 as usize],
                 // LEFT is `t.l`, this worker's own context: `&mut` obviates the
                 // tracker (see `case_set_al!`), so no guard, no registration.
-                &mut t.l.tx_lpf_y.get_mut()[by4 as usize..][..bh4 as usize],
+                &mut t.l.tx_lpf_y[by4 as usize..][..bh4 as usize],
                 if has_chroma {
-                    a_uv_guard = ta.tx_lpf_uv.index_mut((cbx4 as usize.., ..cbw4 as usize));
-                    l_uv_slice = &mut t.l.tx_lpf_uv.get_mut()[cby4 as usize..][..cbh4 as usize];
+                    a_uv_guard = &mut ta.tx_lpf_uv[cbx4 as usize..cbx4 as usize + cbw4 as usize];
+                    l_uv_slice = &mut t.l.tx_lpf_uv[cby4 as usize..][..cbh4 as usize];
                     Some((&mut a_uv_guard, l_uv_slice))
                 } else {
                     None
@@ -2210,7 +2221,7 @@ fn decode_b(
             max_ytx,
             tx_split0,
             tx_split1,
-        } = read_vartx_tree(t, f, ts_c, b, bs, bx4, by4);
+        } = read_vartx_tree(t, f, ts_c, ta, b, bs, bx4, by4);
 
         let filter2d = if t.frame_thread.pass == 1 {
             Filter2d::Bilinear
@@ -2240,9 +2251,9 @@ fn decode_b(
 
         // reconstruction
         if t.frame_thread.pass == 1 {
-            (bd_fn.read_coef_blocks)(f, t, ts_c, bs, b);
+            (bd_fn.read_coef_blocks)(f, t, ta, ts_c, bs, b);
         } else {
-            (bd_fn.recon_b_inter)(f, t, Some(ts_c), bs, b, &inter)?;
+            (bd_fn.recon_b_inter)(f, t, ta, Some(ts_c), bs, b, &inter)?;
         }
 
         splat_intrabc_mv(c, t, &f.rf, bs, r#ref, bw4 as usize, bh4 as usize);
@@ -2610,16 +2621,16 @@ fn decode_b(
                         CompInterType::WeightedAvg
                     };
                     if debug_block_info!(f, t.b) {
-                        let a = ta;
+                        let a = &*ta;
                         let l = &t.l;
                         println!(
                             "Post-jnt_comp[{},ctx={}[ac:{:?},ar:{},lc:{:?},lr:{}]]: r={}",
                             comp_type == CompInterType::Avg,
                             jnt_ctx,
-                            *a.comp_type.index(bx4 as usize),
-                            *a.r#ref[0].index(bx4 as usize),
-                            *l.comp_type.index(by4 as usize),
-                            *l.r#ref[0].index(by4 as usize),
+                            a.comp_type[bx4 as usize],
+                            a.r#ref[0][bx4 as usize],
+                            l.comp_type[by4 as usize],
+                            l.r#ref[0][by4 as usize],
                             ts_c.msac.rng,
                         );
                     }
@@ -2945,8 +2956,8 @@ fn decode_b(
                     && frame_hdr.gmv[r#ref[0] as usize].r#type > Rav1dWarpedMotionType::Translation)
                 // has overlappable neighbours
                 && (have_left
-                    && findoddzero(&t.l.intra.get_mut()[by4 as usize..(by4 + h4) as usize])
-                    || have_top && findoddzero(&ta.intra.index(bx4 as usize..(bx4 + w4) as usize)))
+                    && findoddzero(&t.l.intra[by4 as usize..(by4 + h4) as usize])
+                    || have_top && findoddzero(&ta.intra[bx4 as usize..(bx4 + w4) as usize]))
             {
                 // reaching here means the block allows obmc - check warp by
                 // finding matching-ref blocks in top/left edges
@@ -3111,7 +3122,7 @@ fn decode_b(
             max_ytx,
             tx_split0,
             tx_split1,
-        } = read_vartx_tree(t, f, ts_c, b, bs, bx4, by4);
+        } = read_vartx_tree(t, f, ts_c, ta, b, bs, bx4, by4);
 
         b.uvtx = uvtx;
         let inter = Av1BlockInter {
@@ -3131,9 +3142,9 @@ fn decode_b(
 
         // reconstruction
         if t.frame_thread.pass == 1 {
-            (bd_fn.read_coef_blocks)(f, t, ts_c, bs, b);
+            (bd_fn.read_coef_blocks)(f, t, ta, ts_c, bs, b);
         } else {
-            (bd_fn.recon_b_inter)(f, t, Some(ts_c), bs, b, &inter)?;
+            (bd_fn.recon_b_inter)(f, t, ta, Some(ts_c), bs, b, &inter)?;
         }
 
         let frame_hdr = f.frame_hdr();
@@ -3151,7 +3162,7 @@ fn decode_b(
                 TileStateRef::Frame => &f.lf.lvl,
                 TileStateRef::Local => &*ts.lflvlmem.try_read().unwrap(),
             };
-            let mut a_uv_guard;
+            let a_uv_guard;
             let l_uv_slice;
             rav1d_create_lf_mask_inter(
                 &f.lf.mask[t.lf_mask.unwrap()],
@@ -3174,13 +3185,13 @@ fn decode_b(
                 &tx_split,
                 uvtx,
                 f.cur.p.layout,
-                &mut ta.tx_lpf_y.index_mut((bx4 as usize.., ..bw4 as usize)),
+                &mut ta.tx_lpf_y[bx4 as usize..bx4 as usize + bw4 as usize],
                 // LEFT is `t.l`, this worker's own context: `&mut` obviates the
                 // tracker (see `case_set_al!`), so no guard, no registration.
-                &mut t.l.tx_lpf_y.get_mut()[by4 as usize..][..bh4 as usize],
+                &mut t.l.tx_lpf_y[by4 as usize..][..bh4 as usize],
                 if has_chroma {
-                    a_uv_guard = ta.tx_lpf_uv.index_mut((cbx4 as usize.., ..cbw4 as usize));
-                    l_uv_slice = &mut t.l.tx_lpf_uv.get_mut()[cby4 as usize..][..cbh4 as usize];
+                    a_uv_guard = &mut ta.tx_lpf_uv[cbx4 as usize..cbx4 as usize + cbw4 as usize];
+                    l_uv_slice = &mut t.l.tx_lpf_uv[cby4 as usize..][..cbh4 as usize];
                     Some((&mut *a_uv_guard, l_uv_slice))
                 } else {
                     None
@@ -3548,9 +3559,10 @@ fn decode_sb(
             }
             bx8 = (t.b.x & 31) >> 1;
             by8 = (t.b.y & 31) >> 1;
-            // `&f.a[t.a]` reads `t.a`, so the ABOVE context is bound before the
-            // LEFT one is taken mutably.
-            let ta = &f.a[t.a];
+            // `f.a` is bound for `t.a`, so the ABOVE context borrow precedes
+            // the LEFT one's mutable borrow.
+            let ta_guard = f.a.index(t.a as usize..t.a as usize + 1);
+            let ta = &ta_guard[0];
             Some((get_partition_ctx(ta, &mut t.l, bl, by8, bx8), &mut **ts_c))
         }
         FrameThreadPassState::Second => None,
@@ -3849,10 +3861,11 @@ fn decode_sb(
     if matches!(pass, FrameThreadPassState::First(_))
         && (bp != BlockPartition::Split || bl == BlockLevel::Bl8x8)
     {
+        let mut ta_guard = f.a.index_mut(t.a as usize..t.a as usize + 1);
         case_set_al! {
             <16, false>
             l: (&mut t.l, hsz as usize, by8 as usize),
-            a: (&f.a[t.a], hsz as usize, bx8 as usize),
+            a: (&mut ta_guard[0], hsz as usize, bx8 as usize),
             partition = (
                 dav1d_al_part_ctx[1][bl as usize][bp as usize],
                 dav1d_al_part_ctx[0][bl as usize][bp as usize]
@@ -3864,41 +3877,39 @@ fn decode_sb(
 }
 
 fn reset_context(ctx: &mut BlockContext, keyframe: bool, pass: c_int) {
-    ctx.intra.get_mut().fill(keyframe.into());
-    ctx.uvmode.get_mut().fill(DC_PRED);
+    ctx.intra.fill(keyframe.into());
+    ctx.uvmode.fill(DC_PRED);
     if keyframe {
-        ctx.mode.get_mut().fill(DC_PRED);
+        ctx.mode.fill(DC_PRED);
     }
 
     if pass == 2 {
         return;
     }
 
-    ctx.partition.get_mut().fill(0);
-    ctx.skip.get_mut().fill(0);
-    ctx.skip_mode.get_mut().fill(0);
-    ctx.tx_lpf_y.get_mut().fill(2);
-    ctx.tx_lpf_uv.get_mut().fill(1);
-    ctx.tx_intra.get_mut().fill(-1);
-    ctx.tx.get_mut().fill(TxfmSize::S64x64.into());
+    ctx.partition.fill(0);
+    ctx.skip.fill(0);
+    ctx.skip_mode.fill(0);
+    ctx.tx_lpf_y.fill(2);
+    ctx.tx_lpf_uv.fill(1);
+    ctx.tx_intra.fill(-1);
+    ctx.tx.fill(TxfmSize::S64x64.into());
     if !keyframe {
         for r#ref in &mut ctx.r#ref {
-            r#ref.get_mut().fill(-1);
+            r#ref.fill(-1);
         }
-        ctx.comp_type.get_mut().fill(CompTypeByte::default());
-        ctx.mode.get_mut().fill(NEARESTMV);
+        ctx.comp_type.fill(CompTypeByte::default());
+        ctx.mode.fill(NEARESTMV);
     }
-    ctx.lcoef.get_mut().fill(0x40);
+    ctx.lcoef.fill(0x40);
     for ccoef in &mut ctx.ccoef {
-        ccoef.get_mut().fill(0x40);
+        ccoef.fill(0x40);
     }
     for filter in &mut ctx.filter {
-        filter
-            .get_mut()
-            .fill(Rav1dFilterMode::N_SWITCHABLE_FILTERS.into());
+        filter.fill(Rav1dFilterMode::N_SWITCHABLE_FILTERS.into());
     }
-    ctx.seg_pred.get_mut().fill(0);
-    ctx.pal_sz.get_mut().fill(0);
+    ctx.seg_pred.fill(0);
+    ctx.pal_sz.fill(0);
 }
 
 impl DefaultValue for [u8; 2] {
@@ -4384,7 +4395,7 @@ pub(crate) fn rav1d_decode_tile_sbrow(
     let start_lpf_y = (t.b.y & 16) as usize;
     f.lf.tx_lpf_right_edge.copy_from_slice_y(
         start_y..start_y + len_y,
-        &t.l.tx_lpf_y.get_mut()[start_lpf_y..start_lpf_y + len_y],
+        &t.l.tx_lpf_y[start_lpf_y..start_lpf_y + len_y],
     );
     let ss_ver = (f.cur.p.layout == Rav1dPixelLayout::I420) as c_int;
     align_h >>= ss_ver;
@@ -4393,7 +4404,7 @@ pub(crate) fn rav1d_decode_tile_sbrow(
     let lpf_uv_start = ((t.b.y & 16) >> ss_ver) as usize;
     f.lf.tx_lpf_right_edge.copy_from_slice_uv(
         start_uv..start_uv + len_uv,
-        &t.l.tx_lpf_uv.get_mut()[lpf_uv_start..lpf_uv_start + len_uv],
+        &t.l.tx_lpf_uv[lpf_uv_start..lpf_uv_start + len_uv],
     );
 
     // error out on symbol decoder overread
@@ -4446,8 +4457,7 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
     let a_sz = f.sb128w
         * frame_hdr.tiling.rows as c_int
         * (1 + (c.fc.len() > 1 && c.tc.len() > 1) as c_int);
-    f.a.try_resize_with(a_sz as usize, Default::default)
-        .map_err(|_| ENOMEM)?;
+    f.a.resize(a_sz as usize, Default::default());
 
     let num_sb128 = f.sb128w * f.sb128h;
     let size_mul = &ss_size_mul[f.cur.p.layout];
@@ -4849,7 +4859,7 @@ pub(crate) fn rav1d_decode_frame_init_cdf(
     }
 
     if c.tc.len() > 1 {
-        for (n, ctx) in f.a[..sb128w * rows * (1 + uses_2pass as usize)]
+        for (n, ctx) in f.a.get_mut()[..sb128w * rows * (1 + uses_2pass as usize)]
             .iter_mut()
             .enumerate()
         {
@@ -4878,7 +4888,7 @@ fn rav1d_decode_frame_main(c: &Rav1dContext, f: &mut Rav1dFrameData) -> Rav1dRes
 
     let frame_hdr = &***f.frame_hdr.as_ref().ok_or(EINVAL)?;
 
-    for ctx in &mut f.a[..f.sb128w as usize * frame_hdr.tiling.rows as usize] {
+    for ctx in &mut f.a.get_mut()[..f.sb128w as usize * frame_hdr.tiling.rows as usize] {
         reset_context(ctx, frame_hdr.frame_type.is_key_or_intra(), 0);
     }
 
