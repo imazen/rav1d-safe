@@ -78,13 +78,25 @@ use crate::src::lf_apply::rav1d_loopfilter_sbrow_cols;
 use crate::src::lf_apply::rav1d_loopfilter_sbrow_rows;
 use crate::src::lr_apply::rav1d_lr_sbrow;
 use crate::src::msac::MsacContext;
-use crate::src::msac::rav1d_msac_decode_bool_adapt;
+#[cfg(target_arch = "x86_64")]
+use crate::src::msac::{
+    msac_adapt16_v1, msac_adapt16_v3, msac_adapt4_v1, msac_adapt4_v3, msac_adapt8_v1,
+    msac_adapt8_v3, msac_bool_adapt_v1, msac_bool_adapt_v3, msac_hi_tok_v1, msac_hi_tok_v3,
+};
+#[cfg(all(target_arch = "x86_64", not(asm_msac)))]
+use crate::src::msac::{msac_update_cdf_v1, msac_update_cdf_v3};
+use crate::src::msac::{
+    msac_adapt16_scalar, msac_adapt4_scalar, msac_adapt8_scalar, msac_bool_adapt_scalar,
+    msac_hi_tok_scalar,
+};
+#[cfg(not(asm_msac))]
+use crate::src::msac::msac_update_cdf_scalar;
+#[cfg(not(asm_msac))]
+use crate::src::msac::{ctx_norm, EcWin, EC_MIN_PROB, EC_PROB_SHIFT, EC_WIN_SIZE};
+use cfg_if::cfg_if;
 use crate::src::msac::rav1d_msac_decode_bool_equi;
 use crate::src::msac::rav1d_msac_decode_bools;
-use crate::src::msac::rav1d_msac_decode_hi_tok;
-use crate::src::msac::rav1d_msac_decode_symbol_adapt4;
 use crate::src::msac::rav1d_msac_decode_symbol_adapt8;
-use crate::src::msac::rav1d_msac_decode_symbol_adapt16;
 use crate::src::picture::Rav1dThreadPicture;
 #[cfg(feature = "asm")]
 use crate::src::pixels::Pixels as _;
@@ -570,10 +582,10 @@ impl<'a, BD: BitDepth> CfSlice<'a, BD> {
 }
 
 /// `#[autoversion]` — the dispatcher summons the best token once per call
-/// and the `_v3`/`_scalar` variants are compiled in matching feature
+/// and the `_v3`/`_v1`/`_scalar` variants are compiled in matching feature
 /// contexts, so `incant!` calls inside thread the held token instead of
 /// re-summoning per callee.
-#[archmage::autoversion(v3, scalar)]
+#[archmage::autoversion(v3, v1, scalar)]
 fn decode_coefs<BD: BitDepth>(
     f: &Rav1dFrameData,
     ts: usize,
@@ -613,9 +625,11 @@ fn decode_coefs<BD: BitDepth>(
 
     // does this block have any non-zero coefficients
     let sctx = get_skip_ctx(t_dim, bs, a, l, chroma, f.cur.p.layout);
-    let all_skip = rav1d_msac_decode_bool_adapt(
-        &mut ts_c.msac,
-        &mut ts_c.cdf.coef.skip[t_dim.ctx as usize][sctx.get() as usize],
+    let all_skip = incant!(
+        msac_bool_adapt(
+            &mut ts_c.msac,
+            &mut ts_c.cdf.coef.skip[t_dim.ctx as usize][sctx.get() as usize]
+        ) without token
     );
     if unlikely(dbg) {
         println!(
@@ -653,17 +667,21 @@ fn decode_coefs<BD: BitDepth>(
             };
             let idx;
             let txtp = if frame_hdr.reduced_txtp_set != 0 || t_dim.min == TxfmSize::S16x16 as _ {
-                idx = rav1d_msac_decode_symbol_adapt8(
-                    &mut ts_c.msac,
-                    &mut ts_c.cdf.m.txtp_intra2[t_dim.min as usize][y_mode_nofilt as usize],
-                    4,
+                idx = incant!(
+                    msac_adapt8(
+                        &mut ts_c.msac,
+                        &mut ts_c.cdf.m.txtp_intra2[t_dim.min as usize][y_mode_nofilt as usize],
+                        4
+                    ) without token
                 );
                 dav1d_tx_types_per_set[idx as usize + 0]
             } else {
-                idx = rav1d_msac_decode_symbol_adapt8(
-                    &mut ts_c.msac,
-                    &mut ts_c.cdf.m.txtp_intra1[t_dim.min as usize][y_mode_nofilt as usize],
-                    6,
+                idx = incant!(
+                    msac_adapt8(
+                        &mut ts_c.msac,
+                        &mut ts_c.cdf.m.txtp_intra1[t_dim.min as usize][y_mode_nofilt as usize],
+                        6
+                    ) without token
                 );
                 dav1d_tx_types_per_set[idx as usize + 5]
             };
@@ -678,24 +696,26 @@ fn decode_coefs<BD: BitDepth>(
         Inter(_) => {
             let idx;
             let txtp = if frame_hdr.reduced_txtp_set != 0 || t_dim.max == TxfmSize::S32x32 as _ {
-                let bool_idx = rav1d_msac_decode_bool_adapt(
-                    &mut ts_c.msac,
-                    &mut ts_c.cdf.m.txtp_inter3[t_dim.min as usize],
+                let bool_idx = incant!(
+                    msac_bool_adapt(
+                        &mut ts_c.msac,
+                        &mut ts_c.cdf.m.txtp_inter3[t_dim.min as usize]
+                    ) without token
                 );
                 idx = bool_idx as u8;
                 if bool_idx { DCT_DCT } else { IDTX }
             } else if t_dim.min == TxfmSize::S16x16 as _ {
-                idx = rav1d_msac_decode_symbol_adapt16(
-                    &mut ts_c.msac,
-                    &mut *ts_c.cdf.m.txtp_inter2,
-                    11,
+                idx = incant!(
+                    msac_adapt16(&mut ts_c.msac, &mut *ts_c.cdf.m.txtp_inter2, 11) without token
                 );
                 dav1d_tx_types_per_set[idx as usize + 12]
             } else {
-                idx = rav1d_msac_decode_symbol_adapt16(
-                    &mut ts_c.msac,
-                    &mut ts_c.cdf.m.txtp_inter1[t_dim.min as usize],
-                    15,
+                idx = incant!(
+                    msac_adapt16(
+                        &mut ts_c.msac,
+                        &mut ts_c.cdf.m.txtp_inter1[t_dim.min as usize],
+                        15
+                    ) without token
                 );
                 dav1d_tx_types_per_set[idx as usize + 24]
             };
@@ -718,31 +738,31 @@ fn decode_coefs<BD: BitDepth>(
     let eob_bin = match tx2dszctx {
         0 => {
             let eob_bin_cdf = &mut ts_c.cdf.coef.eob_bin_16[chroma][is_1d];
-            rav1d_msac_decode_symbol_adapt8(&mut ts_c.msac, eob_bin_cdf, 4 + 0)
+            incant!(msac_adapt8(&mut ts_c.msac, eob_bin_cdf, 4 + 0) without token)
         }
         1 => {
             let eob_bin_cdf = &mut ts_c.cdf.coef.eob_bin_32[chroma][is_1d];
-            rav1d_msac_decode_symbol_adapt8(&mut ts_c.msac, eob_bin_cdf, 4 + 1)
+            incant!(msac_adapt8(&mut ts_c.msac, eob_bin_cdf, 4 + 1) without token)
         }
         2 => {
             let eob_bin_cdf = &mut ts_c.cdf.coef.eob_bin_64[chroma][is_1d];
-            rav1d_msac_decode_symbol_adapt8(&mut ts_c.msac, eob_bin_cdf, 4 + 2)
+            incant!(msac_adapt8(&mut ts_c.msac, eob_bin_cdf, 4 + 2) without token)
         }
         3 => {
             let eob_bin_cdf = &mut ts_c.cdf.coef.eob_bin_128[chroma][is_1d];
-            rav1d_msac_decode_symbol_adapt8(&mut ts_c.msac, eob_bin_cdf, 4 + 3)
+            incant!(msac_adapt8(&mut ts_c.msac, eob_bin_cdf, 4 + 3) without token)
         }
         4 => {
             let eob_bin_cdf = &mut ts_c.cdf.coef.eob_bin_256[chroma][is_1d];
-            rav1d_msac_decode_symbol_adapt16(&mut ts_c.msac, eob_bin_cdf, 4 + 4)
+            incant!(msac_adapt16(&mut ts_c.msac, eob_bin_cdf, 4 + 4) without token)
         }
         5 => {
             let eob_bin_cdf = &mut ts_c.cdf.coef.eob_bin_512[chroma];
-            rav1d_msac_decode_symbol_adapt16(&mut ts_c.msac, eob_bin_cdf, 4 + 5)
+            incant!(msac_adapt16(&mut ts_c.msac, eob_bin_cdf, 4 + 5) without token)
         }
         6 => {
             let eob_bin_cdf = &mut ts_c.cdf.coef.eob_bin_1024[chroma];
-            rav1d_msac_decode_symbol_adapt16(&mut ts_c.msac, eob_bin_cdf, 4 + 6)
+            incant!(msac_adapt16(&mut ts_c.msac, eob_bin_cdf, 4 + 6) without token)
         }
         // `tx2dszctx` is `cmp::min(_, 3) + cmp::min(_, 3)`, where `TX_32X32 as u8 == 3`,
         // and we cover `0..=6`.  `rustc` should eliminate this.
@@ -761,7 +781,7 @@ fn decode_coefs<BD: BitDepth>(
     let eob = if eob_bin > 1 {
         let eob_hi_bit_cdf =
             &mut ts_c.cdf.coef.eob_hi_bit[t_dim.ctx as usize][chroma][eob_bin as usize];
-        let eob_hi_bit = rav1d_msac_decode_bool_adapt(&mut ts_c.msac, eob_hi_bit_cdf) as u16;
+        let eob_hi_bit = incant!(msac_bool_adapt(&mut ts_c.msac, eob_hi_bit_cdf) without token) as u16;
         if unlikely(dbg) {
             println!(
                 "Post-eob_hi_bit[{}][{}][{}][{}]: r={}",
@@ -804,19 +824,19 @@ fn decode_coefs<BD: BitDepth>(
                 decode_coefs_class::<{ TxClass::TwoD as _ }, BD>(
                     Token, ts_c, t_dim, chroma, scratch, eob, tx, dbg, cf,
                 ),
-                [v3, scalar]
+                [v3, v1, scalar]
             ),
             TxClass::H => incant!(
                 decode_coefs_class::<{ TxClass::H as _ }, BD>(
                     Token, ts_c, t_dim, chroma, scratch, eob, tx, dbg, cf,
                 ),
-                [v3, scalar]
+                [v3, v1, scalar]
             ),
             TxClass::V => incant!(
                 decode_coefs_class::<{ TxClass::V as _ }, BD>(
                     Token, ts_c, t_dim, chroma, scratch, eob, tx, dbg, cf,
                 ),
-                [v3, scalar]
+                [v3, v1, scalar]
             ),
         };
     } else {
@@ -824,7 +844,7 @@ fn decode_coefs<BD: BitDepth>(
         let hi_cdf = &mut ts_c.cdf.coef.br_tok[cmp::min(t_dim.ctx, 3) as usize][chroma];
 
         // dc-only
-        let tok_br = rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut eob_cdf[0], 2) as c_uint;
+        let tok_br = incant!(msac_adapt4(&mut ts_c.msac, &mut eob_cdf[0], 2) without token) as c_uint;
         dc_tok = 1 + tok_br;
         if unlikely(dbg) {
             println!(
@@ -833,7 +853,7 @@ fn decode_coefs<BD: BitDepth>(
             );
         }
         if tok_br == 2 {
-            dc_tok = rav1d_msac_decode_hi_tok(&mut ts_c.msac, &mut hi_cdf[0]) as c_uint;
+            dc_tok = incant!(msac_hi_tok(&mut ts_c.msac, &mut hi_cdf[0]) without token) as c_uint;
             if unlikely(dbg) {
                 println!(
                     "Post-dc_hi_tok[{}][{}][0][{}]: r={}",
@@ -883,7 +903,7 @@ fn decode_coefs<BD: BitDepth>(
     } else {
         dc_sign_ctx = get_dc_sign_ctx(tx, a, l) as c_int;
         let dc_sign_cdf = &mut ts_c.cdf.coef.dc_sign[chroma][dc_sign_ctx as usize];
-        dc_sign = rav1d_msac_decode_bool_adapt(&mut ts_c.msac, dc_sign_cdf) as c_int;
+        dc_sign = incant!(msac_bool_adapt(&mut ts_c.msac, dc_sign_cdf) without token) as c_int;
         if unlikely(dbg) {
             println!(
                 "Post-dc_sign[{}][{}][{}]: r={}",
@@ -1048,11 +1068,12 @@ fn decode_coefs<BD: BitDepth>(
     eob as i32
 }
 
-/// `#[magetypes(v3, scalar)]` — stamps `decode_coefs_class_v3`/`_scalar`
-/// directly; no dispatcher. `incant!` inside `decode_coefs`'s variants calls
-/// the matching tier variant with `from_context()` — the token is threaded,
-/// not re-summoned. `Token` is the placeholder replaced per variant.
-#[archmage::magetypes(v3, scalar)]
+/// `#[magetypes(v3, v1, scalar)]` — stamps `decode_coefs_class_v3`/`_v1`/
+/// `_scalar` directly; no dispatcher. `incant!` inside `decode_coefs`'s
+/// variants calls the matching tier variant with `from_context()` — the
+/// token is threaded, not re-summoned. `Token` is the placeholder replaced
+/// per variant.
+#[archmage::magetypes(v3, v1, scalar)]
 fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
     _token: Token,
     ts_c: &mut Rav1dTileStateContext,
@@ -1071,6 +1092,93 @@ fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
 
     let lo_cdf = &mut ts_c.cdf.coef.base_tok[t_dim.ctx as usize][chroma];
     let levels = scratch.inter_intra_mut().levels_pal.levels_mut();
+
+    // The per-coefficient MSAC leaves as local closures instead of the
+    // generated `msac_*_v3` variants: once `#[target_feature]` arcane inners
+    // are this hot LLVM keeps them out-of-line (and `inline(always)` on
+    // `#[target_feature]` fns needs nightly `target_feature_inline_always`),
+    // so every coefficient paid a call boundary. Closures carry no
+    // target-feature boundary and inline like the old plain fns did — while
+    // `incant!` inside still specializes per tier (`msac_update_cdf_v3` is
+    // called directly in the `_v3` variant, no summon).
+    let adapt4 = |s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8| -> u8 {
+        debug_assert!(n_symbols > 0 && n_symbols < 4);
+        let ret;
+        cfg_if! {
+            if #[cfg(asm_msac)] {
+                ret = incant!(msac_adapt4(s, cdf, n_symbols) without token);
+            } else {
+                let c = (s.dif >> (EC_WIN_SIZE - 16)) as c_uint;
+                let r = s.rng >> 8;
+                let n = n_symbols as c_uint;
+
+                let v0 = (r * ((cdf[0] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT))
+                    + EC_MIN_PROB * n;
+                let v1 = if n > 1 {
+                    (r * ((cdf[1] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT))
+                        + EC_MIN_PROB * (n - 1)
+                } else {
+                    0
+                };
+                let v2 = if n > 2 {
+                    (r * ((cdf[2] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT))
+                        + EC_MIN_PROB * (n - 2)
+                } else {
+                    0
+                };
+
+                let val = (c < v0) as u32 + (c < v1) as u32 + (c < v2) as u32;
+                debug_assert!(val <= n);
+
+                let v_arr = [v0, v1, v2, 0];
+                let u = if val == 0 { s.rng } else { v_arr[val as usize - 1] };
+                let v_val = v_arr[val as usize];
+
+                ctx_norm(
+                    s,
+                    s.dif.wrapping_sub((v_val as EcWin) << (EC_WIN_SIZE - 16)),
+                    u - v_val,
+                );
+
+                if likely(s.allow_update_cdf()) {
+                    let n_usize = n_symbols as usize;
+                    let count = cdf[n_usize];
+                    let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
+                    incant!(
+                        msac_update_cdf(cdf, n_usize, val as usize, rate, count) without token
+                    );
+                }
+                ret = val;
+            }
+        }
+        debug_assert!(ret < 4);
+        ret as u8 % 4
+    };
+    let hi_tok = |s: &mut MsacContext, cdf: &mut [u16; 4]| -> u8 {
+        let ret;
+        cfg_if! {
+            if #[cfg(asm_msac)] {
+                ret = incant!(msac_hi_tok(s, cdf) without token);
+            } else {
+                let mut tok_br = adapt4(s, cdf, 3);
+                let mut tok = 3 + tok_br;
+                if unlikely(tok_br == 3) {
+                    tok_br = adapt4(s, cdf, 3);
+                    tok = 6 + tok_br;
+                    if unlikely(tok_br == 3) {
+                        tok_br = adapt4(s, cdf, 3);
+                        tok = 9 + tok_br;
+                        if unlikely(tok_br == 3) {
+                            tok = 12 + adapt4(s, cdf, 3);
+                        }
+                    }
+                }
+                ret = tok;
+            }
+        }
+        debug_assert!(ret < 16);
+        ret % 16
+    };
     // dav1d 5ef6b241 (1.5.0) "decode_coefs: Optimize index offset calculations":
     // cache the capped log2 sizes and reuse `tx2dszctx` as a shift instead of
     // recomputing `sw * sh` multiplies. `sw == 1 << slw`, `sh == 1 << slh`, so
@@ -1083,7 +1191,7 @@ fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
 
     // eob
     let mut ctx = 1 + (eob > (2u16 << tx2dszctx)) as u8 + (eob > (4u16 << tx2dszctx)) as u8;
-    let eob_tok = rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut eob_cdf[ctx as usize], 2);
+    let eob_tok = adapt4(&mut ts_c.msac, &mut eob_cdf[ctx as usize], 2);
     let mut tok = eob_tok + 1;
     let mut level_tok = tok * 0x41;
     let mut mag = 0;
@@ -1177,7 +1285,7 @@ fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
         } else {
             7
         };
-        tok = rav1d_msac_decode_hi_tok(&mut ts_c.msac, &mut hi_cdf[ctx as usize]);
+        tok = hi_tok(&mut ts_c.msac, &mut hi_cdf[ctx as usize]);
         level_tok = tok + (3 << 6);
         if unlikely(dbg) {
             println!(
@@ -1236,7 +1344,7 @@ fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
         if tx_class == TxClass::TwoD {
             y |= x;
         }
-        tok = rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut lo_cdf[ctx as usize], 3);
+        tok = adapt4(&mut ts_c.msac, &mut lo_cdf[ctx as usize], 3);
         if unlikely(dbg) {
             println!(
                 "Post-lo_tok[{}][{}][{}][{}={}={}]: r={}",
@@ -1250,7 +1358,7 @@ fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
             } else {
                 7
             } + if mag > 12 { 6 } else { (mag + 1) >> 1 };
-            tok = rav1d_msac_decode_hi_tok(&mut ts_c.msac, &mut hi_cdf[ctx as usize]);
+            tok = hi_tok(&mut ts_c.msac, &mut hi_cdf[ctx as usize]);
             if unlikely(dbg) {
                 println!(
                     "Post-hi_tok[{}][{}][{}][{}={}={}]: r={}",
@@ -1295,7 +1403,7 @@ fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
         get_lo_ctx(levels, tx_class, &mut mag, lo_ctx_offsets, 0, 0, stride)
     };
     let mut dc_tok =
-        rav1d_msac_decode_symbol_adapt4(&mut ts_c.msac, &mut lo_cdf[ctx as usize], 3) as c_uint;
+        adapt4(&mut ts_c.msac, &mut lo_cdf[ctx as usize], 3) as c_uint;
     if unlikely(dbg) {
         println!(
             "Post-dc_lo_tok[{}][{}][{}][{}]: r={}",
@@ -1310,7 +1418,7 @@ fn decode_coefs_class<const TX_CLASS: usize, BD: BitDepth>(
         }
         let mag = mag as u8 & 63;
         ctx = if mag > 12 { 6 } else { (mag + 1) >> 1 };
-        dc_tok = rav1d_msac_decode_hi_tok(&mut ts_c.msac, &mut hi_cdf[ctx as usize]) as c_uint;
+        dc_tok = hi_tok(&mut ts_c.msac, &mut hi_cdf[ctx as usize]) as c_uint;
         if unlikely(dbg) {
             println!(
                 "Post-dc_hi_tok[{}][{}][0][{}]: r={}",

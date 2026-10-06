@@ -187,6 +187,18 @@ bench-asm:
 bench-partial-asm:
     cargo bench --bench decode --no-default-features --features "bitdepth_8,bitdepth_16,partial_asm"
 
+# PGO pipeline: instrumented build -> train on 8/10/12-bit vectors + 4K AVIF ->
+# merged profile -> -Cprofile-use build -> interleaved A/B. Nothing is
+# committed: artifacts land in target/pgo-{instr,use,data}/. Needs the dav1d
+# test vectors (just download-vectors); llvm-profdata is resolved from PATH
+# or the active rustup toolchain.
+pgo:
+    bash scripts/perf/bench_pgo.sh
+
+# Same, with -Ctarget-cpu=native on both instrumented and use builds
+pgo-native:
+    bash scripts/perf/bench_pgo.sh --native
+
 # Run panic safety tests specifically
 test-panic:
     cargo nextest run --no-default-features --features "bitdepth_8,bitdepth_16" --test panic_safety_test --release

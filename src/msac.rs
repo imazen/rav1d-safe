@@ -1,5 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
+#[cfg(all(not(asm_msac), target_arch = "x86_64"))]
+use archmage::incant;
 use crate::include::common::attributes::clz;
 use crate::include::common::intops::inv_recenter;
 use crate::include::common::intops::ulog2;
@@ -262,7 +264,7 @@ impl Default for MsacAsmContext {
 }
 
 impl MsacAsmContext {
-    fn allow_update_cdf(&self) -> bool {
+    pub(crate) fn allow_update_cdf(&self) -> bool {
         self.allow_update_cdf != 0
     }
 }
@@ -346,11 +348,11 @@ pub fn rav1d_msac_decode_uniform(s: &mut MsacContext, n: c_uint) -> c_int {
     }) as c_int
 }
 
-const EC_PROB_SHIFT: c_uint = 6;
-const EC_MIN_PROB: c_uint = 4;
+pub(crate) const EC_PROB_SHIFT: c_uint = 6;
+pub(crate) const EC_MIN_PROB: c_uint = 4;
 const _: () = assert!(EC_MIN_PROB <= (1 << EC_PROB_SHIFT) / 16);
 
-const EC_WIN_SIZE: usize = mem::size_of::<EcWin>() << 3;
+pub(crate) const EC_WIN_SIZE: usize = mem::size_of::<EcWin>() << 3;
 
 /// Branchless CDF update after symbol decode.
 ///
@@ -358,13 +360,27 @@ const EC_WIN_SIZE: usize = mem::size_of::<EcWin>() << 3;
 /// For i >= val: cdf[i] -= cdf[i] >> rate (probability decreases)
 ///
 /// Uses mask-select to avoid branches on the val boundary.
-#[inline(always)]
-fn update_cdf(cdf: &mut [u16], n: usize, val: usize, rate: u16, count: u16) {
+///
+/// Tier-specialized leaf of [`update_cdf`]: `#[rite]` stamps tokenless
+/// `msac_update_cdf_v3`/`_v1`/`_scalar`. `incant!` in a tokenless rite body
+/// resolves the callee tier statically (`update_cdf3_v1` with a free
+/// `X64V1Token::from_context()` under v3/v1, `update_cdf3_default` under
+/// scalar) — no summon anywhere. Callers must be inside tier-macro bodies and
+/// use `incant!(msac_update_cdf(..) without token)`; plain callers keep the
+/// dispatching [`update_cdf`] wrapper.
+#[cfg_attr(asm_msac, allow(dead_code))]
+#[archmage::rite(v3, v1, scalar)]
+pub(crate) fn msac_update_cdf(
+    cdf: &mut [u16],
+    n: usize,
+    val: usize,
+    rate: u16,
+    count: u16,
+) {
     #[cfg(all(not(asm_msac), target_arch = "x86_64"))]
     if n == 3 && rate < 16 {
-        return archmage::incant!(
+        return incant!(
             update_cdf3(
-                Token,
                 (&mut cdf[..4]).try_into().unwrap(),
                 val.min(3),
                 rate,
@@ -378,6 +394,35 @@ fn update_cdf(cdf: &mut [u16], n: usize, val: usize, rate: u16, count: u16) {
         let delta_up = (32768u16.wrapping_sub(cdf[i])) >> rate;
         let delta_dn = cdf[i] >> rate;
         // Apply increase (delta_up) if below val, decrease (delta_dn) if at/above val
+        cdf[i] = cdf[i]
+            .wrapping_add(delta_up & mask)
+            .wrapping_sub(delta_dn & !mask);
+    }
+    cdf[n] = count + (count < 32) as u16;
+}
+
+/// Plain-caller form: standalone `incant!` retains the runtime v1 summon —
+/// identical to the pre-specialization body for non-tiered callers. Tier-macro
+/// callers reach `msac_update_cdf` variants via `without token` instead.
+#[inline(always)]
+fn update_cdf(cdf: &mut [u16], n: usize, val: usize, rate: u16, count: u16) {
+    #[cfg(all(not(asm_msac), target_arch = "x86_64"))]
+    if n == 3 && rate < 16 {
+        return incant!(
+            update_cdf3(
+                Token,
+                (&mut cdf[..4]).try_into().unwrap(),
+                val.min(3),
+                rate,
+                count
+            ),
+            [v1, default]
+        );
+    }
+    for i in 0..n {
+        let mask = ((i < val) as u16).wrapping_neg();
+        let delta_up = (32768u16.wrapping_sub(cdf[i])) >> rate;
+        let delta_dn = cdf[i] >> rate;
         cdf[i] = cdf[i]
             .wrapping_add(delta_up & mask)
             .wrapping_sub(delta_dn & !mask);
@@ -454,7 +499,10 @@ fn ctx_refill(s: &mut MsacContext) {
         // decoder (called for every `cnt < 0` refill, ~1-3 times per coefficient
         // group). The per-byte loop below is kept as the tail (when buf has
         // fewer than 8 bytes left) and as the EC_WIN_SIZE < 64 fallback.
-        if EC_WIN_SIZE >= 64 && buf.len() >= 8 {
+        // Coverage-measured: the tail fires only in the last bytes of a
+        // tile's entropy stream — ~0.01% of refills across 8/10/12-bit +
+        // still corpora. Structural bias, not content-dependent.
+        if likely(EC_WIN_SIZE >= 64 && buf.len() >= 8) {
             // `c` at entry is in [0, EC_WIN_SIZE - 24], so for EC_WIN_SIZE=64
             // it is in [0, 40] when called from a steady-state ctx_norm
             // (cnt was in [-7, 16) right before refill), and at most 63
@@ -509,7 +557,7 @@ fn ctx_refill(s: &mut MsacContext) {
 }
 
 #[inline(always)]
-fn ctx_norm(s: &mut MsacContext, dif: EcWin, rng: c_uint) {
+pub(crate) fn ctx_norm(s: &mut MsacContext, dif: EcWin, rng: c_uint) {
     let d = 15 ^ (31 ^ clz(rng));
     let cnt = s.cnt;
     debug_assert!(rng <= 65535);
@@ -526,7 +574,7 @@ fn ctx_norm(s: &mut MsacContext, dif: EcWin, rng: c_uint) {
     }
 }
 
-#[inline(never)]
+#[inline(always)]
 #[cfg_attr(
     all(asm_msac, any(target_feature = "sse2", target_feature = "neon")),
     allow(dead_code)
@@ -549,7 +597,6 @@ fn rav1d_msac_decode_bool_equi_rust(s: &mut MsacContext) -> bool {
     all(asm_msac, any(target_feature = "sse2", target_feature = "neon")),
     allow(dead_code)
 )]
-#[inline(never)]
 fn rav1d_msac_decode_bool_rust(s: &mut MsacContext, f: c_uint) -> bool {
     let r = s.rng;
     let mut dif = s.dif;
@@ -657,7 +704,6 @@ unsafe extern "C" fn rav1d_msac_decode_symbol_adapt_c(
     all(asm_msac, any(target_feature = "sse2", target_feature = "neon")),
     allow(dead_code)
 )]
-#[inline(never)]
 fn rav1d_msac_decode_bool_adapt_rust(s: &mut MsacContext, cdf: &mut [u16; 2]) -> bool {
     let bit = rav1d_msac_decode_bool(s, cdf[0] as c_uint);
     if likely(s.allow_update_cdf()) {
@@ -668,12 +714,44 @@ fn rav1d_msac_decode_bool_adapt_rust(s: &mut MsacContext, cdf: &mut [u16; 2]) ->
     bit
 }
 
+/// Tier-specialized leaf of [`rav1d_msac_decode_bool_adapt`]: `#[rite]` gives
+/// tokenless `msac_bool_adapt_v3`/`_v1`/`_scalar` — the inner `msac_update_cdf`
+/// `incant!` resolves to the caller's exact tier variant, no summon. Reachable
+/// only via `incant!(.. without token)` inside tier-macro bodies; plain
+/// callers use the dispatching wrapper.
+#[archmage::rite(v3, v1, scalar)]
+#[cfg_attr(asm_msac, allow(unsafe_code))]
+pub(crate) fn msac_bool_adapt(s: &mut MsacContext, cdf: &mut [u16; 2]) -> bool {
+    cfg_if! {
+        if #[cfg(all(asm_msac, target_feature = "sse2"))] {
+            // SAFETY: `checkasm` has verified that it is equivalent to [`dav1d_msac_decode_bool_adapt_rust`].
+            unsafe {
+                dav1d_msac_decode_bool_adapt_sse2(&mut s.asm, cdf.as_mut_ptr()) != 0
+            }
+        } else if #[cfg(all(asm_msac, target_feature = "neon"))] {
+            // SAFETY: `checkasm` has verified that it is equivalent to [`dav1d_msac_decode_bool_adapt_rust`].
+            unsafe {
+                dav1d_msac_decode_bool_adapt_neon(&mut s.asm, cdf.as_mut_ptr()) != 0
+            }
+        } else {
+            let bit = rav1d_msac_decode_bool(s, cdf[0] as c_uint);
+            if likely(s.allow_update_cdf()) {
+                let count = cdf[1];
+                let rate = 4 + (count >> 4);
+                incant!(msac_update_cdf(cdf, 1, bit as usize, rate, count) without token);
+            }
+            bit
+        }
+    }
+}
+
 /// Return value is in the range `0..=15`.
-#[inline(never)]
+#[inline(always)]
 #[cfg_attr(
     all(asm_msac, any(target_feature = "sse2", target_feature = "neon")),
     allow(dead_code)
 )]
+#[allow(dead_code)]
 fn rav1d_msac_decode_hi_tok_rust(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
     let mut tok_br = rav1d_msac_decode_symbol_adapt4(s, cdf, 3);
     let mut tok = 3 + tok_br;
@@ -691,6 +769,47 @@ fn rav1d_msac_decode_hi_tok_rust(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 
     tok
 }
 
+/// Return value is in the range `0..=15`.
+/// Tier-specialized leaf of [`rav1d_msac_decode_hi_tok`]: `#[rite]` gives
+/// tokenless `msac_hi_tok_v3`/`_v1`/`_scalar`; the four adapt4 `incant!`s
+/// rewrite to `msac_adapt4_<caller-tier>` — direct calls in every variant.
+/// Reachable only via `incant!(.. without token)` inside tier-macro bodies.
+#[archmage::rite(v3, v1, scalar)]
+#[cfg_attr(asm_msac, allow(unsafe_code))]
+pub(crate) fn msac_hi_tok(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
+    let ret;
+    cfg_if! {
+        if #[cfg(all(asm_msac, target_feature = "sse2"))] {
+            // SAFETY: `checkasm` has verified that it is equivalent to [`dav1d_msac_decode_hi_tok_rust`].
+            ret = (unsafe {
+                dav1d_msac_decode_hi_tok_sse2(&mut s.asm, cdf.as_mut_ptr())
+            }) as u8;
+        } else if #[cfg(all(asm_msac, target_feature = "neon"))] {
+            // SAFETY: `checkasm` has verified that it is equivalent to [`dav1d_msac_decode_hi_tok_rust`].
+            ret = unsafe {
+                dav1d_msac_decode_hi_tok_neon(&mut s.asm, cdf.as_mut_ptr())
+            } as u8;
+        } else {
+            let mut tok_br = incant!(msac_adapt4(s, cdf, 3) without token);
+            let mut tok = 3 + tok_br;
+            if unlikely(tok_br == 3) {
+                tok_br = incant!(msac_adapt4(s, cdf, 3) without token);
+                tok = 6 + tok_br;
+                if unlikely(tok_br == 3) {
+                    tok_br = incant!(msac_adapt4(s, cdf, 3) without token);
+                    tok = 9 + tok_br;
+                    if unlikely(tok_br == 3) {
+                        tok = 12 + incant!(msac_adapt4(s, cdf, 3) without token);
+                    }
+                }
+            }
+            ret = tok;
+        }
+    }
+    debug_assert!(ret < 16);
+    ret % 16
+}
+
 // ============================================================================
 // Branchless scalar implementations (used when asm is disabled)
 // ============================================================================
@@ -700,7 +819,7 @@ fn rav1d_msac_decode_hi_tok_rust(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 
 /// Eliminates branch misprediction from the serial comparison loop by
 /// computing all v values and counting matches branchlessly.
 #[cfg(not(asm_msac))]
-#[inline(never)]
+#[inline(always)]
 fn rav1d_msac_decode_symbol_adapt4_branchless(
     s: &mut MsacContext,
     cdf: &mut [u16],
@@ -753,6 +872,86 @@ fn rav1d_msac_decode_symbol_adapt4_branchless(
     }
 
     val as u8
+}
+
+/// Tier-specialized leaf of [`rav1d_msac_decode_symbol_adapt4`]: `#[rite]`
+/// gives tokenless `msac_adapt4_v3`/`_v1`/`_scalar` — the `msac_update_cdf`
+/// `incant!` resolves to the caller's exact tier, no summon. Reachable only
+/// via `incant!(.. without token)` inside tier-macro bodies.
+#[archmage::rite(v3, v1, scalar)]
+#[cfg_attr(asm_msac, allow(unsafe_code))]
+pub(crate) fn msac_adapt4(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+    debug_assert!(n_symbols < 4);
+    let ret;
+    cfg_if! {
+        if #[cfg(all(asm_msac, target_feature = "sse2"))] {
+            // SAFETY: `checkasm` has verified that it is equivalent to [`dav1d_msac_decode_symbol_adapt_rust`].
+            ret = unsafe {
+                dav1d_msac_decode_symbol_adapt4_sse2(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
+            };
+        } else if #[cfg(all(asm_msac, target_feature = "neon"))] {
+            // SAFETY: `checkasm` has verified that it is equivalent to [`dav1d_msac_decode_symbol_adapt_rust`].
+            ret = unsafe {
+                dav1d_msac_decode_symbol_adapt4_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
+            };
+        } else if #[cfg(not(asm_msac))] {
+            debug_assert!(n_symbols > 0 && n_symbols <= 3);
+            let c = (s.dif >> (EC_WIN_SIZE - 16)) as c_uint;
+            let r = s.rng >> 8;
+            let n = n_symbols as c_uint;
+
+            // Compute all v values (at most 3 for adapt4)
+            // NB: >> has lower precedence than + in Rust, so parens are required
+            let v0 = (r * ((cdf[0] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT))
+                + EC_MIN_PROB * n;
+            let v1 = if n > 1 {
+                (r * ((cdf[1] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT))
+                    + EC_MIN_PROB * (n - 1)
+            } else {
+                0
+            };
+            let v2 = if n > 2 {
+                (r * ((cdf[2] >> EC_PROB_SHIFT) as c_uint) >> (7 - EC_PROB_SHIFT))
+                    + EC_MIN_PROB * (n - 2)
+            } else {
+                0
+            };
+
+            // Branchless: count how many v[i] have c < v[i]
+            // Since v is monotonically decreasing, this gives the first index where c >= v
+            let val = (c < v0) as u32 + (c < v1) as u32 + (c < v2) as u32;
+            debug_assert!(val <= n);
+
+            // v_arr[0..3] for indexed access, with sentinel for boundary
+            let v_arr = [v0, v1, v2, 0];
+            let u = if val == 0 {
+                s.rng
+            } else {
+                v_arr[val as usize - 1]
+            };
+            let v_val = v_arr[val as usize];
+
+            ctx_norm(
+                s,
+                s.dif.wrapping_sub((v_val as EcWin) << (EC_WIN_SIZE - 16)),
+                u - v_val,
+            );
+
+            if likely(s.allow_update_cdf()) {
+                let n_usize = n_symbols as usize;
+                let count = cdf[n_usize];
+                let rate = 4 + (count >> 4) + (n_symbols > 2) as u16;
+                incant!(
+                    msac_update_cdf(cdf, n_usize, val as usize, rate, count) without token
+                );
+            }
+            ret = val;
+        } else {
+            ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols) as c_uint;
+        }
+    }
+    debug_assert!(ret < 4);
+    ret as u8 % 4
 }
 
 /// Branchless implementation of symbol_adapt for n_symbols <= 7 (adapt8).
@@ -1048,6 +1247,84 @@ mod simd {
     }
 }
 
+/// Tier-specialized leaf of [`rav1d_msac_decode_symbol_adapt8`]: `#[rite]`
+/// gives tokenless `msac_adapt8_v3`/`_v1`/`_scalar`. The `simd::adapt8`
+/// `incant!` mints `X64V1Token::from_context()` under v3/v1 and calls
+/// `adapt8_default` under scalar — no summon anywhere. Reachable only via
+/// `incant!(.. without token)` inside tier-macro bodies.
+#[archmage::rite(v3, v1, scalar)]
+#[cfg_attr(asm_msac, allow(unsafe_code))]
+#[cfg_attr(not(asm_msac), allow(dead_code))] // only reachable via `without token` incants
+pub(crate) fn msac_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+    debug_assert!(n_symbols < 8);
+    let ret;
+    cfg_if! {
+        if #[cfg(all(asm_msac, target_feature = "sse2"))] {
+            // SAFETY: `checkasm` has verified that it is equivalent to [`dav1d_msac_decode_symbol_adapt_rust`].
+            ret = unsafe {
+                dav1d_msac_decode_symbol_adapt8_sse2(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
+            };
+        } else if #[cfg(all(asm_msac, target_feature = "neon"))] {
+            // SAFETY: `checkasm` has verified that it is equivalent to [`dav1d_msac_decode_symbol_adapt_rust`].
+            ret = unsafe {
+                dav1d_msac_decode_symbol_adapt8_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
+            };
+        } else if #[cfg(all(not(asm_msac), target_arch = "x86_64"))] {
+            ret = c_uint::from(incant!(
+                simd::adapt8(s, cdf, n_symbols),
+                [v1, default]
+            ));
+        } else if #[cfg(not(asm_msac))] {
+            ret = rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols) as c_uint;
+        } else {
+            ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols) as c_uint;
+        }
+    }
+    debug_assert!(ret < 8);
+    ret as u8 % 8
+}
+
+/// Tier-specialized leaf of [`rav1d_msac_decode_symbol_adapt16`]; same scheme
+/// as `msac_adapt8` — the `simd::adapt16` `incant!` is static inside `_v3`.
+#[archmage::rite(v3, v1, scalar)]
+#[cfg_attr(asm_msac, allow(unsafe_code))]
+#[cfg_attr(not(asm_msac), allow(dead_code))] // only reachable via `without token` incants
+pub(crate) fn msac_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
+    debug_assert!(n_symbols < 16);
+    let ret;
+    cfg_if! {
+        if #[cfg(all(asm_msac, target_arch = "x86_64"))] {
+            // SAFETY: `checkasm` has verified that it is equivalent to [`dav1d_msac_decode_symbol_adapt_rust`].
+            ret = unsafe {
+                (s.symbol_adapt16)(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize, cdf.len())
+            };
+        } else if #[cfg(all(asm_msac, target_feature = "sse2"))] {
+            // SAFETY: `checkasm` has verified that it is equivalent to [`dav1d_msac_decode_symbol_adapt_rust`].
+            ret = unsafe {
+                dav1d_msac_decode_symbol_adapt16_sse2(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize, cdf.len())
+            };
+        } else if #[cfg(all(asm_msac, target_feature = "neon"))] {
+            // SAFETY: `checkasm` has verified that it is equivalent to [`dav1d_msac_decode_symbol_adapt_rust`].
+            ret = unsafe {
+                dav1d_msac_decode_symbol_adapt16_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
+            };
+        } else if #[cfg(all(not(asm_msac), target_arch = "x86_64"))] {
+            ret = c_uint::from(incant!(
+                simd::adapt16(s, cdf, n_symbols),
+                [v1, default]
+            ));
+        } else if #[cfg(not(asm_msac))] {
+            // Serial loop is faster than branchless for adapt16: typical AV1 distributions
+            // exit early (3-5 iterations), while branchless always computes all n_symbols values.
+            ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols) as c_uint;
+        } else {
+            ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols) as c_uint;
+        }
+    }
+    debug_assert!(ret < 16);
+    ret as u8 % 16
+}
+
 /// Return value is in the range `0..=n_symbols`.
 ///
 /// `n_symbols` is in the range `0..4`.
@@ -1069,12 +1346,12 @@ pub fn rav1d_msac_decode_symbol_adapt4(s: &mut MsacContext, cdf: &mut [u16], n_s
         } else if #[cfg(not(asm_msac))] {
             // Scalar branchless beats SSE2 here: at n<=3 three independent
             // multiplies have a shorter serial latency than the vector
-            // splat→pmulhuw→pmovmskb→tzcnt→index chain, and this loop is
+            // splat->pmulhuw->pmovmskb->tzcnt->index chain, and this loop is
             // latency-bound, not throughput-bound (measured -3ms/iter on the
             // 4K AVIF bench). adapt8/16 below invert the trade.
-            ret = rav1d_msac_decode_symbol_adapt4_branchless(s, cdf, n_symbols);
+            ret = rav1d_msac_decode_symbol_adapt4_branchless(s, cdf, n_symbols) as c_uint;
         } else {
-            ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols);
+            ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols) as c_uint;
         }
     }
     debug_assert!(ret < 4);
@@ -1100,14 +1377,14 @@ pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_s
                 dav1d_msac_decode_symbol_adapt8_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
         } else if #[cfg(all(not(asm_msac), target_arch = "x86_64"))] {
-            ret = c_uint::from(archmage::incant!(
-                simd::adapt8(Token, s, cdf, n_symbols),
+            ret = c_uint::from(incant!(
+                simd::adapt8(s, cdf, n_symbols),
                 [v1, default]
             ));
         } else if #[cfg(not(asm_msac))] {
-            ret = rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols);
+            ret = rav1d_msac_decode_symbol_adapt8_branchless(s, cdf, n_symbols) as c_uint;
         } else {
-            ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols);
+            ret = rav1d_msac_decode_symbol_adapt_rust(s, cdf, n_symbols) as c_uint;
         }
     }
     debug_assert!(ret < 8);
@@ -1118,7 +1395,6 @@ pub fn rav1d_msac_decode_symbol_adapt8(s: &mut MsacContext, cdf: &mut [u16], n_s
 ///
 /// `n_symbols` is in the range `0..16`.
 #[inline(always)]
-#[cfg_attr(asm_msac, allow(unsafe_code))]
 pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_symbols: u8) -> u8 {
     debug_assert!(n_symbols < 16);
     let ret;
@@ -1136,11 +1412,11 @@ pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_
         } else if #[cfg(all(asm_msac, target_feature = "neon"))] {
             // SAFETY: `checkasm` has verified that it is equivalent to [`dav1d_msac_decode_symbol_adapt_rust`].
             ret = unsafe {
-                dav1d_msac_decode_symbol_adapt16_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
+                dav1d_msac_decode_symbol_adapt16_neon(&mut s.asm, cdf.as_mut_ptr())
             };
         } else if #[cfg(all(not(asm_msac), target_arch = "x86_64"))] {
-            ret = c_uint::from(archmage::incant!(
-                simd::adapt16(Token, s, cdf, n_symbols),
+            ret = c_uint::from(incant!(
+                simd::adapt16(s, cdf, n_symbols),
                 [v1, default]
             ));
         } else if #[cfg(not(asm_msac))] {
@@ -1214,25 +1490,26 @@ pub fn rav1d_msac_decode_bool(s: &mut MsacContext, f: c_uint) -> bool {
 
 /// Return value is in the range `0..16`.
 #[inline(always)]
+#[allow(dead_code)] // in-crate callers use the `msac_hi_tok_*` variants via `incant!`
 pub fn rav1d_msac_decode_hi_tok(s: &mut MsacContext, cdf: &mut [u16; 4]) -> u8 {
     let ret;
     cfg_if! {
         if #[cfg(all(asm_msac, target_feature = "sse2"))] {
             // SAFETY: `checkasm` has verified that it is equivalent to [`dav1d_msac_decode_hi_tok_rust`].
-            ret = (unsafe {
+            ret = unsafe {
                 dav1d_msac_decode_hi_tok_sse2(&mut s.asm, cdf.as_mut_ptr())
-            }) as u8;
+            };
         } else if #[cfg(all(asm_msac, target_feature = "neon"))] {
             // SAFETY: `checkasm` has verified that it is equivalent to [`dav1d_msac_decode_hi_tok_rust`].
             ret = unsafe {
                 dav1d_msac_decode_hi_tok_neon(&mut s.asm, cdf.as_mut_ptr())
-            } as u8;
-        } else if #[cfg(not(asm_msac))] {
-            ret = rav1d_msac_decode_hi_tok_rust(s, cdf);
+            };
+        } else {
+            ret = rav1d_msac_decode_hi_tok_rust(s, cdf) as c_uint;
         }
     }
     debug_assert!(ret < 16);
-    ret % 16
+    ret as u8 % 16
 }
 
 #[cfg(all(test, not(asm_msac)))]

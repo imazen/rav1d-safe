@@ -16,6 +16,13 @@ if [ "${1:-}" = "--native" ]; then
     TAG="-native"
 fi
 
+# llvm-profdata may not be on PATH; every rustup toolchain ships one.
+LLVM_PROFDATA="$(command -v llvm-profdata || true)"
+if [ -z "$LLVM_PROFDATA" ]; then
+    LLVM_PROFDATA="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/llvm-profdata"
+fi
+[ -x "$LLVM_PROFDATA" ] || { echo "error: llvm-profdata not found (install llvm or use a rustup toolchain)"; exit 1; }
+
 FEATURES="bitdepth_8,bitdepth_16"
 INSTR_DIR="target/pgo-instr$TAG"
 USE_DIR="target/pgo-use$TAG"
@@ -32,6 +39,10 @@ IVF_INPUTS=(
 )
 AVIF_INPUT="test-vectors/bench/photo_4k.avif"
 
+echo "=== 0/4 non-PGO baseline (target/release) ==="
+cargo build --release --no-default-features --features "$FEATURES" \
+    --example profile_ivf --example profile_avif
+
 echo "=== 1/4 instrumented build ($INSTR_DIR) ==="
 CARGO_TARGET_DIR="$INSTR_DIR" \
 RUSTFLAGS="-Cprofile-generate=$PWD/$DATA_DIR $NATIVE_FLAG" \
@@ -44,7 +55,7 @@ for f in "${IVF_INPUTS[@]}"; do
     "$INSTR_DIR/release/examples/profile_ivf" "$f" 30 >/dev/null
 done
 "$INSTR_DIR/release/examples/profile_avif" "$AVIF_INPUT" 5 >/dev/null
-llvm-profdata merge -o "$DATA_DIR/merged.profdata" "$DATA_DIR"/*.profraw
+"$LLVM_PROFDATA" merge -o "$DATA_DIR/merged.profdata" "$DATA_DIR"/*.profraw
 
 echo "=== 3/4 profile-use build ($USE_DIR) ==="
 CARGO_TARGET_DIR="$USE_DIR" \

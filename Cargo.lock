@@ -140,7 +140,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 [[package]]
 name = "archmage"
 version = "0.9.29"
-source = "git+https://github.com/imazen/archmage?rev=aac6160#aac616049c201a007b91bdc3a0ca80a894626b7d"
+source = "git+https://github.com/imazen/archmage?rev=b8d6c0777e55e4ea8d26cde0879faae858cba662#b8d6c0777e55e4ea8d26cde0879faae858cba662"
 dependencies = [
  "archmage-macros",
  "safe_unaligned_simd",
@@ -161,7 +161,7 @@ dependencies = [
 [[package]]
 name = "archmage-macros"
 version = "0.9.29"
-source = "git+https://github.com/imazen/archmage?rev=aac6160#aac616049c201a007b91bdc3a0ca80a894626b7d"
+source = "git+https://github.com/imazen/archmage?rev=b8d6c0777e55e4ea8d26cde0879faae858cba662#b8d6c0777e55e4ea8d26cde0879faae858cba662"
 dependencies = [
  "proc-macro2",
  "quote",

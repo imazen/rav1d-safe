@@ -585,3 +585,47 @@ how reg-bound the loop measured.
 
 jj: experiment `qxtytmvn` (reverted onto `nkztonrv`); both variants
 recoverable from that change's evolog.
+
+## §20 — 2026-10-06: tokenless-rite msac tree + PGO + coverage-mined annotations
+
+**Archmage leaf specialization (`#[rite(v3,v1,scalar)]` on the six msac
+leaves, `without token` incants inside tier bodies, `autoversion(v3,v1,scalar)`
+on `decode_coefs`/`decode_coefs_class`).** Verified via `cargo expand`:
+zero `summon()` in the specialized tree, exact-tier static calls,
+`from_context()` mints for cross-tier kernels. Compiled `class_v3` body:
+0 summon-cache loads, adapt4/hi_tok/update_cdf fully inlined (local
+closures — `#[target_feature]` leaves lose LLVM's inline heuristic at
+this caller size, closures carry no boundary). Bonus: the v1/SSE2 tier
+now runs SIMD adapt8/16 kernels instead of fully-scalar coef decode.
+
+Result on photo-4k-30f t1: **−2.3% wall** (85.0 vs 83.1 ms/f) despite
+−0.36% instructions and −39% icache misses. Cause: +5.2% branch misses —
+the deleted summons were perfectly-predicted branches whose removal
+decorrelated global-history prediction for the data-dependent entropy
+branches. **Predictor-aliasing, not dispatch overhead** — five source
+shapes all land −2–3%. Branch-miss annotate shows misses smeared across
+hundreds of coin-flip arms (largest single site <1.5%).
+
+**PGO (`-Cprofile-generate`/`-Cprofile-use`, train on dav1d vectors +
+4K AVIF): +5.5% on BOTH baseline and rite trees** (82.9→78.2, 85.0→78.9).
+Under PGO the rite tree is neutral vs baseline while keeping the
+summon-free tree + v1 coverage. PGO's win is layout + indirect-call
+promotion (intra_pred `jmp *%rax` was 15.5% of all branch misses) —
+things manual hints cannot express. `just pgo` / `just pgo-native`
+wrap `scripts/perf/bench_pgo.sh`; profiles stay uncommitted in
+`target/pgo-*/`.
+
+**Coverage-mined annotation hunt (`-Cinstrument-coverage` + llvm-cov,
+region counts intersected across stills + 8/10/12-bit corpora): near-null
+result.** Every zero-exec region in the hot path is a `debug_assert` arm
+or a cfg-dead `_rust` fallback; every sub-1% region is content- or
+config-dependent (delta-q present, partition type, CFL alpha,
+frame-thread pass, band-stitch mode) — annotating those encodes corpus
+bias. The single defensible structural annotation: `likely` on
+`ctx_refill`'s bulk-path (`buf.len() >= 8`, taken 99.99% — tail fires
+only in a stream's last bytes). Added in `src/msac.rs`.
+
+Takeaway: for adaptive-entropy hot loops, don't hand-hint — the branches
+are data-dependent by construction. PGO is the layout mechanism; hints
+are for structurally-cold paths only, and each needs a measurement or an
+invariant argument.
