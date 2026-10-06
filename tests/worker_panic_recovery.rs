@@ -43,7 +43,10 @@ fn worker_panic_fails_decode_instead_of_hanging() {
         let mut decoder = Decoder::with_settings(settings).expect("create decoder");
 
         TEST_INDUCE_WORKER_PANIC.store(true, Ordering::SeqCst);
-        let result = decoder.decode(OBU);
+        // `decode` only buffers this single-TU stream (no TU delimiter follows
+        // it), so the frame decode — and the tile-task claims that trip the
+        // armed flag — run inside `flush`'s drain.
+        let result = decoder.decode(OBU).and_then(|_| decoder.flush());
         // Disarm in case the frame finished before any worker claimed a task
         // while armed (should not happen with threads=8, but never leave a
         // global armed).
@@ -55,7 +58,7 @@ fn worker_panic_fails_decode_instead_of_hanging() {
         assert!(
             result.is_err(),
             "decode with a dead worker must fail, got {:?}",
-            result.map(|f| f.is_some())
+            result.map(|f| f.len())
         );
         // Drop must join the remaining workers without waiting on the dead one.
         drop(decoder);
@@ -88,10 +91,14 @@ fn worker_panic_poisons_decoder_but_not_process() {
         let mut decoder = Decoder::with_settings(settings).expect("create decoder");
 
         TEST_INDUCE_WORKER_PANIC.store(true, Ordering::SeqCst);
-        assert!(decoder.decode(OBU).is_err(), "first decode must fail");
+        // As above: the frame decode runs inside `flush`'s drain, so the
+        // panic (and the pool poisoning) surfaces there.
+        let first = decoder.decode(OBU).and_then(|_| decoder.flush());
         let _ = TEST_INDUCE_WORKER_PANIC.swap(false, Ordering::SeqCst);
+        assert!(first.is_err(), "first decode must fail");
+        let second = decoder.decode(OBU).and_then(|_| decoder.flush());
         assert!(
-            decoder.decode(OBU).is_err(),
+            second.is_err(),
             "decoder with a dead worker must stay failed"
         );
         drop(decoder);
@@ -100,8 +107,11 @@ fn worker_panic_poisons_decoder_but_not_process() {
         let mut settings = Settings::default();
         settings.threads = 8;
         let mut fresh = Decoder::with_settings(settings).expect("create fresh decoder");
-        let frame = fresh.decode(OBU).expect("fresh decoder decodes");
-        assert!(frame.is_some(), "fresh decoder must produce a frame");
+        let frames = fresh
+            .decode(OBU)
+            .and_then(|_| fresh.flush())
+            .expect("fresh decoder decodes");
+        assert!(!frames.is_empty(), "fresh decoder must produce a frame");
     });
 
     let start = std::time::Instant::now();
