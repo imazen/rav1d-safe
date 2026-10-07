@@ -1,4 +1,59 @@
-# Where safe / untracked rav1d loses to dav1d (2026-10-01)
+# Where safe / untracked rav1d loses to dav1d on REAL footage (2026-10-06)
+
+The tables further down were measured on synthetic streams. This section repeats the
+per-family sampling (`scripts/perf/ptrace_sample.py` + `family_compare.py`, 1 thread, native
+dispatch for both, symbolised dav1d 1.5.3 built from source) on real footage: a 4K H.264 clip,
+box-downscaled to 1080p, encoded with aomenc and SVT-AV1 (see DECODER_COMPARISON.md,
+"Real footage"). **Untracked build, so the tracker is out of the picture.** ms/frame, ours
+minus dav1d:
+
+| stream | dav1d | ours | ratio | mc | cdef | decode_ctx | loopfilter | itx | entropy | other families |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| aom 1080p | 11.9 | 24.6 | 2.07x | +5.36 | +1.52 | +1.47 | +1.15 | +0.62 | +0.19 | +2.4 |
+| svt 1080p | 8.3 | 14.7 | 1.78x | +2.30 | +1.55 | +0.43 | +0.31 | +0.51 | +0.48 | +0.9 |
+| aom 4K | 36.1 | 78.0 | 2.16x | +16.6 | +7.76 | +3.91 | +3.19 | +2.14 | +0.42 | +8.0 |
+| svt 4K | 25.2 | 50.3 | 2.00x | +8.09 | +7.43 | +1.45 | +1.10 | +1.77 | +1.79 | +3.8 |
+
+**Reading it.**
+
+- **MC + CDEF are 54-62% of the gap** (MC alone 32-42%, CDEF 12-30%). The SIMD kernels as a
+  group (mc, cdef, loopfilter, itx, looprestoration, ipred) are 74-78%; control and glue
+  (`decode_b`, `refmvs`, `lf_mask`, `recon`, `block_mut`) are the other ~22-26%.
+- **Entropy decoding is at parity** (+0.2..+1.8 ms, +2-15% of dav1d's 4-12 ms). It is the
+  biggest family in dav1d's profile and is no longer a gap.
+- If MC and CDEF alone matched dav1d the ratios would be about 1.49x (aom 1080p), 1.32x
+  (svt 1080p), 1.49x (aom 4K) and 1.38x (svt 4K).
+
+**MC** (aom 4K: ours 24.1 ms vs dav1d 7.5, 3.2x). dav1d spends its MC time in
+fused AVX-512 `put/prep_6tap` kernels (2.7 + 1.5 ms) plus 0.9 ms of warp. Ours runs the
+8-tap two-pass pipeline (horizontal pass to an i16 mid buffer, then vertical): 
+`h_filter_8tap_8bpc_avx2_inner` 6.6 ms and `..._avx512_inner` 2.6 ms, `v_filter_8tap_to_i16`
+2.1 + 1.1 ms, `prep_8tap`/`put_8tap` 2.0 + 1.6 ms, warp 2.7 ms (2.9x dav1d's), and 1.75 ms of
+Rust glue in `recon::mc`. The biggest single symbol is the **AVX2** horizontal filter, so
+much of the work still runs the 256-bit path on an AVX-512 machine. Candidates: dedicated
+6-tap kernels (the encoders pick 6-tap filters for narrow blocks; we pay 8 taps and two
+extra rows), fusing the h and v passes for small blocks to skip the mid buffer round trip,
+AVX-512 h/v filters, a cheaper warp.
+
+**CDEF** (aom 4K: 9.8 ms vs 2.0, 4.9x). Per 8x8 block ours does a padding pass into a u16
+temp (`padding_8bpc` 3.4 ms), the filter (`cdef_filter_block_simd_8bpc` 3.7 ms, 3.1x dav1d's
+`cdef_filter_8x8`) and the direction search (`cdef_find_dir_simd_8bpc` 1.7 ms vs dav1d's
+AVX2 `cdef_dir` 0.3 ms, 5.6x). dav1d's whole padding step is inside `cdef_brow` (0.5 ms), so
+**ours is ~7x its padding cost**: the u8->u16 row copies are scalar-looking loops over
+bounds-checked indexing, per row, per block. A SIMD `cvtepu8_epi16` copy and a 256-bit
+direction finder are the obvious first steps.
+
+**Glue.** `decode_b` is 4.4 ms on aom 4K (the largest single Rust symbol outside the kernels),
+`block_mut` 0.5 ms, `get_skip_ctx` 0.3 ms; the earlier note about inlined bounds-check /
+`Option` code still applies and is the remaining ~25%.
+
+Caveats: sampling stops the process every tick, so shares are scaled by separately measured
+unperturbed ms/frame; families are name-regex heuristics and inlined code is charged to the
+enclosing symbol; dav1d runs AVX-512 (icl) kernels on most paths here.
+
+---
+
+# Where safe / untracked rav1d loses to dav1d on synthetic streams (2026-10-01)
 
 Per-family wall time (ms/frame, 1 thread, Zen 4 with AVX-512) of rav1d-safe
 (`untracked` and the default tracked build) against a source-built dav1d 1.5.3,
