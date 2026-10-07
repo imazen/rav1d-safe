@@ -147,7 +147,11 @@ Frame threading is a win on small frames and a loss on big ones (each frame gets
 fewer workers and the working set multiplies). That is what the size-aware automatic
 choice below is for.
 
-## Size-aware automatic frame delay (2026-10-01, later)
+## Size-aware automatic frame delay (2026-10-01, later) - SUPERSEDED
+
+**Superseded 2026-10-06:** this rule was calibrated on 4K intra stills and is wrong for
+video; it was replaced by "2 with `threads > 1`, else 1" (see "Real footage" below). The
+sweep is kept because its small-frame rows are still right.
 
 `max_frame_delay == 0` with `threads > 1` now resolves from the stream's frame size
 (managed `Decoder` opens on first data and reads the sequence header; rule in
@@ -249,6 +253,81 @@ What this adds to the earlier picture:
 - The tracked default build is 2.6-5.3x dav1d on these streams. The multi-tile 1080p row
   (5.31x at 4 threads, noisy: min 4.2 ms) is the one case where the new auto delay is
   slightly worse than tile mode for the tracked build (see the sweep above).
+
+## Real footage (2026-10-06)
+
+The earlier streams were synthetic (one 4K photo, panning crops, a warp-heavy 480p
+stitch). This section uses a real clip: 8 s of 3840x2160 24 fps H.264 (63 Mbps), decoded
+with GStreamer, box-downscaled to 1080p and 720p, and encoded with aomenc
+(`--cpu-used=4`, 2-pass, `--lag-in-frames=19`) and SVT-AV1 (preset 6, crf 30). Seven
+streams (720p/1080p/4K x two encoders, plus a warp- and palette-free 1080p aomenc), every
+one bit-identical in dav1d and rav1d. Regenerate the synthetic helpers with
+`scripts/perf/decoder_bench/{pan_zoom.c,yuv_box_scale.c,ivf_prefix.py,make_sized_streams.sh}`;
+`tool_census.py` counts per-frame kernel calls (warp, palette, put/prep, compound) on a
+symbolised dav1d so a stream's tool mix is known, not assumed.
+
+**1 thread, steady-state ms/frame (setup removed, `steady_state.py`), ratio to dav1d:**
+
+| stream | libgav1 | rav1d untracked | rav1d tracked |
+|---|--:|--:|--:|
+| 720p aom / svt | 1.59 / 1.45 | 2.00 / 1.70 | 2.51 / 1.97 |
+| 1080p aom / svt | 1.64 / 1.53 | 2.14 / 1.90 | 2.64 / 2.27 |
+| 1080p aom, no warp/palette | 1.66 | 2.09 | 2.59 |
+| 4K aom / svt | 1.64 / 1.58 | 2.21 / 2.07 | 2.76 / 2.51 |
+
+- On real video **untracked is about 1.3x slower than libgav1** (the earlier "level with
+  libgav1" held for the 4K still and synthetic clips only), and 1.7-2.2x dav1d.
+- Removing warp changes nothing on 1080p (2.14x vs 2.09x): the gap on real footage is
+  broad, not one kernel. Only the 480p stitch is warp-biased.
+- Setup per fresh decoder is at most ~5% of a pass for every decoder on these streams, with
+  no systematic penalty for rav1d (the "setup" column absorbs the keyframe, so it is an
+  upper bound); only 30-frame clips show 13-35%, for rav1d and dav1d alike.
+
+**Frame delay on real 4K inter** (tile-only = delay 1; untracked, ms/frame):
+
+| stream | threads | delay 1 | delay 2 |
+|---|--:|--:|--:|
+| aom 4K | 4 | 67.5 | 33.5 (0.50x) |
+| aom 4K | 8 | 71.4 | 33.8 (0.47x) |
+| svt 4K | 4 | 42.8 | 24.2 (0.56x) |
+| aom 4K, tracked | 4 | 200.9 | 162.0 (0.81x) |
+
+A second frame in flight halves the time at both 4 and 8 threads, so the size rule (one
+frame above ~6 MP) left 2x on the table; the rule is now "2 whenever there are workers".
+
+**Tracked builds do not scale on real inter video (before 2026-10-06):**
+
+| tracked, ms/frame | 1 thread | 4 threads |
+|---|--:|--:|
+| aom 4K | 97 | 178 |
+| svt 4K | 58 | 132 |
+
+`probe_sites_ivf <ivf> <threads> <iters> all [delay]` (per-call-site registration and
+contended-lock counts over a whole stream) found ~3.4 M registrations per frame, ~3.1 M
+contended lock acquisitions over 48 frames at 4 threads, and CDEF's per-row picture reads
+responsible for ~43% of registrations and ~84% of the contention. Fixes (commit
+`df189432`): CDEF block reads are one `for_rows` borrow, and large worker-decoded planes
+register exact rows instead of one strided hull. Findings along the way:
+
+- Batching alone is not enough: with one hull per block (the single-tile policy) the 4K
+  decode got **36% slower** at 4 threads, because a hull spans several 4 KB tracker
+  blocks, i.e. several shard locks. Fewer registrations were not fewer lock operations.
+- Exact rows for *small* planes cost 9-19% (480p/720p at the auto delay); small planes
+  use one shard, where the hull is cheaper. The size gate is the sharding threshold.
+- Result, interleaved A/B, tile-only, ms/frame before -> after: svt 4K 144.7 -> 70.7 (4
+  threads) and 152.9 -> 67.4 (8); aom 4K 191.6 -> 124.7 and 208.1 -> 121.0; 1080p 47.0 ->
+  41.0 (4); 1 thread 2-5% faster; 480p/720p 0.96-0.98x; 4K intra stills unchanged.
+- **Still open:** tracked 4K inter at 4 threads (125 ms) is slower than at 1 thread (92).
+  The per-row compact path registers every row twice (read + write-back): ~5.7 M
+  registrations per frame now, with 79% fewer contended acquisitions. The next step is a
+  mutable exact-row access that does not need the compact copy, or CDEF over larger
+  blocks (one registration per 64x8 band rather than per 8x8 block).
+
+**Two bugs this work surfaced** (both fixed): the tracked build panicked
+("overlapping DisjointMut") on every 64x64-superblock stream with 64-pixel tile columns at
+2+ threads, from element-granularity above-context tracking that assumed tile workers
+never share a 128-pixel slot (`tests/gen_vectors_threaded.rs` now gates it), and
+`Decoder::decode()` dropped packets under backpressure.
 
 ## Where this points
 
