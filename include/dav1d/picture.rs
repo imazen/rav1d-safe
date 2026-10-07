@@ -878,6 +878,10 @@ unsafe impl ExternalAsMutPtr for Rav1dPictureDataComponentInner {
 pub(crate) struct PictureThreading {
     pub(crate) parallel: bool,
     multi_tile: bool,
+    /// Decoded by workers into a plane big enough to be sharded: reads and writes
+    /// register exact rows, not one hull (see [`Rav1dPictureDataComponent::uses_exact_rows`]).
+    /// Set by `set_threading_policy`; false for single-threaded and small planes.
+    exact_rows: bool,
 }
 
 impl PictureThreading {
@@ -885,6 +889,7 @@ impl PictureThreading {
         Self {
             parallel: threads > 1,
             multi_tile: tiles > 1,
+            exact_rows: false,
         }
     }
 }
@@ -927,11 +932,28 @@ impl Rav1dPictureDataComponent {
             .map_or_else(tile_threading_active, |p| p.parallel && p.multi_tile)
     }
 
+    /// Whether single-tile reads and writes into this plane register EXACT ROWS
+    /// instead of one hull. True only for tracked decodes with workers into a plane
+    /// large enough to be sharded (the decision `set_threading_policy` makes for the
+    /// shard layout): a hull spans several 4 KB tracker blocks, i.e. several shard locks
+    /// that other workers' neighbouring rows hash into, while exact rows stay in the
+    /// shards of the rows they cover. Measured on real 4K inter footage at 4 threads
+    /// this is 0.49-0.64x the time of the hull; on SMALL planes (one shard anyway)
+    /// the hull is cheaper (480p/720p regress 9-19% with exact rows), hence the size
+    /// gate. Always false under `untracked`.
+    #[inline(always)]
+    pub(crate) fn uses_exact_rows(&self) -> bool {
+        #[cfg(feature = "untracked")]
+        return false;
+        #[cfg(not(feature = "untracked"))]
+        self.threading.is_some_and(|p| p.exact_rows)
+    }
+
     pub(crate) fn threading_policy(&self) -> Option<PictureThreading> {
         self.threading
     }
 
-    pub(crate) fn set_threading_policy(&mut self, policy: PictureThreading) {
+    pub(crate) fn set_threading_policy(&mut self, mut policy: PictureThreading) {
         // Shard the picture's tracker when tile workers can share rows, or when the
         // plane is big enough that several post-filter workers will hammer one lock.
         // A SMALL single-tile plane's hull guards would otherwise span many shards
@@ -941,6 +963,7 @@ impl Rav1dPictureDataComponent {
         const SINGLE_SHARD_PLANE_BYTES: usize = 2 << 20;
         let small_single_tile =
             !policy.multi_tile && self.data.as_mut_slice().len() < SINGLE_SHARD_PLANE_BYTES;
+        policy.exact_rows = policy.parallel && !small_single_tile;
         self.data.configure_parallelism(
             if policy.parallel && !small_single_tile {
                 2
@@ -1433,7 +1456,7 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
         track_caller
     )]
     pub fn block_mut<BD: BitDepth>(&self, w: usize, h: usize) -> BlockMut<'a, BD> {
-        if self.data.uses_row_guards() {
+        if self.data.uses_row_guards() || self.data.uses_exact_rows() {
             let (buf, byte_stride) = self.compact_read_per_row::<BD>(w, h);
             BlockMut {
                 storage: BlockMutStorage::Compact { buf },
@@ -1579,7 +1602,11 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
             return;
         }
         let pxstride = self.data.pixel_stride::<BD>();
-        if self.data.uses_row_guards() {
+        // Exact-row records whenever workers decode into this picture. A single hull
+        // spans several 4 KB tracker blocks, i.e. several shard locks that other
+        // workers' neighbouring rows also hash into; exact rows stay in the shards of
+        // the rows they cover.
+        if self.data.uses_row_guards() || self.data.uses_exact_rows() {
             let ps = mem::size_of::<BD::Pixel>();
             self.data.dm().probe_eval_rect(
                 core::panic::Location::caller(),

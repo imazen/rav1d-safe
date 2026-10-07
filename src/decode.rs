@@ -4814,7 +4814,6 @@ pub(crate) fn rav1d_decode_frame_init_cdf(
     let n_bytes = tiling.n_bytes.into();
     let rows: usize = tiling.rows.into();
     let cols = tiling.cols.into();
-    let sb128w: usize = f.sb128w.try_into().unwrap();
 
     // parse individual tiles per tile group
     let mut tile_row = 0;

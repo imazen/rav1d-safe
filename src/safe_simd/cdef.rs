@@ -561,15 +561,15 @@ fn cdef_find_dir_simd_8bpc(_t: Desktop64, img: PicOffset, variance: &mut c_uint)
     let mut hv0 = [0i16; 8];
     let mut hv1_vec = _mm_setzero_si128();
 
-    let stride = img.pixel_stride::<BitDepth8>();
+    // Read the 8x8 block with one borrow (a banded rect record, or one hull for a
+    // single-tile frame) instead of 8 per-row registrations.
+    let mut block = [[0u8; 8]; 8];
+    img.for_rows::<BitDepth8, _>(8, 8, |y, row| block[y].copy_from_slice(&row[..8]));
 
     for y in 0..8usize {
-        let row_img = img + (y as isize * stride);
-        let row_slice = row_img.slice::<BitDepth8>(8);
-
         // Load 8 u8 pixels → i16 → subtract 128
         let mut row_bytes = [0u8; 16];
-        row_bytes[0..8].copy_from_slice(&row_slice[..8]);
+        row_bytes[0..8].copy_from_slice(&block[y]);
         let row_u8 = loadu_128!(&row_bytes);
         let row = _mm_sub_epi16(_mm_cvtepu8_epi16(row_u8), sub128);
 
@@ -705,9 +705,8 @@ fn cdef_find_dir_scalar<BD: BitDepth>(img: PicOffset, variance: &mut c_uint, bd:
     const W: usize = 8;
     const H: usize = 8;
 
-    for y in 0..H {
-        let img = img + (y as isize * img.pixel_stride::<BD>());
-        let img = &*img.slice::<BD>(W);
+    // One borrow for the 8x8 block instead of one per row.
+    img.for_rows::<BD, _>(W, H, |y, img| {
         for x in 0..W {
             let px = (img[x].as_::<c_int>() >> bitdepth_min_8) - 128;
 
@@ -720,7 +719,7 @@ fn cdef_find_dir_scalar<BD: BitDepth>(img: PicOffset, variance: &mut c_uint, bd:
             partial_sum_hv[1][x] += px;
             partial_sum_alt[3][(y >> 1) + x] += px;
         }
-    }
+    });
 
     let mut cost = [0u32; 8];
     for n in 0..8 {
@@ -798,15 +797,14 @@ fn cdef_find_dir_simd_16bpc(
     let mut hv0 = [0i16; 8];
     let mut hv1_vec = _mm_setzero_si128();
 
-    let stride = img.pixel_stride::<BitDepth16>();
+    // One borrow for the 8x8 block; see `cdef_find_dir_simd_8bpc`.
+    let mut block = [[0u16; 8]; 8];
+    img.for_rows::<BitDepth16, _>(8, 8, |y, row| block[y].copy_from_slice(&row[..8]));
 
     for y in 0..8usize {
-        let row_img = img + (y as isize * stride);
-        let row_slice = row_img.slice::<BitDepth16>(8);
-
         // Load 8 u16 pixels, shift right by bitdepth_min_8, truncate to i16, subtract 128
         let mut row_u16 = [0u16; 8];
-        row_u16.copy_from_slice(&row_slice[..8]);
+        row_u16.copy_from_slice(&block[y]);
         let raw = loadu_128!(&row_u16);
         let shifted = _mm_srl_epi16(raw, shift_v);
         let row = _mm_sub_epi16(shifted, sub128);
@@ -1317,7 +1315,11 @@ pub(super) fn padding_8bpc(
     // Single pass: copy source pixels + left/right edges per row.
     // This uses one DisjointMut slice per row instead of two (source + right).
     let slice_w = w + if need_right { 2 } else { 0 };
-    for y in 0..h {
+    // One borrow for the whole block (a banded rect record, or a single hull when the
+    // frame is single-tile / single-threaded) instead of one registration per row:
+    // these per-row reads were ~half of all tracker registrations and nearly all the
+    // contended lock acquisitions of a tile-threaded 4K inter decode.
+    dst.for_rows::<BitDepth8, _>(slice_w, h, |y, src| {
         let row_offset = tmp_offset + y * TMP_STRIDE;
 
         // Left edge (from separate left[] array, not PicOffset)
@@ -1326,12 +1328,11 @@ pub(super) fn padding_8bpc(
             tmp[row_offset - 1] = left[y][1] as u16;
         }
 
-        // Source pixels + right edge in one DisjointMut access
-        let src = (dst + (y as isize * stride)).slice::<BitDepth8>(slice_w);
+        // Source pixels + right edge
         for x in 0..slice_w {
             tmp[row_offset + x] = src[x] as u16;
         }
-    }
+    });
 
     // Handle top edge (safe slice access via DisjointMut)
     if edges.contains(CdefEdgeFlags::HAVE_TOP) {
@@ -1375,33 +1376,39 @@ pub(super) fn padding_8bpc(
         } else {
             w + 2
         };
-        for dy in 0..2usize {
-            let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
-            let bottom_row = WithOffset {
-                data: bottom.data,
-                offset: bottom
-                    .offset
-                    .wrapping_sub(2)
-                    .wrapping_add_signed(dy as isize * stride),
+        // Picture rows (the sb row below) are one two-row borrow; line-buffer rows
+        // (`PicOrBuf::Buf`) stay per-row.
+        if let PicOrBuf::Pic(pic) = bottom.data {
+            // Same exact-window discipline as the top loop above: never guard the
+            // skipped left-padding columns.
+            let first = WithOffset {
+                data: pic,
+                offset: bottom.offset.wrapping_sub(2).wrapping_add(x_start),
             };
-            // Same exact-window discipline as the top loop above: never guard
-            // the skipped left-padding columns.
-            let slice = match bottom_row.data {
-                PicOrBuf::Pic(pic) => {
-                    let guard = pic
-                        .slice::<BitDepth8, _>((bottom_row.offset + x_start.., ..x_end - x_start));
-                    // Copy into tmp inline since guard lifetime is limited
-                    for x in x_start..x_end {
-                        tmp[row_offset + x - 2] = guard[x - x_start] as u16;
-                    }
-                    continue;
+            first.for_rows::<BitDepth8, _>(x_end - x_start, 2, |dy, row| {
+                let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
+                for x in x_start..x_end {
+                    tmp[row_offset + x - 2] = row[x - x_start] as u16;
                 }
-                PicOrBuf::Buf(buf) => {
-                    buf.slice_as::<_, u8>((bottom_row.offset + x_start.., ..x_end - x_start))
+            });
+        } else {
+            for dy in 0..2usize {
+                let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
+                let bottom_row = WithOffset {
+                    data: bottom.data,
+                    offset: bottom
+                        .offset
+                        .wrapping_sub(2)
+                        .wrapping_add_signed(dy as isize * stride),
+                };
+                let PicOrBuf::Buf(buf) = bottom_row.data else {
+                    unreachable!("picture rows handled above")
+                };
+                let slice =
+                    buf.slice_as::<_, u8>((bottom_row.offset + x_start.., ..x_end - x_start));
+                for x in x_start..x_end {
+                    tmp[row_offset + x - 2] = slice[x - x_start] as u16;
                 }
-            };
-            for x in x_start..x_end {
-                tmp[row_offset + x - 2] = slice[x - x_start] as u16;
             }
         }
     }
@@ -1775,13 +1782,13 @@ pub(super) fn padding_16bpc(
     let mut tmp = tmp.flex_mut();
 
     let tmp_offset = 2 * TMP_STRIDE + 2;
-    let pixel_stride = dst.pixel_stride::<BitDepth16>();
     let need_left = edges.contains(CdefEdgeFlags::HAVE_LEFT);
     let need_right = edges.contains(CdefEdgeFlags::HAVE_RIGHT);
 
     // Single pass: copy source pixels + left/right edges per row.
     let slice_w = w + if need_right { 2 } else { 0 };
-    for y in 0..h {
+    // One borrow for the whole block; see `padding_8bpc`.
+    dst.for_rows::<BitDepth16, _>(slice_w, h, |y, src| {
         let row_offset = tmp_offset + y * TMP_STRIDE;
 
         // Left edge (from separate left[] array)
@@ -1790,12 +1797,11 @@ pub(super) fn padding_16bpc(
             tmp[row_offset - 1] = left[y][1];
         }
 
-        // Source pixels + right edge in one DisjointMut access
-        let src = (dst + (y as isize * pixel_stride)).slice::<BitDepth16>(slice_w);
+        // Source pixels + right edge
         for x in 0..slice_w {
             tmp[row_offset + x] = src[x];
         }
-    }
+    });
 
     // Handle top edge (safe slice access via DisjointMut)
     if edges.contains(CdefEdgeFlags::HAVE_TOP) {
@@ -1834,32 +1840,37 @@ pub(super) fn padding_16bpc(
         } else {
             w + 2
         };
-        for dy in 0..2usize {
-            let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
-            let bottom_row = WithOffset {
-                data: bottom.data,
-                offset: bottom
-                    .offset
-                    .wrapping_sub(2)
-                    .wrapping_add_signed(dy as isize * pixel_stride),
+        // Picture rows are one two-row borrow; line-buffer rows stay per-row.
+        if let PicOrBuf::Pic(pic) = bottom.data {
+            // Never guard the skipped left-padding columns.
+            let first = WithOffset {
+                data: pic,
+                offset: bottom.offset.wrapping_sub(2).wrapping_add(x_start),
             };
-            // Same exact-window discipline as the top loop above: never guard
-            // the skipped left-padding columns.
-            let slice = match bottom_row.data {
-                PicOrBuf::Pic(pic) => {
-                    let guard = pic
-                        .slice::<BitDepth16, _>((bottom_row.offset + x_start.., ..x_end - x_start));
-                    for x in x_start..x_end {
-                        tmp[row_offset + x - 2] = guard[x - x_start];
-                    }
-                    continue;
+            first.for_rows::<BitDepth16, _>(x_end - x_start, 2, |dy, row| {
+                let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
+                for x in x_start..x_end {
+                    tmp[row_offset + x - 2] = row[x - x_start];
                 }
-                PicOrBuf::Buf(buf) => {
-                    buf.slice_as::<_, u16>((bottom_row.offset + x_start.., ..x_end - x_start))
+            });
+        } else {
+            for dy in 0..2usize {
+                let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
+                let bottom_row = WithOffset {
+                    data: bottom.data,
+                    offset: bottom
+                        .offset
+                        .wrapping_sub(2)
+                        .wrapping_add_signed(dy as isize * pixel_stride),
+                };
+                let PicOrBuf::Buf(buf) = bottom_row.data else {
+                    unreachable!("picture rows handled above")
+                };
+                let slice =
+                    buf.slice_as::<_, u16>((bottom_row.offset + x_start.., ..x_end - x_start));
+                for x in x_start..x_end {
+                    tmp[row_offset + x - 2] = slice[x - x_start];
                 }
-            };
-            for x in x_start..x_end {
-                tmp[row_offset + x - 2] = slice[x - x_start];
             }
         }
     }

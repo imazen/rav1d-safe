@@ -11,7 +11,29 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   their original bitstream values; a regression test covers parsing through
   decoded-frame accessors.
 
+- `Decoder::decode()` no longer drops a packet when the decoder is backed up. The
+  core refuses new input (EAGAIN) while input from an earlier call is queued behind a
+  finished picture; `decode()` returned `Err(NeedMoreData)` and discarded the packet,
+  so a caller that did not drain `get_frame()` between calls silently lost frames
+  (one benchmark pump counted 2 of 192). It now takes one picture out, queues it
+  (in order, served first by `get_frame`/`receive`/`flush`, cleared by `reset`) and
+  retries the same packet. Applies to every thread count.
+
 ### Changed
+- Tracked builds, large worker-decoded single-tile planes (>= 2 MiB, the same planes
+  that get the sharded tracker): reads and writes register exact rows (banded rect
+  records / the per-row compact path) instead of one strided hull, and CDEF's
+  per-row source, bottom-edge and direction-finder reads are one `for_rows` borrow
+  per 8x8 block (a hull when single-threaded). A hull spans several 4 KB tracker
+  blocks, i.e. several shard locks that other workers' neighbouring rows hash into.
+  Real 4K inter footage (aomenc / SVT-AV1 encodes of a 4K H.264 source), tile-only,
+  ms/frame before -> after: 4 threads 144.7 -> 70.7 (svt) and 191.6 -> 124.7 (aom),
+  8 threads 152.9 -> 67.4 and 208.1 -> 121.0; 1080p 47.0 -> 41.0 at 4 threads;
+  1 thread 2-5% faster; 480p/720p and 4K intra stills unchanged (+-0.5%). Small
+  single-tile planes keep the hull: exact rows cost them 9-19%. Contended tracker
+  lock acquisitions at 4K inter, 4 threads: 3.1 M -> 0.66 M. Tracked 4K inter at 4
+  threads is still slower than at 1 thread (125 vs 92 ms); the compact path now
+  registers every row twice (read + write-back), see docs/DECODER_COMPARISON.md.
 - Multi-threaded tracked builds: single-tile frames keep hull guards (no per-row
   splitting and no compact copy), and small single-tile planes (< 2 MiB) use the
   single-shard tracker layout. The tracker's multi-shard/wide paths were ~90% of the
@@ -44,6 +66,19 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   fall-through (bit-exact on all 803 vectors).
 - Frame threading (`max_frame_delay > 1`) is gated on `untracked` (previously
   `unchecked`).
+
+### Known issues
+- **Stack headroom on spawned threads.** Every thread carries ~1.29 MiB of static TLS
+  (the loop-restoration scratch buffers, `looprestoration.rs` `thread_local!`s of
+  `const` arrays), and glibc places a thread's TLS inside its stack mapping, so a
+  default 2 MiB Rust thread has only ~0.75 MiB of real stack. Decoding 16-bit
+  self-guided restoration needs ~0.63 MiB there (`lr_stripe` 252 KB and
+  `selfguided_filter` 160 KB frames, plus a 98 KB film-grain frame in
+  `rav1d_get_picture`), leaving ~120 KB. Any extra frame can overflow it: growing
+  `Decoder::decode` once added 150 KB and overflowed the `argon_cover` test thread.
+  `Decoder`'s entry points are `#[inline(never)]` to keep caller frames small; the
+  durable fixes are to move the LR scratch off TLS (or box it lazily) and shrink those
+  frames. Decoding on the main thread (8 MiB, TLS outside the stack) is unaffected.
 
 ### Removed
 - **Breaking:** the `unchecked` feature. Its bounds-unchecked SIMD loads/stores
