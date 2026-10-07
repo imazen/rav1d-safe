@@ -896,11 +896,22 @@ pub(crate) struct Rav1dFrameData {
     pub dq: [[[RelaxedAtomic<u16>; 2]; 3]; SegmentId::COUNT], /* [SegmentId::COUNT][3 plane][2 dc/ac] */
     pub qm: [[Option<&'static [u8]>; 3]; 19],                 /* [3 plane][19] */
     /// Above-context, tracked at ELEMENT granularity: one
-    /// `DisjointMut<BlockContext>` per tile-column slot. Tile workers own
-    /// disjoint `t.a` elements, so a per-block `index_mut(t.a..t.a + 1)`
-    /// guard is provably conflict-free and replaces ~12 per-field
-    /// registrations per block with one.
-    pub a: DisjointMut<Vec<BlockContext>>, /* len = w*tile_rows */
+    /// `DisjointMut<BlockContext>` per slot, each covering 128 luma pixels of
+    /// one tile column. Slots are laid out per tile row, `a_row_len` per row,
+    /// and **no two tile columns share a slot**: with 64x64 superblocks a tile
+    /// boundary can fall in the middle of a 128-pixel slot, and two tile workers
+    /// holding `&mut` to the same element would overlap. A tile that starts in
+    /// the middle of a slot therefore gets a fresh slot and uses only the half
+    /// it covers (`bx4 & 31` still addresses within the slot). Workers own
+    /// disjoint `t.a` elements, so the per-block `index_mut(t.a..t.a + 1)`
+    /// guard cannot conflict. Index with [`Self::a_slot`] / [`Self::a_slot_of_col4`].
+    pub a: DisjointMut<Vec<BlockContext>>, /* len = a_row_len * tile_rows (* 2 for 2-pass) */
+    /// First `f.a` slot (within a tile row) of each tile column.
+    pub a_col_base: Vec<usize>,
+    /// Luma start of each tile column in 4-pixel units, plus the frame end.
+    pub a_col_start4: Vec<usize>,
+    /// `f.a` slots per tile row.
+    pub a_row_len: usize,
     pub rf: RefMvsFrame,
     pub jnt_weights: [[u8; 7]; 7],
     pub bitdepth_max: c_int,
@@ -911,6 +922,46 @@ pub(crate) struct Rav1dFrameData {
 }
 
 impl Rav1dFrameData {
+    /// Lay out `f.a`: one private slot range per tile column (see [`Self::a`]).
+    /// `col_start_sb` are the tile column starts in superblocks (`cols + 1` entries),
+    /// `sb128` the superblock size. Returns `(a_col_base, a_col_start4, a_row_len)`.
+    pub fn above_context_layout(
+        col_start_sb: &[u16],
+        sb128: bool,
+    ) -> (Vec<usize>, Vec<usize>, usize) {
+        let to_slot = |sb: usize| sb >> (!sb128) as usize; // 128-pixel slot of a superblock
+        let to_4px = |sb: u16| (sb as usize) << (4 + sb128 as usize);
+        let cols = col_start_sb.len() - 1;
+        let mut base = Vec::with_capacity(cols);
+        let mut start4 = Vec::with_capacity(cols + 1);
+        let mut next = 0;
+        for c in 0..cols {
+            let first = to_slot(col_start_sb[c] as usize);
+            let last = to_slot(col_start_sb[c + 1] as usize - 1);
+            base.push(next);
+            start4.push(to_4px(col_start_sb[c]));
+            next += last - first + 1;
+        }
+        start4.push(to_4px(col_start_sb[cols]));
+        (base, start4, next)
+    }
+
+    /// The `f.a` slot a tile worker starts on (`tile_row`, `tile_col`), before the
+    /// 2-pass offset.
+    pub fn a_slot(&self, tile_row: usize, tile_col: usize) -> usize {
+        tile_row * self.a_row_len + self.a_col_base[tile_col]
+    }
+
+    /// Slot within a tile row that holds the above-context of luma column `col4`
+    /// (4-pixel units).
+    pub fn a_slot_of_col4(&self, col4: usize) -> usize {
+        let c = self.a_col_start4[1..]
+            .iter()
+            .position(|&end| col4 < end)
+            .unwrap_or(self.a_col_base.len() - 1);
+        self.a_col_base[c] + (col4 >> 5) - (self.a_col_start4[c] >> 5)
+    }
+
     /// Choose placement while frame setup holds exclusive access. Resizing
     /// preserves this local policy; other decoders cannot promote our scratch
     /// buffers to concurrent tracking through the process-wide fallback hints.

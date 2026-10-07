@@ -4241,11 +4241,11 @@ pub(crate) fn rav1d_decode_tile_sbrow(
     crate::src::owned_recon::arm_sbrow(f, t);
     if t.frame_thread.pass == 2 {
         let off_2pass = if c.tc.len() > 1 {
-            f.sb128w * frame_hdr.tiling.rows as c_int
+            f.a_row_len * frame_hdr.tiling.rows as usize
         } else {
             0
         };
-        t.a = (off_2pass + col_sb128_start + tile_row * f.sb128w) as usize;
+        t.a = off_2pass + f.a_slot(tile_row as usize, tile_col as usize);
         for bx in (ts.tiling.col_start..ts.tiling.col_end).step_by(sb_step as usize) {
             t.b.x = bx;
             if c.flush.load(Ordering::Acquire) {
@@ -4284,7 +4284,7 @@ pub(crate) fn rav1d_decode_tile_sbrow(
     }
     t.pal_sz_uv[1] = Default::default();
     let sb128y = t.b.y >> 5;
-    t.a = (col_sb128_start + tile_row * f.sb128w) as usize;
+    t.a = f.a_slot(tile_row as usize, tile_col as usize);
     t.lf_mask = Some((sb128y * f.sb128w + col_sb128_start) as usize);
     for bx in (ts.tiling.col_start..ts.tiling.col_end).step_by(sb_step as usize) {
         t.b.x = bx;
@@ -4479,10 +4479,20 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
     f.ts.try_resize_with(n_ts as usize, Default::default)
         .map_err(|_| ENOMEM)?;
 
-    let a_sz = f.sb128w
-        * frame_hdr.tiling.rows as c_int
-        * (1 + (c.fc.len() > 1 && c.tc.len() > 1) as c_int);
-    f.a.resize(a_sz as usize, Default::default());
+    let col_start_sb: Vec<u16> = frame_hdr.tiling.col_start_sb[..=frame_hdr.tiling.cols as usize]
+        .iter()
+        .map(|&sb| sb as u16)
+        .collect();
+    let sb128 = f.seq_hdr.as_ref().ok_or(EINVAL)?.sb128 != 0;
+    let (a_col_base, a_col_start4, a_row_len) =
+        Rav1dFrameData::above_context_layout(&col_start_sb, sb128);
+    f.a_col_base = a_col_base;
+    f.a_col_start4 = a_col_start4;
+    f.a_row_len = a_row_len;
+    let a_sz = a_row_len
+        * frame_hdr.tiling.rows as usize
+        * (1 + (c.fc.len() > 1 && c.tc.len() > 1) as usize);
+    f.a.resize(a_sz, Default::default());
 
     let num_sb128 = f.sb128w * f.sb128h;
     let size_mul = &ss_size_mul[f.cur.p.layout];
@@ -4884,7 +4894,8 @@ pub(crate) fn rav1d_decode_frame_init_cdf(
     }
 
     if c.tc.len() > 1 {
-        for (n, ctx) in f.a.get_mut()[..sb128w * rows * (1 + uses_2pass as usize)]
+        let a_row_len = f.a_row_len;
+        for (n, ctx) in f.a.get_mut()[..a_row_len * rows * (1 + uses_2pass as usize)]
             .iter_mut()
             .enumerate()
         {
@@ -4892,7 +4903,7 @@ pub(crate) fn rav1d_decode_frame_init_cdf(
                 ctx,
                 frame_hdr.frame_type.is_key_or_intra(),
                 if uses_2pass {
-                    1 + (n >= sb128w * rows) as c_int
+                    1 + (n >= a_row_len * rows) as c_int
                 } else {
                     0
                 },
@@ -4913,7 +4924,8 @@ fn rav1d_decode_frame_main(c: &Rav1dContext, f: &mut Rav1dFrameData) -> Rav1dRes
 
     let frame_hdr = &***f.frame_hdr.as_ref().ok_or(EINVAL)?;
 
-    for ctx in &mut f.a.get_mut()[..f.sb128w as usize * frame_hdr.tiling.rows as usize] {
+    let a_len = f.a_row_len * frame_hdr.tiling.rows as usize;
+    for ctx in &mut f.a.get_mut()[..a_len] {
         reset_context(ctx, frame_hdr.frame_type.is_key_or_intra(), 0);
     }
 

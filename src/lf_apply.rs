@@ -607,11 +607,12 @@ pub(crate) fn rav1d_loopfilter_sbrow_cols<BD: BitDepth>(
 
     // fix lpf strength at tile row boundaries
     if start_of_tile_row != 0 {
-        let a_guard = f.a.index(
-            (f.sb128w * (start_of_tile_row - 1)) as usize
-                ..(f.sb128w * (start_of_tile_row - 1) + f.sb128w) as usize,
-        );
-        let mut a = &a_guard[..];
+        let row_start = f.a_row_len * (start_of_tile_row - 1) as usize;
+        let a_guard = f.a.index(row_start..row_start + f.a_row_len);
+        // Above-context of 4-pixel luma column `col4` in the previous tile row. Tile
+        // columns own separate slots (see `Rav1dFrameData::a`), so a 128-pixel
+        // superblock column that spans a tile boundary is read from two slots.
+        let a_at = |col4: usize| &a_guard[f.a_slot_of_col4(col4)];
         for x in 0..f.sb128w {
             let y_vmask = &lflvl[x as usize].filter_y[1][starty4 as usize];
             let w = cmp::min(32, f.w4 - (x << 5)) as u32;
@@ -624,7 +625,10 @@ pub(crate) fn rav1d_loopfilter_sbrow_cols<BD: BitDepth>(
                 y_vmask[2][sidx].update(|it| it & !smask);
                 y_vmask[1][sidx].update(|it| it & !smask);
                 y_vmask[0][sidx].update(|it| it & !smask);
-                y_vmask[cmp::min(idx, a[0].tx_lpf_y[i as usize] as usize)][sidx]
+                y_vmask[cmp::min(
+                    idx,
+                    a_at((x << 5) as usize + i as usize).tx_lpf_y[i as usize] as usize,
+                )][sidx]
                     .update(|it| it | smask);
             }
             if f.cur.p.layout != Rav1dPixelLayout::I400 {
@@ -637,11 +641,14 @@ pub(crate) fn rav1d_loopfilter_sbrow_cols<BD: BitDepth>(
                     let idx = (uv_vmask[1][sidx].get() & smask != 0) as usize;
                     uv_vmask[1][sidx].update(|it| it & !smask);
                     uv_vmask[0][sidx].update(|it| it & !smask);
-                    uv_vmask[cmp::min(idx, a[0].tx_lpf_uv[i as usize] as usize)][sidx]
+                    uv_vmask[cmp::min(
+                        idx,
+                        a_at(((x << 5) as usize) + ((i as usize) << ss_hor)).tx_lpf_uv[i as usize]
+                            as usize,
+                    )][sidx]
                         .update(|it| it | smask);
                 }
             }
-            a = &a[1..];
         }
     }
     let lflvl = &f.lf.mask[lflvl_offset..];
