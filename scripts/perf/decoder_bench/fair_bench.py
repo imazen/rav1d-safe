@@ -26,12 +26,15 @@ ap.add_argument('--threads', default='1,4')
 ap.add_argument('--mode', choices=['tile', 'auto'], default='tile',
                 help='tile: tile/post-filter threading only (frame delay 1); auto: each decoder default parallelism '
                      '(frame threading where available; rav1d sizes it from the frame size)')
+ap.add_argument('--native-only', action='store_true', help='skip the AVX2-capped variants (halves the run time)')
 a = ap.parse_args()
 ROUNDS = int(os.environ.get('ROUNDS', '4')); PASSES = int(os.environ.get('PASSES', '5'))
 FIRST = int(os.environ.get('FIRST_CPU', '2'))
 OURS = {'untr': a.untracked, 'safe': a.default}
 CONT = [('dav1d', 'native'), ('dav1d', 'avx2'), ('gav1', 'avx2'), ('untr', 'native'),
         ('untr', 'avx2'), ('safe', 'native'), ('safe', 'avx2')]
+if a.native_only:
+    CONT = [c for c in CONT if c[1] == 'native' or c[0] == 'gav1']
 LABEL = {'dav1d': 'dav1d', 'gav1': 'libgav1', 'untr': 'rav1d untracked', 'safe': 'rav1d default'}
 
 def cpus(t):

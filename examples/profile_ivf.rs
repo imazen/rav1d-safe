@@ -68,6 +68,7 @@ fn decode_ivf_frames(frames: &[ivf_parser::IvfFrame]) -> usize {
     };
     let mut decoder = Decoder::with_settings(settings).expect("decoder creation failed");
     let mut decoded = 0;
+    let mut errors = 0usize;
 
     for ivf_frame in frames {
         match decoder.decode(&ivf_frame.data) {
@@ -76,8 +77,25 @@ fn decode_ivf_frames(frames: &[ivf_parser::IvfFrame]) -> usize {
                 decoded += 1;
             }
             Ok(None) => {}
-            Err(_) => {}
+            Err(e) => {
+                // A silently dropped error here once turned a decode failure into a
+                // plausible-looking but wrong frame count (and timing).
+                errors += 1;
+                if errors == 1 {
+                    eprintln!("decode error (first of possibly many): {e:?}");
+                }
+            }
         }
+        // Drain what frame-threaded workers have finished. Without this the input
+        // backs up, `decode()` fails with `NeedMoreData` and the packet is dropped
+        // (this is the documented pump: decode, then get_frame until None).
+        while let Ok(Some(frame)) = decoder.get_frame() {
+            black_box(&frame);
+            decoded += 1;
+        }
+    }
+    if errors > 0 {
+        eprintln!("{errors} decode() calls returned an error");
     }
 
     if let Ok(remaining) = decoder.flush() {
