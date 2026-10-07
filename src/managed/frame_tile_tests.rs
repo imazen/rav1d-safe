@@ -86,7 +86,7 @@ fn retained_allocator_allocates_after_decoder_drop() {
     settings.threads = 1;
     settings.max_frame_delay = 1;
     let decoder = Decoder::with_settings(settings).unwrap();
-    let allocator = decoder.ctx.as_ref().unwrap().allocator.clone();
+    let allocator = decoder.ctx.allocator.clone();
     drop(decoder);
 
     use crate::include::dav1d::picture::{Dav1dPicAllocator, Rav1dPicAllocator};
@@ -207,11 +207,8 @@ fn parallel_frame_tile_contexts_preserve_frames() {
         settings.threads = threads;
         settings.max_frame_delay = max_frame_delay;
         let mut decoder = Decoder::with_settings(settings).unwrap();
-        assert_eq!(
-            decoder.ctx.as_ref().unwrap().fc.len(),
-            max_frame_delay as usize
-        );
-        assert_eq!(decoder.ctx.as_ref().unwrap().tc.len(), threads as usize);
+        assert_eq!(decoder.ctx.fc.len(), max_frame_delay as usize);
+        assert_eq!(decoder.ctx.tc.len(), threads as usize);
         let mut output = Vec::new();
         for _ in 0..12 {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);

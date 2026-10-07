@@ -23,19 +23,19 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   (480p inter at 4 threads: 8.0 -> 4.3 ms/frame under load). Validated: 803/803 vectors at
   (2 threads, delay 2), (4, 3) and (8, 4), 640 stress runs, tracked film-grain
   frame-context test. `decode_md5` gained `--delay N`.
-- **Size-aware automatic frame delay** (managed `Decoder`, `max_frame_delay == 0`,
-  `threads > 1`; tracked and `untracked` builds). The `Decoder` now opens its context on
-  the first `decode()`/`send_packet()` and reads the frame size from the sequence
-  header: two frames in flight below about 6 megapixels, tile threading only above
-  (a second frame only for `untracked` at 8+ threads). Measured at 4 and 8 threads:
-  480p-1080p 0.54-0.76x the time of tile-only decoding; 4K at 4 threads, where a second
-  frame loses (1.15-1.45x), stays at one frame. **Behaviour change:** with `threads > 1`
-  and the delay on auto, tracked builds' `decode()` can now return `None` for a small
-  frame that is still in flight (poll `get_frame()`, `flush()` at the end); set
-  `max_frame_delay = 1` for the previous synchronous behaviour. `Decoder::with_settings`
-  still validates its settings immediately; `c-ffi` `dav1d_open` is unchanged (it cannot
-  see the stream) and keeps the thread-count rule. Pure rule:
-  `size_aware_frame_delay` in `src/lib.rs`, mutation-tested.
+- **Automatic frame delay for the managed `Decoder`** (`max_frame_delay == 0`,
+  `threads > 1`; tracked and `untracked` builds): two frames in flight, one frame
+  with `threads == 1`. (An earlier revision sized this from the frame size, one frame
+  above ~6 megapixels; that was calibrated on 4K intra stills and was wrong for 4K
+  video, so it was dropped together with the deferred open it needed.) Measured on real
+  footage (4K H.264 source downscaled to 1080p/720p, aomenc and SVT-AV1 encodes), 4 and 8
+  threads: a second frame takes 0.47-0.76x the time of tile threading alone untracked
+  and 0.67-0.84x tracked; a third or fourth frame adds working set without helping. The
+  one regression is all-intra 4K sequences at 4 threads (~1.15-1.45x). **Behaviour
+  change:** with `threads > 1` and the delay on auto, tracked builds' `decode()` can now
+  return `None` for a frame still in flight (poll `get_frame()`, `flush()` at the end);
+  set `max_frame_delay = 1` for the previous synchronous behaviour. `c-ffi`
+  `dav1d_open` is unchanged (thread-count rule).
 - Enum-valued context arrays (`comp_type`, `filter`, `tx`) and `RefMvsBlock.bs`
   store plain bytes with total decoding (`src/plain.rs`); `SegmentId` is a masked
   byte; the 2-pass frame-threading block store is a `Mutex` per slot.

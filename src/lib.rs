@@ -52,7 +52,6 @@ use parking_lot::Mutex;
 use std::cmp;
 #[cfg(feature = "c-ffi")]
 use std::ffi::CStr;
-use std::ffi::c_int;
 use std::mem;
 use std::sync::Arc;
 use std::sync::Once;
@@ -131,52 +130,6 @@ fn get_num_threads(s: &Rav1dSettings) -> NumThreads {
     NumThreads { n_fc, n_tc }
 }
 
-/// Luma pixels (largest frame of the sequence) from which one frame can keep
-/// several tile/post-filter threads busy: 4K UHD is 8.3 M, 3200x1800 is 5.8 M.
-const LARGE_FRAME_PIXELS: u64 = 6_000_000;
-
-/// How many frames to keep in flight when the caller left `max_frame_delay`
-/// at 0 and the stream's frame size is known (managed `Decoder`, from the first
-/// sequence header). Measured (docs/DECODER_COMPARISON.md, 4/8 threads, 480p to
-/// 4K, single- and 4-tile):
-///
-/// * below about 6 M pixels one frame cannot use more than a couple of threads
-///   (tile mode is flat from 4 to 8 threads at 720p/1080p), and two frames in
-///   flight cost 0.54-0.76x the time; a third or fourth frame only adds working
-///   set (up to 1.3x worse at 8 threads), so the cap is 2;
-/// * at 4K tile threading scales well to 4 threads, so a second frame loses
-///   (1.15-1.45x at 4 threads); at 8 threads tile threading has stalled and a
-///   second frame gains 0.65-0.78x, but only without the overlap tracker (the
-///   tracked build is 0.99-1.17x there, so it keeps one frame).
-///
-/// Verified up to 8 worker threads; the cap of 2 is deliberately not extrapolated.
-pub(crate) fn size_aware_frame_delay(n_tc: usize, width: u32, height: u32) -> usize {
-    if n_tc < 2 {
-        return 1;
-    }
-    if u64::from(width) * u64::from(height) < LARGE_FRAME_PIXELS {
-        return 2;
-    }
-    if cfg!(feature = "untracked") && n_tc >= 8 {
-        2
-    } else {
-        1
-    }
-}
-
-/// Whether `s` leaves the in-flight frame count to the stream's frame size, so an
-/// opener that can see the stream should resolve it with [`auto_frame_delay_for_size`].
-pub(crate) fn frame_delay_depends_on_size(s: &Rav1dSettings) -> bool {
-    s.max_frame_delay == 0 && get_num_threads(s).n_tc > 1
-}
-
-/// The explicit `max_frame_delay` that `s` (with `max_frame_delay == 0`) resolves
-/// to for a stream whose largest frame is `width` x `height`.
-pub(crate) fn auto_frame_delay_for_size(s: &Rav1dSettings, width: u32, height: u32) -> c_int {
-    let n_tc = get_num_threads(s).n_tc;
-    size_aware_frame_delay(n_tc, width, height) as c_int
-}
-
 #[cfg(feature = "c-ffi")]
 #[cold]
 pub(crate) fn rav1d_get_frame_delay(s: &Rav1dSettings) -> Rav1dResult<usize> {
@@ -186,9 +139,13 @@ pub(crate) fn rav1d_get_frame_delay(s: &Rav1dSettings) -> Rav1dResult<usize> {
     Ok(n_fc)
 }
 
-/// The input checks of [`rav1d_open`], on their own so a deferred open can fail at
-/// creation time like an immediate one.
-pub(crate) fn rav1d_validate_settings(s: &Rav1dSettings) -> Rav1dResult<()> {
+#[cold]
+pub(crate) fn rav1d_open(
+    s: &Rav1dSettings,
+) -> Rav1dResult<(Arc<Rav1dContext>, Vec<JoinHandle<()>>)> {
+    static initted: Once = Once::new();
+    initted.call_once(init_internal);
+
     validate_input!((s.n_threads >= 0 && s.n_threads <= 256, EINVAL))?;
     validate_input!((s.max_frame_delay >= 0 && s.max_frame_delay <= 256, EINVAL))?;
     validate_input!((s.operating_point <= 31, EINVAL))?;
@@ -197,17 +154,6 @@ pub(crate) fn rav1d_validate_settings(s: &Rav1dSettings) -> Rav1dResult<()> {
         !s.allocator.is_default() || s.allocator.cookie.is_none(),
         EINVAL
     ))?;
-    Ok(())
-}
-
-#[cold]
-pub(crate) fn rav1d_open(
-    s: &Rav1dSettings,
-) -> Rav1dResult<(Arc<Rav1dContext>, Vec<JoinHandle<()>>)> {
-    static initted: Once = Once::new();
-    initted.call_once(init_internal);
-
-    rav1d_validate_settings(s)?;
 
     // On 32-bit systems, extremely large frame sizes can cause overflows in
     // `rav1d_decode_frame` alloc size calculations. Prevent that from occuring

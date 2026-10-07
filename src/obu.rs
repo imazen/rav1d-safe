@@ -57,6 +57,7 @@ use crate::src::c_arc::CArc;
 use crate::src::decode::rav1d_submit_frame;
 use crate::src::env::get_poc_diff;
 use crate::src::error::Rav1dError::EINVAL;
+#[cfg(feature = "c-ffi")]
 use crate::src::error::Rav1dError::ENOENT;
 use crate::src::error::Rav1dError::ERANGE;
 use crate::src::error::Rav1dResult;
@@ -560,15 +561,8 @@ fn parse_seq_hdr(
 
 #[cfg(feature = "c-ffi")]
 pub(crate) fn rav1d_parse_sequence_header(
-    data: &[u8],
+    mut data: &[u8],
 ) -> Rav1dResult<DRav1d<Rav1dSequenceHeader, Dav1dSequenceHeader>> {
-    rav1d_find_sequence_header(data).map(DRav1d::from_rav1d)
-}
-
-/// Parses the last sequence header OBU in `data` (a buffer of whole OBUs), without
-/// a decoder. The managed `Decoder` uses it to see the frame size before choosing
-/// how many frames to keep in flight.
-pub(crate) fn rav1d_find_sequence_header(mut data: &[u8]) -> Rav1dResult<Rav1dSequenceHeader> {
     let mut res = Err(ENOENT);
 
     while !data.is_empty() {
@@ -603,13 +597,12 @@ pub(crate) fn rav1d_find_sequence_header(mut data: &[u8]) -> Rav1dResult<Rav1dSe
         if gb.has_error() != 0 {
             return Err(EINVAL);
         }
-        #[cfg(feature = "c-ffi")]
         assert!(!gb.has_pending_bits());
 
         data = &data[obu_end..]
     }
 
-    res
+    res.map(DRav1d::from_rav1d)
 }
 
 fn parse_frame_size(

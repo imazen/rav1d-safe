@@ -190,14 +190,13 @@ pub struct Settings {
     ///
     /// Tile threading is always available. With `threads > 1` and
     /// [`max_frame_delay`](Self::max_frame_delay) left at `0`, the decoder also keeps
-    /// frames in flight (frame threading, which scales much better on small frames),
-    /// chosen from the frame size in the stream's first sequence header: two frames
-    /// below about 6 megapixels, and for larger frames (4K stills and video) tile
-    /// threading alone, plus a second frame only with the `untracked` feature at 8 or
-    /// more threads. See [`max_frame_delay`](Self::max_frame_delay). Set it to `1`
-    /// to keep `decode()` synchronous.
-    /// For stills, additional workers help mainly when the image has multiple
-    /// tiles.
+    /// two frames in flight (frame threading, which scales much better than tile
+    /// threading on video). That makes `decode()` asynchronous: it may return `None`
+    /// for a frame that is still being decoded, so poll
+    /// [`get_frame()`](Decoder::get_frame) after each call. Set
+    /// [`max_frame_delay`](Self::max_frame_delay) to `1` to keep `decode()`
+    /// synchronous. For stills, additional workers help mainly when the image has
+    /// multiple tiles.
     pub threads: u32,
 
     /// Apply film grain synthesis during decoding
@@ -226,20 +225,17 @@ pub struct Settings {
 
     /// Maximum number of frames in flight for frame threading.
     ///
-    /// * `0` = auto (default). With `threads == 1` this is `1`. With more threads the
-    ///   decoder opens on the first `decode()`/`send_packet()` call and sizes the delay
-    ///   from that data's sequence header: `2` for frames under about 6 megapixels
-    ///   (measured 0.54-0.76x the time of tile threading alone from 480p to 1080p at
-    ///   4 and 8 threads), `1` for larger frames, except `2` at 8+ threads in
-    ///   `untracked` builds (4K tile threading stalls there). Data with no readable
-    ///   sequence header falls back to the core's thread-count rule
-    ///   (`min(sqrt(threads), 8)` in `untracked` builds, `1` otherwise). The choice is
-    ///   made once per `Decoder`, not per stream after a `reset()`.
-    /// * `1` = no frame threading (tile parallelism only — ideal for still images)
+    /// * `0` = auto (default): `1` when `threads == 1`, otherwise `2`. Measured on real
+    ///   480p-4K footage (aomenc and SVT-AV1 encodes, 4 and 8 threads), a second frame
+    ///   in flight takes 0.47-0.76x the time of tile threading alone in untracked builds
+    ///   and 0.67-0.84x in tracked builds. A third or fourth frame adds working set
+    ///   without helping. The one regression is all-intra 4K sequences at 4 threads
+    ///   (about 1.15-1.45x slower), which have nothing to pipeline anyway.
+    /// * `1` = no frame threading (tile parallelism only; `decode()` stays synchronous)
     /// * `2+` = up to N frames decoded in parallel (capped at `threads`)
     ///
-    /// For still image formats (AVIF, HEIC) that must not turn `decode()` asynchronous,
-    /// set this to `1` to get tile-level parallelism without frame threading.
+    /// For still image formats (AVIF, HEIC) a single frame cannot pipeline, so this only
+    /// matters for sequences; set `1` there if `decode()` must never return `None`.
     pub max_frame_delay: u32,
 
     /// Enforce strict standard compliance.
@@ -283,6 +279,18 @@ impl Settings {
 }
 
 #[allow(deprecated)]
+impl Settings {
+    /// The frame delay handed to the core: `max_frame_delay` as given, or for auto (`0`)
+    /// two frames when there are worker threads to run them and one otherwise.
+    fn effective_frame_delay(&self) -> i32 {
+        match self.max_frame_delay {
+            0 if self.threads == 1 => 1,
+            0 => 2,
+            n => n as i32,
+        }
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
@@ -327,7 +335,7 @@ impl From<Settings> for Rav1dSettings {
         let strictness = settings.effective_strictness();
         Self {
             n_threads: settings.threads as i32,
-            max_frame_delay: settings.max_frame_delay as i32,
+            max_frame_delay: settings.effective_frame_delay(),
             apply_grain: settings.apply_grain,
             operating_point: settings.operating_point,
             all_layers: settings.all_layers,
@@ -588,11 +596,7 @@ impl std::fmt::Display for CpuLevel {
 /// # }
 /// ```
 pub struct Decoder {
-    /// `None` only until the first data arrives, when `max_frame_delay == 0` and
-    /// `threads > 1` (see [`Decoder::ensure_open`]).
-    ctx: Option<Arc<Rav1dContext>>,
-    /// Settings of a context whose open is deferred until the frame size is known.
-    deferred: Option<Rav1dSettings>,
+    ctx: Arc<Rav1dContext>,
     worker_handles: Vec<std::thread::JoinHandle<()>>,
     /// Cooperative cancellation token (issue #412). Kept here as well as in the
     /// context so that on any decode error we can authoritatively report
@@ -601,6 +605,9 @@ pub struct Decoder {
     stop: Option<Arc<dyn Stop>>,
     input_ended: bool,
     drained: bool,
+    /// Pictures taken out of the decoder to let a blocked `decode()` retry its packet
+    /// (see [`Decoder::decode`]); always handed out before anything newer.
+    pending: std::collections::VecDeque<Frame>,
 }
 
 /// One owned chunk of AV1 OBUs with caller-supplied timing.
@@ -700,6 +707,26 @@ pub const fn is_untracked() -> bool {
     cfg!(feature = "untracked")
 }
 
+/// The core's send / get-picture entry points inline very large call chains
+/// (`parse_obus` -> frame decode -> reconstruction). Each inlined copy gets its own
+/// stack slots, and one thread already needs close to 2 MiB of stack to decode
+/// (1.92 MiB on the Argon cover streams) against Rust's 2 MiB default for spawned
+/// threads. Routing every call site through one non-inlined function keeps those
+/// frames transient instead of accumulating in `Decoder::decode`: adding a second
+/// and third inlined call site there once added 150 KB and overflowed the
+/// `argon_cover` test thread.
+#[inline(never)]
+fn core_send(ctx: &Rav1dContext, data: &mut Rav1dData) -> Result<(), Rav1dError> {
+    crate::src::lib::rav1d_send_data(ctx, data)
+}
+
+/// See [`core_send`].
+#[inline(never)]
+fn core_get_picture(ctx: &Rav1dContext) -> Result<Rav1dPicture, Rav1dError> {
+    let mut pic = Rav1dPicture::default();
+    crate::src::lib::rav1d_get_picture(ctx, &mut pic).map(|()| pic)
+}
+
 impl Decoder {
     /// Create a new decoder with default settings
     pub fn new() -> Result<Self> {
@@ -707,66 +734,26 @@ impl Decoder {
     }
 
     /// Create a decoder with custom settings
+    // Not inlined into callers: fat LTO would otherwise absorb this body (and the core
+    // decode machinery it reaches) into the caller's stack frame. A caller's frame is not
+    // reused while it decodes, and a spawned thread's default 2 MiB stack already has
+    // about 1.3 MiB taken by thread-local scratch, so every extra KB counts.
+    #[inline(never)]
     pub fn with_settings(settings: Settings) -> Result<Self> {
         // Apply CPU feature level mask before decoder init (affects SIMD dispatch)
         crate::src::cpu::rav1d_set_cpu_flags_mask(settings.cpu_level.to_mask());
 
         let rav1d_settings: Rav1dSettings = settings.into();
-        // With the frame delay left on auto and worker threads, the right number
-        // of frames in flight depends on the frame size, which only the first
-        // sequence header tells. Defer the open until the first data arrives.
-        crate::src::lib::rav1d_validate_settings(&rav1d_settings).map_err(|_| Error::InitFailed)?;
-        if crate::src::lib::frame_delay_depends_on_size(&rav1d_settings) {
-            return Ok(Self {
-                ctx: None,
-                deferred: Some(rav1d_settings),
-                worker_handles: Vec::new(),
-                stop: None,
-                input_ended: false,
-                drained: false,
-            });
-        }
         let (ctx, worker_handles) =
             crate::src::lib::rav1d_open(&rav1d_settings).map_err(|_| Error::InitFailed)?;
         Ok(Self {
-            ctx: Some(ctx),
-            deferred: None,
+            ctx,
             worker_handles,
             stop: None,
             input_ended: false,
             drained: false,
+            pending: std::collections::VecDeque::new(),
         })
-    }
-
-    /// Opens a deferred context, sizing the frame delay from `first_data` (whole
-    /// OBUs). A buffer without a readable sequence header leaves the core's own
-    /// automatic choice in place.
-    fn ensure_open(&mut self, first_data: Option<&[u8]>) -> Result<()> {
-        let Some(mut settings) = self.deferred.take() else {
-            return Ok(());
-        };
-        if let Some(seq_hdr) =
-            first_data.and_then(|data| crate::src::obu::rav1d_find_sequence_header(data).ok())
-        {
-            settings.max_frame_delay = crate::src::lib::auto_frame_delay_for_size(
-                &settings,
-                seq_hdr.max_width as u32,
-                seq_hdr.max_height as u32,
-            );
-        }
-        let (ctx, worker_handles) = match crate::src::lib::rav1d_open(&settings) {
-            Ok(opened) => opened,
-            Err(_) => {
-                self.deferred = Some(settings);
-                return Err(Error::InitFailed.into());
-            }
-        };
-        if self.stop.is_some() {
-            ctx.set_stop(self.stop.clone());
-        }
-        self.ctx = Some(ctx);
-        self.worker_handles = worker_handles;
-        Ok(())
     }
 
     /// Set (or clear with `None`) a cooperative cancellation token (issue #412).
@@ -796,9 +783,7 @@ impl Decoder {
     /// # }
     /// ```
     pub fn set_stop(&mut self, stop: Option<Arc<dyn Stop>>) {
-        if let Some(ctx) = &self.ctx {
-            ctx.set_stop(stop.clone());
-        }
+        self.ctx.set_stop(stop.clone());
         self.stop = stop;
     }
 
@@ -820,6 +805,11 @@ impl Decoder {
     /// partially processed: call [`reset`](Self::reset) before starting again.
     /// Sending an empty/already accepted packet is an error. New input after
     /// [`end_input`](Self::end_input) requires a reset.
+    // Not inlined into callers: fat LTO would otherwise absorb this body (and the core
+    // decode machinery it reaches) into the caller's stack frame. A caller's frame is not
+    // reused while it decodes, and a spawned thread's default 2 MiB stack already has
+    // about 1.3 MiB taken by thread-local scratch, so every extra KB counts.
+    #[inline(never)]
     pub fn send_packet(&mut self, packet: &mut Packet) -> Result<SendStatus> {
         if self.input_ended {
             return Err(Error::Other(
@@ -830,11 +820,7 @@ impl Decoder {
         if packet.is_empty() {
             return Err(Error::InvalidData.into());
         }
-        self.ensure_open(packet.inner.data.as_deref())?;
-        let Some(ctx) = &self.ctx else {
-            unreachable!("ensure_open opens the context")
-        };
-        match crate::src::lib::rav1d_send_data(ctx, &mut packet.inner) {
+        match core_send(&self.ctx, &mut packet.inner) {
             Ok(()) => Ok(SendStatus::Accepted),
             Err(Rav1dError::EAGAIN) => Ok(SendStatus::ReceivePending),
             Err(e) => Err(self.classify_decode_error(e)),
@@ -855,25 +841,24 @@ impl Decoder {
     /// Before [`end_input`](Self::end_input), no picture means `NeedInput`.
     /// Afterwards, this also waits for frame-threaded pictures before reporting
     /// terminal `EndOfStream`. Errors are never reported as end of stream.
+    // Not inlined into callers: fat LTO would otherwise absorb this body (and the core
+    // decode machinery it reaches) into the caller's stack frame. A caller's frame is not
+    // reused while it decodes, and a spawned thread's default 2 MiB stack already has
+    // about 1.3 MiB taken by thread-local scratch, so every extra KB counts.
+    #[inline(never)]
     pub fn receive(&mut self) -> Result<ReceiveStatus> {
+        if let Some(frame) = self.pending.pop_front() {
+            return Ok(ReceiveStatus::Frame(frame));
+        }
         if self.drained {
             return Ok(ReceiveStatus::EndOfStream);
         }
         // The first get_picture following send_data enters drain mode. A second
         // poll is required after EAGAIN to wait for delayed frame-thread output.
         let attempts = if self.input_ended { 2 } else { 1 };
-        // Nothing was ever sent to a still-deferred context, so it has no frames.
-        let Some(ctx) = &self.ctx else {
-            if self.input_ended {
-                self.drained = true;
-                return Ok(ReceiveStatus::EndOfStream);
-            }
-            return Ok(ReceiveStatus::NeedInput);
-        };
         for _ in 0..attempts {
-            let mut pic = Rav1dPicture::default();
-            match crate::src::lib::rav1d_get_picture(ctx, &mut pic) {
-                Ok(()) => return Ok(ReceiveStatus::Frame(Frame { inner: pic })),
+            match core_get_picture(&self.ctx) {
+                Ok(pic) => return Ok(ReceiveStatus::Frame(Frame { inner: pic })),
                 Err(Rav1dError::EAGAIN) => {}
                 Err(e) => return Err(self.classify_decode_error(e)),
             }
@@ -891,9 +876,8 @@ impl Decoder {
     /// Previously returned frames remain valid. Decoder settings and the stop
     /// token are retained. This is a discard operation, not an output drain.
     pub fn reset(&mut self) {
-        if let Some(ctx) = &self.ctx {
-            crate::src::lib::rav1d_flush(ctx);
-        }
+        crate::src::lib::rav1d_flush(&self.ctx);
+        self.pending.clear();
         self.input_ended = false;
         self.drained = false;
     }
@@ -922,6 +906,11 @@ impl Decoder {
     /// # Ok(())
     /// # }
     /// ```
+    // Not inlined into callers: fat LTO would otherwise absorb this body (and the core
+    // decode machinery it reaches) into the caller's stack frame. A caller's frame is not
+    // reused while it decodes, and a spawned thread's default 2 MiB stack already has
+    // about 1.3 MiB taken by thread-local scratch, so every extra KB counts.
+    #[inline(never)]
     pub fn decode(&mut self, data: &[u8]) -> Result<Option<Frame>> {
         if self.input_ended {
             return Err(Error::Other(
@@ -950,18 +939,32 @@ impl Decoder {
         // an in-flight frame may be decoded synchronously here, so a fired stop
         // token can surface on this call — route it through the same classifier
         // so it reports `Cancelled`, not the raw decode error.
-        self.ensure_open(Some(data))?;
-        let Some(ctx) = &self.ctx else {
-            unreachable!("ensure_open opens the context")
-        };
-        crate::src::lib::rav1d_send_data(ctx, &mut rav1d_data)
-            .map_err(|e| self.classify_decode_error(e))?;
+        //
+        // The decoder refuses new data (EAGAIN) while input from an earlier call is
+        // still queued behind a finished picture. That is backpressure, not an error:
+        // dropping this packet there silently lost frames from any caller that did
+        // not drain `get_frame()` between calls. Take one picture out so the decoder
+        // can continue, keep it (in order) for the caller, and retry the same packet.
+        loop {
+            match core_send(&self.ctx, &mut rav1d_data) {
+                Ok(()) => break,
+                Err(Rav1dError::EAGAIN) => match core_get_picture(&self.ctx) {
+                    Ok(pic) => self.pending.push_back(Frame { inner: pic }),
+                    // Queued input was consumed without finishing a picture.
+                    Err(Rav1dError::EAGAIN) => {}
+                    Err(e) => return Err(self.classify_decode_error(e)),
+                },
+                Err(e) => return Err(self.classify_decode_error(e)),
+            }
+        }
 
         // Try to get a picture
-        let mut pic = Rav1dPicture::default();
-        match crate::src::lib::rav1d_get_picture(ctx, &mut pic) {
-            Ok(()) => Ok(Some(Frame { inner: pic })),
-            Err(Rav1dError::EAGAIN) => Ok(None),
+        match core_get_picture(&self.ctx) {
+            Ok(pic) => {
+                self.pending.push_back(Frame { inner: pic });
+                Ok(self.pending.pop_front())
+            }
+            Err(Rav1dError::EAGAIN) => Ok(self.pending.pop_front()),
             Err(e) => Err(self.classify_decode_error(e)),
         }
     }
@@ -990,6 +993,11 @@ impl Decoder {
     ///
     /// On an error the decoder is still reset, and the error is returned;
     /// frames drained before it are dropped with it.
+    // Not inlined into callers: fat LTO would otherwise absorb this body (and the core
+    // decode machinery it reaches) into the caller's stack frame. A caller's frame is not
+    // reused while it decodes, and a spawned thread's default 2 MiB stack already has
+    // about 1.3 MiB taken by thread-local scratch, so every extra KB counts.
+    #[inline(never)]
     pub fn flush(&mut self) -> Result<Vec<Frame>> {
         // Drain BEFORE `rav1d_flush`. That function has dav1d's `dav1d_flush`
         // reset semantics: it discards pending input (`state.in_0`), the
@@ -1024,9 +1032,7 @@ impl Decoder {
 impl Drop for Decoder {
     fn drop(&mut self) {
         // Signal worker threads to exit
-        if let Some(ctx) = &self.ctx {
-            ctx.tell_worker_threads_to_die();
-        }
+        self.ctx.tell_worker_threads_to_die();
 
         // Join all worker threads synchronously
         // This is safe because:
@@ -1835,7 +1841,7 @@ pub fn enabled_features() -> String {
     features.join(", ")
 }
 
-// The size-aware automatic frame delay and the deferred open it needs; both builds.
+// The automatic frame delay; runs in both the tracked and untracked builds.
 #[cfg(test)]
 #[path = "managed/frame_delay_tests.rs"]
 mod frame_delay_tests;
