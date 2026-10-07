@@ -65,33 +65,39 @@ const DST_LEN: usize = 64 * MAX_RESTORATION_WIDTH;
 /// the box arrays', and `selfguided` fills `dst` before the apply pass
 /// reads it), so each array is initialized once per thread instead of
 /// being re-zeroed for every restoration unit.
+#[derive(zerocopy::FromZeros)]
 struct WienerScratch8 {
     tmp: [u8; TMP_LEN],
     hor: [u16; TMP_LEN],
 }
 
+#[derive(zerocopy::FromZeros)]
 struct WienerScratch16 {
     tmp: [u16; TMP_LEN],
     hor: [i32; TMP_LEN],
 }
 
+#[derive(zerocopy::FromZeros)]
 struct SgrScratch8 {
     tmp: [u8; TMP_LEN],
     dst0: [i16; DST_LEN],
     dst1: [i16; DST_LEN],
 }
 
+#[derive(zerocopy::FromZeros)]
 struct SgrScratch16 {
     tmp: [u16; TMP_LEN],
     dst0: [i32; DST_LEN],
     dst1: [i32; DST_LEN],
 }
 
+#[derive(zerocopy::FromZeros)]
 struct SgScratch8 {
     sumsq: [i32; BOX_LEN],
     sum: [i16; BOX_LEN],
 }
 
+#[derive(zerocopy::FromZeros)]
 struct SgScratch16 {
     sumsq: [i64; BOX_LEN],
     sum: [i32; BOX_LEN],
@@ -109,30 +115,47 @@ struct BoxTmp16 {
     sumsq: [i64; REST_UNIT_STRIDE],
 }
 
-thread_local! {
-    static WIENER_SCRATCH8: RefCell<WienerScratch8> = const {
-        RefCell::new(WienerScratch8 { tmp: [0; TMP_LEN], hor: [0; TMP_LEN] })
-    };
-    static WIENER_SCRATCH16: RefCell<WienerScratch16> = const {
-        RefCell::new(WienerScratch16 { tmp: [0; TMP_LEN], hor: [0; TMP_LEN] })
-    };
-    static SGR_SCRATCH8: RefCell<SgrScratch8> = const {
-        RefCell::new(SgrScratch8 { tmp: [0; TMP_LEN], dst0: [0; DST_LEN], dst1: [0; DST_LEN] })
-    };
-    static SGR_SCRATCH16: RefCell<SgrScratch16> = const {
-        RefCell::new(SgrScratch16 { tmp: [0; TMP_LEN], dst0: [0; DST_LEN], dst1: [0; DST_LEN] })
-    };
-    static SG_SCRATCH8: RefCell<SgScratch8> = const {
-        RefCell::new(SgScratch8 { sumsq: [0; BOX_LEN], sum: [0; BOX_LEN] })
-    };
-    static SG_SCRATCH16: RefCell<SgScratch16> = const {
-        RefCell::new(SgScratch16 {
-            sumsq: [0; BOX_LEN],
-            sum: [0; BOX_LEN],
-            aa: [0; BOX_LEN],
-            bb: [0; BOX_LEN],
+/// A per-thread scratch struct allocated on the heap on first use.
+///
+/// These were `const`-initialised `thread_local!` arrays, which put ~1.3 MiB of `.tbss`
+/// into EVERY thread of any program linking this crate: glibc places a thread's TLS
+/// inside its stack mapping, so a default 2 MiB Rust thread was left with ~0.75 MiB of
+/// real stack, against ~0.63 MiB the decoder itself needs. Now a thread that never
+/// restores a frame pays nothing, and the arrays are zero-allocated (lazily paged) once
+/// per decoding thread. Access costs one extra pointer load per restoration unit.
+struct LazyScratch<T: zerocopy::FromZeros>(RefCell<Option<Box<T>>>);
+
+impl<T: zerocopy::FromZeros> LazyScratch<T> {
+    const fn new() -> Self {
+        Self(RefCell::new(None))
+    }
+}
+
+/// `KEY.with_borrow_mut(|scratch| ..)` for a lazily boxed scratch, matching the
+/// `LocalKey<RefCell<T>>` method the call sites already use.
+trait WithScratch<T> {
+    fn with_borrow_mut<R>(&'static self, f: impl FnOnce(&mut T) -> R) -> R;
+}
+
+impl<T: zerocopy::FromZeros> WithScratch<T> for std::thread::LocalKey<LazyScratch<T>> {
+    fn with_borrow_mut<R>(&'static self, f: impl FnOnce(&mut T) -> R) -> R {
+        self.with(|cell| {
+            let mut slot = cell.0.borrow_mut();
+            let scratch = slot.get_or_insert_with(|| {
+                T::new_box_zeroed().expect("allocating loop-restoration scratch")
+            });
+            f(scratch)
         })
-    };
+    }
+}
+
+thread_local! {
+    static WIENER_SCRATCH8: LazyScratch<WienerScratch8> = const { LazyScratch::new() };
+    static WIENER_SCRATCH16: LazyScratch<WienerScratch16> = const { LazyScratch::new() };
+    static SGR_SCRATCH8: LazyScratch<SgrScratch8> = const { LazyScratch::new() };
+    static SGR_SCRATCH16: LazyScratch<SgrScratch16> = const { LazyScratch::new() };
+    static SG_SCRATCH8: LazyScratch<SgScratch8> = const { LazyScratch::new() };
+    static SG_SCRATCH16: LazyScratch<SgScratch16> = const { LazyScratch::new() };
     static BOX_TMP8: RefCell<BoxTmp8> = const {
         RefCell::new(BoxTmp8 { sum: [0; REST_UNIT_STRIDE], sumsq: [0; REST_UNIT_STRIDE] })
     };

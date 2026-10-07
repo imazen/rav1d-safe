@@ -20,6 +20,17 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   retries the same packet. Applies to every thread count.
 
 ### Changed
+- **Loop-restoration scratch moved off thread-local storage.** The x86-64 Wiener/SGR
+  scratch (~1.3 MiB: six `const`-initialised `thread_local!` struct arrays) put ~1.29 MiB of
+  `.tbss` into EVERY thread of any program linking the crate, and glibc places a thread's
+  TLS inside its stack mapping, so a default 2 MiB Rust thread had only ~0.75 MiB of real
+  stack against the ~0.63 MiB the decoder needs. The scratch is now boxed lazily per
+  decoding thread (`LazyScratch`, zeroed via `zerocopy::FromZeros::new_box_zeroed`, no
+  stack temporary); TLS is 11 KB. The Argon streams that overflowed a default thread
+  now need 586 KB of stack instead of 1,924 KB (headroom ~1.4 MiB instead of ~120 KB).
+  Benchmarked for regressions (tracked and untracked, 8- and 10-bit real footage, 4K
+  intra, 1 and 4 threads, with an A-vs-A control): no change beyond noise. The aarch64
+  file already boxed its scratch.
 - Tracked builds, large worker-decoded single-tile planes (>= 2 MiB, the same planes
   that get the sharded tracker): reads and writes register exact rows (banded rect
   records / the per-row compact path) instead of one strided hull, and CDEF's
@@ -66,19 +77,6 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   fall-through (bit-exact on all 803 vectors).
 - Frame threading (`max_frame_delay > 1`) is gated on `untracked` (previously
   `unchecked`).
-
-### Known issues
-- **Stack headroom on spawned threads.** Every thread carries ~1.29 MiB of static TLS
-  (the loop-restoration scratch buffers, `looprestoration.rs` `thread_local!`s of
-  `const` arrays), and glibc places a thread's TLS inside its stack mapping, so a
-  default 2 MiB Rust thread has only ~0.75 MiB of real stack. Decoding 16-bit
-  self-guided restoration needs ~0.63 MiB there (`lr_stripe` 252 KB and
-  `selfguided_filter` 160 KB frames, plus a 98 KB film-grain frame in
-  `rav1d_get_picture`), leaving ~120 KB. Any extra frame can overflow it: growing
-  `Decoder::decode` once added 150 KB and overflowed the `argon_cover` test thread.
-  `Decoder`'s entry points are `#[inline(never)]` to keep caller frames small; the
-  durable fixes are to move the LR scratch off TLS (or box it lazily) and shrink those
-  frames. Decoding on the main thread (8 MiB, TLS outside the stack) is unaffected.
 
 ### Removed
 - **Breaking:** the `unchecked` feature. Its bounds-unchecked SIMD loads/stores

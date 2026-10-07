@@ -818,15 +818,14 @@ builds only get it from the core on an EXPLICIT `max_frame_delay > 1`; the manag
 `Settings::effective_frame_delay`). That makes `decode()` asynchronous; poll
 `get_frame()` after each call, or set `max_frame_delay = 1`. See docs/DECODER_COMPARISON.md.
 
-**Stack headroom is thin on spawned threads (2026-10-06).** Each thread carries ~1.29 MiB of
-static TLS (the loop-restoration `thread_local!` scratch in `looprestoration.rs`), and glibc
-puts it inside the thread's stack mapping, so a default 2 MiB thread has ~0.75 MiB of real
-stack; 16-bit self-guided restoration needs ~0.63 MiB (`lr_stripe` 252 KB, `selfguided_filter`
-160 KB frames). Growing `Decoder::decode` once added 150 KB and overflowed the `argon_cover`
-test thread (SIGABRT, tracked build only). Keep new frames out of the decode path, keep the
-`Decoder` entry points `#[inline(never)]`, and if `argon_cover` aborts with "overflowed its
-stack", measure with `RUST_MIN_STACK=<bytes>` rather than guessing. The durable fix is moving
-that scratch off TLS. See CHANGELOG "Known issues".
+**Stack headroom on spawned threads (2026-10-06).** The x86 loop-restoration scratch used to live in
+`thread_local!` arrays (~1.3 MiB of `.tbss`); glibc puts a thread's TLS inside its stack mapping, so a
+default 2 MiB thread had only ~0.75 MiB of real stack and decoding (~0.63 MiB) overflowed whenever a frame
+grew by ~150 KB (it did, in `Decoder::decode`; SIGABRT in `argon_cover`, tracked build only). The scratch is
+now boxed lazily (`LazyScratch` in `looprestoration.rs`), TLS is 11 KB and decoding needs ~0.59 MiB of a
+2 MiB thread. **Do not put large arrays in `thread_local!` with a `const` initialiser**: check the TLS size
+with `readelf -SW <bin> | grep tbss`. The `Decoder` entry points stay `#[inline(never)]`. If a test aborts
+with "overflowed its stack", measure with `RUST_MIN_STACK=<bytes>` rather than guessing.
 
 Reproducer: `cargo test --release --test reproduce_overlap -- --ignored`
 

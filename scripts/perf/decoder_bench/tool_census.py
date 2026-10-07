@@ -9,13 +9,13 @@ D = sys.argv[1]
 syms = subprocess.run(['nm', D], capture_output=True, text=True).stdout.split('\n')
 names = sorted({l.split()[2] for l in syms if len(l.split()) == 3 and l.split()[1] == 'T'})
 GROUPS = {
-    'warp':     r'^dav1d_warp_affine_8x8t?_8bpc_',
-    'put/prep': r'^dav1d_(put|prep)_(6tap|8tap|bilin)[a-z_]*_8bpc_',
-    'compound': r'^dav1d_(avg|w_avg|mask|w_mask_\d+)_8bpc_',
-    'blend':    r'^dav1d_blend[_hv]?_8bpc_',
+    'warp':     r'^dav1d_warp_affine_8x8t?_(8|16)bpc_',
+    'put/prep': r'^dav1d_(put|prep)_(6tap|8tap|bilin)[a-z_]*_(8|16)bpc_',
+    'compound': r'^dav1d_(avg|w_avg|mask|w_mask_\d+)_(8|16)bpc_',
+    'blend':    r'^dav1d_blend[_hv]?_(8|16)bpc_',
     'palette':  r'^dav1d_pal_idx_finish_',
-    'cdef':     r'^dav1d_cdef_filter_\d+x\d+_8bpc_',
-    'lr':       r'^dav1d_(wiener|sgr)_filter\d*_8bpc_',
+    'cdef':     r'^dav1d_cdef_filter_\d+x\d+_(8|16)bpc_',
+    'lr':       r'^dav1d_(wiener|sgr)_filter\d*_(8|16)bpc_',
 }
 for f in sys.argv[2:]:
     sel = {g: [n for n in names if re.match(p, n)] for g, p in GROUPS.items()}
