@@ -375,6 +375,15 @@ jobs:
         run: cargo fmt --all -- --check
 
   # ==========================================================================
+  conformance-runner:
+    name: Conformance runner protocol
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Manifest extraction, flags and nonempty selection
+        run: python3 tools/test_conformance_runner.py
+
   i686-cross:
     name: i686 container tests (cross)
     runs-on: ubuntu-latest

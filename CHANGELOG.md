@@ -5,6 +5,9 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- Default conformance extraction serializes excluded sanitizer rows with the
+  same seven-column shape as MD5 rows; the end-to-end protocol gate now runs
+  in CI (`54279978` restores extraction).
 - Thread cleanup observes worker OS names for up to one second before its
   unchanged four-worker assertion; a three-worker mutation still fails.
 - Release all-target lint recipes pass on native ARM in tracked and untracked

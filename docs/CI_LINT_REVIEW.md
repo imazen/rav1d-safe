@@ -88,3 +88,8 @@ the repair and passes afterward alongside all five existing runner tests;
 it also checks operating-point/frame-type/limit flags survive extraction.
 [Failure, restored gate and native build proof](../benchmarks/conformance_extractor_2026-10-08.meta.json)
 record the distinction. The separate full sidecar matrix remains pending.
+
+The dedicated `Conformance runner protocol` CI job now runs all six boundary
+tests on pushes, including the default extraction path. Actionlint 1.7.12
+accepts the updated workflow. This adds one job to the previously green
+32-job matrix; the new 33-job remote result remains pending.
