@@ -73,6 +73,10 @@ bench-paired-modes *args:
 bench-paired-report directory:
     python3 scripts/perf/decoder_bench/report_paired.py "{{directory}}"
 
+# Preserve one exact SIMD symbol range; resolve bounds with nm -S -C first.
+dump-simd-codegen binary start stop:
+    objdump -d -C --start-address={{start}} --stop-address={{stop}} "{{binary}}"
+
 # Focused repeats still require complete matched A/A and A/B phases.
 bench-paired-mode-report directory mode:
     python3 scripts/perf/decoder_bench/report_paired.py "{{directory}}" --mode "{{mode}}"

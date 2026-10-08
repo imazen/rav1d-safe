@@ -1,7 +1,7 @@
 # Fused small-block MC experiment
 
 Missing: completed whole-clip identity/error checks, full decoder/sidecar
-gates, codegen inspection and matched tracked/untracked A/A plus A/B timing.
+gates and matched tracked/untracked A/A plus A/B timing.
 No throughput improvement is claimed.
 
 This isolated child shares the published signed warp destination repair
@@ -72,3 +72,14 @@ The wrapped scope returned rc=0 after 120 seconds, peak RSS 0.20 GiB,
 minimum available 25,499 MiB and peak load 1.73. The controlled timing
 matrix is now running; full decoder/sidecar gates and a production landing
 remain missing.
+
+## Static code generation
+
+The [preserved disassemblies](../benchmarks/mc_fused_small_2026-10-08/codegen.json)
+resolve two private helper instantiations, shifts six and ten. Each emitted
+symbol has 1,186 machine-code bytes, fourteen static byte multiply-adds
+and eight static word multiply-adds. `just dump-simd-codegen` reproduces
+each exact address range; executable and raw-output hashes are recorded.
+These are static occurrences, not executed instruction counts, call
+frequency or measured savings from avoiding the pooled intermediate.
+The whole-clip controlled timing matrix remains pending.
