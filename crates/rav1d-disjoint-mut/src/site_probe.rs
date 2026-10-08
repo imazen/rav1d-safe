@@ -164,7 +164,13 @@ pub fn report(frames: u64) -> String {
             .and_then(|n| n.iter().find(|(k, _)| *k == key))
             .map(|(_, l)| std::format!("{}:{}:{}", l.file(), l.line(), l.column()))
             .unwrap_or_else(|| std::format!("?{key:#x}"));
-        rows.push((m + i, m, s.bytes.load(Relaxed), s.n_cont.load(Relaxed), where_));
+        rows.push((
+            m + i,
+            m,
+            s.bytes.load(Relaxed),
+            s.n_cont.load(Relaxed),
+            where_,
+        ));
     }
     // Descending by call count. `sort_by_key` + `Reverse` is the same stable
     // sort as the reversed comparator it replaces, ties included.

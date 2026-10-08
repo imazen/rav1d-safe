@@ -1,12 +1,12 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
-#[cfg(all(not(asm_msac), target_arch = "x86_64"))]
-use archmage::incant;
 use crate::include::common::attributes::clz;
 use crate::include::common::intops::inv_recenter;
 use crate::include::common::intops::ulog2;
 use crate::src::c_arc::CArc;
 use crate::src::cpu::CpuFlags;
+#[cfg(all(not(asm_msac), target_arch = "x86_64"))]
+use archmage::incant;
 use cfg_if::cfg_if;
 use likely_stable::{likely, unlikely};
 use std::ffi::c_int;
@@ -370,22 +370,11 @@ pub(crate) const EC_WIN_SIZE: usize = mem::size_of::<EcWin>() << 3;
 /// dispatching [`update_cdf`] wrapper.
 #[cfg_attr(asm_msac, allow(dead_code))]
 #[archmage::rite(v3, v1, scalar)]
-pub(crate) fn msac_update_cdf(
-    cdf: &mut [u16],
-    n: usize,
-    val: usize,
-    rate: u16,
-    count: u16,
-) {
+pub(crate) fn msac_update_cdf(cdf: &mut [u16], n: usize, val: usize, rate: u16, count: u16) {
     #[cfg(all(not(asm_msac), target_arch = "x86_64"))]
     if n == 3 && rate < 16 {
         return incant!(
-            update_cdf3(
-                (&mut cdf[..4]).try_into().unwrap(),
-                val.min(3),
-                rate,
-                count
-            ),
+            update_cdf3((&mut cdf[..4]).try_into().unwrap(), val.min(3), rate, count),
             [v1, default]
         );
     }
@@ -1412,7 +1401,7 @@ pub fn rav1d_msac_decode_symbol_adapt16(s: &mut MsacContext, cdf: &mut [u16], n_
         } else if #[cfg(all(asm_msac, target_feature = "neon"))] {
             // SAFETY: `checkasm` has verified that it is equivalent to [`dav1d_msac_decode_symbol_adapt_rust`].
             ret = unsafe {
-                dav1d_msac_decode_symbol_adapt16_neon(&mut s.asm, cdf.as_mut_ptr())
+                dav1d_msac_decode_symbol_adapt16_neon(&mut s.asm, cdf.as_mut_ptr(), n_symbols as usize)
             };
         } else if #[cfg(all(not(asm_msac), target_arch = "x86_64"))] {
             ret = c_uint::from(incant!(
