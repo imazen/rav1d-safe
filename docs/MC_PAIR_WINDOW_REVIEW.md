@@ -2,8 +2,8 @@
 
 The reviewed final candidate passes the full decoder, feature and forty-leg
 sidecar gates. Matched one-worker timing improves on all three 8-bit clips
-in both modes. Tracked four-worker 4K has mixed median/minimum direction;
-a longer controlled repeat remains pending before source landing. The
+in both modes. The longer tracked four-worker 4K repeat does not reproduce
+the first campaign's positive median; no four-worker improvement is established. The
 candidate source is `e8162a0d6bbae5543546f6f8532a651ac31e4a13`, MC SHA
 `5eef8c20ef03bb11d1c922cecb47727edf96ca7cf002bc162f33b3dddc8dc8db`.
 Results below were measured on Ryzen 9 7900X (Zen 4), 2026-10-08. Zen 5
@@ -205,3 +205,18 @@ arithmetic; no 10-bit improvement is claimed.
 
 The complete scope reports `run-heavy: done rc=0 2986s | peak-RSS 0.21GiB |
 min-avail 22266MiB | peak-load 1.93`. Production source remains unpublished.
+
+## Longer tracked four-worker 4K repeat
+
+[Eight-pair A/A and A/B repeat](../benchmarks/mc_tracked_4k_repeat_2026-10-08/meta.json)
+uses the same frozen executables, stream and settings as the full campaign.
+Each phase has eight process pairs with three timed passes per process.
+A/B median is 121.1436405 to 120.383814 ms/frame (-0.6272%); minimum
+ratio is 0.9957455124 (-0.4254%). A/A median/minimum differ by
++0.0992%/+0.7408%. Five of eight A/B process-pair medians are negative;
+three are positive. These results do not reproduce the first campaign's
++1.3483% median, and do not establish a four-worker speedup.
+The consistent one-worker 8-bit gains are the supported performance finding.
+No numerical pass threshold was changed. The completed scope returned rc=0
+after 748 seconds, peak RSS 0.21 GiB, minimum available 25,720 MiB and
+peak load 1.56.

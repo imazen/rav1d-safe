@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-08",
+  "cpu": "AMD Ryzen 9 7900X (Zen 4); Zen 5 not measured",
+  "before_revision": "bb4cded48baf878d7ae404db78006b6b572b0633",
+  "after_revision": "e8162a0d6bbae5543546f6f8532a651ac31e4a13",
+  "build_provenance": "../mc_final_matched_builds_2026-10-08.meta.json",
+  "command": "env PATH=/home/lilith/.cargo/bin:$PATH TMPDIR=/home/lilith/tmp RUSTFLAGS= CARGO_ENCODED_RUSTFLAGS= /home/lilith/work/claudehints/scripts/run-heavy --mem 16G --jobs 20 -- just bench-paired-modes --mode safe --before-prefix /home/lilith/work/zen/rav1d-safe/target/lead-mc-final-before --after-prefix /home/lilith/work/zen/rav1d-safe/target/lead-mc-final-after --before-rev bb4cded48baf878d7ae404db78006b6b572b0633 --after-rev e8162a0d6bbae5543546f6f8532a651ac31e4a13 --stream /home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real4k_48.ivf --threads 4 --rounds 8 --passes 3 --first-cpu 8 --delay 1 --output /home/lilith/tmp/handoff/rav1d-safe-lead/ci/mc-tracked-4k-repeat-20261008",
+  "resource": "run-heavy: done rc=0 748s | peak-RSS 0.21GiB | min-avail 25720MiB | peak-load 1.56",
+  "process_pairs_per_phase": 8,
+  "timed_passes_per_process": 3,
+  "interpretation": "The positive tracked four-worker median in the first campaign is not repeated; four-worker improvement is not established. Single-worker 8-bit gains remain supported by the full matched campaign.",
+  "files": [
+    {
+      "name": "analysis.json",
+      "sha256": "4c8849f5cd173bc73448c1971fc27075d91dd461ab97b6b0b00e7cc1fbb66486",
+      "bytes": 1150
+    },
+    {
+      "name": "campaign.log",
+      "sha256": "f369f0e2d944207a78bc7a8ac48e59e55efdb9202a26bcf4aa6833620ab7b65e",
+      "bytes": 5846
+    },
+    {
+      "name": "safe-aa.jsonl",
+      "sha256": "3715c1b036221b7508e1bcbd6113c2b9aab6e3b7a5e418fd6e1762a0299a6090",
+      "bytes": 1493
+    },
+    {
+      "name": "safe-ab.jsonl",
+      "sha256": "241c90b872376fa2b0421efdd63cf9a639e3eae828f195c7ac2a84c7d3fe74fc",
+      "bytes": 1490
+    }
+  ]
+}
