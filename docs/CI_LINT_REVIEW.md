@@ -78,3 +78,13 @@ The later lead-owned main revision `a34a4233` also passed all 32 jobs in
 verified on 2026-10-08. The separate Disjoint workflow at `a076772f`
 passed all 14 jobs, including Stacked and Tree Borrows Miri. Native decoder
 experiments remain separate from these published-revision checks.
+
+The first native all-tier/all-worker sidecar invocation exposed a TSV-shape
+regression before any decode: OSS-fuzz sanitizer arrays emitted six fields
+although the writer required seven. Those rows are excluded by the default
+caller, but still must serialize successfully. Their empty `extra_args`
+field is now explicit. A new end-to-end default-extraction test fails before
+the repair and passes afterward alongside all five existing runner tests;
+it also checks operating-point/frame-type/limit flags survive extraction.
+[Failure, restored gate and native build proof](../benchmarks/conformance_extractor_2026-10-08.meta.json)
+record the distinction. The separate full sidecar matrix remains pending.

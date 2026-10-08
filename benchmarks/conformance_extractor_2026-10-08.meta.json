@@ -1,0 +1,22 @@
+{
+  "command": "just test-conformance-runner; native just build-conformance-modes followed by just conformance-all-modes",
+  "regression": "Default extraction crashes on a six-field OSS-fuzz array row before the caller can exclude it; add the seventh empty extra_args field.",
+  "tests": "New end-to-end default-extraction test fails before repair; all six runner tests pass afterward. Existing assertions unchanged.",
+  "native_prepare": {
+    "rustc": "1.99.0",
+    "archmage": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+    "cpu": "Neoverse-N1",
+    "result": "Both preserved binaries build; sidecar runner fails in extractor before decoding any vectors.",
+    "run_heavy": "rc=1;131s;peak-RSS0.92GiB;min-avail26003MiB;peak-load11.04",
+    "binary_sha256": {
+      "tracked": "d23246330bd46410ce66a011a47cee065beb5d4c77d125a299cc334b1233b573",
+      "untracked": "d4cf563892707ee7a367adac9162c31a4cd511d53fc6fb726c383ca7e7cc3d0e"
+    }
+  },
+  "log_sha256": {
+    "conformance_extractor_before_2026-10-08.log": "363a946fbf5f987aa8d9a629084b191637a96fbcf7869b876c506914a6f0ed36",
+    "conformance_extractor_after_2026-10-08.log": "2371bb9db8ef139833b5d04c2c6cfbfafe9b23f0f33fb7f69421181e5904b61d",
+    "arm_sidecar_prepare_2026-10-08.log": "d0668162250045a761c30db978dc3649e79d2a080e331789eb8451ef966df69c"
+  },
+  "limits": "Correct runner-shape/liveness regression and build proof only; complete sidecar matrix remains pending."
+}

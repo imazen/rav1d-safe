@@ -1,0 +1,22 @@
+python3 tools/test_conformance_runner.py
+.F....
+======================================================================
+FAIL: test_default_extraction_handles_excluded_sanitizer_arrays (__main__.ConformanceRunnerTests.test_default_extraction_handles_excluded_sanitizer_arrays)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/lilith/work/zen/rav1d-safe/tools/test_conformance_runner.py", line 111, in test_default_extraction_handles_excluded_sanitizer_arrays
+    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+AssertionError: 1 != 0 : Traceback (most recent call last):
+  File "/home/lilith/work/zen/rav1d-safe/scripts/extract_test_vectors.py", line 355, in <module>
+    main()
+  File "/home/lilith/work/zen/rav1d-safe/scripts/extract_test_vectors.py", line 349, in main
+    print(f"{row[0]}\t{row[1]}\t{row[2]}\t{row[3]}\t{row[4]}\t{row[5]}\t{row[6]}")
+                                                                         ~~~^^^
+IndexError: tuple index out of range
+
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.350s
+
+FAILED (failures=1)
+error: recipe `test-conformance-runner` failed on line 84 with exit code 1

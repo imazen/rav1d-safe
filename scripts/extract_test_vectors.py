@@ -3,7 +3,8 @@
 Extract test vectors from dav1d-test-data meson.build files.
 
 Outputs TSV to stdout with columns:
-    bitdepth, category, test_name, file_path (absolute), expected_md5, filmgrain (0 or 1)
+    bitdepth, category, test_name, file_path (absolute), expected_md5,
+    filmgrain (0 or 1), extra_args
 
 Handles these meson.build patterns:
 1. tests += [['name', files('path'), 'md5'], ...]
@@ -81,7 +82,7 @@ def find_variable_context(text):
 def find_standalone_tests(text):
     """Find standalone test() calls with dav1d (not dav1d_fuzzer).
 
-    Returns list of (name, filepath_rel, md5, filmgrain) tuples.
+    Returns list of (name, filepath_rel, md5, filmgrain, extra_args) tuples.
     """
     results = []
 
@@ -204,6 +205,7 @@ def parse_oss_fuzz(meson_path):
                 os.path.abspath(filepath),
                 "",
                 0,
+                "",
             ))
 
     # Parse standalone test() calls for oss-fuzz (both dav1d_fuzzer and dav1d_fuzzer_mt)

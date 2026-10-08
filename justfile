@@ -52,8 +52,8 @@ test-integration: download-vectors
     just test-integration-selection test-vectors
 
 # Explicit caller-selected corpus; no fetch or implicit fallback for this path.
-test-integration-selection vectors:
-    RAV1D_TEST_VECTORS="{{vectors}}" cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --test integration_decode --run-ignored all --test-threads 2
+test-integration-selection vectors features="bitdepth_8,bitdepth_16":
+    RAV1D_TEST_VECTORS="{{vectors}}" cargo nextest run --release --no-default-features --features "{{features}}" --test integration_decode --run-ignored all --test-threads 2
 
 # Threading-race regression gates (zenavif#30 + the original overlap class):
 # the ignored tile_threading_overlap tests (incl. multi_threaded_cdef_lpf_race,
@@ -87,6 +87,10 @@ conformance binary threads="1" delay="0":
     bash scripts/conformance_test.sh --binary "{{binary}}" --threads {{threads}} --delay {{delay}} --expected 803
 
 # Complete sidecar oracle at every runtime tier and 1/2/4/8 workers in both modes.
+build-conformance-modes tracked untracked:
+    CARGO_TARGET_DIR="{{tracked}}" cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16" --example decode_md5
+    CARGO_TARGET_DIR="{{untracked}}" cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --example decode_md5
+
 conformance-all-modes tracked untracked:
     #!/usr/bin/env bash
     set -euo pipefail
