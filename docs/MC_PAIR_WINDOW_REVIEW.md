@@ -133,3 +133,18 @@ and delay one. That 123-second scope peaks at 0.20 GiB RSS, minimum available
 MD5 frame-limit checks also pass; the control scope peaks at 0.02 GiB.
 The full actual-token sidecar gate is running; no A/A or A/B throughput
 claim follows from these build and output checks.
+
+## Final actual-token sidecar matrix
+
+[All forty configurations](../benchmarks/mc_final_sidecars_2026-10-08/meta.json)
+pass 803/803 official sidecars, with zero mismatches or decode errors. The
+matrix covers tracked and untracked builds, one/two/four/eight workers,
+and enforced scalar/v2/v3/v4/native tokens at delay zero. Each configuration
+explicitly excludes 149 malformed OSS-fuzz inputs from the 952-row manifest;
+those are not conformance sidecars. All eight generated manifests are byte
+identical and preserved together with the complete output log in ordered
+parts under 28,000 bytes. The final source and executable hashes match the
+preceding build record. The 4,876-second wrapped scope reports peak RSS
+0.24 GiB, minimum available 24,802 MiB, peak load 3.73 and rc=0.
+Matched A/A and A/B throughput remains pending; production source remains
+unpublished. Zen 5 has not been measured.
