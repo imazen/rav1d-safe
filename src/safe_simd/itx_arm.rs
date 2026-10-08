@@ -19,13 +19,16 @@
 // callers: the `extern "C"` dispatch wrappers, which are
 // `#[cfg(all(feature = "asm", target_arch = "aarch64"))]`, and the
 // `#[cfg(all(test, target_arch = "aarch64"))]` autoversioned-vs-NEON benchmark
-// module. In every other configuration ~96 items lose their last caller at once
-// and `dead_code` fires on all of them.
+// module. That benchmark covers eight 8bpc transforms, not every reference.
+// Other non-ASM test configurations retain 75 unused reference items;
+// their allowances are item-scoped so new unused test helpers remain visible.
+// In non-test configurations without ASM, the reference group has no callers.
 //
 // They are kept deliberately: they are the readable specification the NEON code
 // is checked against, and the bench module A/Bs them against it. The allow is
-// therefore conditional on the configuration where the callers are compiled out,
-// so the lint stays live in the configurations where these items DO have callers.
+// therefore conditional on configurations where both caller groups are compiled
+// out. Item-scoped non-ASM test allowances account for partial benchmark
+// coverage; dead-code linting stays active for the assembly wrappers.
 #![cfg_attr(
     not(all(target_arch = "aarch64", any(feature = "asm", test))),
     allow(dead_code)
@@ -46,6 +49,7 @@ use crate::include::common::intops::iclip;
 use crate::include::dav1d::picture::PicOffset;
 use crate::src::ffi_safe::FFISafe;
 #[allow(non_camel_case_types)]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 type ptrdiff_t = isize;
 
 // ============================================================================
@@ -121,6 +125,7 @@ pub(crate) fn inv_txfm_add_wht_wht_4x4_8bpc_inner(
 
 /// WHT 4x4 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_wht_wht_4x4_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -191,9 +196,13 @@ fn inv_txfm_add_wht_wht_4x4_16bpc_inner(
 // ============================================================================
 
 /// DCT4 1D transform constants
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 const DCT4_C1: i32 = 2896; // cos(pi/8) * 4096
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 const DCT4_C2: i32 = 2896; // cos(3pi/8) * 4096
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 const DCT4_C3: i32 = 1567; // sin(pi/8) * 4096
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 const DCT4_C4: i32 = 3784; // sin(3pi/8) * 4096
 
 /// DCT4 1D transform
@@ -270,6 +279,7 @@ pub(crate) fn inv_txfm_add_dct_dct_4x4_8bpc_inner(
 
 /// DCT 4x4 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_4x4_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -323,12 +333,19 @@ fn inv_txfm_add_dct_dct_4x4_16bpc_inner(
 // ============================================================================
 
 /// DCT8 1D transform constants
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 const COS_PI_1_16: i32 = 4017; // cos(pi/16) * 4096
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 const COS_PI_2_16: i32 = 3784; // cos(2*pi/16) * 4096
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 const COS_PI_3_16: i32 = 3406; // cos(3*pi/16) * 4096
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 const COS_PI_4_16: i32 = 2896; // cos(4*pi/16) * 4096 = sqrt(2)/2 * 4096
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 const COS_PI_5_16: i32 = 2276; // cos(5*pi/16) * 4096
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 const COS_PI_6_16: i32 = 1567; // cos(6*pi/16) * 4096
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 const COS_PI_7_16: i32 = 799; // cos(7*pi/16) * 4096
 
 /// DCT8 1D transform
@@ -418,6 +435,7 @@ fn inv_txfm_add_dct_dct_8x8_8bpc_inner(
 
 /// DCT 8x8 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_8x8_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -573,6 +591,7 @@ fn inv_txfm_add_dct_dct_16x16_8bpc_inner(
 
 /// DCT 16x16 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_16x16_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -652,6 +671,7 @@ pub(crate) fn inv_txfm_add_identity_identity_4x4_8bpc_inner(
 
 /// Identity 4x4 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_identity_identity_4x4_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -708,6 +728,7 @@ fn inv_txfm_add_identity_identity_8x8_8bpc_inner(
 
 /// Identity 8x8 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_identity_identity_8x8_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -734,6 +755,7 @@ fn inv_txfm_add_identity_identity_8x8_16bpc_inner(
 
 /// Identity 16x16 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_identity_identity_16x16_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -764,6 +786,7 @@ fn inv_txfm_add_identity_identity_16x16_8bpc_inner(
 
 /// Identity 16x16 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_identity_identity_16x16_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -880,6 +903,7 @@ pub(crate) fn inv_txfm_add_adst_adst_4x4_8bpc_inner(
 
 /// ADST 4x4 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_adst_adst_4x4_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -993,6 +1017,7 @@ fn adst8_1d(input: &[i32; 8]) -> [i32; 8] {
 
 /// ADST 8x8 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_adst_adst_8x8_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -1037,6 +1062,7 @@ fn inv_txfm_add_adst_adst_8x8_8bpc_inner(
 
 /// ADST 8x8 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_adst_adst_8x8_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -1138,6 +1164,7 @@ pub(crate) fn inv_txfm_add_flipadst_flipadst_4x4_8bpc_inner(
 
 /// FlipADST 4x4 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_flipadst_flipadst_4x4_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -1287,6 +1314,7 @@ pub(crate) fn inv_txfm_add_adst_dct_4x4_8bpc_inner(
 
 /// DCT-ADST 4x4 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_adst_4x4_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -1334,6 +1362,7 @@ fn inv_txfm_add_dct_adst_4x4_16bpc_inner(
 
 /// ADST-DCT 4x4 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_adst_dct_4x4_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -1479,6 +1508,7 @@ pub(crate) fn inv_txfm_add_flipadst_dct_4x4_8bpc_inner(
 
 /// DCT-FLIPADST 4x4 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_flipadst_4x4_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -1526,6 +1556,7 @@ fn inv_txfm_add_dct_flipadst_4x4_16bpc_inner(
 
 /// FLIPADST-DCT 4x4 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_flipadst_dct_4x4_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -1671,6 +1702,7 @@ pub(crate) fn inv_txfm_add_flipadst_adst_4x4_8bpc_inner(
 
 /// ADST-FLIPADST 4x4 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_adst_flipadst_4x4_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -1718,6 +1750,7 @@ fn inv_txfm_add_adst_flipadst_4x4_16bpc_inner(
 
 /// FLIPADST-ADST 4x4 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_flipadst_adst_4x4_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -3164,6 +3197,7 @@ pub unsafe extern "C" fn inv_txfm_add_flipadst_adst_4x4_16bpc_neon(
 
 /// DCT 4x8 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_4x8_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -3211,6 +3245,7 @@ fn inv_txfm_add_dct_dct_4x8_8bpc_inner(
 
 /// DCT 4x8 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_4x8_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -3256,6 +3291,7 @@ fn inv_txfm_add_dct_dct_4x8_16bpc_inner(
 
 /// DCT 8x4 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_8x4_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -3303,6 +3339,7 @@ fn inv_txfm_add_dct_dct_8x4_8bpc_inner(
 
 /// DCT 8x4 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_8x4_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -3352,6 +3389,7 @@ fn inv_txfm_add_dct_dct_8x4_16bpc_inner(
 
 /// DCT 8x16 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_8x16_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -3398,6 +3436,7 @@ fn inv_txfm_add_dct_dct_8x16_8bpc_inner(
 
 /// DCT 8x16 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_8x16_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -3442,6 +3481,7 @@ fn inv_txfm_add_dct_dct_8x16_16bpc_inner(
 
 /// DCT 16x8 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_16x8_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -3488,6 +3528,7 @@ fn inv_txfm_add_dct_dct_16x8_8bpc_inner(
 
 /// DCT 16x8 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_16x8_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -3536,6 +3577,7 @@ fn inv_txfm_add_dct_dct_16x8_16bpc_inner(
 
 /// DCT-ADST 8x8 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_adst_8x8_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -3580,6 +3622,7 @@ fn inv_txfm_add_dct_adst_8x8_8bpc_inner(
 
 /// ADST-DCT 8x8 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_adst_dct_8x8_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -3624,6 +3667,7 @@ fn inv_txfm_add_adst_dct_8x8_8bpc_inner(
 
 /// DCT-ADST 8x8 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_adst_8x8_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -3668,6 +3712,7 @@ fn inv_txfm_add_dct_adst_8x8_16bpc_inner(
 
 /// ADST-DCT 8x8 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_adst_dct_8x8_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -4303,6 +4348,7 @@ fn inv_txfm_add_dct_dct_32x32_8bpc_inner(
 
 /// DCT 32x32 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_32x32_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -4351,6 +4397,7 @@ fn inv_txfm_add_dct_dct_32x32_16bpc_inner(
 
 /// DCT 4x16 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_4x16_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -4398,6 +4445,7 @@ fn inv_txfm_add_dct_dct_4x16_8bpc_inner(
 
 /// DCT 4x16 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_4x16_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -4443,6 +4491,7 @@ fn inv_txfm_add_dct_dct_4x16_16bpc_inner(
 
 /// DCT 16x4 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_16x4_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -4490,6 +4539,7 @@ fn inv_txfm_add_dct_dct_16x4_8bpc_inner(
 
 /// DCT 16x4 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_16x4_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -4539,6 +4589,7 @@ fn inv_txfm_add_dct_dct_16x4_16bpc_inner(
 
 /// DCT 16x32 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_16x32_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -4585,6 +4636,7 @@ fn inv_txfm_add_dct_dct_16x32_8bpc_inner(
 
 /// DCT 16x32 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_16x32_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -4629,6 +4681,7 @@ fn inv_txfm_add_dct_dct_16x32_16bpc_inner(
 
 /// DCT 32x16 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_32x16_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -4675,6 +4728,7 @@ fn inv_txfm_add_dct_dct_32x16_8bpc_inner(
 
 /// DCT 32x16 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_32x16_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -5153,6 +5207,7 @@ fn dct64_1d(input: &[i32; 64]) -> [i32; 64] {
 
 /// DCT 64x64 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_64x64_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -5199,6 +5254,7 @@ fn inv_txfm_add_dct_dct_64x64_8bpc_inner(
 
 /// DCT 64x64 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_64x64_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -5247,6 +5303,7 @@ fn inv_txfm_add_dct_dct_64x64_16bpc_inner(
 
 /// DCT 8x32 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_8x32_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -5293,6 +5350,7 @@ fn inv_txfm_add_dct_dct_8x32_8bpc_inner(
 
 /// DCT 8x32 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_8x32_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -5337,6 +5395,7 @@ fn inv_txfm_add_dct_dct_8x32_16bpc_inner(
 
 /// DCT 32x8 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_32x8_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -5383,6 +5442,7 @@ fn inv_txfm_add_dct_dct_32x8_8bpc_inner(
 
 /// DCT 32x8 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_32x8_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -5431,6 +5491,7 @@ fn inv_txfm_add_dct_dct_32x8_16bpc_inner(
 
 /// DCT 32x64 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_32x64_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -5475,6 +5536,7 @@ fn inv_txfm_add_dct_dct_32x64_8bpc_inner(
 
 /// DCT 32x64 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_32x64_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -5519,6 +5581,7 @@ fn inv_txfm_add_dct_dct_32x64_16bpc_inner(
 
 /// DCT 64x32 transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_64x32_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -5563,6 +5626,7 @@ fn inv_txfm_add_dct_dct_64x32_8bpc_inner(
 
 /// DCT 64x32 transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_64x32_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -5997,6 +6061,7 @@ fn identity4_1d_arm(c: &mut [i32], stride: usize) {
 }
 
 #[inline(always)]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn identity8_1d_arm(c: &mut [i32], stride: usize) {
     for i in 0..8 {
         c[i * stride] *= 2;
@@ -6004,6 +6069,7 @@ fn identity8_1d_arm(c: &mut [i32], stride: usize) {
 }
 
 #[inline(always)]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn identity16_1d_arm(c: &mut [i32], stride: usize) {
     for i in 0..16 {
         c[i * stride] *= 2;
@@ -6011,6 +6077,7 @@ fn identity16_1d_arm(c: &mut [i32], stride: usize) {
 }
 
 #[inline(always)]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn identity32_1d_arm(c: &mut [i32], stride: usize) {
     for i in 0..32 {
         c[i * stride] *= 4;
@@ -6029,6 +6096,7 @@ fn rect2_scale(v: i32) -> i32 {
 
 /// Generic rectangular identity transform for 8bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn identity_rect_8bpc_inner<const W: usize, const H: usize>(
     dst: &mut [u8],
     dst_base: usize,
@@ -6075,6 +6143,7 @@ fn identity_rect_8bpc_inner<const W: usize, const H: usize>(
 
 /// Generic rectangular identity transform for 16bpc
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn identity_rect_16bpc_inner<const W: usize, const H: usize>(
     dst: &mut [u16],
     dst_base: usize,
@@ -7337,6 +7406,7 @@ pub unsafe extern "C" fn inv_txfm_add_identity_flipadst_4x4_8bpc_neon(
 // ============================================================================
 
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_16x64_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -7380,6 +7450,7 @@ fn inv_txfm_add_dct_dct_16x64_8bpc_inner(
 }
 
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_16x64_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -7423,6 +7494,7 @@ fn inv_txfm_add_dct_dct_16x64_16bpc_inner(
 }
 
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_64x16_8bpc_inner(
     dst: &mut [u8],
     dst_base: usize,
@@ -7466,6 +7538,7 @@ fn inv_txfm_add_dct_dct_64x16_8bpc_inner(
 }
 
 #[autoversion]
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_dct_dct_64x16_16bpc_inner(
     dst: &mut [u16],
     dst_base: usize,
@@ -7670,10 +7743,12 @@ use crate::src::itx_1d::*;
 use std::cmp;
 use std::num::NonZeroUsize;
 
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 type Itx1dFn = fn(&mut [i32], NonZeroUsize, i32, i32);
 
 /// Generic 8bpc inverse transform: apply row_fn across rows, then col_fn down columns,
 /// then add residuals to dst pixels.
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_generic_8bpc(
     dst: &mut [u8],
     dst_base: usize,
@@ -7771,6 +7846,7 @@ fn inv_txfm_add_generic_8bpc(
 }
 
 /// Generic 16bpc inverse transform
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn inv_txfm_add_generic_16bpc(
     dst: &mut [u16],
     dst_base: usize,
@@ -7868,6 +7944,7 @@ fn inv_txfm_add_generic_16bpc(
 }
 
 /// Resolve a 1D transform function by type and size
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn resolve_1d(txfm: &str, n: usize) -> Itx1dFn {
     match (txfm, n) {
         ("dct", 4) => rav1d_inv_dct4_1d_c,
@@ -7889,6 +7966,7 @@ fn resolve_1d(txfm: &str, n: usize) -> Itx1dFn {
     }
 }
 
+#[cfg_attr(all(test, not(feature = "asm")), allow(dead_code))]
 fn shift_for(w: usize, h: usize) -> u8 {
     match (w, h) {
         (4, 4) => 0,

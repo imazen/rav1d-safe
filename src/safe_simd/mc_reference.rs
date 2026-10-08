@@ -94,7 +94,11 @@ pub(in crate::src::safe_simd) fn filter_guard<BD: BitDepth>(
     read_guard::<BD>(src, w as usize, h as usize, [pad(mx), pad(my)])
 }
 
-#[cfg(all(test, not(feature = "c-ffi")))]
+#[cfg(all(
+    test,
+    not(feature = "c-ffi"),
+    any(not(feature = "untracked"), target_arch = "x86_64")
+))]
 mod tests {
     use super::*;
     use crate::include::common::bitdepth::BitDepth8;

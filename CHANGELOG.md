@@ -5,6 +5,9 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- Release all-target lint recipes pass on native ARM in tracked and untracked
+  modes; intentionally retained scalar references have item-scoped test
+  allowances, and an empty test module follows its existing test cfgs.
 - Legacy integration recipe uses release mode and an explicit corpus selection;
   missing/empty corpus data fails instead of passing without decoding.
 - Restore the missing symbol-count argument in the ARM assembly adapt16 call;

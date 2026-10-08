@@ -1,0 +1,568 @@
+1584 |         self.loop_filter_sb.y.v = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_v_sb_y, neon);
+     |                                   ---------------------------------------------------- in this macro invocation
+     |
+     = help: consider adding a `#[repr(C)]` or `#[repr(transparent)]` attribute to this struct
+     = note: this struct has unspecified layout
+     = note: this warning originates in the macro `loopfilter_sb::decl_fn` which comes from the expansion of the macro `bd_fn` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: `extern` block uses type `A16`, which is not FFI-safe
+    --> src/loopfilter.rs:38:10
+     |
+  38 |     lut: &Align16<Av1FilterLUT>,
+     |          ^^^^^^^^^^^^^^^^^^^^^^ not FFI-safe
+...
+1585 |         self.loop_filter_sb.uv.h = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_h_sb_uv, neon);
+     |                                    ----------------------------------------------------- in this macro invocation
+     |
+     = help: consider adding a `#[repr(C)]` or `#[repr(transparent)]` attribute to this struct
+     = note: this struct has unspecified layout
+     = note: this warning originates in the macro `loopfilter_sb::decl_fn` which comes from the expansion of the macro `bd_fn` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: `extern` block uses type `A16`, which is not FFI-safe
+    --> src/loopfilter.rs:38:10
+     |
+  38 |     lut: &Align16<Av1FilterLUT>,
+     |          ^^^^^^^^^^^^^^^^^^^^^^ not FFI-safe
+...
+1586 |         self.loop_filter_sb.uv.v = bd_fn!(loopfilter_sb::decl_fn, BD, lpf_v_sb_uv, neon);
+     |                                    ----------------------------------------------------- in this macro invocation
+     |
+     = help: consider adding a `#[repr(C)]` or `#[repr(transparent)]` attribute to this struct
+     = note: this struct has unspecified layout
+     = note: this warning originates in the macro `loopfilter_sb::decl_fn` which comes from the expansion of the macro `bd_fn` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+  --> src/wrap_fn_ptr.rs:57:27
+   |
+57 |               pub struct Fn(FnPtr);
+   |                             ^^^^^
+   |
+  ::: src/loopfilter.rs:32:1
+   |
+32 | / wrap_fn_ptr!(pub unsafe extern "C" fn loopfilter_sb(
+33 | |     dst_ptr: *mut DynPixel,
+34 | |     stride: ptrdiff_t,
+35 | |     mask: &[u32; 3],
+...  |
+42 | |     _lvl: *const FFISafe<WithOffset<&[AtomicU8]>>,
+43 | | ) -> ());
+   | |________- in this macro invocation
+   |
+   = note: the address of the same function can vary between different codegen units
+   = note: furthermore, different functions could have the same address after being merged together
+   = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+   = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+   --> src/wrap_fn_ptr.rs:57:27
+    |
+ 57 |               pub struct Fn(FnPtr);
+    |                             ^^^^^
+    |
+   ::: src/looprestoration.rs:116:1
+    |
+116 | / wrap_fn_ptr!(pub unsafe extern "C" fn loop_restoration_filter(
+117 | |     dst_ptr: *mut DynPixel,
+118 | |     dst_stride: ptrdiff_t,
+119 | |     left: *const LeftPixelRow<DynPixel>,
+...   |
+127 | |     _lpf: *const FFISafe<DisjointMut<AlignedVec64<u8>>>,
+128 | | ) -> ());
+    | |________- in this macro invocation
+    |
+    = note: the address of the same function can vary between different codegen units
+    = note: furthermore, different functions could have the same address after being merged together
+    = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+    = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/looprestoration.rs:1806:5
+     |
+1806 | /     wrap_fn_ptr!(unsafe extern "C" fn sgr_box_row_h(
+1807 | |         sumsq: *mut i32,
+1808 | |         sum: *mut i16,
+1809 | |         left: *const LeftPixelRow<DynPixel>,
+...    |
+1813 | |         bitdepth_max: c_int,
+1814 | |     ) -> ());
+     | |____________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/looprestoration.rs:1845:5
+     |
+1845 | /     wrap_fn_ptr!(unsafe extern "C" fn sgr_box35_row_h(
+1846 | |         sumsq3: *mut i32,
+1847 | |         sum3: *mut i16,
+1848 | |         sumsq5: *mut i32,
+...    |
+1854 | |         bitdepth_max: c_int,
+1855 | |     ) -> ());
+     | |____________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/looprestoration.rs:1884:5
+     |
+1884 | /     wrap_fn_ptr!(unsafe extern "C" fn sgr_box_vert(
+1885 | |         sumsq: *mut *mut i32,
+1886 | |         sum: *mut *mut i16,
+1887 | |         aa: *mut i32,
+...    |
+1891 | |         bitdepth_max: c_int,
+1892 | |     ) -> ());
+     | |____________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/looprestoration.rs:1948:5
+     |
+1948 | /     wrap_fn_ptr!(unsafe extern "C" fn sgr_finish_weighted1(
+1949 | |         dst: *mut DynPixel,
+1950 | |         a_ptrs: *mut *mut i32,
+1951 | |         b_ptrs: *mut *mut i16,
+...    |
+1954 | |         bitdepth_max: c_int,
+1955 | |     ) -> ());
+     | |____________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/looprestoration.rs:1985:5
+     |
+1985 | /     wrap_fn_ptr!(unsafe extern "C" fn sgr_finish_weighted2(
+1986 | |         dst: *mut DynPixel,
+1987 | |         stride: ptrdiff_t,
+1988 | |         a_ptrs: *mut *mut i32,
+...    |
+1993 | |         bitdepth_max: c_int,
+1994 | |     ) -> ());
+     | |____________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/looprestoration.rs:2026:5
+     |
+2026 | /     wrap_fn_ptr!(unsafe extern "C" fn sgr_finish_filter_2rows(
+2027 | |         tmp: *mut i16,
+2028 | |         src: *const DynPixel,
+2029 | |         src_stride: ptrdiff_t,
+...    |
+2034 | |         bitdepth_max: c_int,
+2035 | |     ) -> ());
+     | |____________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/looprestoration.rs:2123:5
+     |
+2123 | /     wrap_fn_ptr!(unsafe extern "C" fn sgr_weighted2(
+2124 | |         dst: *mut DynPixel,
+2125 | |         dst_stride: ptrdiff_t,
+2126 | |         t1: *const i16,
+...    |
+2131 | |         bitdepth_max: c_int,
+2132 | |     ) -> ());
+     | |____________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/mc.rs:1583:1
+     |
+1583 | / wrap_fn_ptr!(pub unsafe extern "C" fn mc(
+1584 | |     dst_ptr: *mut DynPixel,
+1585 | |     dst_stride: isize,
+1586 | |     src_ptr: *const DynPixel,
+...    |
+1594 | |     _src: *const FFISafe<PicOffset>,
+1595 | | ) -> ());
+     | |________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/mc.rs:1634:1
+     |
+1634 | / wrap_fn_ptr!(pub unsafe extern "C" fn mc_scaled(
+1635 | |     dst_ptr: *mut DynPixel,
+1636 | |     dst_stride: isize,
+1637 | |     src_ptr: *const DynPixel,
+...    |
+1647 | |     _src: *const FFISafe<PicOffset>,
+1648 | | ) -> ());
+     | |________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/mc.rs:1688:1
+     |
+1688 | / wrap_fn_ptr!(pub unsafe extern "C" fn warp8x8(
+1689 | |     dst_ptr: *mut DynPixel,
+1690 | |     dst_stride: isize,
+1691 | |     src_ptr: *const DynPixel,
+...    |
+1698 | |     _src: *const FFISafe<PicOffset>,
+1699 | | ) -> ());
+     | |________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/mc.rs:1734:1
+     |
+1734 | / wrap_fn_ptr!(pub unsafe extern "C" fn mct(
+1735 | |     tmp: *mut i16,
+1736 | |     src_ptr: *const DynPixel,
+1737 | |     src_stride: isize,
+...    |
+1743 | |     _src: *const FFISafe<PicOffset>,
+1744 | | ) -> ());
+     | |________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/mc.rs:1776:1
+     |
+1776 | / wrap_fn_ptr!(pub unsafe extern "C" fn mct_scaled(
+1777 | |     tmp: *mut i16,
+1778 | |     src_ptr: *const DynPixel,
+1779 | |     src_stride: isize,
+...    |
+1787 | |     _src: *const FFISafe<PicOffset>,
+1788 | | ) -> ());
+     | |________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/mc.rs:1822:1
+     |
+1822 | / wrap_fn_ptr!(pub unsafe extern "C" fn warp8x8t(
+1823 | |     tmp: *mut i16,
+1824 | |     tmp_stride: usize,
+1825 | |     src_ptr: *const DynPixel,
+...    |
+1832 | |     _src: *const FFISafe<PicOffset>,
+1833 | | ) -> ());
+     | |________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/mc.rs:1868:1
+     |
+1868 | / wrap_fn_ptr!(pub unsafe extern "C" fn avg(
+1869 | |     dst_ptr: *mut DynPixel,
+1870 | |     dst_stride: isize,
+1871 | |     tmp1: &[i16; COMPINTER_LEN],
+...    |
+1876 | |     _dst: *const FFISafe<PicOffset>,
+1877 | | ) -> ());
+     | |________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/mc.rs:1906:1
+     |
+1906 | / wrap_fn_ptr!(pub unsafe extern "C" fn w_avg(
+1907 | |     dst_ptr: *mut DynPixel,
+1908 | |     dst_stride: isize,
+1909 | |     tmp1: &[i16; COMPINTER_LEN],
+...    |
+1915 | |     _dst: *const FFISafe<PicOffset>,
+1916 | | ) -> ());
+     | |________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/mc.rs:1945:1
+     |
+1945 | / wrap_fn_ptr!(pub unsafe extern "C" fn mask(
+1946 | |     dst_ptr: *mut DynPixel,
+1947 | |     dst_stride: isize,
+1948 | |     tmp1: &[i16; COMPINTER_LEN],
+...    |
+1954 | |     _dst: *const FFISafe<PicOffset>,
+1955 | | ) -> ());
+     | |________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/mc.rs:1985:1
+     |
+1985 | / wrap_fn_ptr!(pub unsafe extern "C" fn w_mask(
+1986 | |     dst_ptr: *mut DynPixel,
+1987 | |     dst_stride: isize,
+1988 | |     tmp1: &[i16; COMPINTER_LEN],
+...    |
+1995 | |     _dst: *const FFISafe<PicOffset>,
+1996 | | ) -> ());
+     | |________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/mc.rs:2028:1
+     |
+2028 | / wrap_fn_ptr!(pub unsafe extern "C" fn blend(
+2029 | |     dst_ptr: *mut DynPixel,
+2030 | |     dst_stride: isize,
+2031 | |     tmp: *const [DynPixel; SCRATCH_INTER_INTRA_BUF_LEN],
+...    |
+2035 | |     _dst: *const FFISafe<PicOffset>,
+2036 | | ) -> ());
+     | |________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/mc.rs:2064:1
+     |
+2064 | / wrap_fn_ptr!(pub unsafe extern "C" fn blend_dir(
+2065 | |     dst_ptr: *mut DynPixel,
+2066 | |     dst_stride: isize,
+2067 | |     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
+...    |
+2070 | |     _dst: *const FFISafe<PicOffset>,
+2071 | | ) -> ());
+     | |________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/mc.rs:2099:1
+     |
+2099 | / wrap_fn_ptr!(pub unsafe extern "C" fn emu_edge(
+2100 | |     bw: isize,
+2101 | |     bh: isize,
+2102 | |     iw: isize,
+...    |
+2110 | |     _src: *const FFISafe<Rav1dPictureDataComponent>,
+2111 | | ) -> ());
+     | |________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+    --> src/wrap_fn_ptr.rs:57:27
+     |
+  57 |               pub struct Fn(FnPtr);
+     |                             ^^^^^
+     |
+    ::: src/mc.rs:2150:1
+     |
+2150 | / wrap_fn_ptr!(pub unsafe extern "C" fn resize(
+2151 | |     dst: *mut DynPixel,
+2152 | |     dst_stride: isize,
+2153 | |     src_ptr: *const DynPixel,
+...    |
+2162 | |     _dst: *const FFISafe<WithOffset<PicOrBuf<AlignedVec64<u8>>>>,
+2163 | | ) -> ());
+     | |________- in this macro invocation
+     |
+     = note: the address of the same function can vary between different codegen units
+     = note: furthermore, different functions could have the same address after being merged together
+     = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+  --> src/wrap_fn_ptr.rs:57:27
+   |
+57 |               pub struct Fn(FnPtr);
+   |                             ^^^^^
+   |
+  ::: src/pal.rs:10:1
+   |
+10 | / wrap_fn_ptr!(pub unsafe extern "C" fn pal_idx_finish(
+11 | |     dst: *mut u8,
+12 | |     src: *const u8,
+13 | |     bw: c_int,
+...  |
+16 | |     h: c_int,
+17 | | ) -> ());
+   | |________- in this macro invocation
+   |
+   = note: the address of the same function can vary between different codegen units
+   = note: furthermore, different functions could have the same address after being merged together
+   = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+   = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: `extern` block uses type `A16`, which is not FFI-safe
+    --> src/refmvs.rs:481:10
+     |
+ 481 |     rmv: &Align16<RefMvsBlock>,
+     |          ^^^^^^^^^^^^^^^^^^^^^ not FFI-safe
+...
+1912 |         self.splat_mv = splat_mv::decl_fn!(fn dav1d_splat_mv_neon);

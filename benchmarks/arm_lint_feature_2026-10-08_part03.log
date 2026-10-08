@@ -1,0 +1,75 @@
+     |                         ------------------------------------------ in this macro invocation
+     |
+     = help: consider adding a `#[repr(C)]` or `#[repr(transparent)]` attribute to this struct
+     = note: this struct has unspecified layout
+     = note: this warning originates in the macro `splat_mv::decl_fn` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+   --> src/wrap_fn_ptr.rs:57:27
+    |
+ 57 |               pub struct Fn(FnPtr);
+    |                             ^^^^^
+    |
+   ::: src/refmvs.rs:183:1
+    |
+183 | / wrap_fn_ptr!(pub(crate) unsafe extern "C" fn load_tmvs(
+184 | |     rf: &AsmRefMvsFrame,
+185 | |     tile_row_idx: i32,
+186 | |     col_start8: i32,
+...   |
+191 | |     _rp_ref: *const FFISafe<[Option<DisjointMutArcSlice<RefMvsTemporalBlock>>; 7]>,
+192 | | ) -> ());
+    | |________- in this macro invocation
+    |
+    = note: the address of the same function can vary between different codegen units
+    = note: furthermore, different functions could have the same address after being merged together
+    = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+    = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+   --> src/wrap_fn_ptr.rs:57:27
+    |
+ 57 |               pub struct Fn(FnPtr);
+    |                             ^^^^^
+    |
+   ::: src/refmvs.rs:360:1
+    |
+360 | / wrap_fn_ptr!(pub unsafe extern "C" fn save_tmvs(
+361 | |     rp_ptr: *mut RefMvsTemporalBlock,
+362 | |     stride: isize,
+363 | |     rr: &[*const RefMvsBlock; 31],
+...   |
+371 | |     _rp: *const FFISafe<DisjointMutArcSlice<RefMvsTemporalBlock>>,
+372 | | ) -> ());
+    | |________- in this macro invocation
+    |
+    = note: the address of the same function can vary between different codegen units
+    = note: furthermore, different functions could have the same address after being merged together
+    = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+    = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique
+   --> src/wrap_fn_ptr.rs:57:27
+    |
+ 57 |               pub struct Fn(FnPtr);
+    |                             ^^^^^
+    |
+   ::: src/refmvs.rs:479:1
+    |
+479 | / wrap_fn_ptr!(pub unsafe extern "C" fn splat_mv(
+480 | |     rr: *mut *mut RefMvsBlock,
+481 | |     rmv: &Align16<RefMvsBlock>,
+482 | |     bx4: i32,
+483 | |     bw4: i32,
+484 | |     bh4: i32,
+485 | | ) -> ());
+    | |________- in this macro invocation
+    |
+    = note: the address of the same function can vary between different codegen units
+    = note: furthermore, different functions could have the same address after being merged together
+    = note: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+    = note: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: `rav1d-safe` (lib) generated 62 warnings (3 duplicates) (run `cargo fix --lib -p rav1d-safe` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.25s
+run-heavy: done rc=0 67s | peak-RSS 0.70GiB | min-avail 26612MiB | peak-load 7.99

@@ -16,8 +16,14 @@
 //! to the destination.
 
 #![allow(clippy::too_many_arguments)]
-#![cfg_attr(not(any(feature = "asm", feature = "c-ffi", feature = "partial_asm")), forbid(unsafe_code))]
-#![cfg_attr(any(feature = "asm", feature = "c-ffi", feature = "partial_asm"), deny(unsafe_code))]
+#![cfg_attr(
+    not(any(feature = "asm", feature = "c-ffi", feature = "partial_asm")),
+    forbid(unsafe_code)
+)]
+#![cfg_attr(
+    any(feature = "asm", feature = "c-ffi", feature = "partial_asm"),
+    deny(unsafe_code)
+)]
 
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
@@ -1466,7 +1472,6 @@ mod tests {
         // Then srshr #4
 
         // Simplest scalar approach matching the generic scalar:
-        let sqrt2x2 = 5793i32; // sqrt(2) * 4096
         for y in 0..16 {
             let row_off = (y as isize * stride) as usize;
             for x in 0..16 {

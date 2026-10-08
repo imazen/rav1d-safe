@@ -52,5 +52,16 @@ The updated main revision `83c928d3` passed every one of 32 jobs in the
 [2026-10-08 CI run](https://github.com/imazen/rav1d-safe/actions/runs/37721109550).
 This includes Windows ARM, macOS Intel, native and container i686 tests,
 both conformance architectures, token permutations, and both allocator
-Miri models. Native ARM all-target lint is a separate local recipe gate;
-its retained scalar-reference warnings are still being repaired.
+Miri models. Native ARM all-target lint is a separate local recipe gate.
+
+Both native ARM release all-target recipes now pass on Rust 1.99.0. Seventy-five
+unused scalar ITX reference items have non-ASM test allowances scoped to
+individual items; new unused helpers and assembly-wrapper configurations keep
+dead-code linting. One unused test variable is removed. The MC reservation test
+module is compiled only where one of its existing tests is compiled; this
+removes empty-module imports on ARM untracked builds without dropping tests.
+C-FFI and ASM compile checks also pass; ASM still emits existing warnings.
+[Commands, full logs and source hashes](../benchmarks/arm_lint_feature_2026-10-08.meta.json)
+record the 67s native scope: peak-RSS 0.70GiB, min-avail 26612MiB, peak-load 7.99.
+The x86 lint recipes, ARM/WASM/C-FFI compile checks and formatting check also
+pass after these edits; their 24s scope peaked at 0.97GiB RSS.

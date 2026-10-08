@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-08",
+  "cpu": "Neoverse-N1",
+  "toolchain": "rustc1.99.0",
+  "base_revision": "83c928d3d6c57f57187212b9657e959828cb5634",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "source_sha256": {
+    "src/safe_simd/itx_arm.rs": "0adbc1a0a2540c38ed8dff81163be4955bc0672cce50175a64197273b2de2922",
+    "src/safe_simd/itx_arm_neon_16x16.rs": "432a23aad5e0549beacd425a8650773aacd9b9f608fd5dda328f396c79714e68",
+    "src/safe_simd/mc_reference.rs": "e5edcbd33325d28193c895eb6d2c8452e686057a06720ffa0819211590baed5e",
+    "src/safe_simd/mc_arm.rs": "0c9f55ddcae81dee9bb1d934ddc792290e8cca7c1de3c4aa9ceb472ddbc641ad"
+  },
+  "command": "RUSTUP_TOOLCHAIN=1.99.0 RUSTFLAGS= CARGO_ENCODED_RUSTFLAGS=; just clippy; just clippy-untracked; cargo check --no-default-features --features bitdepth_8,bitdepth_16,c-ffi; cargo check --no-default-features --features bitdepth_8,bitdepth_16,asm",
+  "results": "Both release all-target lint recipes pass under -Dwarnings. C-FFI andASM compile pass; ASM emits62 preexisting warnings and is not claimed warning-free. No test expectation or ignored test changed. Expanded signed ARM MC source was present for compilation; full decoder suites pending.",
+  "heavy_wrapper": {
+    "memory_limit": "16G",
+    "jobs": 12,
+    "exit_code": 0,
+    "seconds": 67,
+    "peak_rss_gib": 0.7,
+    "min_available_mib": 26612,
+    "peak_load": 7.99
+  },
+  "raw_sha256": "91158155865c58a05da61dd258570d3b0119a3c7ea10df8c92aac86adb40282d",
+  "ordered_log_parts": {
+    "benchmarks/arm_lint_feature_2026-10-08_part01.log": "984312ac781475e9114a172cbf6313d6312ea0053bfdaae2c21236e44c153318",
+    "benchmarks/arm_lint_feature_2026-10-08_part02.log": "781137087f5ce9e7f8424a6d1a4454419f54437be0b79f110636422afc9f71cf",
+    "benchmarks/arm_lint_feature_2026-10-08_part03.log": "4f24e0aa3773b1f0807107a50ef1332771cfa5af6ba7ed84b479fb7952171a0c"
+  }
+}
