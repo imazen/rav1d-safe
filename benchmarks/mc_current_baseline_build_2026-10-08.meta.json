@@ -55,5 +55,6 @@
       ]
     }
   ],
-  "status": "Baseline builds only; current-revision MC performance comparison remains pending. Zen 5 was not measured."
+  "status": "Baseline builds only; current-revision MC performance comparison remains pending. Zen 5 was not measured.",
+  "cargo_lock_sha256": "315a1c4b47dd38cbd8d855514f4bf446e515834393b934c4fe836f31b51b6ce6"
 }

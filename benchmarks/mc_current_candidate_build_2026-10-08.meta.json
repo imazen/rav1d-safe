@@ -1,0 +1,67 @@
+{
+  "source_revision": "f910b2f254630aed2893329daf1a90cb6678b940",
+  "source_sha256": {
+    "Cargo.lock": "315a1c4b47dd38cbd8d855514f4bf446e515834393b934c4fe836f31b51b6ce6",
+    "src/safe_simd/mc.rs": "3a4f8c1996d306bf5f2fcf3a13f06e66ac7b008a4c2e3708ead18ae1b2030f85",
+    "src/safe_simd/mc_x86_8bpc_parity.rs": "d5fd303f70cf3ecc993b881ec600e7adbd6773cac43dd17a37abf0c0e19781b2",
+    "src/safe_simd/mod.rs": "52653e761e8074cfb32e4dd380da2d7e88c66a3105bdefc49682c7917b1b3dde"
+  },
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "cpu": "Ryzen 9 7900X (Zen 4); not measured on Zen 5",
+  "flags": {
+    "RUSTFLAGS": "",
+    "CARGO_ENCODED_RUSTFLAGS": ""
+  },
+  "commands": [
+    "just test-mc-pair-windows",
+    "CARGO_TARGET_DIR=<preserved mode directory> cargo build --release --no-default-features --features bitdepth_8,bitdepth_16[,untracked] --example profile_ivf --example decode_md5"
+  ],
+  "focused_result": "3/3 selected MC arithmetic/full-domain/endpoint parity tests pass;26.835s",
+  "run_heavy": "rc=0;114s;peak-RSS 1.63GiB;min-avail 24166MiB;peak-load 10.21",
+  "binaries": [
+    {
+      "mode": "safe",
+      "binary": "/home/lilith/work/zen/rav1d-safe/target/lead-current-mc-safe/release/examples/profile_ivf",
+      "sha256": "1cadecb8adbaa70bb2fbdcae2745527859cc707d2fd2011a91966f6ac8b4b7d9",
+      "tbss": [
+        "[21] .tbss             NOBITS          00000000004844f0 4824f0 002c68 00 WAT  0   0 16"
+      ]
+    },
+    {
+      "mode": "safe",
+      "binary": "/home/lilith/work/zen/rav1d-safe/target/lead-current-mc-safe/release/examples/decode_md5",
+      "sha256": "d28e78c5c9cdcf147b1bac5edd9b49801ff85778f9650125b7014276fff23404",
+      "tbss": [
+        "[21] .tbss             NOBITS          00000000003b74a0 3b54a0 002be0 00 WAT  0   0 16"
+      ]
+    },
+    {
+      "mode": "untracked",
+      "binary": "/home/lilith/work/zen/rav1d-safe/target/lead-current-mc-untracked/release/examples/profile_ivf",
+      "sha256": "7353184f8b7d4da5ff2e0b4488f96b6eca9919e5637c78048bd91b89625d9255",
+      "tbss": [
+        "[21] .tbss             NOBITS          00000000004348a0 4328a0 002c68 00 WAT  0   0 16"
+      ]
+    },
+    {
+      "mode": "untracked",
+      "binary": "/home/lilith/work/zen/rav1d-safe/target/lead-current-mc-untracked/release/examples/decode_md5",
+      "sha256": "fbb71c60d979e8dd7e6811cd4addd297ab70aae71d19c4cc093cce4919f3bd53",
+      "tbss": [
+        "[21] .tbss             NOBITS          0000000000366d50 364d50 002be0 00 WAT  0   0 16"
+      ]
+    }
+  ],
+  "limits": "Candidate compilation and focused gates only. Full decoder gates and current matched A/A and A/B remain pending.",
+  "logs": {
+    "full_sha256": "766eaa8de2a187c96f86d863bf5e13b2457c369aeef2f30192833c34ed521f3d",
+    "parts": [
+      {
+        "path": "mc_current_candidate_build_2026-10-08.part1.log",
+        "sha256": "766eaa8de2a187c96f86d863bf5e13b2457c369aeef2f30192833c34ed521f3d"
+      }
+    ]
+  },
+  "baseline_compiled_dependencies_match": true
+}
