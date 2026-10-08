@@ -1,0 +1,20 @@
+{
+  "source_revision": "3c797ec8fbc725e95e051c839c721a0681facb1a",
+  "source_sha256": "134f50481a25c22a9a35edffdb60c9f45701a724776e48da7c210164cf703ab5",
+  "oracle_sha256": "0002a23dfb964af1c4e87999749c513fbafc4b8b6a71c5a07b93c5368a19295d",
+  "result": "reversed-source oracle fails at mc.rs:3552: index18446744073709551232 into length2",
+  "run_heavy": "rc100;15s;peak-RSS1.64GiB;min-avail24639MiB;peak-load1.71",
+  "command": "just test-mc-source-strides;Rust1.99.0;emptyRUSTFLAGS",
+  "cpu": "Ryzen 9 7900X (Zen 4); not measured on Zen 5",
+  "restored_gate": "unchanged reversed-source oracle passes6.810seconds;11520cases include direct AVX2/available AVX-512 and production put/prep dispatch, whole outputs and a live unrelated write",
+  "restored_run_heavy": "rc=0;21s;peak-RSS1.59GiB;min-avail23861MiB;peak-load1.29",
+  "repair_source_sha256": "20936713baff2b89f2dc51185a4c4a097facc09b434d06196519af689a416f63",
+  "limits": "Private byte MC experiment; focused default/C-FFI gates pass. Publication, full decoder/sidecar gates, cross compilation and current matched timing remain pending.",
+  "focused_gate": "All four default MC oracle tests pass33.255seconds; all three C-FFI MC oracle tests pass2.718seconds. The new reversed-source fixture is default-only; no claim of negative-stride C-FFI fixture coverage.",
+  "focused_run_heavy": "rc=0;49s;peak-RSS1.43GiB;min-avail23889MiB;peak-load1.72",
+  "log_sha256": {
+    "mc_negative_source_before_2026-10-08.log": "9082e88be4c2cf4eb978c4ac6a8384ca1d1ed5a88bbf117b9e1a6d0d5071caf6",
+    "mc_negative_source_after_2026-10-08.log": "6620bf68a4a72d9aff5a0244fccc64b5e1a3af295978ba4fbc1e2d13de522db3",
+    "mc_signed_source_parity_2026-10-08.log": "4b617beb062db811006905f57c50309de58ea132f2dbfb0b7bbe5ba8a5089360"
+  }
+}

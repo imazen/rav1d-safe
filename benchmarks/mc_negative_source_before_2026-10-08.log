@@ -1,0 +1,33 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=26052MiB :: bash -c set -e; rustc --version; just test-mc-source-strides
+rustc 1.99.0 (b940084d7 2026-09-28)
+cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib -E 'test(reversed_source_rows_match_scalar_for_all_8tap_filters)' --test-threads 1
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-mc)
+[1m[92m    Finished[0m `release-thin` profile [optimized + debuginfo] target(s) in 14.17s
+────────────
+[32;1m Nextest run[0m ID [1mef86c799-fa7b-4ab6-a9e4-0fe84c27ca32[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m1[0m test across [1m1[0m binary ([1m118[0m tests [33;1mskipped[0m)
+[31;1m        FAIL[0m [   0.003s] (1/1) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mreversed_source_rows_match_scalar_for_all_8tap_filters[0m
+[31;1m [0m [31;1mstdout[0m [31;1m───[0m
+
+    running 1 test
+    test src::safe_simd::mc_x86_8bpc_parity::reversed_source_rows_match_scalar_for_all_8tap_filters ... FAILED
+
+    failures:
+
+    failures:
+        src::safe_simd::mc_x86_8bpc_parity::reversed_source_rows_match_scalar_for_all_8tap_filters
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 118 filtered out; finished in 0.00s
+    [0m
+[31;1m [0m [31;1mstderr[0m [31;1m───[0m
+
+    [0m[31;1mthread 'src::safe_simd::mc_x86_8bpc_parity::reversed_source_rows_match_scalar_for_all_8tap_filters' (2564816) panicked at src/safe_simd/mc.rs:3552:25:[0m
+    [31;1mindex out of bounds: the len is 2 but the index is 18446744073709551232[0m
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace[0m
+
+────────────
+[31;1m     Summary[0m [   0.004s] [1m1[0m test run: [1m0[0m [32;1mpassed[0m, [1m1[0m [31;1mfailed[0m, [1m118[0m [33;1mskipped[0m
+[31;1m        FAIL[0m [   0.003s] (1/1) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mreversed_source_rows_match_scalar_for_all_8tap_filters[0m
+[31;1merror[0m: test run failed
+error: recipe `test-mc-source-strides` failed on line 39 with exit code 100
+run-heavy: done rc=100 15s | peak-RSS 1.64GiB | min-avail 24639MiB | peak-load 1.71

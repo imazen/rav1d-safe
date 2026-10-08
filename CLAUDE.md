@@ -999,6 +999,33 @@ fails, and restoring the approved source passes again. See
 The same run also lacked `test-vectors/bench/photo_4k.avif`; copying the existing
 fixture repairs that setup without skipping the stress gate.
 
+### Default conformance extraction (2026-10-08) — FIXED
+
+The all-tier/all-worker recipe crashed before decoding because sanitizer
+array rows still had six fields and the seven-column TSV writer indexed
+row[6]. Even excluded OSS-fuzz rows must serialize before caller selection.
+They now carry an empty extra_args field. The new default-extraction boundary
+test fails on the old shape and all six runner tests pass after the repair,
+including decode-mode flag preservation. See docs/CI_LINT_REVIEW.md.
+This runner repair does not count as a completed 803-vector sidecar matrix.
+
+### x86 MC negative source strides (2026-10-08) — validation in progress
+
+The expanded reversed-row oracle for the private byte MC candidate fails in
+its V-only scalar tail: a negative row offset becomes index
+18446744073709551232 into a two-byte suffix at `mc.rs:3552` in that candidate.
+The published base V-only helper also casts the pitch to `usize` and receives
+a suffix, but its failure has not been independently run yet. The new
+horizontal row batching likewise needs the complete bounded source slice
+and a base index to walk backwards. Repair signed source addressing, then
+rerun the unchanged scalar/whole-buffer/dispatch oracle and full gates.
+The repaired private source passes the unchanged reversed-row oracle
+(6.810 seconds), all four default MC parity/arithmetic tests (33.255 seconds)
+and all three C-FFI fixture tests (2.718 seconds). Negative-stride C-FFI
+fixtures are not covered by the new default-only test. Full decoder/sidecar,
+cross-compile and current matched timing remain pending; the production
+MC performance candidate has not been published.
+
 ### ARM MC negative source strides (2026-10-08) — validation in progress
 
 The expanded source-window parity gate fails on a negative-stride 8bpc
