@@ -1,0 +1,7 @@
+== bitdepth_8,bitdepth_16 18:52:29
+error: test run failed
+     SIGABRT [  87.087s] (229/232) rav1d-safe::argon_cover argon_cover_streams_bit_exact_across_levels
+     Summary [ 453.916s] 232 tests run: 231 passed (1 slow), 1 failed, 18 skipped
+== bitdepth_8,bitdepth_16,untracked 19:01:33
+     Summary [ 247.180s] 215 tests run: 215 passed, 18 skipped
+NEXTEST_DONE

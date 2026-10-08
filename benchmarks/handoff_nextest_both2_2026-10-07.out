@@ -1,0 +1,5 @@
+== bitdepth_8,bitdepth_16 21:19:41
+     Summary [ 595.287s] 232 tests run: 232 passed (3 slow), 18 skipped
+== bitdepth_8,bitdepth_16,untracked 21:31:03
+     Summary [ 251.567s] 215 tests run: 215 passed, 18 skipped
+NEXTEST_DONE
