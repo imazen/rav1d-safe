@@ -1,0 +1,329 @@
+## aom1080: ms/frame dav1d 11.859  untracked 24.608  ratio 2.07x   (samples dav1d 6155, ours 8961)
+family          dav1d     ours    delta   (ms/frame; total dav1d 11.859, ours 24.608, +107%)
+mc              1.846    7.203   +5.357
+cdef            0.530    2.054   +1.524
+decode_ctx      1.042    2.515   +1.473
+loopfilter      0.513    1.664   +1.152
+other           0.108    0.739   +0.631
+itx             0.308    0.928   +0.620
+refmvs          2.341    2.837   +0.496
+looprestor      0.087    0.481   +0.394
+lf_mask         0.514    0.873   +0.359
+ipred           0.077    0.415   +0.338
+recon_glue      0.353    0.684   +0.331
+entropy         4.017    4.210   +0.192
+libc/mem        0.123    0.005   -0.118
+
+largest delta families: top symbols ours | dav1d
+
+== mc (delta +5.357 ms/f)
+   ours   2.134  rav1d_safe::src::safe_simd::mc::h_filter_8tap_8bpc_avx2_inner
+   ours   0.832  rav1d_safe::src::recon::mc::<>
+   ours   0.736  rav1d_safe::src::safe_simd::mc::__arcane_prep_8tap_8bpc_avx512_impl_in
+   ours   0.428  rav1d_safe::src::safe_simd::mc::v_filter_8tap_to_i16_avx2_inner
+   ours   0.417  rav1d_safe::src::safe_simd::mc::warp_h_pass_8bpc
+   ours   0.384  rav1d_safe::src::safe_simd::mc::__arcane_put_8tap_8bpc_avx512_impl_inn
+   ours   0.376  rav1d_safe::src::safe_simd::mc::v_filter_8tap_to_i16_avx512_inner
+   ours   0.316  rav1d_safe::src::safe_simd::mc::h_filter_8tap_8bpc_avx512_inner
+   ours   0.277  rav1d_safe::src::safe_simd::mc::v_filter_8tap_8bpc_avx2_inner
+   ours   0.195  rav1d_safe::src::safe_simd::mc::__arcane_avg_8bpc_avx512_safe
+   dav1d  0.418  dav1d_prep_8tap_8bpc_avx512icl
+   dav1d  0.304  dav1d_prep_6tap_8bpc_avx512icl
+   dav1d  0.304  dav1d_put_6tap_8bpc_avx512icl
+   dav1d  0.274  mc.isra.0
+   dav1d  0.150  dav1d_warp_affine_8x8_8bpc_avx2
+
+== cdef (delta +1.524 ms/f)
+   ours   0.758  rav1d_safe::src::safe_simd::cdef::__arcane_cdef_filter_block_simd_8bpc
+   ours   0.656  rav1d_safe::src::safe_simd::cdef::padding_8bpc
+   ours   0.417  rav1d_safe::src::safe_simd::cdef::__arcane_cdef_find_dir_simd_8bpc
+   ours   0.151  rav1d_safe::src::cdef_apply::rav1d_cdef_brow::<>
+   ours   0.060  rav1d_safe::src::cdef::cdef_direct::<>
+   ours   0.011  <>>::for_rows::<>::{closure#0}>
+   dav1d  0.247  dav1d_cdef_filter_8x8_8bpc_avx512icl
+   dav1d  0.127  dav1d_cdef_brow_8bpc
+   dav1d  0.079  dav1d_cdef_dir_8bpc_avx2.main
+   dav1d  0.073  dav1d_cdef_filter_4x4_8bpc_avx512icl
+   dav1d  0.004  dav1d_cdef_dir_8bpc_avx2
+
+== decode_ctx (delta +1.473 ms/f)
+   ours   1.716  rav1d_safe::src::decode::decode_b
+   ours   0.181  rav1d_safe::src::decode::decode_sb
+   ours   0.113  rav1d_safe::src::decode::read_vartx_tree
+   ours   0.091  rav1d_safe::src::decode::read_tx_tree
+   ours   0.085  rav1d_safe::src::decode::read_mv_component_diff
+   ours   0.060  rav1d_safe::src::env::av1_get_fwd_ref_ctx
+   ours   0.052  rav1d_safe::src::env::av1_get_bwd_ref_ctx
+   ours   0.038  rav1d_safe::src::env::av1_get_fwd_ref_1_ctx
+   ours   0.038  rav1d_safe::src::env::av1_get_ref_ctx
+   ours   0.033  rav1d_safe::src::recon::get_skip_ctx
+   dav1d  0.836  decode_b
+   dav1d  0.133  decode_sb
+   dav1d  0.056  read_vartx_tree
+   dav1d  0.008  read_tx_tree
+   dav1d  0.006  read_mv_component_diff
+
+== loopfilter (delta +1.152 ms/f)
+   ours   0.354  rav1d_safe::src::safe_simd::loopfilter::loop_filter_4_8bpc
+   ours   0.264  rav1d_safe::src::safe_simd::loopfilter::packed16::__arcane_apply_h_v4
+   ours   0.217  rav1d_safe::src::safe_simd::loopfilter::__arcane_lpf_h_sb_y_8bpc_inner
+   ours   0.206  rav1d_safe::src::safe_simd::loopfilter::__arcane_lpf_h_sb_uv_8bpc_inne
+   ours   0.198  rav1d_safe::src::safe_simd::loopfilter::lf_wd8_8bpc_core_u8
+   ours   0.124  rav1d_safe::src::safe_simd::loopfilter::__arcane_lpf_v_sb_uv_8bpc_inne
+   ours   0.113  rav1d_safe::src::safe_simd::loopfilter::__arcane_lpf_v_sb_y_8bpc_inner
+   ours   0.080  rav1d_safe::src::safe_simd::loopfilter::__arcane_loop_filter_4_8bpc_wd
+   ours   0.074  rav1d_safe::src::loopfilter::loopfilter_sb_direct::<>
+   ours   0.019  rav1d_safe::src::recon::rav1d_filter_sbrow_deblock_rows::<>
+   dav1d  0.249  dav1d_lpf_h_sb_y_8bpc_avx2
+   dav1d  0.116  dav1d_lpf_v_sb_y_8bpc_avx512icl
+   dav1d  0.096  dav1d_lpf_h_sb_uv_8bpc_avx2
+   dav1d  0.035  dav1d_lpf_v_sb_uv_8bpc_avx512icl
+   dav1d  0.012  dav1d_loopfilter_sbrow_rows_8bpc
+
+## svt1080: ms/frame dav1d 8.267  untracked 14.709  ratio 1.78x   (samples dav1d 4084, ours 5292)
+family          dav1d     ours    delta   (ms/frame; total dav1d 8.267, ours 14.709, +78%)
+mc              0.941    3.244   +2.302
+cdef            0.648    2.196   +1.548
+itx             0.194    0.706   +0.512
+entropy         5.382    5.859   +0.477
+decode_ctx      0.281    0.712   +0.430
+other           0.085    0.470   +0.385
+loopfilter      0.186    0.498   +0.311
+recon_glue      0.079    0.200   +0.121
+refmvs          0.241    0.356   +0.115
+ipred           0.038    0.145   +0.106
+lf_mask         0.126    0.208   +0.083
+looprestor      0.036    0.117   +0.080
+libc/mem        0.028    0.000   -0.028
+
+largest delta families: top symbols ours | dav1d
+
+== mc (delta +2.302 ms/f)
+   ours   0.742  rav1d_safe::src::safe_simd::mc::h_filter_8tap_8bpc_avx2_inner
+   ours   0.603  rav1d_safe::src::safe_simd::mc::v_filter_8tap_to_i16_avx512_inner
+   ours   0.517  rav1d_safe::src::safe_simd::mc::__arcane_prep_8tap_8bpc_avx512_impl_in
+   ours   0.484  rav1d_safe::src::safe_simd::mc::h_filter_8tap_8bpc_avx512_inner
+   ours   0.233  rav1d_safe::src::recon::mc::<>
+   ours   0.208  rav1d_safe::src::safe_simd::mc::__arcane_avg_8bpc_avx512_safe
+   ours   0.170  rav1d_safe::src::safe_simd::mc::__arcane_put_8tap_8bpc_avx512_impl_inn
+   ours   0.089  rav1d_safe::src::safe_simd::mc::v_filter_8tap_to_i16_avx2_inner
+   ours   0.028  rav1d_safe::src::safe_simd::mc::reference::read_guard::<>
+   ours   0.025  rav1d_safe::src::safe_simd::mc::__arcane_prep_8tap_8bpc_dispatch_inner
+   dav1d  0.356  dav1d_prep_8tap_8bpc_avx512icl
+   dav1d  0.168  dav1d_prep_6tap_8bpc_avx512icl
+   dav1d  0.095  dav1d_put_6tap_8bpc_avx512icl
+   dav1d  0.085  mc.isra.0
+   dav1d  0.083  dav1d_avg_8bpc_avx512icl
+
+== cdef (delta +1.548 ms/f)
+   ours   0.876  rav1d_safe::src::safe_simd::cdef::__arcane_cdef_filter_block_simd_8bpc
+   ours   0.756  rav1d_safe::src::safe_simd::cdef::padding_8bpc
+   ours   0.359  rav1d_safe::src::safe_simd::cdef::__arcane_cdef_find_dir_simd_8bpc
+   ours   0.106  rav1d_safe::src::cdef_apply::rav1d_cdef_brow::<>
+   ours   0.072  rav1d_safe::src::cdef::cdef_direct::<>
+   ours   0.028  <>>::for_rows::<>::{closure#0}>
+   dav1d  0.379  dav1d_cdef_filter_8x8_8bpc_avx512icl
+   dav1d  0.148  dav1d_cdef_brow_8bpc
+   dav1d  0.071  dav1d_cdef_dir_8bpc_avx2.main
+   dav1d  0.043  dav1d_cdef_filter_4x4_8bpc_avx512icl
+   dav1d  0.008  dav1d_cdef_dir_8bpc_avx2
+
+== itx (delta +0.512 ms/f)
+   ours   0.189  rav1d_safe::src::safe_simd::itx::__arcane_inv_txfm_add_dct_dct_32x32_8
+   ours   0.122  rav1d_safe::src::safe_simd::itx::__arcane_inv_txfm_add_dct_dct_16x16_8
+   ours   0.081  rav1d_safe::src::safe_simd::itx::dct16_1d_cols16
+   ours   0.081  rav1d_safe::src::safe_simd::itx::dct32_1d_cols16
+   ours   0.044  rav1d_safe::src::safe_simd::itx::__arcane_dct32_cols_add_8bpc_v4
+   ours   0.033  rav1d_safe::src::safe_simd::itx::itxfm_dispatch_8bpc
+   ours   0.019  <>::call::<>
+   ours   0.014  rav1d_safe::src::safe_simd::itx::adst16_1d_cols8
+   ours   0.014  rav1d_safe::src::safe_simd::itx::__arcane_inv_txfm_add_dct_identity_16
+   ours   0.011  rav1d_safe::src::safe_simd::itx::__arcane_inv_txfm_add_adst_dct_8x8_8b
+   dav1d  0.040  dav1d_inv_txfm_add_dct_dct_32x32_8bpc_avx512icl.main_oddhalf
+   dav1d  0.034  dav1d_idct_16x16_internal_8bpc_avx512icl.main2
+   dav1d  0.030  dav1d_idct_16x16_internal_8bpc_avx512icl
+   dav1d  0.020  dav1d_inv_txfm_add_dct_dct_32x32_8bpc_avx512icl
+   dav1d  0.018  dav1d_inv_txfm_add_dct_dct_32x8_8bpc_avx512icl.main
+
+== entropy (delta +0.477 ms/f)
+   ours   3.783  rav1d_safe::src::recon::__arcane_decode_coefs_class_v3::<>::{closure#0
+   ours   1.109  rav1d_safe::src::recon::__arcane_decode_coefs_class_v3::<>
+   ours   0.628  rav1d_safe::src::recon::__arcane_decode_coefs_v3::<>
+   ours   0.086  <>::with_buf::<>
+   ours   0.058  rav1d_safe::src::msac::ctx_refill
+   ours   0.056  rav1d_safe::src::msac::simd::__arcane_adapt16_v1.2388
+   ours   0.053  rav1d_safe::src::recon::read_coef_tree::<>
+   ours   0.033  rav1d_safe::src::msac::simd::__arcane_adapt16_v1
+   ours   0.022  rav1d_safe::src::recon::decode_coefs::<>
+   ours   0.014  rav1d_safe::src::recon::read_golomb
+   dav1d  3.239  dav1d_msac_decode_symbol_adapt4_sse2
+   dav1d  1.117  decode_coefs.constprop.0
+   dav1d  0.267  dav1d_msac_decode_hi_tok_sse2
+   dav1d  0.243  dav1d_msac_decode_bool_equi_sse2
+   dav1d  0.208  decode_coefs.constprop.1
+
+## aom4k: ms/frame dav1d 36.133  untracked 78.025  ratio 2.16x   (samples dav1d 7851, ours 10656)
+family          dav1d     ours    delta   (ms/frame; total dav1d 36.133, ours 78.025, +116%)
+mc              7.488   24.075  +16.587
+cdef            2.002    9.760   +7.758
+decode_ctx      2.619    6.524   +3.905
+loopfilter      2.094    5.279   +3.185
+other           0.446    3.031   +2.585
+itx             1.008    3.149   +2.141
+looprestor      0.419    2.204   +1.785
+ipred           0.497    1.655   +1.158
+refmvs          5.877    7.022   +1.145
+lf_mask         1.629    2.438   +0.809
+recon_glue      0.948    1.735   +0.787
+entropy        10.728   11.152   +0.424
+libc/mem        0.377    0.000   -0.377
+
+largest delta families: top symbols ours | dav1d
+
+== mc (delta +16.587 ms/f)
+   ours   6.649  rav1d_safe::src::safe_simd::mc::h_filter_8tap_8bpc_avx2_inner
+   ours   2.614  rav1d_safe::src::safe_simd::mc::h_filter_8tap_8bpc_avx512_inner
+   ours   2.123  rav1d_safe::src::safe_simd::mc::v_filter_8tap_to_i16_avx512_inner
+   ours   1.992  rav1d_safe::src::safe_simd::mc::__arcane_prep_8tap_8bpc_avx512_impl_in
+   ours   1.860  rav1d_safe::src::safe_simd::mc::warp_h_pass_8bpc
+   ours   1.750  rav1d_safe::src::recon::mc::<>
+   ours   1.589  rav1d_safe::src::safe_simd::mc::__arcane_put_8tap_8bpc_avx512_impl_inn
+   ours   1.084  rav1d_safe::src::safe_simd::mc::v_filter_8tap_to_i16_avx2_inner
+   ours   0.791  rav1d_safe::src::safe_simd::mc::__arcane_warp_affine_8x8_8bpc_avx2
+   ours   0.586  rav1d_safe::src::safe_simd::mc::__arcane_avg_8bpc_avx512_safe
+   dav1d  2.706  dav1d_prep_6tap_8bpc_avx512icl
+   dav1d  1.491  dav1d_put_6tap_8bpc_avx512icl
+   dav1d  0.925  dav1d_warp_affine_8x8_8bpc_avx2
+   dav1d  0.608  mc.isra.0
+   dav1d  0.377  dav1d_prep_8tap_8bpc_avx512icl
+
+== cdef (delta +7.758 ms/f)
+   ours   3.705  rav1d_safe::src::safe_simd::cdef::__arcane_cdef_filter_block_simd_8bpc
+   ours   3.390  rav1d_safe::src::safe_simd::cdef::padding_8bpc
+   ours   1.669  rav1d_safe::src::safe_simd::cdef::__arcane_cdef_find_dir_simd_8bpc
+   ours   0.622  rav1d_safe::src::cdef_apply::rav1d_cdef_brow::<>
+   ours   0.286  rav1d_safe::src::cdef::cdef_direct::<>
+   ours   0.088  <>>::for_rows::<>::{closure#0}>
+   dav1d  0.893  dav1d_cdef_filter_8x8_8bpc_avx512icl
+   dav1d  0.497  dav1d_cdef_brow_8bpc
+   dav1d  0.313  dav1d_cdef_filter_4x4_8bpc_avx512icl
+   dav1d  0.290  dav1d_cdef_dir_8bpc_avx2.main
+   dav1d  0.009  dav1d_cdef_dir_8bpc_avx2
+
+== decode_ctx (delta +3.905 ms/f)
+   ours   4.423  rav1d_safe::src::decode::decode_b
+   ours   0.417  rav1d_safe::src::decode::decode_sb
+   ours   0.256  rav1d_safe::src::decode::read_mv_component_diff
+   ours   0.249  rav1d_safe::src::decode::read_vartx_tree
+   ours   0.190  rav1d_safe::src::decode::read_tx_tree
+   ours   0.183  rav1d_safe::src::env::av1_get_fwd_ref_1_ctx
+   ours   0.176  rav1d_safe::src::recon::get_skip_ctx
+   ours   0.139  rav1d_safe::src::env::av1_get_fwd_ref_ctx
+   ours   0.110  rav1d_safe::src::recon::get_skip_ctx::cdir
+   ours   0.103  rav1d_safe::src::env::av1_get_bwd_ref_ctx
+   dav1d  2.089  decode_b
+   dav1d  0.290  decode_sb
+   dav1d  0.175  read_vartx_tree
+   dav1d  0.032  read_mv_component_diff
+   dav1d  0.028  read_tx_tree
+
+== loopfilter (delta +3.185 ms/f)
+   ours   1.303  rav1d_safe::src::safe_simd::loopfilter::packed16::__arcane_apply_h_v4
+   ours   0.827  rav1d_safe::src::safe_simd::loopfilter::__arcane_lpf_h_sb_uv_8bpc_inne
+   ours   0.652  rav1d_safe::src::safe_simd::loopfilter::loop_filter_4_8bpc
+   ours   0.483  rav1d_safe::src::safe_simd::loopfilter::lf_wd8_8bpc_core_u8
+   ours   0.454  rav1d_safe::src::safe_simd::loopfilter::__arcane_lpf_v_sb_uv_8bpc_inne
+   ours   0.417  rav1d_safe::src::safe_simd::loopfilter::__arcane_lpf_h_sb_y_8bpc_inner
+   ours   0.403  rav1d_safe::src::safe_simd::loopfilter::__arcane_loop_filter_4_8bpc_wd
+   ours   0.322  rav1d_safe::src::safe_simd::loopfilter::__arcane_lpf_v_sb_y_8bpc_inner
+   ours   0.220  rav1d_safe::src::loopfilter::loopfilter_sb_direct::<>
+   ours   0.110  rav1d_safe::src::recon::rav1d_filter_sbrow_deblock_rows::<>
+   dav1d  0.925  dav1d_lpf_h_sb_y_8bpc_avx2
+   dav1d  0.483  dav1d_lpf_v_sb_y_8bpc_avx512icl
+   dav1d  0.423  dav1d_lpf_h_sb_uv_8bpc_avx2
+   dav1d  0.175  dav1d_lpf_v_sb_uv_8bpc_avx512icl
+   dav1d  0.055  dav1d_loopfilter_sbrow_cols_8bpc
+
+## svt4k: ms/frame dav1d 25.188  untracked 50.305  ratio 2.00x   (samples dav1d 5444, ours 6978)
+family          dav1d     ours    delta   (ms/frame; total dav1d 25.188, ours 50.305, +100%)
+mc              5.413   13.503   +8.089
+cdef            2.300    9.725   +7.426
+other           0.384    2.271   +1.887
+entropy        11.933   13.719   +1.786
+itx             0.750    2.516   +1.766
+decode_ctx      1.055    2.509   +1.454
+loopfilter      0.847    1.946   +1.100
+looprestor      0.222    0.843   +0.621
+recon_glue      0.310    0.699   +0.389
+ipred           0.241    0.606   +0.365
+refmvs          1.018    1.190   +0.172
+lf_mask         0.611    0.771   +0.161
+libc/mem        0.106    0.007   -0.099
+
+largest delta families: top symbols ours | dav1d
+
+== mc (delta +8.089 ms/f)
+   ours   2.941  rav1d_safe::src::safe_simd::mc::h_filter_8tap_8bpc_avx2_inner
+   ours   2.624  rav1d_safe::src::safe_simd::mc::h_filter_8tap_8bpc_avx512_inner
+   ours   2.314  rav1d_safe::src::safe_simd::mc::v_filter_8tap_to_i16_avx512_inner
+   ours   1.846  rav1d_safe::src::safe_simd::mc::__arcane_prep_8tap_8bpc_avx512_impl_in
+   ours   1.053  rav1d_safe::src::recon::mc::<>
+   ours   0.966  rav1d_safe::src::safe_simd::mc::__arcane_put_8tap_8bpc_avx512_impl_inn
+   ours   0.634  rav1d_safe::src::safe_simd::mc::__arcane_avg_8bpc_avx512_safe
+   ours   0.288  rav1d_safe::src::safe_simd::mc::v_filter_8tap_to_i16_avx2_inner
+   ours   0.166  rav1d_safe::src::safe_simd::mc::reference::read_guard::<>
+   ours   0.137  rav1d_safe::src::safe_simd::mc::v_filter_8tap_8bpc_avx2_inner
+   dav1d  2.253  dav1d_prep_6tap_8bpc_avx512icl
+   dav1d  0.884  dav1d_put_6tap_8bpc_avx512icl
+   dav1d  0.870  dav1d_prep_8tap_8bpc_avx512icl
+   dav1d  0.361  dav1d_avg_8bpc_avx512icl
+   dav1d  0.338  mc.isra.0
+
+== cdef (delta +7.426 ms/f)
+   ours   3.597  rav1d_safe::src::safe_simd::cdef::padding_8bpc
+   ours   3.547  rav1d_safe::src::safe_simd::cdef::__arcane_cdef_filter_block_simd_8bpc
+   ours   1.737  rav1d_safe::src::safe_simd::cdef::__arcane_cdef_find_dir_simd_8bpc
+   ours   0.497  rav1d_safe::src::cdef_apply::rav1d_cdef_brow::<>
+   ours   0.238  rav1d_safe::src::cdef::cdef_direct::<>
+   ours   0.108  <>>::for_rows::<>::{closure#0}>
+   dav1d  1.379  dav1d_cdef_filter_8x8_8bpc_avx512icl
+   dav1d  0.440  dav1d_cdef_brow_8bpc
+   dav1d  0.241  dav1d_cdef_dir_8bpc_avx2.main
+   dav1d  0.213  dav1d_cdef_filter_4x4_8bpc_avx512icl
+   dav1d  0.028  dav1d_cdef_dir_8bpc_avx2
+
+== other (delta +1.887 ms/f)
+   ours   0.490  <>>::block_mut::<>
+   ours   0.317  libc.so.6+0x1b1300
+   ours   0.223  libc.so.6+0x1b1315
+   ours   0.173  libc.so.6+0x1b130e
+   ours   0.123  libc.so.6+0x1b1307
+   ours   0.072  libc.so.6+0x1b1280
+   ours   0.065  rav1d_safe::src::env::get_gmv_2d
+   ours   0.058  brk@@GLIBC_2.2.5
+   ours   0.050  munmap@@GLIBC_2.2.5
+   ours   0.050  libc.so.6+0x1b0c06
+   dav1d  0.116  munmap@@GLIBC_2.2.5
+   dav1d  0.046  libc.so.6+0xa03e6
+   dav1d  0.037  libc.so.6+0x1b0c06
+   dav1d  0.028  libc.so.6+0x1b0c1b
+   dav1d  0.019  libc.so.6+0x1b130e
+
+== entropy (delta +1.786 ms/f)
+   ours   8.327  rav1d_safe::src::recon::__arcane_decode_coefs_class_v3::<>::{closure#0
+   ours   2.545  rav1d_safe::src::recon::__arcane_decode_coefs_class_v3::<>
+   ours   1.615  rav1d_safe::src::recon::__arcane_decode_coefs_v3::<>
+   ours   0.411  rav1d_safe::src::msac::simd::__arcane_adapt16_v1.2388
+   ours   0.310  <>::with_buf::<>
+   ours   0.159  rav1d_safe::src::recon::read_coef_tree::<>
+   ours   0.130  rav1d_safe::src::msac::simd::__arcane_adapt16_v1
+   ours   0.079  rav1d_safe::src::msac::ctx_refill
+   ours   0.043  rav1d_safe::src::recon::read_golomb
+   ours   0.043  rav1d_safe::src::recon::get_dc_sign_ctx
+   dav1d  6.602  dav1d_msac_decode_symbol_adapt4_sse2
+   dav1d  2.230  decode_coefs.constprop.0
+   dav1d  0.787  dav1d_msac_decode_hi_tok_sse2
+   dav1d  0.731  dav1d_msac_decode_bool_equi_sse2
+   dav1d  0.685  decode_coefs.constprop.1
+
+CAMPAIGN_DONE

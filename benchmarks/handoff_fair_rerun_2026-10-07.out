@@ -1,0 +1,373 @@
+######## ARM new  05:15:17 load 1.30
+##### AUTO
+load 1.30; mode=auto; rounds=4 passes/round=5 (+1 warm-up each)
+
+## 480p_inter  threads=1  (150 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                1.427    1.416    1.586     1.00x
+  dav1d (avx2)                  1.459    1.454    1.474     1.02x
+  libgav1                       2.578    2.541    2.609     1.81x
+  rav1d untracked (native)      3.567    3.554    3.589     2.50x
+  rav1d untracked (avx2)        3.513    3.496    3.544     2.46x
+  rav1d default (native)        4.188    4.167    4.219     2.93x
+  rav1d default (avx2)          4.116    4.095    4.209     2.88x
+
+## 480p_inter  threads=4  (150 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.737    0.723    0.749     1.00x
+  dav1d (avx2)                  0.741    0.733    0.755     1.00x
+  libgav1                       1.699    1.657    1.790     2.30x
+  rav1d untracked (native)      1.585    1.576    1.680     2.15x
+  rav1d untracked (avx2)        1.539    1.521    1.723     2.09x
+  rav1d default (native)        2.096    2.082    2.220     2.84x
+  rav1d default (avx2)          2.057    2.030    2.177     2.79x
+
+## 480p_inter  threads=8  (150 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.660    0.641    0.732     1.00x
+  dav1d (avx2)                  0.673    0.653    0.715     1.02x
+  libgav1                       1.518    1.465    1.719     2.30x
+  rav1d untracked (native)      1.779    1.695    1.926     2.70x
+  rav1d untracked (avx2)        1.746    1.655    1.925     2.65x
+  rav1d default (native)        2.353    2.233    2.676     3.57x
+  rav1d default (avx2)          2.261    2.160    2.600     3.43x
+
+## 720p  threads=1  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.395    0.390    0.404     1.00x
+  dav1d (avx2)                  0.400    0.396    0.408     1.01x
+  libgav1                       0.785    0.693    0.825     1.99x
+  rav1d untracked (native)      0.699    0.694    0.707     1.77x
+  rav1d untracked (avx2)        0.717    0.707    0.807     1.81x
+  rav1d default (native)        0.902    0.887    1.310     2.28x
+  rav1d default (avx2)          0.920    0.898    1.034     2.33x
+
+## 720p  threads=4  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.274    0.254    0.310     1.00x
+  dav1d (avx2)                  0.279    0.260    0.311     1.02x
+  libgav1                       0.462    0.433    0.591     1.68x
+  rav1d untracked (native)      0.476    0.394    0.596     1.74x
+  rav1d untracked (avx2)        0.485    0.404    0.575     1.77x
+  rav1d default (native)        0.721    0.645    0.851     2.63x
+  rav1d default (avx2)          0.718    0.659    0.854     2.62x
+
+## 720p  threads=8  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.314    0.280    0.355     1.00x
+  dav1d (avx2)                  0.302    0.275    0.337     0.96x
+  libgav1                       0.409    0.380    0.658     1.30x
+  rav1d untracked (native)      0.534    0.439    0.633     1.70x
+  rav1d untracked (avx2)        0.541    0.438    0.599     1.72x
+  rav1d default (native)        0.851    0.749    0.929     2.71x
+  rav1d default (avx2)          0.797    0.749    0.876     2.54x
+
+## 1080p  threads=1  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                1.093    1.077    1.123     1.00x
+  dav1d (avx2)                  1.122    1.112    1.163     1.03x
+  libgav1                       1.835    1.795    2.167     1.68x
+  rav1d untracked (native)      2.034    2.018    2.111     1.86x
+  rav1d untracked (avx2)        2.109    2.090    2.136     1.93x
+  rav1d default (native)        2.540    2.521    2.803     2.32x
+  rav1d default (avx2)          2.622    2.588    2.916     2.40x
+
+## 1080p  threads=4  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.726    0.650    0.814     1.00x
+  dav1d (avx2)                  0.754    0.659    0.807     1.04x
+  libgav1                       1.225    1.153    1.498     1.69x
+  rav1d untracked (native)      1.189    1.020    1.394     1.64x
+  rav1d untracked (avx2)        1.341    1.033    1.467     1.85x
+  rav1d default (native)        2.492    2.208    2.593     3.43x
+  rav1d default (avx2)          2.454    2.190    2.613     3.38x
+
+## 1080p  threads=8  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.777    0.690    0.856     1.00x
+  dav1d (avx2)                  0.804    0.684    0.861     1.03x
+  libgav1                       1.088    0.989    1.586     1.40x
+  rav1d untracked (native)      1.382    1.133    1.498     1.78x
+  rav1d untracked (avx2)        1.404    1.200    1.584     1.81x
+  rav1d default (native)        2.599    2.389    2.842     3.34x
+  rav1d default (avx2)          2.632    2.454    2.837     3.39x
+
+## 1080p_4tile  threads=1  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                1.125    1.116    1.145     1.00x
+  dav1d (avx2)                  1.165    1.147    1.203     1.04x
+  libgav1                       1.896    1.862    2.152     1.69x
+  rav1d untracked (native)      2.134    2.123    2.173     1.90x
+  rav1d untracked (avx2)        2.217    2.200    2.237     1.97x
+  rav1d default (native)        2.764    2.732    3.003     2.46x
+  rav1d default (avx2)          2.841    2.795    3.072     2.52x
+
+## 1080p_4tile  threads=4  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.652    0.585    0.685     1.00x
+  dav1d (avx2)                  0.643    0.599    0.731     0.99x
+  libgav1                       1.022    0.894    1.061     1.57x
+  rav1d untracked (native)      1.005    0.819    1.178     1.54x
+  rav1d untracked (avx2)        1.059    0.890    1.244     1.63x
+  rav1d default (native)        2.208    1.990    2.394     3.39x
+  rav1d default (avx2)          2.307    1.998    2.849     3.54x
+
+## 1080p_4tile  threads=8  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.559    0.483    0.633     1.00x
+  dav1d (avx2)                  0.573    0.473    0.637     1.02x
+  libgav1                       0.794    0.680    1.026     1.42x
+  rav1d untracked (native)      0.979    0.811    1.093     1.75x
+  rav1d untracked (avx2)        1.047    0.847    1.130     1.87x
+  rav1d default (native)        1.901    1.613    2.139     3.40x
+  rav1d default (avx2)          1.978    1.799    2.476     3.54x
+
+## 4k_photo  threads=1  (40 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)               23.733   23.675   23.816     1.00x
+  dav1d (avx2)                 24.149   24.079   24.215     1.02x
+  libgav1                      38.899   38.731   39.441     1.64x
+  rav1d untracked (native)     36.779   36.653   37.090     1.55x
+  rav1d untracked (avx2)       37.176   37.086   37.361     1.57x
+  rav1d default (native)       37.568   37.393   37.785     1.58x
+  rav1d default (avx2)         38.063   37.819   38.591     1.60x
+
+## 4k_photo  threads=4  (40 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                7.267    7.183    7.997     1.00x
+  dav1d (avx2)                  7.312    7.265    7.689     1.01x
+  libgav1                      11.062   10.951   11.301     1.52x
+  rav1d untracked (native)     10.541   10.474   10.702     1.45x
+  rav1d untracked (avx2)       10.683   10.627   10.919     1.47x
+  rav1d default (native)       15.173   15.084   15.359     2.09x
+  rav1d default (avx2)         15.184   15.084   15.448     2.09x
+
+## 4k_photo  threads=8  (40 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                4.728    4.656    4.906     1.00x
+  dav1d (avx2)                  4.813    4.741    4.990     1.02x
+  libgav1                      11.364   10.886   11.764     2.40x
+  rav1d untracked (native)      6.904    6.664    7.243     1.46x
+  rav1d untracked (avx2)        7.012    6.390    7.184     1.48x
+  rav1d default (native)       14.018   13.610   14.259     2.96x
+  rav1d default (avx2)         14.178   13.911   14.552     3.00x
+##### TILE
+load 4.92; mode=tile; rounds=4 passes/round=5 (+1 warm-up each)
+
+## 720p  threads=4  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.443    0.435    0.460     1.00x
+  dav1d (avx2)                  0.447    0.438    0.463     1.01x
+  libgav1                       0.449    0.418    0.567     1.01x
+  rav1d untracked (native)      0.730    0.658    0.768     1.65x
+  rav1d untracked (avx2)        0.730    0.713    0.763     1.65x
+  rav1d default (native)        1.085    1.037    1.116     2.45x
+  rav1d default (avx2)          1.080    1.023    1.121     2.43x
+
+## 1080p  threads=4  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                1.130    1.114    1.153     1.00x
+  dav1d (avx2)                  1.145    1.119    1.156     1.01x
+  libgav1                       1.130    1.044    1.281     1.00x
+  rav1d untracked (native)      1.940    1.900    2.005     1.72x
+  rav1d untracked (avx2)        1.967    1.927    2.037     1.74x
+  rav1d default (native)        3.797    3.732    3.855     3.36x
+  rav1d default (avx2)          3.818    3.706    3.900     3.38x
+
+## 1080p_4tile  threads=4  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.601    0.590    0.619     1.00x
+  dav1d (avx2)                  0.605    0.590    0.629     1.01x
+  libgav1                       1.017    0.792    1.072     1.69x
+  rav1d untracked (native)      1.130    1.088    1.175     1.88x
+  rav1d untracked (avx2)        1.152    1.115    1.213     1.92x
+  rav1d default (native)        2.303    2.245    2.346     3.83x
+  rav1d default (avx2)          2.328    2.259    2.382     3.87x
+FAIR_DONE
+######## ARM old  05:25:15 load 3.88
+##### AUTO
+load 3.88; mode=auto; rounds=4 passes/round=5 (+1 warm-up each)
+
+## 480p_inter  threads=1  (150 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                1.426    1.421    1.432     1.00x
+  dav1d (avx2)                  1.462    1.456    1.471     1.03x
+  libgav1                       2.568    2.541    2.624     1.80x
+  rav1d untracked (native)      3.593    3.559    3.625     2.52x
+  rav1d untracked (avx2)        3.509    3.486    3.520     2.46x
+  rav1d default (native)        4.777    4.743    4.851     3.35x
+  rav1d default (avx2)          4.699    4.676    4.720     3.30x
+
+## 480p_inter  threads=4  (150 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.732    0.724    0.748     1.00x
+  dav1d (avx2)                  0.740    0.734    0.749     1.01x
+  libgav1                       1.678    1.647    1.739     2.29x
+  rav1d untracked (native)      1.581    1.570    1.603     2.16x
+  rav1d untracked (avx2)        1.519    1.510    1.530     2.08x
+  rav1d default (native)        2.332    2.318    2.347     3.19x
+  rav1d default (avx2)          2.274    2.255    2.295     3.11x
+
+## 480p_inter  threads=8  (150 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.655    0.642    0.723     1.00x
+  dav1d (avx2)                  0.669    0.650    0.698     1.02x
+  libgav1                       1.495    1.434    1.639     2.28x
+  rav1d untracked (native)      1.750    1.695    1.847     2.67x
+  rav1d untracked (avx2)        1.710    1.642    1.797     2.61x
+  rav1d default (native)        2.561    2.511    2.924     3.91x
+  rav1d default (avx2)          2.593    2.435    2.855     3.96x
+
+## 720p  threads=1  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.395    0.392    0.400     1.00x
+  dav1d (avx2)                  0.401    0.395    0.407     1.01x
+  libgav1                       0.784    0.692    0.801     1.98x
+  rav1d untracked (native)      0.702    0.694    0.715     1.78x
+  rav1d untracked (avx2)        0.706    0.701    0.721     1.79x
+  rav1d default (native)        1.007    0.971    1.114     2.55x
+  rav1d default (avx2)          1.017    0.988    1.114     2.57x
+
+## 720p  threads=4  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.282    0.260    0.310     1.00x
+  dav1d (avx2)                  0.272    0.253    0.313     0.97x
+  libgav1                       0.452    0.436    0.582     1.60x
+  rav1d untracked (native)      0.470    0.392    0.570     1.67x
+  rav1d untracked (avx2)        0.465    0.398    0.574     1.65x
+  rav1d default (native)        0.832    0.731    0.903     2.95x
+  rav1d default (avx2)          0.814    0.726    0.896     2.89x
+
+## 720p  threads=8  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.311    0.279    0.333     1.00x
+  dav1d (avx2)                  0.314    0.277    0.334     1.01x
+  libgav1                       0.409    0.367    0.649     1.31x
+  rav1d untracked (native)      0.513    0.443    0.655     1.65x
+  rav1d untracked (avx2)        0.527    0.435    0.625     1.69x
+  rav1d default (native)        0.945    0.836    1.043     3.04x
+  rav1d default (avx2)          0.942    0.835    0.991     3.03x
+
+## 1080p  threads=1  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                1.087    1.077    1.130     1.00x
+  dav1d (avx2)                  1.119    1.110    1.127     1.03x
+  libgav1                       1.844    1.788    2.139     1.70x
+  rav1d untracked (native)      2.030    2.016    2.052     1.87x
+  rav1d untracked (avx2)        2.082    2.069    2.113     1.91x
+  rav1d default (native)        2.856    2.784    3.032     2.63x
+  rav1d default (avx2)          2.918    2.826    3.088     2.68x
+
+## 1080p  threads=4  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.742    0.661    0.797     1.00x
+  dav1d (avx2)                  0.759    0.668    0.809     1.02x
+  libgav1                       1.218    1.169    1.490     1.64x
+  rav1d untracked (native)      1.240    1.042    1.388     1.67x
+  rav1d untracked (avx2)        1.304    1.070    1.413     1.76x
+  rav1d default (native)        2.617    2.381    2.706     3.53x
+  rav1d default (avx2)          2.614    2.275    2.831     3.52x
+
+## 1080p  threads=8  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.789    0.708    0.842     1.00x
+  dav1d (avx2)                  0.772    0.697    0.816     0.98x
+  libgav1                       1.090    1.005    1.662     1.38x
+  rav1d untracked (native)      1.412    1.147    1.596     1.79x
+  rav1d untracked (avx2)        1.390    1.027    1.535     1.76x
+  rav1d default (native)        2.759    2.387    3.132     3.50x
+  rav1d default (avx2)          2.758    2.413    3.822     3.50x
+
+## 1080p_4tile  threads=1  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                1.118    1.112    1.163     1.00x
+  dav1d (avx2)                  1.153    1.136    1.186     1.03x
+  libgav1                       1.889    1.859    2.145     1.69x
+  rav1d untracked (native)      2.137    2.119    2.163     1.91x
+  rav1d untracked (avx2)        2.189    2.174    2.232     1.96x
+  rav1d default (native)        3.035    2.956    3.227     2.71x
+  rav1d default (avx2)          3.072    3.011    3.255     2.75x
+
+## 1080p_4tile  threads=4  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.668    0.586    0.750     1.00x
+  dav1d (avx2)                  0.670    0.602    0.782     1.00x
+  libgav1                       1.028    0.811    1.414     1.54x
+  rav1d untracked (native)      0.968    0.860    1.279     1.45x
+  rav1d untracked (avx2)        1.038    0.867    1.235     1.55x
+  rav1d default (native)        2.438    2.195    2.654     3.65x
+  rav1d default (avx2)          2.430    2.180    2.627     3.64x
+
+## 1080p_4tile  threads=8  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.562    0.489    0.586     1.00x
+  dav1d (avx2)                  0.544    0.480    0.620     0.97x
+  libgav1                       0.740    0.664    1.068     1.32x
+  rav1d untracked (native)      1.060    0.744    1.127     1.89x
+  rav1d untracked (avx2)        1.093    0.952    1.203     1.94x
+  rav1d default (native)        2.075    1.728    2.494     3.69x
+  rav1d default (avx2)          2.095    1.821    2.300     3.73x
+
+## 4k_photo  threads=1  (40 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)               23.573   23.515   23.696     1.00x
+  dav1d (avx2)                 24.005   23.851   24.367     1.02x
+  libgav1                      38.796   38.453   39.103     1.65x
+  rav1d untracked (native)     36.162   35.991   37.378     1.53x
+  rav1d untracked (avx2)       36.190   36.002   36.548     1.54x
+  rav1d default (native)       41.544   41.220   41.834     1.76x
+  rav1d default (avx2)         41.513   41.321   42.062     1.76x
+
+## 4k_photo  threads=4  (40 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                7.226    7.128    7.538     1.00x
+  dav1d (avx2)                  7.371    7.267    7.603     1.02x
+  libgav1                      11.031   10.900   11.352     1.53x
+  rav1d untracked (native)     10.302   10.244   10.735     1.43x
+  rav1d untracked (avx2)       10.373   10.274   10.624     1.44x
+  rav1d default (native)       16.900   16.778   17.509     2.34x
+  rav1d default (avx2)         16.825   16.720   16.962     2.33x
+
+## 4k_photo  threads=8  (40 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                4.727    4.640    4.915     1.00x
+  dav1d (avx2)                  4.813    4.742    5.047     1.02x
+  libgav1                      11.200   10.776   11.770     2.37x
+  rav1d untracked (native)      6.773    6.198    7.009     1.43x
+  rav1d untracked (avx2)        6.797    6.269    7.025     1.44x
+  rav1d default (native)       15.879   15.688   16.234     3.36x
+  rav1d default (avx2)         16.008   15.737   16.341     3.39x
+##### TILE
+load 4.27; mode=tile; rounds=4 passes/round=5 (+1 warm-up each)
+
+## 720p  threads=4  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.444    0.433    0.469     1.00x
+  dav1d (avx2)                  0.446    0.432    0.461     1.00x
+  libgav1                       0.445    0.421    0.535     1.00x
+  rav1d untracked (native)      0.730    0.645    0.757     1.65x
+  rav1d untracked (avx2)        0.717    0.635    0.746     1.62x
+  rav1d default (native)        1.175    1.157    1.204     2.65x
+  rav1d default (avx2)          1.171    1.152    1.192     2.64x
+
+## 1080p  threads=4  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                1.131    1.105    1.146     1.00x
+  dav1d (avx2)                  1.142    1.119    1.167     1.01x
+  libgav1                       1.185    1.029    1.300     1.05x
+  rav1d untracked (native)      1.956    1.926    1.995     1.73x
+  rav1d untracked (avx2)        1.942    1.874    1.999     1.72x
+  rav1d default (native)        4.007    3.926    4.470     3.54x
+  rav1d default (avx2)          3.998    3.924    4.750     3.53x
+
+## 1080p_4tile  threads=4  (30 frames)
+  decoder                      median      min      max  vs dav1d
+  dav1d (native)                0.598    0.588    0.626     1.00x
+  dav1d (avx2)                  0.605    0.599    0.635     1.01x
+  libgav1                       1.031    0.768    1.093     1.72x
+  rav1d untracked (native)      1.123    1.082    1.192     1.88x
+  rav1d untracked (avx2)        1.143    1.111    1.173     1.91x
+  rav1d default (native)        2.461    2.414    2.839     4.11x
+  rav1d default (avx2)          2.480    2.398    2.662     4.15x
+FAIR_DONE
+BOTH_DONE

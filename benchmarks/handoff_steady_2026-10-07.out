@@ -1,0 +1,171 @@
+##### REAL 07:39:01 load 3.74
+load 3.74; mode=auto; rounds=4 passes/round=5 (+1 warm-up each)
+clip            t decoder                      full ms/fr   steady  setup ms setup % of full pass
+aom1080         1 dav1d (native)                   12.147   11.917      22.0                 1.9%
+aom1080         1 libgav1                          19.850   19.544      29.4                 1.5%
+aom1080         1 rav1d default (native)           31.603   31.507       9.2                 0.3%
+aom1080         1 rav1d untracked (native)         25.744   25.546      19.0                 0.8%
+aom1080         4 dav1d (native)                    6.948    6.727      21.3                 3.2%
+aom1080         4 libgav1                          15.006   14.744      25.1                 1.7%
+aom1080         4 rav1d default (native)           28.855   28.638      20.8                 0.8%
+aom1080         4 rav1d untracked (native)         10.667   10.227      42.2                 4.1%
+aom1080         8 dav1d (native)                    6.472    6.305      16.0                 2.6%
+aom1080         8 libgav1                          12.765   12.394      35.6                 2.9%
+aom1080         8 rav1d default (native)           31.475   31.274      19.3                 0.6%
+aom1080         8 rav1d untracked (native)         11.920   11.527      37.7                 3.3%
+aom4k           1 dav1d (native)                   36.038   35.373      31.9                 1.8%
+aom4k           1 libgav1                          59.062   58.156      43.5                 1.5%
+aom4k           1 rav1d default (native)           97.426   97.708     -13.5                -0.3%
+aom4k           1 rav1d untracked (native)         78.186   78.083       4.9                 0.1%
+aom4k           4 dav1d (native)                   17.214   16.603      29.3                 3.5%
+aom4k           4 libgav1                          39.506   38.625      42.3                 2.2%
+aom4k           4 rav1d default (native)          178.355  178.617     -12.6                -0.1%
+aom4k           4 rav1d untracked (native)         67.685   66.653      49.5                 1.5%
+aom4k           8 dav1d (native)                   15.827   15.519      14.8                 1.9%
+aom4k           8 libgav1                          31.465   30.164      62.5                 4.1%
+aom4k           8 rav1d default (native)          179.968  179.389      27.8                 0.3%
+aom4k           8 rav1d untracked (native)         31.399   29.788      77.3                 5.1%
+aom720          1 dav1d (native)                    5.270    5.222       9.3                 0.9%
+aom720          1 libgav1                           8.358    8.309       9.4                 0.6%
+aom720          1 rav1d default (native)           13.130   13.100       5.7                 0.2%
+aom720          1 rav1d untracked (native)         10.659   10.433      43.4                 2.1%
+aom720          4 dav1d (native)                    3.366    3.333       6.4                 1.0%
+aom720          4 libgav1                           6.819    6.791       5.4                 0.4%
+aom720          4 rav1d default (native)            6.452    6.409       8.2                 0.7%
+aom720          4 rav1d untracked (native)          4.850    4.787      12.1                 1.3%
+aom720          8 dav1d (native)                    2.875    2.842       6.3                 1.1%
+aom720          8 libgav1                           5.957    5.901      10.8                 0.9%
+aom720          8 rav1d default (native)            7.226    7.199       5.2                 0.4%
+aom720          8 rav1d untracked (native)          5.368    5.307      11.8                 1.1%
+aomnowarp1080   1 dav1d (native)                   11.339   11.063      26.5                 2.4%
+aomnowarp1080   1 libgav1                          18.734   18.375      34.5                 1.9%
+aomnowarp1080   1 rav1d default (native)           28.907   28.665      23.3                 0.8%
+aomnowarp1080   1 rav1d untracked (native)         23.496   23.168      31.5                 1.4%
+aomnowarp1080   4 dav1d (native)                    6.509    6.265      23.5                 3.8%
+aomnowarp1080   4 libgav1                          14.359   14.059      28.8                 2.1%
+aomnowarp1080   4 rav1d default (native)           26.508   26.274      22.5                 0.9%
+aomnowarp1080   4 rav1d untracked (native)          9.658    9.182      45.7                 4.9%
+aomnowarp1080   8 dav1d (native)                    6.144    5.965      17.2                 2.9%
+aomnowarp1080   8 libgav1                          12.283   11.894      37.3                 3.2%
+aomnowarp1080   8 rav1d default (native)           28.810   28.587      21.4                 0.8%
+aomnowarp1080   8 rav1d untracked (native)         11.216   10.814      38.6                 3.6%
+svt1080         1 dav1d (native)                    8.265    7.765      48.0                 6.0%
+svt1080         1 libgav1                          12.608   11.901      67.9                 5.6%
+svt1080         1 rav1d default (native)           18.323   17.659      63.7                 3.6%
+svt1080         1 rav1d untracked (native)         15.413   14.784      60.4                 4.1%
+svt1080         4 dav1d (native)                    5.353    4.968      36.9                 7.2%
+svt1080         4 libgav1                           9.739    9.159      55.7                 6.0%
+svt1080         4 rav1d default (native)           15.137   14.434      67.4                 4.6%
+svt1080         4 rav1d untracked (native)          6.588    5.926      63.5                10.0%
+svt1080         8 dav1d (native)                    4.289    3.766      50.2                12.2%
+svt1080         8 libgav1                           8.347    7.592      72.5                 9.0%
+svt1080         8 rav1d default (native)           17.077   16.291      75.4                 4.6%
+svt1080         8 rav1d untracked (native)          7.127    6.520      58.3                 8.5%
+svt4k           1 dav1d (native)                   23.948   20.423     169.2                14.7%
+svt4k           1 libgav1                          37.630   32.174     261.9                14.5%
+svt4k           1 rav1d default (native)           58.479   51.309     344.2                12.3%
+svt4k           1 rav1d untracked (native)         48.226   42.216     288.5                12.5%
+svt4k           4 dav1d (native)                   13.514   10.851     127.8                19.7%
+svt4k           4 libgav1                          28.832   25.118     178.3                12.9%
+svt4k           4 rav1d default (native)          132.039  119.252     613.8                 9.7%
+svt4k           4 rav1d untracked (native)         39.653   35.017     222.5                11.7%
+svt4k           8 dav1d (native)                   12.256    9.425     135.9                23.1%
+svt4k           8 libgav1                          25.229   20.464     228.7                18.9%
+svt4k           8 rav1d default (native)          153.366  140.206     631.7                 8.6%
+svt4k           8 rav1d untracked (native)         23.261   19.373     186.6                16.7%
+svt720          1 dav1d (native)                    4.087    3.994      17.9                 2.3%
+svt720          1 libgav1                           5.924    5.777      28.3                 2.5%
+svt720          1 rav1d default (native)            8.027    7.880      28.2                 1.8%
+svt720          1 rav1d untracked (native)          6.923    6.806      22.4                 1.7%
+svt720          4 dav1d (native)                    2.732    2.633      18.9                 3.6%
+svt720          4 libgav1                           4.952    4.834      22.7                 2.4%
+svt720          4 rav1d default (native)            3.836    3.713      23.7                 3.2%
+svt720          4 rav1d untracked (native)          3.326    3.193      25.6                 4.0%
+svt720          8 dav1d (native)                    2.267    2.140      24.4                 5.6%
+svt720          8 libgav1                           4.259    4.118      27.1                 3.3%
+svt720          8 rav1d default (native)            5.162    5.117       8.7                 0.9%
+svt720          8 rav1d untracked (native)          3.568    3.430      26.5                 3.9%
+##### SYNTH 08:48:14 load 5.37
+load 5.37; mode=auto; rounds=4 passes/round=5 (+1 warm-up each)
+clip            t decoder                      full ms/fr   steady  setup ms setup % of full pass
+def1080         1 dav1d (native)                    3.800    3.501      26.9                 7.9%
+def1080         1 libgav1                           7.619    7.205      37.2                 5.4%
+def1080         1 rav1d default (native)           14.661   14.160      45.1                 3.4%
+def1080         1 rav1d untracked (native)         12.826   12.412      37.2                 3.2%
+def1080         4 dav1d (native)                    2.490    2.352      12.4                 5.5%
+def1080         4 libgav1                           5.675    5.326      31.4                 6.2%
+def1080         4 rav1d default (native)           29.637   29.499      12.4                 0.5%
+def1080         4 rav1d untracked (native)          9.284    8.997      25.8                 3.1%
+def720          1 dav1d (native)                    1.610    1.467      12.9                 8.9%
+def720          1 libgav1                           3.371    3.168      18.3                 6.0%
+def720          1 rav1d default (native)            6.442    6.245      17.7                 3.1%
+def720          1 rav1d untracked (native)          5.646    5.464      16.4                 3.2%
+def720          4 dav1d (native)                    1.106    1.023       7.4                 7.5%
+def720          4 libgav1                           2.543    2.377      15.0                 6.5%
+def720          4 rav1d default (native)            4.582    4.408      15.7                 3.8%
+def720          4 rav1d untracked (native)          4.037    3.943       8.4                 2.3%
+nw1080          1 dav1d (native)                    1.999    1.648      31.5                17.5%
+nw1080          1 libgav1                           3.493    2.971      47.0                14.9%
+nw1080          1 rav1d default (native)            6.548    5.834      64.2                10.9%
+nw1080          1 rav1d untracked (native)          5.125    4.519      54.6                11.8%
+nw1080          4 dav1d (native)                    1.274    1.110      14.8                12.9%
+nw1080          4 libgav1                           2.709    2.344      32.9                13.5%
+nw1080          4 rav1d default (native)            5.749    4.892      77.1                14.9%
+nw1080          4 rav1d untracked (native)          3.017    2.555      41.6                15.3%
+nw720           1 dav1d (native)                    0.936    0.767      15.2                18.0%
+nw720           1 libgav1                           1.592    1.319      24.5                17.1%
+nw720           1 rav1d default (native)            2.995    2.718      25.0                 9.3%
+nw720           1 rav1d untracked (native)          2.283    1.974      27.8                13.6%
+nw720           4 dav1d (native)                    0.599    0.501       8.8                16.3%
+nw720           4 libgav1                           1.263    1.055      18.7                16.5%
+nw720           4 rav1d default (native)            1.890    1.648      21.8                12.8%
+nw720           4 rav1d untracked (native)          1.381    1.171      18.9                15.2%
+pan1080         1 dav1d (native)                    1.257    0.972       8.5                22.7%
+pan1080         1 libgav1                           1.953    1.429      15.7                26.8%
+pan1080         1 rav1d default (native)            2.624    2.538       2.6                 3.3%
+pan1080         1 rav1d untracked (native)          2.090    1.771       9.6                15.3%
+pan1080         4 dav1d (native)                    0.773    0.465       9.2                39.8%
+pan1080         4 libgav1                           1.291    0.835      13.7                35.3%
+pan1080         4 rav1d default (native)            3.444    2.809      19.0                18.4%
+pan1080         4 rav1d untracked (native)          1.865    1.225      19.2                34.3%
+pan720          1 dav1d (native)                    0.403    0.287       3.5                28.8%
+pan720          1 libgav1                           0.801    0.687       3.4                14.2%
+pan720          1 rav1d default (native)            0.928    0.936      -0.2                -0.8%
+pan720          1 rav1d untracked (native)          0.710    0.616       2.8                13.2%
+pan720          4 dav1d (native)                    0.293    0.199       2.8                32.2%
+pan720          4 libgav1                           0.542    0.350       5.8                35.5%
+pan720          4 rav1d default (native)            0.948    0.808       4.2                14.8%
+pan720          4 rav1d untracked (native)          0.681    0.460       6.6                32.4%
+photo4k         1 dav1d (native)                   24.416   24.274       5.7                 0.6%
+photo4k         1 libgav1                          40.177   40.185      -0.3                -0.0%
+photo4k         1 rav1d default (native)           38.904   38.819       3.4                 0.2%
+photo4k         1 rav1d untracked (native)         37.668   37.537       5.2                 0.3%
+photo4k         4 dav1d (native)                    7.455    7.028      17.1                 5.7%
+photo4k         4 libgav1                          11.273   11.213       2.4                 0.5%
+photo4k         4 rav1d default (native)           15.460   15.252       8.3                 1.3%
+photo4k         4 rav1d untracked (native)         10.634   10.430       8.2                 1.9%
+stitch480       1 dav1d (native)                    1.433    1.415       2.7                 1.3%
+stitch480       1 libgav1                           2.612    2.591       3.2                 0.8%
+stitch480       1 rav1d default (native)            4.326    4.318       1.1                 0.2%
+stitch480       1 rav1d untracked (native)          3.706    3.695       1.6                 0.3%
+stitch480       4 dav1d (native)                    0.729    0.705       3.6                 3.3%
+stitch480       4 libgav1                           1.705    1.658       7.1                 2.8%
+stitch480       4 rav1d default (native)            3.500    3.481       2.9                 0.5%
+stitch480       4 rav1d untracked (native)          2.678    2.648       4.6                 1.1%
+svt1080s        1 dav1d (native)                    2.190    1.880      27.9                14.1%
+svt1080s        1 libgav1                           3.892    3.424      42.1                12.0%
+svt1080s        1 rav1d default (native)            6.545    6.048      44.8                 7.6%
+svt1080s        1 rav1d untracked (native)          5.202    4.657      49.0                10.5%
+svt1080s        4 dav1d (native)                    1.323    1.046      24.9                20.9%
+svt1080s        4 libgav1                           2.863    2.431      38.9                15.1%
+svt1080s        4 rav1d default (native)            6.525    5.779      67.1                11.4%
+svt1080s        4 rav1d untracked (native)          2.991    2.565      38.3                14.2%
+svt720s         1 dav1d (native)                    0.970    0.699      24.4                28.0%
+svt720s         1 libgav1                           1.669    1.269      36.0                24.0%
+svt720s         1 rav1d default (native)            2.677    2.147      47.7                19.8%
+svt720s         1 rav1d untracked (native)          2.435    1.998      39.3                17.9%
+svt720s         4 dav1d (native)                    0.571    0.397      15.6                30.4%
+svt720s         4 libgav1                           1.226    0.924      27.2                24.6%
+svt720s         4 rav1d default (native)            1.702    1.247      40.9                26.7%
+svt720s         4 rav1d untracked (native)          1.295    1.046      22.4                19.2%
+STEADY_DONE
