@@ -1,6 +1,6 @@
 # Warp destination row addressing
 
-Missing: sidecar and timing gates and production landing of the repair.
+Missing: timing gate and production landing of the repair.
 Production remains unchanged while the isolated repair passes both full
 decoder suites and three scalar tests. [Raw before/after and compile logs](../benchmarks/warp_signed_destination_2026-10-08/meta.json)
 record executable source fingerprints and wrapped resource lines.
@@ -36,8 +36,8 @@ wrapped scope returned rc=0 after 51 seconds, peak RSS 1.57 GiB, minimum
 available 24,206 MiB and peak load 2.45. An extra filter used a nonexistent
 reference-test name and selected nothing; this is not claimed as reference
 fixture coverage. The corrected focused recipe includes the real test,
-`warp_reference_windows_cover_both_strides_and_all_depths`, and its two-mode
-gate and complete decoder suites are now running. No assertion changed.
+`warp_reference_windows_cover_both_strides_and_all_depths`, and its completed two-mode
+gate and complete decoder suites are recorded below. No assertion changed.
 
 ## Complete decoder validation
 
@@ -58,8 +58,8 @@ example, generic code generation and release fat LTO in both modes.
 The preserved before binaries match published MC production source;
 only the signed destination repair changes compiled production code.
 The 71-second build scope returned rc=0, peak RSS 1.30 GiB, minimum
-available 24,107 MiB and peak load 3.28. Whole-clip MD5, sidecar and
-throughput gates remain pending.
+available 24,107 MiB and peak load 3.28. Whole-clip MD5 and sidecar results appear below;
+throughput validation remains pending.
 
 [All 32 whole-clip comparisons](../benchmarks/warp_signed_destination_2026-10-08/clips.meta.json)
 match dav1d 1.5.3 with grain enabled, across four 8/10-bit clips, both
@@ -69,4 +69,21 @@ and peak load 1.15. Both new timing binaries also reject a malformed
 second packet without printing timing results; valid input and MD5
 frame-limit controls pass. That scope reports peak RSS 0.02 GiB,
 minimum available 25,820 MiB, peak load 0.42 and rc=0.
-The forty-configuration sidecar and A/A plus A/B gates remain pending.
+The completed sidecar gate appears below; A/A plus A/B remains pending.
+
+## Complete runtime-tier sidecars
+
+The [full forty-configuration gate](../benchmarks/warp_signed_destination_2026-10-08/sidecars.meta.json)
+passes all 803 official sidecars in tracked and untracked modes, at
+one/two/four/eight workers and scalar/v2/v3/v4/native tiers, with frame
+delay zero. Every configuration has zero mismatches or decode errors;
+149 manifest rows remain outside the explicit 803-vector selection.
+The eight generated manifests are byte-identical. Compared with the
+previous MC gate, only their absolute workspace prefix changes; the new
+raw manifest is archived separately with its actual hash. Source and
+executable fingerprints were verified unchanged after execution.
+
+The wrapped scope returned rc=0 after 4,875 seconds, peak RSS 0.24 GiB,
+minimum available 25,480 MiB and peak load 1.90. Ordered bounded parts
+reconstruct the complete log and manifest. This is correctness evidence;
+timing and production landing remain pending.

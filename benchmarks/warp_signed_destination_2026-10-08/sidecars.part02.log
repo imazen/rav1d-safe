@@ -1,0 +1,232 @@
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=v3 threads=2 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+Conformance: level=v4 threads=2 delay=0 binary=/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5 manifest=/home/lilith/tmp/rav1d-vectors.EekbJn.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=v4 threads=2 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+Conformance: level=native threads=2 delay=0 binary=/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5 manifest=/home/lilith/tmp/rav1d-vectors.EekbJn.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=native threads=2 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+# Total: 952 test vectors
+Conformance: level=scalar threads=4 delay=0 binary=/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5 manifest=/home/lilith/tmp/rav1d-vectors.0Rh1yQ.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=scalar threads=4 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+Conformance: level=v2 threads=4 delay=0 binary=/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5 manifest=/home/lilith/tmp/rav1d-vectors.0Rh1yQ.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=v2 threads=4 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+Conformance: level=v3 threads=4 delay=0 binary=/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5 manifest=/home/lilith/tmp/rav1d-vectors.0Rh1yQ.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=v3 threads=4 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+Conformance: level=v4 threads=4 delay=0 binary=/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5 manifest=/home/lilith/tmp/rav1d-vectors.0Rh1yQ.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=v4 threads=4 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+Conformance: level=native threads=4 delay=0 binary=/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5 manifest=/home/lilith/tmp/rav1d-vectors.0Rh1yQ.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=native threads=4 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+# Total: 952 test vectors
+Conformance: level=scalar threads=8 delay=0 binary=/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5 manifest=/home/lilith/tmp/rav1d-vectors.GHAdV7.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=scalar threads=8 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+Conformance: level=v2 threads=8 delay=0 binary=/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5 manifest=/home/lilith/tmp/rav1d-vectors.GHAdV7.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=v2 threads=8 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+Conformance: level=v3 threads=8 delay=0 binary=/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5 manifest=/home/lilith/tmp/rav1d-vectors.GHAdV7.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=v3 threads=8 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+Conformance: level=v4 threads=8 delay=0 binary=/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5 manifest=/home/lilith/tmp/rav1d-vectors.GHAdV7.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=v4 threads=8 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+Conformance: level=native threads=8 delay=0 binary=/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5 manifest=/home/lilith/tmp/rav1d-vectors.GHAdV7.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=native threads=8 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+run-heavy: done rc=0 4875s | peak-RSS 0.24GiB | min-avail 25480MiB | peak-load 1.90
