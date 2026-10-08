@@ -1,7 +1,6 @@
 # Paired horizontal warp experiment
 
-Missing: full decoder/sidecar gates, completed whole-clip MD5/error controls,
-matched A/A plus A/B and production landing. No speedup is claimed.
+Missing: full decoder/sidecar gates, matched A/A plus A/B and production landing. No speedup is claimed.
 The experiment starts from the landed signed-destination fix `80069eb0`.
 
 The private 8-bit horizontal helper computes two adjacent dot products
@@ -49,3 +48,15 @@ horizontal pass contains unsigned/signed widening and `vpmaddwd`; it
 contains no `vpmaddubsw`. These are static code-generation observations,
 not throughput or instruction-count measurements. Full gate results and
 real-clip performance remain pending.
+
+## Whole-clip identity and error controls
+
+All [32 before/after whole-clip cases](../benchmarks/warp_paired_horizontal_2026-10-08/clips-controls.meta.json)
+match dav1d 1.5.3 with grain enabled, across four 8/10-bit clips, both
+modes and one/four workers at frame delay one. Both new timing binaries
+reject a malformed second packet with no timing RESULT; valid controls
+and MD5 frame limits zero/one pass. The wrapped scope returned rc=0
+after 121 seconds, peak RSS 0.20 GiB, minimum available 25,540 MiB and
+peak load 1.96. Full raw output and executable provenance are retained.
+The sixteen-case controlled timing matrix is running; no throughput
+conclusion or production landing follows from these MD5 checks.
