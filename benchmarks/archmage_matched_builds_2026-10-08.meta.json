@@ -1,0 +1,71 @@
+{
+  "date": "2026-10-08",
+  "decoder_base_revision": "8ea8bf18080b94fe992ba642853868cf69a680d0",
+  "old_manifest_revision": "520d8ebd7c2de57717b8005030f88e599ed9f560",
+  "old_archmage": "b8d6c0777e55e4ea8d26cde0879faae858cba662",
+  "new_archmage": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "rustc": "1.99.0 (b940084d7 2026-09-28)",
+  "cpu": "Ryzen 9 7900X (Zen 4)",
+  "commands": [
+    "just build-bench-modes <target>/lead-archmage-old-safe <target>/lead-archmage-old-untracked",
+    "just build-bench-modes <target>/lead-archmage-new-safe <target>/lead-archmage-new-untracked"
+  ],
+  "builds": [
+    {
+      "stage": "old",
+      "seconds": 64,
+      "peak_rss_gib": 1.29,
+      "min_available_mib": 24212,
+      "peak_load": 3.25,
+      "rc": 0
+    },
+    {
+      "stage": "new",
+      "seconds": 63,
+      "peak_rss_gib": 1.29,
+      "min_available_mib": 24352,
+      "peak_load": 4.63,
+      "rc": 0
+    }
+  ],
+  "source_catalog": "benchmarks/archmage_matched_sources_2026-10-08.json",
+  "binary_hashes": {
+    "old/safe/profile_ivf": "82c6f40f2cfeb4ce6be563044723f53b60a645a7f5d18408b559c597e0aab729",
+    "old/safe/decode_md5": "57342f21da191454b971c53ca93a3320de5725efb1157ce9e62eaad557a188d8",
+    "old/untracked/profile_ivf": "07eb3dabd2dc39dec92908c9cbe76f5eb7d7889fdc607a655376efe7afc33e45",
+    "old/untracked/decode_md5": "51193a18d3c9c5da47339fdacd187e3a3d271411e48eba043ff48f1acc9361c3",
+    "new/safe/profile_ivf": "5e7e02ccfd58e891c5a030467beb0fdb894406841c0ce193b0c491526ef18a04",
+    "new/safe/decode_md5": "55f0b25595dfbb835b35c032864cef68158575e302ee88f194f610043ca20307",
+    "new/untracked/profile_ivf": "1ba5d3f7655cb884bc48906896d44022fc5b269e6a091b0ad4884bb574e6a59d",
+    "new/untracked/decode_md5": "c43409a9243d472d282d8d9d3fe104abbc25ab6a65174c9317104ef4e83182ad"
+  },
+  "logs": [
+    {
+      "stage": "old",
+      "path": "benchmarks/archmage_matched_old_build_2026-10-08.log",
+      "sha256": "3dfebfb0aab4dbf16ceb31398072c017e36d94860e65770b4cda00c4ca0e6780"
+    },
+    {
+      "stage": "new",
+      "path": "benchmarks/archmage_matched_new_build_2026-10-08.log",
+      "sha256": "38a4b45f37134c79c8fbb7e2f445d6e6b84a0552efe1e35b22b8ea3cb2526169"
+    }
+  ],
+  "tls_tbss_bytes": 11368,
+  "missing": "A/A and A/B timings; no performance benefit claimed; Zen 5 unmeasured",
+  "output_validation": {
+    "cases": 32,
+    "oracle": "dav1d 1.5.3 whole-clip MD5, grain off",
+    "threads": [
+      1,
+      4
+    ],
+    "delay": 1,
+    "seconds": 121,
+    "peak_rss_gib": 0.2,
+    "min_available_mib": 25795,
+    "peak_load": 1.19,
+    "log": "benchmarks/archmage_matched_md5_2026-10-08.log",
+    "sha256": "01886af5e1e56b72c47048fb5887120e592649b14ee4074e0118657597c64af0"
+  }
+}

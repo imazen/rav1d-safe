@@ -43,6 +43,14 @@ test-cast-miri:
 bench-ab *args:
     python3 scripts/perf/decoder_bench/ab_bench.py {{args}}
 
+# Require whole-clip dav1d MD5 identity before comparing benchmark binaries.
+bench-md5 *args:
+    python3 scripts/perf/decoder_bench/compare_md5.py {{args}}
+
+# Sequential A/A and A/B runs for tracked and untracked target directories.
+bench-paired-modes *args:
+    python3 scripts/perf/decoder_bench/paired_modes.py {{args}}
+
 # Download test vectors
 download-vectors:
     bash scripts/download-test-vectors.sh
