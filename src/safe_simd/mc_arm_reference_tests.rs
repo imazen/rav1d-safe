@@ -4,7 +4,7 @@
 use crate::include::common::bitdepth::{AsPrimitive, BitDepth, BitDepth8, BitDepth16};
 use crate::include::dav1d::picture::{Rav1dPictureDataComponent, Rav1dPictureDataComponentInner};
 use crate::src::levels::Filter2d;
-use crate::src::strided::Strided;
+use crate::src::with_offset::WithOffset;
 use archmage::SimdToken;
 use zerocopy::IntoBytes;
 
@@ -14,14 +14,16 @@ fn interpolation_reads_leave_unrelated_reconstruction_rows_available() {
     // This is a native ARM regression; refusing the token would compare only
     // scalar fallbacks and would not exercise the reservation being repaired.
     assert!(archmage::Arm64::summon().is_some());
-    for full_range in [false, true] {
-        check_depth(BitDepth8::new(()), full_range);
-        check_depth(BitDepth16::new(1023), full_range);
-        check_depth(BitDepth16::new(4095), full_range);
+    for negative in [false, true] {
+        for full_range in [false, true] {
+            check_depth(BitDepth8::new(()), full_range, negative);
+            check_depth(BitDepth16::new(1023), full_range, negative);
+            check_depth(BitDepth16::new(4095), full_range, negative);
+        }
     }
 }
 
-fn check_depth<BD: BitDepth>(bd: BD, full_range: bool) {
+fn check_depth<BD: BitDepth>(bd: BD, full_range: bool, negative: bool) {
     const STRIDE: usize = 192;
     const ROWS: usize = 144;
     let max = bd.bitdepth_max().as_::<i32>();
@@ -48,11 +50,20 @@ fn check_depth<BD: BitDepth>(bd: BD, full_range: bool) {
         assert_eq!(pixels.iter().map(|&p| p.as_::<i32>()).max(), Some(max));
     }
     let pixel_size = core::mem::size_of::<BD::Pixel>();
+    let source_stride = if negative {
+        -(STRIDE as isize)
+    } else {
+        STRIDE as isize
+    };
     let picture = Rav1dPictureDataComponent::from_parts(
         Rav1dPictureDataComponentInner::from_slice_copy(pixels.as_bytes()),
-        (STRIDE * pixel_size) as isize,
+        source_stride * pixel_size as isize,
     );
-    let source = picture.with_offset::<BD>() + (4 * STRIDE + 8);
+    let origin_row = if negative { ROWS - 5 } else { 4 };
+    let source = WithOffset {
+        data: &picture,
+        offset: origin_row * STRIDE + 8,
+    };
     // Last row is outside every source window below. The old full_guard
     // refused this live reconstruction write before reaching the kernel.
     let _reconstruction = picture.index_mut::<BD>((ROWS - 1) * STRIDE);
@@ -148,11 +159,11 @@ fn check_depth<BD: BitDepth>(bd: BD, full_range: bool) {
                     assert_eq!(
                         put.as_bytes(),
                         actual.as_bytes(),
-                        "put {w}x{h} filter={filter_id} {mx},{my} max={max} full_range={full_range}"
+                        "put {w}x{h} filter={filter_id} {mx},{my} max={max} full_range={full_range} negative={negative}"
                     );
                     assert_eq!(
                         prep, expected_prep,
-                        "prep {w}x{h} filter={filter_id} {mx},{my} max={max} full_range={full_range}"
+                        "prep {w}x{h} filter={filter_id} {mx},{my} max={max} full_range={full_range} negative={negative}"
                     );
                 }
             }

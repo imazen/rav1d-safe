@@ -5,6 +5,9 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- ARM MC preserves signed source pitches through put/prep and retains the
+  full bounded source slice for backward row walks. Expanded 8/10/12-bit
+  parity, full native suites and both sidecar matrices pass.
 - Correct CPU-mask documentation: pixel DSP gates consult masks, while
   baseline ARM NEON and x86 entropy/coefficient token dispatch can remain
   active. Conformance uses explicit token caps; managed behavior is unchanged.

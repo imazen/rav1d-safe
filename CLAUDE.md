@@ -993,7 +993,8 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
   a real scalar decode. X86 msac incants and coefficient autoversion also
   select tokens independently of pixel masks. The `decode_md5` token guards
   pass native worker tests and fail deliberate disabling mutations on both
-  architectures; enforced ARM scalar sidecars are running. The separate
+  architectures; all eight enforced ARM scalar sidecar legs pass 803/803
+  at 1/2/4/8 workers in both modes. The separate
   token-permutation suite passes. Production CPU-mask behavior is unchanged.
   See `docs/ARM_MC_SOURCE_STRIDES.md`. The managed API limitation remains open.
 
@@ -1048,7 +1049,7 @@ fixtures are not covered by the new default-only test. Full decoder/sidecar,
 cross-compile and current matched timing remain pending; the production
 MC performance candidate has not been published.
 
-### ARM MC negative source strides (2026-10-08) — validation in progress
+### ARM MC negative source strides (2026-10-08) — FIXED
 
 The expanded source-window parity gate fails on a negative-stride 8bpc
 vertical-filter tail: `mc_arm.rs` casts the signed source pitch to `usize`,
@@ -1059,6 +1060,10 @@ put/prep and pass the slice's base separately; a vertical filter must retain
 the full bounded slice to walk backward. The same oracle now covers both
 stride signs at 8/10/12 bits, all filters and phases, endpoints, tails and
 128x128 blocks while an unrelated reconstruction row stays borrowed.
+The repaired source passes the expanded oracle, complete native suites,
+24 CPU-mask sidecar legs and eight enforced scalar legs, each 803/803
+at 1/2/4/8 workers in both modes. No performance change is claimed. See
+[validation and source hashes](docs/ARM_MC_SOURCE_STRIDES.md).
 
 ### ARM MC source reservations and 12-bit bilinear rounding (2026-10-08)
 

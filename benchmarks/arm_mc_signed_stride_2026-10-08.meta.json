@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-08",
+  "cpu": "Neoverse-N1",
+  "toolchain": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "base_revision": "83c928d3d6c57f57187212b9657e959828cb5634",
+  "source_sha256": {
+    "src/safe_simd/mc_arm.rs": "0c9f55ddcae81dee9bb1d934ddc792290e8cca7c1de3c4aa9ceb472ddbc641ad",
+    "src/safe_simd/mc_arm_reference_tests.rs": "4c0a2fcee1c0e6551506117145e043bd5e1608b64f2ca3173596e655850f2ce3"
+  },
+  "command": "RUSTUP_TOOLCHAIN=1.99.0 RUSTFLAGS= CARGO_ENCODED_RUSTFLAGS= just test-mc-reference; cargo/rustc resolve through rustup, bypassing mise shims",
+  "heavy_wrapper": {
+    "memory_limit": "16G",
+    "jobs": 12,
+    "exit_code": 0,
+    "seconds": 443,
+    "peak_rss_gib": 1.17,
+    "min_available_mib": 25745,
+    "peak_load": 9.76
+  },
+  "gate": "1/1 selected native ARM MC oracle, 394.709 seconds; full decoder suites remain pending",
+  "coverage": "both source stride signs, 8/10/12-bit, ten filters, all256 phase pairs, two source patterns including zero/max/random, eight dimensions including odd/vector tails and128x128; whole put/prep output vs scalar with unrelated live reconstruction write",
+  "logs": {
+    "benchmarks/arm_mc_signed_stride_2026-10-08.log": "4f0b4dcb98764f7d662114dd3c3786ed0f9f225b5aa2c07657113ab774d842ac"
+  }
+}

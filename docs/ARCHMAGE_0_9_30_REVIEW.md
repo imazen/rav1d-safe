@@ -1,9 +1,10 @@
 # Archmage 0.9.30 update review
 
 The native ARM full suites, doctests and explicit integration selection are
-green with the local signed-source repair. Its separate CPU-mask
-sidecar matrix passes24/24 legs. The explicit token-disabled scalar
-supplement is running; source publication remains pending. The updated remote CI matrix
+green with the signed-source repair. Its separate CPU-mask
+sidecar matrix passes 24/24 legs. The explicit token-disabled scalar
+supplement passes all eight legs, each 803/803 vectors at 1/2/4/8 workers
+in both modes ([evidence](../benchmarks/arm_scalar_sidecars_2026-10-08.meta.json)). The updated remote CI matrix
 passes all 33 jobs on `ae6c26d8`: [CI run](https://github.com/imazen/rav1d-safe/actions/runs/37732635299).
 The manifest selects full revision
 `e2dbab66ef5aa08f8e23ed05248e7d1217f58475` for both normal and dev
@@ -61,5 +62,6 @@ integration selections pass all nine bodies without skips.
 record the 2856-second scope: peak-RSS 1.05 GiB, min-avail 23306 MiB,
 peak-load 17.37. The catalog identifies all 262 runtime/test/build source files for that
 recorded run. Later conformance token/limit tool changes have their own
-[validation and hashes](CI_LINT_REVIEW.md). The signed-source repair is not yet published; its
-separate 803-vector all-tier/all-worker sidecar matrix remains pending.
+[validation and hashes](CI_LINT_REVIEW.md). The signed-source repair also passes the separate CPU-mask and enforced
+scalar sidecar matrices described above. No decoder performance benefit is
+claimed for this dependency update.

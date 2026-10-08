@@ -1,9 +1,9 @@
 # Signed source addressing in ARM motion compensation
 
-Missing: the explicit token-disabled scalar supplement at 1/2/4/8 workers in both modes, and
-publication.
-The complete native nextest/doctest/integration selections are green with
-the local source repair. No performance change is claimed.
+The signed-source repair passes the expanded native oracle, complete native
+nextest/doctest/integration selections, the 24-leg CPU-mask matrix and all
+eight explicitly token-disabled scalar sidecar legs. No performance change
+is claimed.
 
 The expanded put/prep oracle exposed a negative source pitch converted to
 `usize` before computing vertical-filter tail addresses. The 16-bit dispatch
@@ -44,19 +44,24 @@ bodies per mode. Its 2,856-second wrapped scope peaked at 1.05 GiB RSS.
 records the source inventory and existing ignored selections. The separate CPU-mask matrix passed all 24 legs, each 803/803 at 1/2/4/8
 workers in both modes. Its 2,763-second scope peaked at 0.24 GiB RSS.
 [CPU-mask sidecar results](../benchmarks/arm_cpu_mask_sidecars_2026-10-08.meta.json)
-record the mask limitation below; fully scalar decoding still needs the supplement.
+record the mask limitation below; the explicit scalar supplement is separate.
 
 Review confirmed the ARM mask limitation documented in
 [X64_APPLICABILITY A6](X64_APPLICABILITY.md#a6-cpulevelscalar-does-not-disable-safe-simd-measurement-infrastructure-gap). Several dispatchers summon
 `Arm64` without testing the CPU mask, so a sidecar invocation labelled
 `scalar` can still run NEON. The token-permutation suite exercises the real
 fallbacks, but the CPU-mask matrix alone cannot claim fully scalar sidecar
-coverage. The prepared `decode_md5` scalar guard disables the NEON token and
+coverage. The `decode_md5` scalar guard disables the NEON token and
 its descendants under the existing process-wide testing lock through decoder
 worker shutdown. The worker guard passes, fails when token disabling is deliberately omitted,
 and passes after exact source restoration. The unchanged assertions check
 four concurrent workers and token restoration.
 [Guard and mutation evidence](../benchmarks/arm_token_guard_2026-10-08.meta.json)
-records the 42/27/28-second scopes, each peaking at 0.98 GiB RSS. Fresh decoder
-builds and eight scalar sidecar legs remain pending. The managed API's ARM
-mask limitation remains open.
+records the 42/27/28-second scopes, each peaking at 0.98 GiB RSS.
+
+Fresh binaries with the repaired frame-limit tool pass all eight enforced
+scalar legs: 803/803 vectors at 1/2/4/8 workers in tracked and untracked modes,
+delay 0, with the unchanged 120-second per-vector deadline. The wrapped
+scope took 2,096 seconds, peaked at 0.24 GiB RSS, with minimum available memory
+27,258 MiB and peak load 8.31. [Scalar sidecar results](../benchmarks/arm_scalar_sidecars_2026-10-08.meta.json)
+record source and binary hashes. The managed API's ARM mask limitation remains open.

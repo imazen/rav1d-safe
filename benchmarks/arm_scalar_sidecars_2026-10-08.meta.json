@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-08",
+  "base_revision": "a279f3c5f0f32959219b12e79ed4fa459ccd8ac5",
+  "cpu": "Neoverse-N1",
+  "rustc": "1.99.0",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "source_sha256": {
+    "src/safe_simd/mc_arm.rs": "0c9f55ddcae81dee9bb1d934ddc792290e8cca7c1de3c4aa9ceb472ddbc641ad",
+    "src/safe_simd/mc_arm_reference_tests.rs": "4c0a2fcee1c0e6551506117145e043bd5e1608b64f2ca3173596e655850f2ce3",
+    "examples/decode_md5.rs": "9d25da85938745fe96aeff8958bbdbeef285316bbe491c147f1273121979b5b8"
+  },
+  "binaries_sha256": {
+    "tracked": "a348ae75735844ca46d6e75bc5b2d8fb2086a55bfe86f2feb6541ce4d0811c32",
+    "untracked": "b08099d0b2b6f2f3fd3ddf5f8806f73c77e57eb36e1cad0f4df2d4ea0b48db76"
+  },
+  "command": "just conformance-scalar-modes target/lead-frame-limit-safe/release/examples/decode_md5 target/lead-frame-limit-untracked/release/examples/decode_md5",
+  "results": {
+    "legs_passed": 8,
+    "vectors_passed_per_leg": 803,
+    "excluded_per_leg": 149,
+    "modes": [
+      "tracked",
+      "untracked"
+    ],
+    "workers": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "delay": 0,
+    "deadline_seconds": 120,
+    "token_selection": "NEON root and descendants disabled under process-wide lock through decoder worker shutdown"
+  },
+  "run_heavy": {
+    "exit_code": 0,
+    "seconds": 2096,
+    "peak_rss_gib": 0.24,
+    "min_available_mib": 27258,
+    "peak_load": 8.31,
+    "memory_limit": "16G",
+    "jobs": 12
+  },
+  "log": {
+    "path": "benchmarks/arm_scalar_sidecars_2026-10-08.log",
+    "bytes": 8240,
+    "sha256": "4da8053759ac5381dcd46fbafe58a7b2213ec22a95d9e6c53b8f349ab920d872"
+  },
+  "limits": "Complements the earlier 24-leg CPU-mask matrix. Managed CPU mask behavior remains incomplete. No throughput claim."
+}
