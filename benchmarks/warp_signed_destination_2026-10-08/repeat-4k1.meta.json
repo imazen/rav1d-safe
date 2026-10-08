@@ -1,0 +1,63 @@
+{
+  "date": "2026-10-08",
+  "host": "r7900x",
+  "before_revision": "e8162a0d6bbae5543546f6f8532a651ac31e4a13",
+  "after_revision": "1e57f3b283f3d45fb98a968ce04e1c41797a7e16",
+  "source_provenance": "builds.meta.json",
+  "binary_provenance": "timing.meta.json; eight executable hashes verified unchanged after repeat",
+  "argv": [
+    "just",
+    "bench-paired-modes",
+    "--before-prefix",
+    "/home/lilith/work/zen/rav1d-safe/target/lead-mc-final-after",
+    "--after-prefix",
+    "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final",
+    "--before-rev",
+    "e8162a0d6bbae5543546f6f8532a651ac31e4a13",
+    "--after-rev",
+    "1e57f3b283f3d45fb98a968ce04e1c41797a7e16",
+    "--threads",
+    "1",
+    "--rounds",
+    "8",
+    "--passes",
+    "3",
+    "--first-cpu",
+    "8",
+    "--delay",
+    "1",
+    "--output",
+    "/home/lilith/tmp/handoff/rav1d-safe-lead/ci/warp-destination-4k1-repeat",
+    "--mode",
+    "untracked",
+    "--stream",
+    "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real4k_48.ivf"
+  ],
+  "wrapper": "run-heavy --mem 16G --jobs 20",
+  "matrix": "untracked AOM4K one worker, delay1,8processpairs/phase,3timedpasses/invocation,24samples/arm",
+  "resources": "run-heavy: done rc=0 460s | peak-RSS 0.20GiB | min-avail 25534MiB | peak-load 1.24",
+  "files": {
+    "repeat-4k1-aa.jsonl": {
+      "bytes": 1440,
+      "sha256": "740207acb4c09394dc550706775c0175bb85d29a224b89659c63604bc632e201"
+    },
+    "repeat-4k1-ab.jsonl": {
+      "bytes": 1436,
+      "sha256": "efba5312e250ee2f687d8f21e569fc2adae8a152d4d3bdc98c8c1569e7905f6a"
+    },
+    "repeat-4k1.log": {
+      "bytes": 5800,
+      "sha256": "806d9bd3c454b8dfd1f90861f222fac640b7dbfe4ed0cf5e0071eadd11b3e2fc"
+    },
+    "repeat-4k1-analysis.json": {
+      "bytes": 1161,
+      "sha256": "0624f519527449bfa2f9c35b88a0b69da7dde0ac558af151f4778d5fc7c8f6dc"
+    }
+  },
+  "finding": "7/8 paired medians slower; AB median+0.8944313901%,minimum+0.2672137368%; AA median-0.0342223313%,minimum+0.1558023343%. Original four-pair cost observed again, without establishing universal slowdown.",
+  "limits": [
+    "Generic fat-LTO example binaries unify testable_dispatch",
+    "Not measured on Zen5 or ordinary consumers without testable_dispatch",
+    "Negative-stride correctness repair remains required; timing cost needs optimization investigation"
+  ]
+}

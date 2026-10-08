@@ -1,6 +1,6 @@
 # Warp destination row addressing
 
-Missing: focused repeat of a possible timing cost.
+Missing: an optimization resolving the measured untracked 4K one-worker timing cost.
 The production repair passes both full decoder suites, three scalar tests
 and the runtime-tier sidecar matrix. [Raw before/after and compile logs](../benchmarks/warp_signed_destination_2026-10-08/meta.json)
 record executable source fingerprints and wrapped resource lines.
@@ -86,7 +86,7 @@ executable fingerprints were verified unchanged after execution.
 The wrapped scope returned rc=0 after 4,875 seconds, peak RSS 0.24 GiB,
 minimum available 25,480 MiB and peak load 1.90. Ordered bounded parts
 reconstruct the complete log and manifest. This is correctness evidence;
-a focused timing repeat remains pending.
+the timing-cost investigation remains open.
 
 ## Matched timing matrix
 
@@ -100,8 +100,7 @@ consumer builds without that feature and Zen 5 were not measured.
 
 Untracked AOM 4K at one worker has median A/B +1.2898% and minimum
 +0.8796%; all four paired medians increase. Its A/A median is -0.1752%
-and minimum -0.0399%. This is a possible regression, with a focused
-eight-pair repeat pending. Tracked 10-bit at one worker also has four
+and minimum -0.0399%. The focused eight-pair repeat below also observes a cost. Tracked 10-bit at one worker also has four
 positive paired medians: A/B +0.5375% and minimum +0.3900%, while its
 A/A median is +0.6028% and minimum +0.0657%. These results do not
 establish performance neutrality or a general speedup. The full analysis
@@ -122,3 +121,20 @@ both lints had passed; installing that toolchain's ARM/WASM targets and
 rerunning the feature recipe resolved it. Both complete logs are retained.
 The successful retry returned rc=0 after 35 seconds, peak RSS 1.49 GiB,
 minimum available 24,101 MiB and peak load 1.64.
+
+## Focused 4K one-worker repeat
+
+The [eight-pair untracked repeat](../benchmarks/warp_signed_destination_2026-10-08/repeat-4k1.meta.json)
+uses the same preserved binaries and clip, with 24 timed observations per
+arm. Median time changes from 74.5512185 to 75.218028 milliseconds per
+frame (+0.8944%); minimum ratio is +0.2672%. Seven of eight process-pair
+medians increase. A/A has median -0.0342%, minimum +0.1558%, and four
+positive/four negative paired medians. The original four-pair cost is
+observed again; this does not establish a slowdown on every workload.
+The negative-stride correctness repair remains required, while its timing
+cost remains an optimization target. No pixel expectation was relaxed.
+
+The wrapped scope returned rc=0 after 460 seconds, peak RSS 0.20 GiB,
+minimum available 25,534 MiB and peak load 1.24. The completed phase
+files, full command output, recomputed analysis and metadata are committed.
+Executable hashes remain unchanged.

@@ -995,9 +995,12 @@ The isolated exact-source gate passes 240 tracked and 223 untracked tests,
 ten active doctests per mode, feature checks and forty actual-token sidecar
 configurations (803/803 each, zero failures/errors). Existing ignored tests
 remain outside that scope. C-FFI negative-destination allocator coverage is
-not established. The matched timing matrix identifies a possible untracked
-4K one-worker cost (+1.2898% median, +0.8796% minimum); a focused repeat is
-running. No performance-neutrality claim follows from the correctness gates.
+not established. The matched timing matrix identifies an untracked 4K
+one-worker cost (+1.2898% median, +0.8796% minimum). An eight-pair repeat
+also observes a cost: +0.8944% median, +0.2672% minimum, seven positive
+paired medians; A/A is -0.0342% median, +0.1558% minimum. This remains an
+optimization target. No performance-neutrality claim follows from the
+correctness gates.
 No expectation has been relaxed.
 [Evidence, source fingerprints and repair scope](docs/MC_WARP_DESTINATION_ROWS.md).
 
