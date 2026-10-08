@@ -198,3 +198,9 @@ MC build-record run completed 31 jobs before two unfinished corpus jobs were
 cancelled by the subsequent push; it is not an all-green record. This complete
 run covers the published decoder and tools. Private MC, CDEF, retained-row
 and glue candidates still require their separate validation and timing.
+
+Published initial MC passes all 33 CI jobs on revision `96dcf44a`.
+The [complete job record](../benchmarks/ci_mc_landing_2026-10-08.json)
+includes Windows ARM, macOS Intel and i686 and links the successful run.
+This coverage does not include the unpublished signed warp destination
+repair or the remaining performance experiments.

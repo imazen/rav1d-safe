@@ -1,0 +1,311 @@
+{
+  "conclusion": "success",
+  "createdAt": "2026-10-08T13:14:20Z",
+  "event": "push",
+  "headSha": "96dcf44af8c5e0225a80c35b1d9aecaaf52b911d",
+  "status": "completed",
+  "updatedAt": "2026-10-08T13:38:37Z",
+  "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221",
+  "workflowName": "CI",
+  "jobs": [
+    {
+      "databaseId": 113330135578,
+      "name": "Cross-compile (aarch64-unknown-linux-gnu)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:08Z",
+      "completedAt": "2026-10-08T13:15:37Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330135578"
+    },
+    {
+      "databaseId": 113330135866,
+      "name": "Decoder MSRV (1.89)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:09Z",
+      "completedAt": "2026-10-08T13:16:15Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330135866"
+    },
+    {
+      "databaseId": 113330135885,
+      "name": "Clippy",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:08Z",
+      "completedAt": "2026-10-08T13:15:50Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330135885"
+    },
+    {
+      "databaseId": 113330136022,
+      "name": "Conformance runner protocol",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:09Z",
+      "completedAt": "2026-10-08T13:15:14Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136022"
+    },
+    {
+      "databaseId": 113330136039,
+      "name": "Format",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:08Z",
+      "completedAt": "2026-10-08T13:15:22Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136039"
+    },
+    {
+      "databaseId": 113330136044,
+      "name": "Coverage",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:08Z",
+      "completedAt": "2026-10-08T13:36:21Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136044"
+    },
+    {
+      "databaseId": 113330136065,
+      "name": "FFI allocator ownership (Miri, stacked)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:12Z",
+      "completedAt": "2026-10-08T13:16:14Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136065"
+    },
+    {
+      "databaseId": 113330136089,
+      "name": "Build & Test (windows-latest, safe-simd)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:08Z",
+      "completedAt": "2026-10-08T13:27:58Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136089"
+    },
+    {
+      "databaseId": 113330136092,
+      "name": "Packaged source feature builds (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:08Z",
+      "completedAt": "2026-10-08T13:17:17Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136092"
+    },
+    {
+      "databaseId": 113330136093,
+      "name": "i686 container tests (cross)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:09Z",
+      "completedAt": "2026-10-08T13:18:19Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136093"
+    },
+    {
+      "databaseId": 113330136106,
+      "name": "FFI allocator ownership (Miri, tree)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:08Z",
+      "completedAt": "2026-10-08T13:16:08Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136106"
+    },
+    {
+      "databaseId": 113330136134,
+      "name": "Cross-compile (x86_64-unknown-linux-musl)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:08Z",
+      "completedAt": "2026-10-08T13:15:42Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136134"
+    },
+    {
+      "databaseId": 113330136169,
+      "name": "Packaged source feature builds (ubuntu-24.04-arm)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:11Z",
+      "completedAt": "2026-10-08T13:16:33Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136169"
+    },
+    {
+      "databaseId": 113330136190,
+      "name": "Diagnostic feature and environment policy",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:10Z",
+      "completedAt": "2026-10-08T13:16:35Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136190"
+    },
+    {
+      "databaseId": 113330136251,
+      "name": "Conformance (decode permutations, aarch64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:12Z",
+      "completedAt": "2026-10-08T13:36:56Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136251"
+    },
+    {
+      "databaseId": 113330136278,
+      "name": "Threading race gates",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:21Z",
+      "completedAt": "2026-10-08T13:18:59Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136278"
+    },
+    {
+      "databaseId": 113330136286,
+      "name": "Wrapper feature contracts",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:08Z",
+      "completedAt": "2026-10-08T13:15:38Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136286"
+    },
+    {
+      "databaseId": 113330136313,
+      "name": "SIMD Permutation Tests (x86_64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:09Z",
+      "completedAt": "2026-10-08T13:16:44Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136313"
+    },
+    {
+      "databaseId": 113330136329,
+      "name": "Tile Threading",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:09Z",
+      "completedAt": "2026-10-08T13:16:30Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136329"
+    },
+    {
+      "databaseId": 113330136333,
+      "name": "Build & Test (ubuntu-latest, i686)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:09Z",
+      "completedAt": "2026-10-08T13:18:48Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136333"
+    },
+    {
+      "databaseId": 113330136375,
+      "name": "Build & Test (macos-latest, safe-simd)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:18Z",
+      "completedAt": "2026-10-08T13:25:32Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136375"
+    },
+    {
+      "databaseId": 113330136380,
+      "name": "Build & Test (ubuntu-24.04-arm, asm-arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:12Z",
+      "completedAt": "2026-10-08T13:17:50Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136380"
+    },
+    {
+      "databaseId": 113330136381,
+      "name": "Build & Test (macos-26-intel, safe-simd)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:10Z",
+      "completedAt": "2026-10-08T13:26:52Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136381"
+    },
+    {
+      "databaseId": 113330136406,
+      "name": "Build & Test (windows-latest, i686)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:09Z",
+      "completedAt": "2026-10-08T13:20:02Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136406"
+    },
+    {
+      "databaseId": 113330136411,
+      "name": "Build & Test (ubuntu-latest, safe-simd)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:10Z",
+      "completedAt": "2026-10-08T13:24:59Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136411"
+    },
+    {
+      "databaseId": 113330136420,
+      "name": "SIMD Permutation Tests (aarch64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:12Z",
+      "completedAt": "2026-10-08T13:16:06Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136420"
+    },
+    {
+      "databaseId": 113330136433,
+      "name": "Build & Test (ubuntu-24.04-arm, safe-simd-arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:12Z",
+      "completedAt": "2026-10-08T13:26:36Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136433"
+    },
+    {
+      "databaseId": 113330136469,
+      "name": "Cross-compile (wasm32-wasip1)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:10Z",
+      "completedAt": "2026-10-08T13:15:35Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136469"
+    },
+    {
+      "databaseId": 113330136497,
+      "name": "Guard-extent gate (bounds map invariant)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:09Z",
+      "completedAt": "2026-10-08T13:16:46Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136497"
+    },
+    {
+      "databaseId": 113330136498,
+      "name": "Build & Test (windows-11-arm, safe-simd-arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:10Z",
+      "completedAt": "2026-10-08T13:27:23Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136498"
+    },
+    {
+      "databaseId": 113330136651,
+      "name": "Build & Test (ubuntu-24.04-arm, c-ffi-arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:12Z",
+      "completedAt": "2026-10-08T13:18:55Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136651"
+    },
+    {
+      "databaseId": 113330136757,
+      "name": "Build & Test (ubuntu-latest, asm)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:10Z",
+      "completedAt": "2026-10-08T13:22:21Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136757"
+    },
+    {
+      "databaseId": 113330136790,
+      "name": "Conformance (decode permutations, x86_64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T13:15:09Z",
+      "completedAt": "2026-10-08T13:38:36Z",
+      "url": "https://github.com/imazen/rav1d-safe/actions/runs/37782780221/job/113330136790"
+    }
+  ],
+  "raw_capture_sha256": "376bb3790a924572eab61a088def09c5b812842bf8b8798886a401b8736fd872",
+  "coverage_limit": "This run verifies published initial MC and existing CI repairs, not unpublished signed warp destination or CDEF/glue/fused/paired-warp experiments."
+}
