@@ -381,9 +381,6 @@ jobs:
     timeout-minutes: 25
     env:
       CARGO_BUILD_JOBS: 4
-      CROSS_CONTAINER_OPTS: >-
-        --memory=8g --memory-swap=8g --cpus=4 --cpu-shares=2
-        --volume=${{ runner.temp }}:/scratch --env=TMPDIR=/scratch
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -392,6 +389,10 @@ jobs:
           tool: cross,just
       - uses: Swatinem/rust-cache@v2
       - run: just test-i686-cross
+        env:
+          CROSS_CONTAINER_OPTS: >-
+            --memory=8g --memory-swap=8g --cpus=4 --cpu-shares=2
+            --volume=${{ runner.temp }}:/scratch --env=TMPDIR=/scratch
 
   # Cross-compile checks (build only, no tests)
   # ==========================================================================

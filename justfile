@@ -84,6 +84,10 @@ check-lead-ci: clippy cross-aarch64
     cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib --test-threads 2
     cargo test --profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib -- --test-threads 8
 
+# Validate workflow expressions and runner/action schemas (requires actionlint).
+lint-ci-workflow checker="actionlint":
+    "{{checker}}" -shellcheck="" .github/workflows/ci.yml
+
 # Check code formatting
 fmt-check:
     cargo fmt --all -- --check

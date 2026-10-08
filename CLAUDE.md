@@ -976,6 +976,10 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+- 2026-10-08: job-level container options referenced `runner.temp`, which GitHub
+  rejects before scheduling CI jobs. The options now live in step-level `env`;
+  `just lint-ci-workflow` validates workflow contexts with actionlint.
+
 ### ARM MC source reservations and 12-bit bilinear rounding (2026-10-08)
 
 The safe ARM put/prep dispatchers reserved entire reference planes. With frame

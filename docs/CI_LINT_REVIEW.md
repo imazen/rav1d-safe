@@ -32,3 +32,8 @@ The CI leg complements the existing native i686 nextest leg. The library's
 Intel macOS runner is `macos-26-intel`; Windows ARM remains covered.
 Checkout v7 and Codecov v7 match the current official major releases checked
 on 2026-10-08. The revised remote matrix remains pending until its run finishes.
+
+The first revised workflow was rejected before jobs started: `runner.temp`
+is unavailable in job-level environment expressions. Container options now
+live in the test step's environment. Actionlint 1.7.12 validates the workflow;
+`just lint-ci-workflow` retains that check for future expression edits.
