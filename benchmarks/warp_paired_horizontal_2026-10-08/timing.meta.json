@@ -1,0 +1,158 @@
+{
+  "argv": [
+    "just",
+    "bench-paired-modes",
+    "--before-prefix",
+    "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final",
+    "--after-prefix",
+    "/home/lilith/work/zen/rav1d-safe/target/lead-warp-paired-current",
+    "--before-rev",
+    "1e57f3b283f3d45fb98a968ce04e1c41797a7e16",
+    "--after-rev",
+    "d3a424241d65f67699d646b2365dd6836a69a9ba",
+    "--threads",
+    "1,4",
+    "--rounds",
+    "4",
+    "--passes",
+    "3",
+    "--first-cpu",
+    "8",
+    "--delay",
+    "1",
+    "--stream",
+    "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real1080_96.ivf",
+    "--stream",
+    "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real4k_48.ivf",
+    "--stream",
+    "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/svt_real1080_96.ivf",
+    "--stream",
+    "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom10_real1080.ivf",
+    "--output",
+    "/home/lilith/tmp/handoff/rav1d-safe-lead/ci/warp-paired-current-aaab"
+  ],
+  "binaries": {
+    "before/safe/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-safe/release/examples/profile_ivf",
+      "sha256": "9ed0eeea45a6839744ae0fc432704e31f5e6f9b61f4831d725823890ebfe31c4",
+      "bytes": 17221624
+    },
+    "before/safe/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-safe/release/examples/decode_md5",
+      "sha256": "5ff5e0a567f66483752c84b3b8b2cda4ffadf7ae8d57fc1ce8e0e2ea3c2cd20a",
+      "bytes": 13583784
+    },
+    "before/untracked/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/profile_ivf",
+      "sha256": "b7000abff48e73826102c7c39b2c610aaaaa064f95cd43b5e862b48801b6a3dd",
+      "bytes": 16055888
+    },
+    "before/untracked/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5",
+      "sha256": "57d31073dcb060d95dcd0030ef816e6e1d835a03d764cdd3b66733af6f076aa4",
+      "bytes": 12400272
+    },
+    "after/safe/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-paired-current-safe/release/examples/profile_ivf",
+      "bytes": 17222120,
+      "sha256": "fbc12c783c750d59cf1e74a6670ebfedd080cd08bb00c1bf0764607ee94bd7c9"
+    },
+    "after/safe/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-paired-current-safe/release/examples/decode_md5",
+      "bytes": 13584344,
+      "sha256": "0f39fe2a75b6a1a9b52f0ca1af860b255c02c3c75c6a7aa725f5559aee5fe2ec"
+    },
+    "after/untracked/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-paired-current-untracked/release/examples/profile_ivf",
+      "bytes": 16056440,
+      "sha256": "53e6f7f32e8c30e19b1862497600b212b76b7f02624ea2bba357f1fdcb375474"
+    },
+    "after/untracked/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-paired-current-untracked/release/examples/decode_md5",
+      "bytes": 12400824,
+      "sha256": "35bf13524ae4c7423ff98a4eb7e85e35667e766d905f173d272b3f6d42dfe49d"
+    }
+  },
+  "streams": [
+    {
+      "path": "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real1080_96.ivf",
+      "sha256": "0a0584bfd7a21207da1449c3f749b63b0b2fe77a59ab18ce6bd4cf9e33ad1d32",
+      "bytes": 7430709
+    },
+    {
+      "path": "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real4k_48.ivf",
+      "sha256": "f5099176ce0656f0c7975d5fc23ee3f138043a01941ca0eaeca1684298a66c4a",
+      "bytes": 10079624
+    },
+    {
+      "path": "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/svt_real1080_96.ivf",
+      "sha256": "093140494057f49dfe48a4a5fa59bdc5d45be226fcd377c8e77bd568af323ab8",
+      "bytes": 9959733
+    },
+    {
+      "path": "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom10_real1080.ivf",
+      "sha256": "e21249f068ad20c51af8a249ad0a831f1d3fa42013efb1c6b087c659ecdc902c",
+      "bytes": 6585055
+    }
+  ],
+  "baseline_source_provenance": "benchmarks/warp_signed_destination_2026-10-08/builds.meta.json",
+  "candidate_source_provenance": "benchmarks/warp_paired_horizontal_2026-10-08/gate-build.meta.json",
+  "source_scope": "Only paired8bitwarp horizontal dot arithmetic changes compiled production; both arms share signedDSTfix/compiler/deps/timer",
+  "session": 51151,
+  "log": "ci/warp-paired-current-aaab.log",
+  "date": "2026-10-08",
+  "host": "r7900x",
+  "files": {
+    "timing-safe-aa.jsonl": {
+      "bytes": 5666,
+      "sha256": "643d2e255e1b2ab0231c2993a7690a41742d93276e2702fe54d3a437f625a839",
+      "parts": [
+        "timing-safe-aa.jsonl"
+      ]
+    },
+    "timing-safe-ab.jsonl": {
+      "bytes": 5649,
+      "sha256": "56d97ace1a3b0278586a946d1e7995d2e6ddb1ba1582e4a7f2945d6956be639e",
+      "parts": [
+        "timing-safe-ab.jsonl"
+      ]
+    },
+    "timing-untracked-aa.jsonl": {
+      "bytes": 5625,
+      "sha256": "3921e8e52a0e352d7deb67dbbf51e7ab52622f15a271e473798ddc4ee0609c33",
+      "parts": [
+        "timing-untracked-aa.jsonl"
+      ]
+    },
+    "timing-untracked-ab.jsonl": {
+      "bytes": 5609,
+      "sha256": "7d977fcc6f82bcd030b2bbcded52ab2dfa3bbfa707d025d8a9d8f47e6514fed7",
+      "parts": [
+        "timing-untracked-ab.jsonl"
+      ]
+    },
+    "timing-analysis.json": {
+      "bytes": 11749,
+      "sha256": "a80e04c05bbc25a3ffd229a410ee2bf4afb6302f5d0e70c465a902418f834329",
+      "parts": [
+        "timing-analysis.json"
+      ]
+    },
+    "timing.log": {
+      "bytes": 28604,
+      "sha256": "3d4497b584aa6c9582a735116c4c044f56ad57be1dbcc4da426cc6df2cb7b176",
+      "parts": [
+        "timing.part01.log",
+        "timing.part02.log"
+      ]
+    }
+  },
+  "resources": "run-heavy: done rc=0 2974s | peak-RSS 0.21GiB | min-avail 25457MiB | peak-load 1.80",
+  "observations_per_arm_per_case": 12,
+  "process_pairs_per_case": 4,
+  "passes": 3,
+  "cases_per_phase": 8,
+  "phases": 4,
+  "outcome": "Rejected for production: mixed mode/worker effects, no common gain. Full decoder and sidecar gates were not run for this rejected candidate.",
+  "scope": "Only byte paired horizontal warp arithmetic differs; shared signed destination repair, identical timer, compiler, dependency lock and generic fat LTO. Both examples unify testable_dispatch. Zen5 and ordinary consumers unmeasured."
+}
