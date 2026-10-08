@@ -1,0 +1,59 @@
+{
+  "source_revision": "2b96f04d40d717daf462b46df63fa3d3e5b33c80",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "cpu": "Ryzen 9 7900X (Zen 4)",
+  "flags": {
+    "RUSTFLAGS": "",
+    "CARGO_ENCODED_RUSTFLAGS": ""
+  },
+  "command": "CARGO_TARGET_DIR=<preserved mode directory> cargo build --release --no-default-features --features bitdepth_8,bitdepth_16[,untracked] --example profile_ivf --example decode_md5",
+  "run_heavy": {
+    "rc": 0,
+    "seconds": 66,
+    "peak_rss_gib": 1.29,
+    "min_available_mib": 23998,
+    "peak_load": 7.29,
+    "memory_limit": "16G",
+    "jobs": 20
+  },
+  "log": {
+    "path": "benchmarks/mc_current_baseline_build_2026-10-08.log",
+    "sha256": "a34ff8c0206ab6570f8913f07dec4601bbb0797a0c7269a2327c3663e5d2f607"
+  },
+  "binaries": [
+    {
+      "mode": "safe",
+      "binary": "/home/lilith/work/zen/rav1d-safe/target/lead-current-baseline-safe/release/examples/profile_ivf",
+      "sha256": "311195210a35456e0a43efdd40ba8870a3e397f77d7a563f80536a807321819b",
+      "tbss": [
+        "[21] .tbss             NOBITS          000000000047e650 47c650 002c68 00 WAT  0   0 16"
+      ]
+    },
+    {
+      "mode": "safe",
+      "binary": "/home/lilith/work/zen/rav1d-safe/target/lead-current-baseline-safe/release/examples/decode_md5",
+      "sha256": "490d24d8cbc08578705f69be60af8ac8d790d096c592034601acd46e69e76b25",
+      "tbss": [
+        "[21] .tbss             NOBITS          00000000003b15b0 3af5b0 002be0 00 WAT  0   0 16"
+      ]
+    },
+    {
+      "mode": "untracked",
+      "binary": "/home/lilith/work/zen/rav1d-safe/target/lead-current-baseline-untracked/release/examples/profile_ivf",
+      "sha256": "73628d416884e9eca76b318a78ece3700ac43a41c41b68b16b90ef87f320c681",
+      "tbss": [
+        "[21] .tbss             NOBITS          000000000042f010 42d010 002c68 00 WAT  0   0 16"
+      ]
+    },
+    {
+      "mode": "untracked",
+      "binary": "/home/lilith/work/zen/rav1d-safe/target/lead-current-baseline-untracked/release/examples/decode_md5",
+      "sha256": "bb5572ed87016152cd636b8ccf52c7f57851b31d8aa592d6e43e249f376acd16",
+      "tbss": [
+        "[21] .tbss             NOBITS          00000000003614b0 35f4b0 002be0 00 WAT  0   0 16"
+      ]
+    }
+  ],
+  "status": "Baseline builds only; current-revision MC performance comparison remains pending. Zen 5 was not measured."
+}
