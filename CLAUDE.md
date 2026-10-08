@@ -768,13 +768,13 @@ zero-filled, bit-identical), so every 8bpc H kernel's load extent is exactly
 `lf_compact_window`. **Rule for the next window written here: size from the mask,
 and remember an H window has a picture ROW to stay inside, not just a superblock
 row.** Both window invariants are asserted in `loopfilter_sb_direct` under
-`debug_assertions` OR `--features probe-sites` — the latter because at the time
+`debug_assertions` OR `--features __probe_sites` — the latter because at the time
 EVERY decode test in this repo was release-only, so a `debug_assertions`-only
 check ran in no CI job at all. **That is no longer true as of 2026-08-31:**
 `decode_md5_committed`, `safe_simd_crashes` and `fuzz_regression` now run in the
 dev profile too, on every `build-test` leg (see the Known Bugs entry below), so
 a `debug_assertions`-only check on a committed vector now does reach CI. The
-`probe-sites` arm stays — it is the only one that covers the downloaded corpus,
+`__probe_sites` arm stays — it is the only one that covers the downloaded corpus,
 which is still release-only.
 
 **CDEF tile race (FIXED, commit b948270):** The `padding_8bpc`/`padding_16bpc` functions in
@@ -1174,7 +1174,7 @@ safe-mode `copy_pixels_to` call sites are `cfg(not(feature = "c-ffi"))`. A copy
 would silently drop the OBMC `lap` and interintra `tmp` writes.
 
 CI now has an `ubuntu-24.04-arm` × `c-ffi` leg in `build-test`, and a
-`probe-sites` clippy leg (that feature had two `-D warnings` failures in
+`__probe_sites` clippy leg (that feature had two `-D warnings` failures in
 `rav1d-disjoint-mut`'s `site_probe.rs` that nothing linted).
 
 ### `decode_permutations` was a DEAD GATE on aarch64 (2026-08-08) — FIXED

@@ -23,7 +23,7 @@ jobs:
     name: Diagnostic feature and environment policy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - run: python3 tools/check-feature-policy.py
       - run: python3 tools/test_conformance_runner.py
@@ -46,7 +46,7 @@ jobs:
     env:
       CARGO_BUILD_JOBS: 4
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - if: runner.arch == 'X64'
         run: sudo apt-get update && sudo apt-get install -y nasm
@@ -58,7 +58,7 @@ jobs:
     name: Decoder MSRV (1.89)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.89.0"
@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-unknown-linux-gnu
@@ -90,7 +90,7 @@ jobs:
           - model: tree
             flags: "-Zmiri-strict-provenance -Zmiri-tree-borrows"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
@@ -147,7 +147,7 @@ jobs:
             label: c-ffi-arm64
 
           # macOS Intel (x86_64) — catch Intel-specific issues
-          - os: macos-15-intel
+          - os: macos-26-intel
             features: "bitdepth_8,bitdepth_16"
             label: safe-simd
 
@@ -170,7 +170,7 @@ jobs:
             target: i686-pc-windows-msvc
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -335,7 +335,7 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -367,7 +367,7 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -375,6 +375,24 @@ jobs:
         run: cargo fmt --all -- --check
 
   # ==========================================================================
+  i686-cross:
+    name: i686 container tests (cross)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CARGO_BUILD_JOBS: 4
+      CROSS_CONTAINER_OPTS: >-
+        --memory=8g --memory-swap=8g --cpus=4 --cpu-shares=2
+        --volume=${{ runner.temp }}:/scratch --env=TMPDIR=/scratch
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cross,just
+      - uses: Swatinem/rust-cache@v2
+      - run: just test-i686-cross
+
   # Cross-compile checks (build only, no tests)
   # ==========================================================================
   cross-compile:
@@ -388,7 +406,7 @@ jobs:
           - aarch64-unknown-linux-gnu
           - wasm32-wasip1
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -421,7 +439,7 @@ jobs:
           - os: ubuntu-24.04-arm
             arch: aarch64
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-nextest
@@ -460,7 +478,7 @@ jobs:
             # runner room.
             timeout: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-nextest
@@ -504,7 +522,7 @@ jobs:
     name: Guard-extent gate (bounds map invariant)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Download test vectors
@@ -529,7 +547,7 @@ jobs:
     name: Tile Threading
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Download test vectors
@@ -568,7 +586,7 @@ jobs:
     name: Threading race gates
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-nextest
@@ -605,7 +623,7 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
@@ -617,7 +635,7 @@ jobs:
       - name: Generate coverage
         run: cargo llvm-cov nextest --no-default-features --features "bitdepth_8,bitdepth_16" --lib --lcov --output-path lcov.info
       - name: Upload to codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: lcov.info
           fail_ci_if_error: false

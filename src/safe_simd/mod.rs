@@ -25,7 +25,7 @@ pub mod pixel_access;
 /// Any test that either PERMUTES tokens or DEPENDS on a token being available
 /// must hold this lock. Poisoning is ignored: a panicking test has already
 /// failed, and the lock exists to order the survivors, not to protect data.
-#[cfg(test)]
+#[cfg(all(test, any(target_arch = "x86_64", target_arch = "aarch64")))]
 pub(crate) fn token_test_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     LOCK.lock().unwrap_or_else(|e| e.into_inner())
@@ -49,7 +49,7 @@ pub(crate) fn token_test_lock() -> std::sync::MutexGuard<'static, ()> {
 ///
 /// [`Rav1dPictureDataComponent::wrap_buf`]: crate::include::dav1d::picture::Rav1dPictureDataComponent::wrap_buf
 /// [`RAV1D_PICTURE_ALIGNMENT`]: crate::include::dav1d::picture::DAV1D_PICTURE_ALIGNMENT
-#[cfg(test)]
+#[cfg(all(test, any(target_arch = "x86_64", target_arch = "aarch64")))]
 pub(crate) fn aligned_plane<T: Copy + Default>(
     src: &[T],
 ) -> rav1d_disjoint_mut::align::AlignedVec64<T> {

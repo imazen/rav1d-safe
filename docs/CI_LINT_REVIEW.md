@@ -22,3 +22,13 @@ min-avail 24800MiB and peak-load 4.69. WASM's unused import is removed;
 its unused compact-window helper has the same allowance as other non-x86
 builds. Panic helpers used only by tracked tests are cfg-gated accordingly.
 Remote CI remains the platform gate.
+
+The Linux i686 container recipe passes 60 release tests (38 library and 22
+committed/crash/fuzz tests) and repeats the 22 regression tests with dev
+overflow checks. A repeat after architecture-gating unused test helpers
+passes without warnings. [Commands, raw logs and container limits](../benchmarks/i686_cross_2026-10-08.meta.json)
+record both runs; wrapper RSS excludes the daemon-owned container.
+The CI leg complements the existing native i686 nextest leg. The library's
+Intel macOS runner is `macos-26-intel`; Windows ARM remains covered.
+Checkout v7 and Codecov v7 match the current official major releases checked
+on 2026-10-08. The revised remote matrix remains pending until its run finishes.

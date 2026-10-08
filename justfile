@@ -23,6 +23,13 @@ test:
     cargo nextest run --no-default-features --features "bitdepth_8,bitdepth_16" --release
     cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --release --doc
 
+# Complete tracked/untracked dependency gate; serialize heavy decode tests.
+test-all-modes:
+    cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --test-threads 2
+    cargo test --release --no-default-features --features "bitdepth_8,bitdepth_16" --doc
+    cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --test-threads 2
+    cargo test --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --doc
+
 # Cast-range overflow and valid-alignment controls under Stacked Borrows.
 test-cast-miri:
     cargo +nightly miri test -p rav1d-disjoint-mut --test cast_range_overflow
@@ -51,6 +58,10 @@ test-threading-races:
 # Run clippy lints
 clippy:
     cargo clippy --release --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings
+
+# The untracked mode has a different set of unit tests and helpers.
+clippy-untracked:
+    cargo clippy --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --all-targets -- -D warnings
 
 # Match the library-only CI lint gate; release-only integration tests are separate.
 clippy-lib:
@@ -119,6 +130,11 @@ check-wasm:
 test-i686:
     cargo nextest run --target i686-unknown-linux-gnu --no-default-features \
         --features "bitdepth_8,bitdepth_16" --release --lib
+
+# The Linux 32-bit container gate complements the native nextest matrix.
+test-i686-cross:
+    cross test --target i686-unknown-linux-gnu --no-default-features --features "bitdepth_8,bitdepth_16" --release --lib --test decode_md5_committed --test safe_simd_crashes --test fuzz_regression -- --test-threads 1
+    cross test --target i686-unknown-linux-gnu --no-default-features --features "bitdepth_8,bitdepth_16" --test decode_md5_committed --test safe_simd_crashes --test fuzz_regression -- --test-threads 1
 
 # Check 32-bit compilation only
 check-i686:
