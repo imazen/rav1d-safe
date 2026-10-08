@@ -594,7 +594,11 @@ just ci                  # Run all CI checks locally
 
 ### Current Status
 
-- ✅ CI workflow configured (not yet pushed to GitHub)
+- CI runs on pushes to `imazen/rav1d-safe` main. Select that repository explicitly
+  in `gh` commands; the inherited fork default produced the earlier missing-CI
+  report. The 2026-10-08 lead review reproduced ARM MC reservations, an ARM
+  assembly call-argument error, formatting, and library lint failures; follow
+  the linked run for current results: https://github.com/imazen/rav1d-safe/actions/runs/37710360347
 - ✅ Test vectors downloaded (dav1d-test-data cloned)
 - ✅ Integration test infrastructure in place
 - ✅ Managed API unit tests pass (3/3)
@@ -1000,7 +1004,6 @@ hashes are in `benchmarks/arm_mc_ci_validation_2026-10-08.{log,meta.json}`.
 Complete suites and token/Argon coverage remain separate gates.
 
 
-
 - 2026-09-07: retained-picture allocation could dereference a default allocator cookie into a dropped decoder in `c-ffi`/`asm` builds. PR #528 retains the pool in each internal allocator clone, passes owned handles directly, and makes default-address recognition optional for correctness. The formerly crashing lifecycle test, a 16-generation copy test, and a minimal Stacked/Tree Borrows Miri gate cover it. See `docs/FFI_ALLOCATOR_LIFETIME.md`.
 
 ### Differential fuzz #522/#523: same malformed segment-ID repro
@@ -1105,9 +1108,9 @@ needs a gate that runs under `overflow-checks`. Before adding
 cost — for committed vectors it is seconds, and the "debug decode is too slow"
 premise only ever applied to the downloaded dav1d corpus (~20 min in dev).
 
-### `just clippy` / `just check` cannot pass, on any host (2026-08-29) — OPEN
-`just clippy` runs `cargo clippy ... --all-targets`, which lints the **test**
-targets under the **dev** profile. Two of those tests open with
+### `just clippy` / `just check` used a dev-profile lint gate (2026-08-29)
+The old `just clippy` ran `cargo clippy ... --all-targets`, linting the
+**test** targets under the **dev** profile. Several of those tests open with
 
 ```rust
 #[cfg(debug_assertions)]
@@ -1118,20 +1121,26 @@ Eight test files still do (`cancellation`, `decode_cpu_levels`,
 `decode_md5_verify`, `decode_permutations`, `integration_decode`,
 `tile_threading_overlap`, `tile_threading_parity`, `worker_panic_recovery` — all
 of which either need the downloaded corpus or are threading/timing tests), so
-`--all-targets` in a debug profile is unsatisfiable by construction — the recipe
-has never been able to succeed, and `just check` (which depends on it) inherits
-the failure. (`decode_md5_committed`, `safe_simd_crashes` and `fuzz_regression`
+`--all-targets` in a debug profile is unsatisfiable by construction. The old
+recipe could not succeed, and `just check` inherited the failure. (`decode_md5_committed`, `safe_simd_crashes` and `fuzz_regression`
 were on that list until 2026-08-31; they are not any more.) On aarch64 it additionally reports ~76 `dead_code` errors from
 `src/safe_simd/itx_arm.rs` in the `lib test` target.
 
-**CI is unaffected and is the gate that counts:** the `clippy` job runs
-`cargo clippy --no-default-features --features … -- -D warnings` (no
-`--all-targets`) on `ubuntu-latest`, across three feature legs (safe-simd,
-c-ffi, probe-sites). All three pass. Use those commands locally; do not read a
-`just clippy` failure as a regression. Fixing the recipe means either dropping
-`--all-targets` or teaching it `--release`, plus deciding whether the aarch64
-`itx_arm.rs` dead code should be `cfg`-gated or `expect`-annotated — neither was
-in scope for the dependency refresh that found this.
+**The library-only CI gate is separate:** it runs
+`cargo clippy --no-default-features --features … -- -D warnings` on
+`ubuntu-latest`. It does not compile the release-only integration tests.
+The 2026-10-08 review reproduced six library errors under Rust 1.99: the
+compatibility settings field, four constant-sized chunk loops, and one
+manual ceiling division. Prepared fixes pass this library command locally.
+Do not infer the current CI result from an older green run. `just clippy-lib`
+matches the library gate. The lead repair changes `just clippy` to
+`--release --all-targets`, so release-only integration targets can compile.
+The release all-target invocation passes locally on Rust 1.98.1. Runtime
+feature assertions remain intact with scoped lint allowances; Argon fetch
+helpers compile only in their owning integration test. Test inputs and
+expectations are unchanged. `check-lead-ci` also exercises cross-compilation
+and isolated plus eight-thread library runs. Native aarch64 lib-test lint
+findings remain a separate check.
 
 ### `c-ffi` + aarch64 unit tests were UNRUN (2026-08-29) — FIXED
 Same class as the `decode_permutations` entry below: a configuration CI compiled

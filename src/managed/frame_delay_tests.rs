@@ -1,10 +1,11 @@
 use super::*;
 
 fn settings(threads: u32, max_frame_delay: u32) -> Settings {
-    let mut s = Settings::default();
-    s.threads = threads;
-    s.max_frame_delay = max_frame_delay;
-    s
+    Settings {
+        threads,
+        max_frame_delay,
+        ..Settings::default()
+    }
 }
 
 #[test]

@@ -50,7 +50,7 @@ test-threading-races:
 
 # Run clippy lints
 clippy:
-    cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings
+    cargo clippy --release --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings
 
 # Match the library-only CI lint gate; release-only integration tests are separate.
 clippy-lib:
@@ -65,6 +65,13 @@ test-conformance-runner:
 
 conformance binary threads="1" delay="0":
     bash scripts/conformance_test.sh --binary "{{binary}}" --threads {{threads}} --delay {{delay}} --expected 803
+
+# Dependency and CI repair gate, with shared-machine-friendly test parallelism.
+check-lead-ci: clippy cross-aarch64
+    cargo check --target wasm32-unknown-unknown --no-default-features --features "bitdepth_8,bitdepth_16"
+    cargo check --no-default-features --features "bitdepth_8,bitdepth_16,c-ffi"
+    cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib --test-threads 2
+    cargo test --profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib -- --test-threads 8
 
 # Check code formatting
 fmt-check:

@@ -11,6 +11,8 @@ use committed_vectors::{VECTORS, decode_md5_with_threads};
 /// Same-process clients are essential here: nextest normally isolates test
 /// cases, which cannot expose one decoder clobbering another decoder's globals.
 #[test]
+// Keep the runtime feature guard: all-target checks also compile unsupported configurations.
+#[allow(clippy::assertions_on_constants)]
 fn simultaneous_single_and_multi_thread_decoders_match_reference_md5() {
     assert!(
         !cfg!(feature = "__simd_test"),

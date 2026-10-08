@@ -60,7 +60,7 @@ fn check_pixels(frame: &Frame, index: usize) {
         for (y, row) in plane.rows().enumerate() {
             for (x, &actual) in row.iter().enumerate() {
                 let level = if x == 0 && y == 0 {
-                    if index % 2 == 0 { 0 } else { 256 }
+                    if index.is_multiple_of(2) { 0 } else { 256 }
                 } else {
                     (17 * x + 29 * y + 43 * index + 71 * component) % 257
                 };

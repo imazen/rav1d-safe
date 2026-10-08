@@ -20,9 +20,11 @@ fn picture_policy_is_local_and_survives_decoder_lifetimes() {
         let mut decoders: Vec<_> = order
             .into_iter()
             .map(|threads| {
-                let mut settings = Settings::default();
-                settings.threads = threads;
-                settings.max_frame_delay = 1;
+                let settings = Settings {
+                    threads,
+                    max_frame_delay: 1,
+                    ..Settings::default()
+                };
                 Decoder::with_settings(settings).unwrap()
             })
             .collect();
@@ -52,9 +54,11 @@ fn picture_policy_is_local_and_survives_decoder_lifetimes() {
 
 #[test]
 fn copied_picture_can_allocate_after_decoder_and_source_drop() {
-    let mut settings = Settings::default();
-    settings.threads = 4;
-    settings.max_frame_delay = 1;
+    let settings = Settings {
+        threads: 4,
+        max_frame_delay: 1,
+        ..Settings::default()
+    };
     let mut decoder = Decoder::with_settings(settings).unwrap();
     let mut frame = decoder.decode(STREAM).unwrap().expect("still frame");
     drop(decoder);
@@ -82,9 +86,11 @@ fn copied_picture_can_allocate_after_decoder_and_source_drop() {
 #[cfg(feature = "c-ffi")]
 #[test]
 fn retained_allocator_allocates_after_decoder_drop() {
-    let mut settings = Settings::default();
-    settings.threads = 1;
-    settings.max_frame_delay = 1;
+    let settings = Settings {
+        threads: 1,
+        max_frame_delay: 1,
+        ..Settings::default()
+    };
     let decoder = Decoder::with_settings(settings).unwrap();
     let allocator = decoder.ctx.allocator.clone();
     drop(decoder);
@@ -124,9 +130,11 @@ fn serial_and_threaded_decoders_run_concurrently_with_local_policies() {
             .into_iter()
             .map(|(threads, tx, rx)| {
                 scope.spawn(move || {
-                    let mut settings = Settings::default();
-                    settings.threads = threads;
-                    settings.max_frame_delay = 1;
+                    let settings = Settings {
+                        threads,
+                        max_frame_delay: 1,
+                        ..Settings::default()
+                    };
                     let mut decoder = Decoder::with_settings(settings).unwrap();
                     let mut retained = Vec::new();
                     for _ in 0..8 {
@@ -203,9 +211,11 @@ fn parallel_frame_tile_contexts_preserve_frames() {
     // Frame threading (explicit delay > 1) is available in tracked builds too.
     let modes = vec![(8, 1), (8, 2), (8, 4)];
     for (threads, max_frame_delay) in modes {
-        let mut settings = Settings::default();
-        settings.threads = threads;
-        settings.max_frame_delay = max_frame_delay;
+        let settings = Settings {
+            threads,
+            max_frame_delay,
+            ..Settings::default()
+        };
         let mut decoder = Decoder::with_settings(settings).unwrap();
         assert_eq!(decoder.ctx.fc.len(), max_frame_delay as usize);
         assert_eq!(decoder.ctx.tc.len(), threads as usize);
@@ -250,9 +260,11 @@ const SINGLE_TILE_STREAM: &[u8] =
 fn single_tile_frames_keep_hull_guards_at_any_thread_count() {
     let mut reference = None;
     for threads in [1u32, 2, 4, 8] {
-        let mut settings = Settings::default();
-        settings.threads = threads;
-        settings.max_frame_delay = 1;
+        let settings = Settings {
+            threads,
+            max_frame_delay: 1,
+            ..Settings::default()
+        };
         let mut decoder = Decoder::with_settings(settings).unwrap();
         let frame = decoder
             .decode(SINGLE_TILE_STREAM)
