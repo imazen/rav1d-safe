@@ -1,0 +1,15 @@
+{
+  "observed_utc": "2026-10-08T15:36:07.551474+00:00",
+  "workflow_run": 37799280369,
+  "job": 113386854348,
+  "cli_command": "gh run rerun 37799280369 --repo imazen/rav1d-safe --job 113386854348",
+  "cli_exit": 1,
+  "cli_output": "job 113386854348 cannot be rerun",
+  "api_command": "gh api --method POST repos/imazen/rav1d-safe/actions/jobs/113386854348/rerun",
+  "api_http_status": 403,
+  "api_message": "The workflow run containing this job is already running",
+  "next": "Monitor same workflow run attempt2 macOS ARM job",
+  "retry_after_workflow_completed_utc": "2026-10-08T15:41:52.603815+00:00",
+  "api_retry_exit": 0,
+  "api_retry_result": "Accepted after original run completed with32successfuljobs andoneinfrastructurecancelledjob"
+}

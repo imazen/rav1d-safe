@@ -210,3 +210,28 @@ Its [complete platform record](../benchmarks/ci_mc_evidence_2026-10-08.json)
 verifies the published MC source plus the newly committed warp investigation
 evidence. The warp repair itself remains unpublished and is excluded from
 this green run.
+
+## Hosted macOS runner capacity
+
+The [complete job record on `811a9728`](../benchmarks/ci_macos_capacity_2026-10-08/completed-job-record.json)
+verifies all 33 jobs in [run 37799280369](https://github.com/imazen/rav1d-safe/actions/runs/37799280369).
+Its first macOS ARM safe-SIMD job was cancelled before acquiring a runner
+or executing any step. GitHub annotations report hosted-runner acquisition
+failure and macOS ARM capacity constraints; the other 32 jobs passed.
+This was an infrastructure cancellation, with no decoder test result.
+
+The specific-job retry was refused while the workflow was still running.
+After that attempt completed, the same API request was accepted:
+`gh api --method POST repos/imazen/rav1d-safe/actions/jobs/113386854348/rerun`.
+The retry acquired a runner and passed. No workflow leg or test selection
+was removed. Raw job/annotation captures, refused/accepted retry evidence
+and every final job outcome are committed. Resolve a new incident from
+its actual job and annotations; this dated observation is not a blanket
+classification of cancellations.
+
+This green run precedes the signed warp destination source repair, which
+subsequently landed as `80069eb0`. Historical source exclusions above
+refer to their named revisions; later commits do not extend those runs'
+coverage. The new repair's local exact-source gates are recorded in
+[the warp row review](MC_WARP_DESTINATION_ROWS.md); its current remote
+platform gate must be checked against the actual head revision.
