@@ -1,0 +1,13 @@
+{
+  "date": "2026-10-08",
+  "resource": "run-heavy: done rc=0 51s | peak-RSS 1.57GiB | min-avail 24206MiB | peak-load 2.45",
+  "scope": "Both-mode release all-target lint and ARM/WASM/C-FFI checks pass; all three untracked scalar warp tests pass. A mistakenly named extra reference selection matched no tests; existing reference fixture will run under its actual name and the full suite.",
+  "log_sha256": "8b9933782add272fc37a1589541911afd52960e0c2757c02a50b44ca64ffcdff",
+  "source_sha256": {
+    "src/safe_simd/mc.rs": "c2b265303d58c114b40980fbbb81d3721a2b4e711bc1f124c7c01bd4db8cece8",
+    "src/mc.rs": "34685435ebf7464d184804fdc805d13f1f2933620bc72b55f9cac8cec64c69d3",
+    "src/mc_warp_scalar_tests.rs": "f48b8f6ca9aa1c78bb73bd0858626426bd5710e56b5070ad36bb5730ae64f89a",
+    "src/safe_simd/mc_reference.rs": "392afbc92ccd71d02dcf34c9ed29d3894e6e24fc77d80beec546253281966e16"
+  },
+  "command": "env PATH=/home/lilith/.cargo/bin:$PATH TMPDIR=/home/lilith/tmp RUSTFLAGS= CARGO_ENCODED_RUSTFLAGS= /home/lilith/work/claudehints/scripts/run-heavy --mem 16G --jobs 20 -- bash -c \"just clippy && just clippy-untracked && just cross-aarch64 && cargo check --target wasm32-unknown-unknown --no-default-features --features bitdepth_8,bitdepth_16 && cargo check --no-default-features --features bitdepth_8,bitdepth_16,c-ffi && cargo nextest run --cargo-profile release-thin --no-default-features --features bitdepth_8,bitdepth_16,untracked --lib -E 'test(warp_scalar_tests) | test(warp_reference_reads_leave_unrelated_rows_available)' --test-threads 1\""
+}

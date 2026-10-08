@@ -1,6 +1,6 @@
 # Warp destination row addressing
 
-Missing: full decoder, feature, sidecar and timing gates on the repair.
+Missing: full decoder, sidecar and timing gates on the repair.
 Production remains unchanged while the isolated repaired source passes
 three scalar tests. [Raw before/after and compile logs](../benchmarks/warp_signed_destination_2026-10-08/meta.json)
 record executable source fingerprints and wrapped resource lines.
@@ -26,3 +26,15 @@ compared, including padding. The broad 8-bit whole-warp put/prep oracle
 also passes all 7,768 cases. This focused scope returned rc=0 after fourteen
 seconds, peak RSS 1.62 GiB, minimum available 24,181 MiB and peak load 0.82.
 These tests do not establish C-FFI negative-stride allocator coverage.
+
+## Feature validation
+
+[Feature scope and exact source hashes](../benchmarks/warp_signed_destination_2026-10-08/features.meta.json)
+record passing tracked/untracked all-target lint and ARM/WASM/C-FFI checks.
+All three scalar warp tests also pass untracked (0.017 seconds). The
+wrapped scope returned rc=0 after 51 seconds, peak RSS 1.57 GiB, minimum
+available 24,206 MiB and peak load 2.45. An extra filter used a nonexistent
+reference-test name and selected nothing; this is not claimed as reference
+fixture coverage. The corrected focused recipe includes the real test,
+`warp_reference_windows_cover_both_strides_and_all_depths`, and its two-mode
+gate and complete decoder suites are now running. No assertion changed.
