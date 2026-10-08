@@ -1,0 +1,79 @@
+{
+  "decoder_base_revision": "f010130aefa99c61b45618f9f28e33035dba2824",
+  "old_manifest_revision": "43432b6d410f749c311dc5d7989ee9d3297445e3",
+  "old_archmage": "b8d6c0777e55e4ea8d26cde0879faae858cba662",
+  "new_archmage": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "lockfile_delta": "Only archmage and archmage-macros; all other package records identical",
+  "matching_rust_source_count": 258,
+  "old_lock_sha256": "13ac1ebc8502c0bd949dd07341283c783ca80761e3fad6bf1fc15be0ab390011",
+  "new_lock_sha256": "315a1c4b47dd38cbd8d855514f4bf446e515834393b934c4fe836f31b51b6ce6",
+  "date": "2026-10-08",
+  "cpu": "Ryzen9 7900X (Zen4)",
+  "rustc": "1.99.0 (b940084d7 2026-09-28)",
+  "profile": "release fatLTO; generic emptyRUSTFLAGS; archmage testable_dispatch enabled in both example builds",
+  "builds": [
+    {
+      "stage": "old",
+      "seconds": 63,
+      "peak_rss_gib": 1.29,
+      "min_available_mib": 24466,
+      "peak_load": 2.53,
+      "rc": 0
+    },
+    {
+      "stage": "new",
+      "seconds": 68,
+      "peak_rss_gib": 1.29,
+      "min_available_mib": 22562,
+      "peak_load": 6.06,
+      "rc": 0
+    }
+  ],
+  "source_catalog": "benchmarks/archmage_guarded_sources_2026-10-08.json",
+  "logs": [
+    {
+      "stage": "old",
+      "path": "benchmarks/archmage_guarded_old_build_2026-10-08.log",
+      "sha256": "9396c6189bf455cbff78ecc3ca36f197a19d4c7d86bed50397f75d4bae6ec82b"
+    },
+    {
+      "stage": "new",
+      "path": "benchmarks/archmage_guarded_new_build_2026-10-08.log",
+      "sha256": "b31ddd37a6a1195807171f6ee707963f8c321aaccf8d94a7588aedd71bd96d1d"
+    }
+  ],
+  "binaries": {
+    "old/safe/profile_ivf": "14c200f71eaf215ed597f7150cd415000cc03446f1e01fbf191021cf27b0c272",
+    "old/safe/decode_md5": "57342f21da191454b971c53ca93a3320de5725efb1157ce9e62eaad557a188d8",
+    "old/untracked/profile_ivf": "2495ee7b08a291af2ba4d5453036a6c6dff1497d357fa9080e8eb97484e75c7d",
+    "old/untracked/decode_md5": "51193a18d3c9c5da47339fdacd187e3a3d271411e48eba043ff48f1acc9361c3",
+    "new/safe/profile_ivf": "0055de86734312153a5ad3cf0773520c977ff492d9635b5e214cb98cfbe76db5",
+    "new/safe/decode_md5": "55f0b25595dfbb835b35c032864cef68158575e302ee88f194f610043ca20307",
+    "new/untracked/profile_ivf": "563d3b336f8d8d6e8a7bdc03ef579b9fd9dd86d5ac8b366f3afba1bcec107995",
+    "new/untracked/decode_md5": "c43409a9243d472d282d8d9d3fe104abbc25ab6a65174c9317104ef4e83182ad"
+  },
+  "output_validation": "decode_md5 binaries byte-identical to 32 successful dav1d comparisons recorded in archmage_matched_builds_2026-10-08.meta.json; timings use strengthened profile_ivf.",
+  "missing": "Complete both-mode A/A and A/B campaign; Zen5 unmeasured",
+  "timing_cli_controls": {
+    "path": "benchmarks/archmage_guarded_cli_controls_2026-10-08.log",
+    "sha256": "24127ffb656dc480f6cb2c97b944782eafd717fdd68e14cc1674e38063e03c17",
+    "binary_pairs": 4,
+    "result": "All malformed controls fail before RESULT; valid controls decode one frame twice; frame-limit gates unchanged",
+    "seconds": 0,
+    "peak_rss_gib": 0.02,
+    "min_available_mib": 25670,
+    "peak_load": 4.21,
+    "rc": 0
+  },
+  "profile_tls_bytes": 11368,
+  "intermediate_build": {
+    "path": "benchmarks/archmage_intermediate_old_build_2026-10-08.log",
+    "sha256": "9a891a69dff1895fe0932009acc083caca290c77fbcec093d2cf21dd0ed8c888",
+    "seconds": 65,
+    "peak_rss_gib": 1.29,
+    "min_available_mib": 24514,
+    "peak_load": 4.06,
+    "rc": 0,
+    "purpose": "Count-guarded binary before error propagation repair; malformed-input negative control only, excluded from throughput comparison"
+  }
+}

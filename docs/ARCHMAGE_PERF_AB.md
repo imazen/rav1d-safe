@@ -44,3 +44,16 @@ and peak load 2.40. Replacement measurements rebuild both pins with the
 [same per-pass count check](BENCHMARK_TIMED_FRAMES.md). Earlier output-MD5
 checks still establish parity for their recorded executables, independently
 of the unfinished timing run.
+
+The replacement pair uses identical Rust source at f010130a, including both
+the per-pass frame-count check and decode/drain/flush error propagation.
+[Guarded build proof](../benchmarks/archmage_guarded_builds_2026-10-08.meta.json)
+records all binary hashes, matching sources, and CLI controls for both pins
+in both modes. Each timing binary rejects the malformed-packet control
+before any RESULT and decodes the valid control twice. The four MD5 binaries
+are byte-identical to those in the 32 successful dav1d comparisons above.
+Both example builds enable archmage's testable_dispatch feature; consumers
+without that development-feature unification have not been measured.
+The two guarded builds took 63 and 68 seconds, each peaking at 1.29 GiB RSS;
+the CLI-control scope peaked at 0.02 GiB. All four timing binaries have
+11,368 bytes of TLS. Full guarded timing results remain missing.
