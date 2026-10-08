@@ -1,0 +1,34 @@
+{
+  "purpose": "Tracked MC A/B against independently rebuilt exact pre-MC baseline",
+  "before_revision": "5b51b144cf73216fffd1100bfc396bc7dc17b5bd",
+  "after_revision": "25ef8af1124cecccab38c54efc521a69cae6b3d5",
+  "baseline_provenance": "mc_baseline_identity_2026-10-08.json",
+  "noise_control": "mc_exact_control_safe_2026-10-08.jsonl",
+  "cpu": "AMD Ryzen 9 7900X, Zen 4; not measured on Zen 5",
+  "interpretation": "Measured tracked-only samples. Several effects overlap the per-case A/A control; untracked measurements and full correctness gates are pending. This record does not approve landing the candidate.",
+  "run_heavy": "rc=0; 888s; peak-RSS 0.21GiB; min-avail 25947MiB; peak-load 2.58",
+  "protocol": {
+    "event": "start",
+    "metadata": {
+      "protocol": "fresh decoder, warm-up, internal ms/frame, alternating A/B",
+      "before": {
+        "revision": "5b51b144",
+        "sha256": "d35c11ae0d31d7fea178dbd3664cc4649d2a58da19f0b80df6e9e3dd159f1426"
+      },
+      "after": {
+        "revision": "25ef8af1",
+        "sha256": "81fb63d22d75157331b135c080fe3565b32721a505f5a04810beef698568ff90"
+      },
+      "rounds": 4,
+      "passes": 3,
+      "delay": 1,
+      "first_cpu": 8,
+      "load_start": [
+        1.49169921875,
+        1.76025390625,
+        1.93896484375
+      ],
+      "cases": []
+    }
+  }
+}
