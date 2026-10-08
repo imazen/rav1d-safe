@@ -11,7 +11,9 @@ and `copy_from_slice` copies u16 pixels. Top and line-buffer bottom reads
 reserve two exact row segments through `index_rect_as`. Geometry or stride
 hint mismatches retain the existing per-row path. `decode.rs` re-declares
 the luma byte pitch after resizing both line buffers, which resets the hint.
-Chroma's different pitch declines that rectangle path.
+With tracking enabled, a chroma pitch different from the declared luma
+pitch declines that rectangle path. Untracked builds validate rectangle
+geometry without requiring a tracker pitch hint.
 
 The three focused tests pass on native Zen 4: all edge flags, four fixture
 block shapes, positive/negative strides, picture/line-buffer bottom rows,
