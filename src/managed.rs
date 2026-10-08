@@ -292,6 +292,8 @@ impl Settings {
 }
 
 impl Default for Settings {
+    // Preserve the legacy field's default while callers migrate to strictness.
+    #[allow(deprecated)]
     fn default() -> Self {
         Self {
             // Use single-threaded decoding by default for simpler, deterministic behavior.

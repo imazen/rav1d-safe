@@ -3354,7 +3354,7 @@ fn ipred_z3_8bpc_inner(
     for k in 0..=max_base_y {
         lbuf[k] = left[left_off - k];
     }
-    let need = ((dy * width) >> 6) + base_inc * (((height + 7) / 8 * 8).saturating_sub(1)) + 16;
+    let need = ((dy * width) >> 6) + base_inc * ((height.div_ceil(8) * 8).saturating_sub(1)) + 16;
     debug_assert!(need <= lbuf.len());
     if need > max_base_y + 1 {
         lbuf[max_base_y + 1..need.min(1216)].fill(fill_val);
@@ -7898,7 +7898,7 @@ mod v4x_dir_tests {
             (6, 6),
         ];
         for &(w, h) in &dims {
-            for &(aw, ah) in &[(w, h), (w / 2, h), (w, h / 2), (w / 2.max(1), h / 2.max(1))] {
+            for &(aw, ah) in &[(w, h), (w / 2, h), (w, h / 2), (w / 2, h / 2)] {
                 if aw == 0 || ah == 0 {
                     continue;
                 }

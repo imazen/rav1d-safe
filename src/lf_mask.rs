@@ -518,7 +518,7 @@ pub(crate) fn rav1d_create_lf_mask_intra(
         let lv1 = filter_level[1][0][0];
         for _y in 0..bh4 {
             let row = &level_cache[4 * level_cache_off..4 * (level_cache_off + bw4)];
-            for ch in row.chunks_exact(4) {
+            for ch in row.as_chunks::<4>().0 {
                 // `ch[0], ch[1]` is for Y
                 ch[0].store(lv0, Relaxed);
                 ch[1].store(lv1, Relaxed);
@@ -557,7 +557,7 @@ pub(crate) fn rav1d_create_lf_mask_intra(
     let lv3 = filter_level[3][0][0];
     for _y in 0..cbh4 {
         let row = &level_cache[4 * level_cache_off..4 * (level_cache_off + cbw4)];
-        for ch in row.chunks_exact(4) {
+        for ch in row.as_chunks::<4>().0 {
             // `ch[2], ch[3]` is for UV
             ch[2].store(lv2, Relaxed);
             ch[3].store(lv3, Relaxed);
@@ -618,7 +618,7 @@ pub(crate) fn rav1d_create_lf_mask_inter(
         let lv1 = filter_level[1][r#ref][is_gmv];
         for _y in 0..bh4 {
             let row = &level_cache[4 * level_cache_off..4 * (level_cache_off + bw4)];
-            for ch in row.chunks_exact(4) {
+            for ch in row.as_chunks::<4>().0 {
                 // `ch[0], ch[1]` is for Y
                 ch[0].store(lv0, Relaxed);
                 ch[1].store(lv1, Relaxed);
@@ -668,7 +668,7 @@ pub(crate) fn rav1d_create_lf_mask_inter(
     let lv3 = filter_level[3][r#ref][is_gmv];
     for _y in 0..cbh4 {
         let row = &level_cache[4 * level_cache_off..4 * (level_cache_off + cbw4)];
-        for ch in row.chunks_exact(4) {
+        for ch in row.as_chunks::<4>().0 {
             // `ch[2], ch[3]` is for UV
             ch[2].store(lv2, Relaxed);
             ch[3].store(lv3, Relaxed);
