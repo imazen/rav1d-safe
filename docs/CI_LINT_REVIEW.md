@@ -65,3 +65,10 @@ C-FFI and ASM compile checks also pass; ASM still emits existing warnings.
 record the 67s native scope: peak-RSS 0.70GiB, min-avail 26612MiB, peak-load 7.99.
 The x86 lint recipes, ARM/WASM/C-FFI compile checks and formatting check also
 pass after these edits; their 24s scope peaked at 0.97GiB RSS.
+
+For the complete sidecar matrix, `just conformance-all-modes <tracked-binary>
+<untracked-binary>` runs each native runtime tier at 1/2/4/8 workers, delay 0,
+with an expected 803-vector selection and stop-on-first-failure. The caller
+selects both binaries; this command does not infer successful coverage from
+nextest or silently build a different mode. The existing five runner boundary
+tests and recipe expansion pass. Execution results belong with each candidate.

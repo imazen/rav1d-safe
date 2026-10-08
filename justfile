@@ -81,6 +81,16 @@ test-conformance-runner:
 conformance binary threads="1" delay="0":
     bash scripts/conformance_test.sh --binary "{{binary}}" --threads {{threads}} --delay {{delay}} --expected 803
 
+# Complete sidecar oracle at every runtime tier and 1/2/4/8 workers in both modes.
+conformance-all-modes tracked untracked:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for binary in "{{tracked}}" "{{untracked}}"; do
+        for threads in 1 2 4 8; do
+            bash scripts/conformance_test.sh --binary "$binary" --threads "$threads" --delay 0 --level all --expected 803 --stop-on-fail
+        done
+    done
+
 # Dependency and CI repair gate, with shared-machine-friendly test parallelism.
 check-lead-ci: clippy cross-aarch64
     cargo check --target wasm32-unknown-unknown --no-default-features --features "bitdepth_8,bitdepth_16"
