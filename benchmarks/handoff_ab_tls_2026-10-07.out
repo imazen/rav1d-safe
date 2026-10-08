@@ -1,0 +1,23 @@
+## tracked: base -> TLS-free
+aom_real1080_96.ivf        t=1 d=1  before    29.37  after    29.45  ratio 1.003  (min 29.08 -> 29.18)
+aom_real1080_96.ivf        t=4 d=1  before    41.90  after    41.66  ratio 0.994  (min 40.62 -> 40.16)
+aom10_real1080.ivf         t=1 d=1  before    32.41  after    32.56  ratio 1.005  (min 31.92 -> 32.16)
+aom10_real1080.ivf         t=4 d=1  before    43.88  after    44.15  ratio 1.006  (min 42.89 -> 42.39)
+svt_real4k_48.ivf          t=1 d=1  before    58.21  after    59.46  ratio 1.021  (min 56.76 -> 56.75)
+svt_real4k_48.ivf          t=4 d=1  before    66.90  after    75.34  ratio 1.126  (min 63.73 -> 63.38)
+photo40.ivf                t=1 d=1  before    50.13  after    39.28  ratio 0.784  (min 38.70 -> 38.70)
+photo40.ivf                t=4 d=1  before    16.38  after    16.59  ratio 1.013  (min 15.68 -> 16.13)
+stitch150.ivf              t=1 d=1  before     4.55  after     4.35  ratio 0.955  (min 4.25 -> 4.22)
+stitch150.ivf              t=4 d=1  before     4.99  after     6.76  ratio 1.353  (min 4.54 -> 4.66)
+## untracked: base -> TLS-free
+aom_real1080_96.ivf        t=1 d=1  before    26.67  after    27.15  ratio 1.018  (min 24.81 -> 24.88)
+aom_real1080_96.ivf        t=4 d=1  before    24.07  after    23.61  ratio 0.981  (min 22.64 -> 23.02)
+aom10_real1080.ivf         t=1 d=1  before    30.32  after    29.10  ratio 0.960  (min 28.26 -> 28.25)
+aom10_real1080.ivf         t=4 d=1  before    32.29  after    25.80  ratio 0.799  (min 25.10 -> 23.76)
+svt_real4k_48.ivf          t=1 d=1  before    50.81  after    51.47  ratio 1.013  (min 49.95 -> 49.88)
+svt_real4k_48.ivf          t=4 d=1  before    44.28  after    42.27  ratio 0.954  (min 39.00 -> 38.41)
+photo40.ivf                t=1 d=1  before    43.94  after    40.46  ratio 0.921  (min 37.66 -> 37.99)
+photo40.ivf                t=4 d=1  before    11.64  after    12.43  ratio 1.068  (min 10.83 -> 11.65)
+stitch150.ivf              t=1 d=1  before     3.71  after     3.77  ratio 1.016  (min 3.68 -> 3.66)
+stitch150.ivf              t=4 d=1  before     3.69  after     3.93  ratio 1.065  (min 3.57 -> 3.57)
+AB_DONE

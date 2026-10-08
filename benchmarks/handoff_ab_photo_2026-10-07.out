@@ -1,0 +1,9 @@
+## photo40 untracked base -> TLS-free
+photo40.ivf                t=4 d=1  before    11.34  after    11.29  ratio 0.996  (min 10.47 -> 10.49)
+photo40.ivf                t=8 d=1  before    11.45  after    11.62  ratio 1.015  (min 10.71 -> 11.16)
+## CONTROL photo40 untracked base -> base (noise floor)
+photo40.ivf                t=4 d=1  before    13.17  after    13.16  ratio 0.999  (min 10.83 -> 10.96)
+photo40.ivf                t=8 d=1  before    11.48  after    11.35  ratio 0.989  (min 10.61 -> 10.72)
+## photo40 tracked base -> TLS-free
+photo40.ivf                t=4 d=1  before    15.84  after    16.02  ratio 1.011  (min 15.14 -> 15.51)
+AB2_DONE

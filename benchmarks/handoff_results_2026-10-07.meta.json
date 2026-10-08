@@ -1,0 +1,144 @@
+{
+  "captured_date": "2026-10-07",
+  "machine": "r7900x",
+  "cpu": "AMD Ryzen 9 7900X (Zen 4)",
+  "provenance": "Transferred measurements from the preceding session; original bytes preserved. Build labels and notes come from its supplied index and have not been independently remeasured. Unknown snapshots and invocations remain unknown. Not measured on Zen 5.",
+  "artifacts": [
+    {
+      "artifact": "handoff_fair_auto_2026-10-07.out",
+      "sha256": "e1fb067ee9979818fe8e56543e9c33ef83af9a6893042a3b323d8c7628cb5a4f",
+      "bytes": 10325,
+      "reported_build": "59832e92",
+      "command_provenance": "fair_bench.py; exact invocation not preserved in transferred log",
+      "notes": "Auto and tile modes; load about 20 reported. Ratios under contention."
+    },
+    {
+      "artifact": "handoff_fair_rerun_2026-10-07.out",
+      "sha256": "62342d29637d82e7bbdf20a140c182523a83f10eb105d38604ff9873841feaa6",
+      "bytes": 20730,
+      "reported_build": "59832e92 and 4c2e1b87",
+      "command_provenance": "fair_bench.py; exact invocation not preserved in transferred log",
+      "notes": "Reported load 1\u20135; shared dav1d/libgav1 arms provide comparison controls."
+    },
+    {
+      "artifact": "handoff_sweep_sized_2026-10-07.out",
+      "sha256": "98d67e0dcee1e5759257da8927d273b67d9b64eae2cd883086b8d03f8a3cf346",
+      "bytes": 1108,
+      "reported_build": "pre-59832e92; exact revision unavailable",
+      "command_provenance": "sweep.py; exact invocation not preserved in transferred log",
+      "notes": "Synthetic streams; superseded size policy."
+    },
+    {
+      "artifact": "handoff_sweep_4k_2026-10-07.out",
+      "sha256": "6ee1bac5fdfa6840c6d42b23a308ca1c09030ddd6c39eda3c993ee7d2994cc17",
+      "bytes": 886,
+      "reported_build": "pre-59832e92; exact revision unavailable",
+      "command_provenance": "sweep.py; exact invocation not preserved in transferred log",
+      "notes": "Intra stills and stitch stream."
+    },
+    {
+      "artifact": "handoff_sweep_real_2026-10-07.out",
+      "sha256": "9950798febac07cff68861f901751a2603d1e3e7839e37e1e17a2d255dbd6bc5",
+      "bytes": 928,
+      "reported_build": "pre-df189432; exact revision unavailable",
+      "command_provenance": "sweep.py; exact invocation not preserved in transferred log",
+      "notes": "Real inter footage, frame delay 1 versus 2."
+    },
+    {
+      "artifact": "handoff_steady_2026-10-07.out",
+      "sha256": "4361c1cf95357ff80029b4e293a07c7e627a30b21c255edabdf8390e22844992",
+      "bytes": 16469,
+      "reported_build": "4c2e1b87 plus uncommitted profile_ivf drain fix",
+      "command_provenance": "steady_state.py; exact invocation not preserved in transferred log",
+      "notes": "Exact source snapshot unavailable; second run after an initial crash."
+    },
+    {
+      "artifact": "handoff_ab_matrix_ungated_2026-10-07.out",
+      "sha256": "39e68b10c8fff57fec92a34d344febfc8c0bb7a2e9d4c8e0c9a660962874a58c",
+      "bytes": 1376,
+      "reported_build": "df189432 work in progress; exact snapshot unavailable",
+      "command_provenance": "ab_bin.py; exact invocation not preserved in transferred log",
+      "notes": "Partial experiment without size gate, small-frame regression."
+    },
+    {
+      "artifact": "handoff_ab_matrix_2026-10-07.out",
+      "sha256": "c2a4ec1207ad45b416b40c54d7c1205ccfbc63a7f262d0660526388a501507d3",
+      "bytes": 1903,
+      "reported_build": "df189432",
+      "command_provenance": "ab_bin.py; exact invocation not preserved in transferred log",
+      "notes": "Exact-row size gate experiment."
+    },
+    {
+      "artifact": "handoff_ab_tls_2026-10-07.out",
+      "sha256": "00fa3552459cfcfab8377f0c2072bf6cec7d68717c8fd7d9eb0e95395fef7325",
+      "bytes": 2120,
+      "reported_build": "cc7cffdf versus 093078ef",
+      "command_provenance": "ab_bin.py; exact invocation not preserved in transferred log",
+      "notes": "Tracked and untracked TLS scratch comparison."
+    },
+    {
+      "artifact": "handoff_ab_photo_2026-10-07.out",
+      "sha256": "8e1bb02ad0ac2899b8296b550f6226df4d3525f7b858fc55feb20bdc89bb397b",
+      "bytes": 654,
+      "reported_build": "cc7cffdf versus 093078ef",
+      "command_provenance": "ab_bin.py; exact invocation not preserved in transferred log",
+      "notes": "Eight-round recheck and A-versus-A control."
+    },
+    {
+      "artifact": "handoff_campaign_real_2026-10-07.out",
+      "sha256": "93313580c294fef910ac3fa0c7845dab2bddf6dbd3cc54334740cc78d531009e",
+      "bytes": 17026,
+      "reported_build": "cc7cffdf",
+      "command_provenance": "campaign_real.py; exact invocation not preserved in transferred log",
+      "notes": "Per-family sampling comparison; 1 thread."
+    },
+    {
+      "artifact": "handoff_census_2026-10-07.out",
+      "sha256": "55fec0e5ed89a13cabc800274dae28c2a45133d0f9ada81f0964fea985851a31",
+      "bytes": 1621,
+      "reported_build": "symbolized dav1d 1.5.3; exact build unavailable",
+      "command_provenance": "tool_census.py; exact invocation not preserved in transferred log",
+      "notes": "Per-frame kernel call counts."
+    },
+    {
+      "artifact": "handoff_census_real_2026-10-07.out",
+      "sha256": "9afbe92aa376b587b72a0a8218d97718b89a1eddd01e153aba9e2bba408a30da",
+      "bytes": 1132,
+      "reported_build": "symbolized dav1d 1.5.3; exact build unavailable",
+      "command_provenance": "tool_census.py; exact invocation not preserved in transferred log",
+      "notes": "First 12 frames (6 at 4K); keyframe-skewed."
+    },
+    {
+      "artifact": "handoff_nextest_both_2026-10-07.out",
+      "sha256": "f21ffe971f5a79d87e1a2a4dd8966223dcbbd869e5fc4525e25c95e27d1bea30",
+      "bytes": 364,
+      "reported_build": "work in progress; exact snapshot unavailable",
+      "command_provenance": "nextest_both.sh; exact invocation not preserved in transferred log",
+      "notes": "Summary only: tracked Argon stack abort, untracked passed."
+    },
+    {
+      "artifact": "handoff_nextest_both2_2026-10-07.out",
+      "sha256": "8ef426c738cc0f52d34d0564ca251d993af1dfbc6be5ccb3974e474f0dbcb956",
+      "bytes": 228,
+      "reported_build": "df189432",
+      "command_provenance": "nextest_both.sh; exact invocation not preserved in transferred log",
+      "notes": "Summary only, both builds passed."
+    },
+    {
+      "artifact": "handoff_nextest_both3_2026-10-07.out",
+      "sha256": "ac778c65902b0077589c8671df25ac6f7534a55dc9e2c94a2091348a5693cc07",
+      "bytes": 228,
+      "reported_build": "cc7cffdf",
+      "command_provenance": "nextest_both.sh; exact invocation not preserved in transferred log",
+      "notes": "Summary only, both builds passed."
+    },
+    {
+      "artifact": "handoff_corpus_summaries_2026-10-07.txt",
+      "sha256": "95fd490ae4f62e2a4e8ad27308043b9095f12abb912c567e99fd37ba8168d2de",
+      "bytes": 1762,
+      "reported_build": "multiple revisions; per-run revision unavailable",
+      "command_provenance": "conf_mtd.sh; exact invocation not preserved in transferred log",
+      "notes": "Summary only: 803-vector runs, threads 1/2/4/8, delay 0 or 1."
+    }
+  ]
+}
