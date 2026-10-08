@@ -1038,7 +1038,10 @@ The expanded reversed-row oracle for the private byte MC candidate fails in
 its V-only scalar tail: a negative row offset becomes index
 18446744073709551232 into a two-byte suffix at `mc.rs:3552` in that candidate.
 The published base V-only helper also casts the pitch to `usize` and receives
-a suffix, but its failure has not been independently run yet. The new
+a suffix. Its independent oracle now fails at `mc.rs:3100:25` with unsigned
+index 18446744073709551424 into a two-byte suffix; an isolated signed-address
+repair passes the unchanged oracle in 5.361 seconds. See
+[baseline source review](docs/MC_SOURCE_ROW_REVIEW.md). The new
 horizontal row batching likewise needs the complete bounded source slice
 and a base index to walk backwards. Repair signed source addressing, then
 rerun the unchanged scalar/whole-buffer/dispatch oracle and full gates.

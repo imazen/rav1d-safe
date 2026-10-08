@@ -1,0 +1,47 @@
+{
+  "date": "2026-10-08",
+  "base_revision": "507890b7a56f2ed389e64ca0a4d0ab972384fc46",
+  "cpu": "Ryzen 9 7900X (Zen 4)",
+  "rustc": "1.99.0",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "before_source_sha256": "260b166d05fa81fd60abd1f98b993025a5fdf45f8ba6da199d98841923596658",
+  "after_source_sha256": "a453814033eff112c32e7f62da12a48a00dcfd7f4140589b0d87d7c50f77a041",
+  "oracle_sha256": "c658add2829e9bf2c3517f4d422f4bc7a7140ff8272db13abb66d5bb0a2d2fb4",
+  "command": "just test-mc-source-strides (release-thin, default-only fixture, one nextest process)",
+  "results": {
+    "before": "FAIL at mc.rs:3100:25, index18446744073709551424 into len2,0.003seconds",
+    "after": "1/1selected testPASS,5.361seconds",
+    "coverage": "nine 8tap filter combinations, all256 phase pairs, five shapes through128x128, directAVX2/availableAVX512/production whole put/prep output vs scalar, unrelated live row write"
+  },
+  "run_heavy": [
+    {
+      "stage": "before",
+      "rc": 100,
+      "seconds": 19,
+      "peak_rss_gib": 1.51,
+      "min_available_mib": 24442,
+      "peak_load": 1.3
+    },
+    {
+      "stage": "after",
+      "rc": 0,
+      "seconds": 19,
+      "peak_rss_gib": 1.52,
+      "min_available_mib": 24334,
+      "peak_load": 1.62
+    }
+  ],
+  "logs": [
+    {
+      "stage": "before",
+      "path": "benchmarks/mc_baseline_source_before_2026-10-08.log",
+      "sha256": "7a3db355dea5d0658dcd52ed5fe0fd06c6274b2c9ede94f6d9962b0893eecfff"
+    },
+    {
+      "stage": "after",
+      "path": "benchmarks/mc_baseline_source_after_2026-10-08.log",
+      "sha256": "ea715c6b0fe65c948702d11645a5729101d6fe0db659625a88fbb92c5418b951"
+    }
+  ],
+  "missing": "Production x86 source repair, full decoder/sidecar/feature gates and matched performance measurements. Negative-stride C-FFI fixture coverage not established; Zen5 not measured."
+}
