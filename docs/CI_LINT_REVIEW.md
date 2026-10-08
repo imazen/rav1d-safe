@@ -31,7 +31,7 @@ record both runs; wrapper RSS excludes the daemon-owned container.
 The CI leg complements the existing native i686 nextest leg. The library's
 Intel macOS runner is `macos-26-intel`; Windows ARM remains covered.
 Checkout v7 and Codecov v7 match the current official major releases checked
-on 2026-10-08. The revised remote matrix remains pending until its run finishes.
+on 2026-10-08. The revised remote matrix passed all 32 jobs at `83c928d3`, as linked below.
 
 The first revised workflow was rejected before jobs started: `runner.temp`
 is unavailable in job-level environment expressions. Container options now
@@ -72,3 +72,9 @@ with an expected 803-vector selection and stop-on-first-failure. The caller
 selects both binaries; this command does not infer successful coverage from
 nextest or silently build a different mode. The existing five runner boundary
 tests and recipe expansion pass. Execution results belong with each candidate.
+
+The later lead-owned main revision `a34a4233` also passed all 32 jobs in
+[the complete CI run](https://github.com/imazen/rav1d-safe/actions/runs/37728965312),
+verified on 2026-10-08. The separate Disjoint workflow at `a076772f`
+passed all 14 jobs, including Stacked and Tree Borrows Miri. Native decoder
+experiments remain separate from these published-revision checks.
