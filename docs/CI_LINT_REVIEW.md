@@ -204,3 +204,9 @@ The [complete job record](../benchmarks/ci_mc_landing_2026-10-08.json)
 includes Windows ARM, macOS Intel and i686 and links the successful run.
 This coverage does not include the unpublished signed warp destination
 repair or the remaining performance experiments.
+
+The subsequent current-head run on `bba380f5` also passes all 33 jobs.
+Its [complete platform record](../benchmarks/ci_mc_evidence_2026-10-08.json)
+verifies the published MC source plus the newly committed warp investigation
+evidence. The warp repair itself remains unpublished and is excluded from
+this green run.
