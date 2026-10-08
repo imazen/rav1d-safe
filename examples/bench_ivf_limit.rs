@@ -149,18 +149,18 @@ fn main() {
             }
         }
     }
-    if decoded < limit {
-        if let Ok(rest) = dec.flush() {
-            for frame in &rest {
-                if decoded >= limit {
-                    break;
-                }
-                if want_md5 {
-                    hash_frame(&mut ctx, frame);
-                }
-                black_box(frame);
-                decoded += 1;
+    if decoded < limit
+        && let Ok(rest) = dec.flush()
+    {
+        for frame in &rest {
+            if decoded >= limit {
+                break;
             }
+            if want_md5 {
+                hash_frame(&mut ctx, frame);
+            }
+            black_box(frame);
+            decoded += 1;
         }
     }
     let digest = if want_md5 {

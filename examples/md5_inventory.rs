@@ -356,10 +356,10 @@ fn main() {
     let (mut pass, mut fail, mut err, mut skip) = (0usize, 0usize, 0usize, 0usize);
 
     for &(group, grain) in MESON_GROUPS {
-        if let Some(g) = &group_filter {
-            if !group.contains(g.as_str()) {
-                continue;
-            }
+        if let Some(g) = &group_filter
+            && !group.contains(g.as_str())
+        {
+            continue;
         }
         if skip_groups.iter().any(|g| group.contains(g.as_str())) {
             continue;
@@ -371,10 +371,10 @@ fn main() {
         }
         let group_key = group.trim_end_matches("/meson.build");
         for v in parse_meson_build(&meson) {
-            if let Some(nf) = &name_filter {
-                if !v.name.contains(nf.as_str()) {
-                    continue;
-                }
+            if let Some(nf) = &name_filter
+                && !v.name.contains(nf.as_str())
+            {
+                continue;
             }
             let ext = v
                 .ivf_path
@@ -426,7 +426,7 @@ fn main() {
                 }
                 Err(e) => {
                     err += 1;
-                    let e = e.replace('\t', " ").replace('\n', " ");
+                    let e = e.replace(['\t', '\n'], " ");
                     writeln!(
                         out,
                         "{group_key}\t{}\tERROR\t{}\tERR:{e}\t0\t{ms}\t0\t0{act}",

@@ -203,6 +203,8 @@ fn decode_md5(ivf_path: &Path, apply_grain: bool) -> Result<String, String> {
     Ok(format!("{:x}", ctx.finalize()))
 }
 
+// Keep the runtime feature guard: all-target checks also compile unsupported configurations.
+#[allow(clippy::assertions_on_constants)]
 fn main() {
     // Liveness gate. Without `__ablate` every dispatcher's guard folds to a
     // constant `false`, so all arms would decode identically and the run would
@@ -298,10 +300,10 @@ fn main() {
             }
             let group_key = group.trim_end_matches("/meson.build");
             for v in parse_meson_build(&meson) {
-                if let Some(set) = &failing {
-                    if !set.contains(&format!("{group_key}\t{}", v.name)) {
-                        continue;
-                    }
+                if let Some(set) = &failing
+                    && !set.contains(&format!("{group_key}\t{}", v.name))
+                {
+                    continue;
                 }
                 let ext = v
                     .ivf_path
@@ -329,7 +331,7 @@ fn main() {
                     }
                     Err(e) => {
                         err += 1;
-                        let e = e.replace('\t', " ").replace('\n', " ");
+                        let e = e.replace(['\t', '\n'], " ");
                         writeln!(
                             out,
                             "{arm_name}\t{group_key}\t{}\tERROR\t{}\tERR:{e}",

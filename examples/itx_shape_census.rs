@@ -18,6 +18,8 @@
 use rav1d_safe::src::ablate;
 use rav1d_safe::src::managed::{Decoder, Settings};
 
+// Keep the runtime feature guard: all-target checks also compile unsupported configurations.
+#[allow(clippy::assertions_on_constants)]
 fn main() {
     // A harness MUST assert this: without `__ablate` every counter stays zero
     // and the run reads as "this bitstream codes no transforms".

@@ -108,6 +108,8 @@ fn decode_ivf_frames(frames: &[ivf_parser::IvfFrame]) -> usize {
     decoded
 }
 
+// Ablation is requested at runtime; ordinary builds must remain usable.
+#[allow(clippy::assertions_on_constants)]
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -129,6 +131,8 @@ fn main() {
     // that here is what stops an un-ablated build from quietly reporting two
     // identical arms as an A/B result.
     if let Ok(list) = std::env::var("RAV1D_ABLATE") {
+        // This compile-time flag must be checked only when the runtime env
+        // requests ablation. A const assertion would reject ordinary builds.
         assert!(
             rav1d_safe::src::ablate::ENABLED,
             "RAV1D_ABLATE set but built without --features __ablate"
