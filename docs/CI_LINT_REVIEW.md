@@ -136,8 +136,9 @@ make a timeout distinguishable from a reported pixel mismatch.
 
 Published revision `770fc6d6` passed all 33 jobs in the
 [complete CI run](https://github.com/imazen/rav1d-safe/actions/runs/37738399273),
-verified on 2026-10-08. The unpublished ARM signed-source changes remain
-subject to their separate decoder and sidecar gates.
+verified on 2026-10-08. The ARM signed-source repair subsequently landed in
+`507890b7` after its separate full decoder, CPU-mask sidecar and enforced
+scalar gates passed; see [the ARM source-row review](ARM_MC_SOURCE_STRIDES.md).
 
 The `decode_md5` frame limit now stops packet submission and frame draining,
 rather than only limiting hashes. A committed valid frame followed by a
@@ -164,3 +165,11 @@ requested. Existing historical comparison values and release entries remain
 as recorded; the old unconditional-clamp statement is labeled by its run.
 The [full native ARM gate](../benchmarks/arm_decoder_full_2026-10-08.meta.json)
 includes generated threaded-vector and backpressure tests in both modes.
+
+Published revision `189acd88`, including that ARM repair and the guarded
+benchmark example, passed all 33 jobs in the
+[complete CI run](https://github.com/imazen/rav1d-safe/actions/runs/37750574432).
+[Job identities, outcomes and timestamps](../benchmarks/ci_guarded_builds_2026-10-08.json)
+record the 2026-10-08 observation, including both conformance architectures,
+both allocator Miri models, Windows ARM, macOS Intel and native/container i686.
+Private MC, CDEF and glue experiments remain outside this CI result.
