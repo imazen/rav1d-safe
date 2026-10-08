@@ -182,8 +182,10 @@ fn put_cell(
                 crate::src::safe_simd::mc::put_bilin_8bpc_avx512_impl_inner(
                     t512,
                     &mut avx512_px,
+                    0,
                     stride as isize,
                     &window[src_base..],
+                    0,
                     stride as isize,
                     w as i32,
                     h as i32,
@@ -214,6 +216,7 @@ fn put_cell(
                 crate::src::safe_simd::mc::put_8tap_8bpc_avx512_impl_inner(
                     t512,
                     &mut avx512_px,
+                    0,
                     stride as isize,
                     window,
                     src_base,
@@ -672,6 +675,7 @@ fn reversed_source_rows_match_scalar_for_all_8tap_filters() {
                         crate::src::safe_simd::mc::put_8tap_8bpc_avx512_impl_inner(
                             token512,
                             &mut put,
+                            0,
                             dst_stride as isize,
                             &guard,
                             base,

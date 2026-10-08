@@ -43,6 +43,10 @@ test-mc-pair-windows features="bitdepth_8,bitdepth_16":
 test-mc-warp-destination features="bitdepth_8,bitdepth_16":
     cargo nextest run --cargo-profile release-thin --no-default-features --features "{{features}}" --lib -E 'test(warp_scalar_tests) | test(warp_reference_windows_cover_both_strides_and_all_depths)' --test-threads 1
 
+# Original-scalar put/prep parity with explicit signed SIMD row origins.
+test-mc-put-strides features="bitdepth_8,bitdepth_16":
+    cargo nextest run --cargo-profile release-thin --no-default-features --features "{{features}}" --lib -E 'test(put_scalar_tests)' --test-threads 1 --success-output immediate
+
 # Validate the private destination-base helpers at supported feature boundaries.
 check-mc-warp-destination-features: clippy clippy-untracked cross-aarch64
     cargo check --target wasm32-unknown-unknown --no-default-features --features "bitdepth_8,bitdepth_16"

@@ -3257,3 +3257,7 @@ impl Rav1dMCDSPContext {
 ))]
 #[path = "mc_warp_scalar_tests.rs"]
 mod warp_scalar_tests;
+
+#[cfg(all(test, target_arch = "x86_64", not(feature = "c-ffi")))]
+#[path = "mc_put_scalar_tests.rs"]
+mod put_scalar_tests;
