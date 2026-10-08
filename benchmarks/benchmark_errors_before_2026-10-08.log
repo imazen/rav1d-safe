@@ -1,0 +1,15 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=26048MiB :: just test-benchmark-errors target/lead-archmage-new-safe/release/examples/decode_md5 target/lead-archmage-v2-old-safe/release/examples/profile_ivf
+python3 tools/test_decode_md5_limit.py "target/lead-archmage-new-safe/release/examples/decode_md5" --profile-binary "target/lead-archmage-v2-old-safe/release/examples/profile_ivf"
+{"limit": null, "returncode": 0, "stdout": "9604569c8e5fcd812a940b82ef39b552\n", "stderr": "  Frame: 64x64 bpc=8 layout=I420\n  Y plane: 64x64 stride=128\n  U plane: 32x32 stride=64\n  V plane: 32x32 stride=64\nDecode error: Error: InvalidData\n\n    at src/managed.rs:804\n (invalid data)\nFrames: 1\n"}
+{"limit": 0, "returncode": 0, "stdout": "d41d8cd98f00b204e9800998ecf8427e\n", "stderr": "Frames: 0\n"}
+{"limit": 1, "returncode": 0, "stdout": "9604569c8e5fcd812a940b82ef39b552\n", "stderr": "  Frame: 64x64 bpc=8 layout=I420\n  Y plane: 64x64 stride=128\n  U plane: 32x32 stride=64\n  V plane: 32x32 stride=64\nFrames: 1\n"}
+{"profile_control": "malformed", "returncode": 0, "stdout": "RESULT\trun\t0\t1\t1\t0.133804\nRESULT\trun\t1\t1\t1\t0.124497\n", "stderr": "Input: /home/lilith/tmp/tmp1x5rwm1l/valid-frame-then-malformed-packet.ivf (2 IVF frames)\nIterations: 1\ndecode error (first of possibly many): Error: InvalidData\n\n    at src/managed.rs:804\n\n1 decode() calls returned an error\nFrames decoded per iteration: 1\ndecode error (first of possibly many): Error: InvalidData\n\n    at src/managed.rs:804\n\n1 decode() calls returned an error\ndecode error (first of possibly many): Error: InvalidData\n\n    at src/managed.rs:804\n\n1 decode() calls returned an error\nrun: 0.1245 ms/frame\n"}
+Traceback (most recent call last):
+  File "/home/lilith/work/zen/rav1d-safe/tools/test_decode_md5_limit.py", line 92, in <module>
+    main()
+  File "/home/lilith/work/zen/rav1d-safe/tools/test_decode_md5_limit.py", line 72, in main
+    assert bad.returncode != 0, "malformed benchmark must fail"
+           ^^^^^^^^^^^^^^^^^^^
+AssertionError: malformed benchmark must fail
+error: recipe `test-benchmark-errors` failed on line 127 with exit code 1
+run-heavy: done rc=1 0s | peak-RSS 0.02GiB | min-avail 26048MiB | peak-load 1.12

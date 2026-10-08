@@ -1,0 +1,13 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=25950MiB :: bash -c set -e; CARGO_TARGET_DIR=target/lead-frame-count-guard cargo build --profile release-thin --no-default-features --features bitdepth_8,bitdepth_16 --example profile_ivf; just test-benchmark-errors target/lead-archmage-new-safe/release/examples/decode_md5 target/lead-frame-count-guard/release-thin/examples/profile_ivf; CARGO_TARGET_DIR=target/lead-frame-count-guard cargo clippy --release --no-default-features --features bitdepth_8,bitdepth_16 --example profile_ivf -- -D warnings
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+[1m[92m    Finished[0m `release-thin` profile [optimized + debuginfo] target(s) in 13.58s
+python3 tools/test_decode_md5_limit.py "target/lead-archmage-new-safe/release/examples/decode_md5" --profile-binary "target/lead-frame-count-guard/release-thin/examples/profile_ivf"
+{"limit": null, "returncode": 0, "stdout": "9604569c8e5fcd812a940b82ef39b552\n", "stderr": "  Frame: 64x64 bpc=8 layout=I420\n  Y plane: 64x64 stride=128\n  U plane: 32x32 stride=64\n  V plane: 32x32 stride=64\nDecode error: Error: InvalidData\n\n    at src/managed.rs:804\n (invalid data)\nFrames: 1\n"}
+{"limit": 0, "returncode": 0, "stdout": "d41d8cd98f00b204e9800998ecf8427e\n", "stderr": "Frames: 0\n"}
+{"limit": 1, "returncode": 0, "stdout": "9604569c8e5fcd812a940b82ef39b552\n", "stderr": "  Frame: 64x64 bpc=8 layout=I420\n  Y plane: 64x64 stride=128\n  U plane: 32x32 stride=64\n  V plane: 32x32 stride=64\nFrames: 1\n"}
+{"profile_control": "malformed", "returncode": 101, "stdout": "", "stderr": "Input: /home/lilith/tmp/tmpy9y7n8_0/valid-frame-then-malformed-packet.ivf (2 IVF frames)\nIterations: 1\n\nthread 'main' (2802915) panicked at examples/profile_ivf.rs:74:14:\ndecode failed during benchmark: Error: InvalidData\n\n    at src/managed.rs:804\n\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"}
+{"profile_control": "valid", "returncode": 0, "stdout": "RESULT\trun\t0\t1\t1\t0.104248\nRESULT\trun\t1\t1\t1\t0.032552\n", "stderr": "Input: /home/lilith/tmp/tmpy9y7n8_0/valid-frame.ivf (1 IVF frames)\nIterations: 1\nFrames decoded per iteration: 1\nrun: 0.0326 ms/frame\n"}
+PASS: malformed control and both frame-limit gates
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 5.79s
+run-heavy: done rc=0 19s | peak-RSS 1.28GiB | min-avail 24977MiB | peak-load 1.63

@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -15,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary", type=Path)
+    parser.add_argument("--profile-binary", type=Path)
     args = parser.parse_args()
     binary = args.binary.resolve(strict=True)
     name = "i8_420_p8_q63_noise_64x64"
@@ -57,6 +59,32 @@ def main():
             assert f"Frames: {limit}" in result.stderr, result.stderr
             assert "Decode error" not in result.stderr, "packet after limit was decoded"
             assert "Flush error" not in result.stderr, result.stderr
+        if args.profile_binary is not None:
+            profile = args.profile_binary.resolve(strict=True)
+            env = dict(os.environ, RAV1D_THREADS="1", RAV1D_FRAME_DELAY="1",
+                       RAV1D_REPS="2", RAV1D_LEVEL="native", RAV1D_INLOOP="all")
+            for switch in ("RAV1D_ABLATE", "RAV1D_PPROF"):
+                assert switch not in env, f"unset {switch} before benchmark checks"
+            bad = subprocess.run([str(profile), str(vector), "1"], env=env,
+                                 text=True, capture_output=True, timeout=120)
+            print(json.dumps({"profile_control": "malformed", "returncode": bad.returncode,
+                              "stdout": bad.stdout, "stderr": bad.stderr}), flush=True)
+            assert bad.returncode != 0, "malformed benchmark must fail"
+            assert "decode failed during benchmark" in bad.stderr, bad.stderr
+            assert not any(line.startswith("RESULT") for line in bad.stdout.splitlines())
+            valid = Path(directory) / "valid-frame.ivf"
+            header = struct.pack("<4sHH4sHHIIII", b"DKIF", 0, 32, b"AV01",
+                                 64, 64, 1, 1, 1, 0)
+            valid.write_bytes(header + struct.pack("<IQ", len(packet), 0) + packet)
+            good = subprocess.run([str(profile), str(valid), "1"], env=env,
+                                  text=True, capture_output=True, timeout=120)
+            print(json.dumps({"profile_control": "valid", "returncode": good.returncode,
+                              "stdout": good.stdout, "stderr": good.stderr}), flush=True)
+            assert good.returncode == 0, good.stderr
+            results = [line.split("\t") for line in good.stdout.splitlines()
+                       if line.startswith("RESULT\t")]
+            assert len(results) == 2, good.stdout
+            assert all(row[4] == "1" for row in results), results
     print("PASS: malformed control and both frame-limit gates", flush=True)
 
 

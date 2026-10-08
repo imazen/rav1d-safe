@@ -5,7 +5,7 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
-- Check every timed decoder pass against the nonzero warm-up frame count before reporting benchmark timings (`7e48ed12`).
+- Check every timed decoder pass against the nonzero warm-up frame count before reporting benchmark timings (`7e48ed12`). Benchmark decode, drain and flush errors now fail before results; malformed and valid-frame controls cover decode-error rejection.
 - ARM MC preserves signed source pitches through put/prep and retains the
   full bounded source slice for backward row walks. Expanded 8/10/12-bit
   parity, full native suites and both sidecar matrices pass.

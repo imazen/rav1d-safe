@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-08",
+  "base_revision": "abdd06d6e353f60c98599c45b37bafd170c4ff0b",
+  "oracle": "One committed valid OBU frame followed by forbidden-bit OBU header in a valid IVF container",
+  "before_binary_sha256": "888d76fdb0d0dbdade3899b3a79a59d72a3d5f2cc7bb41dc2a132dd89825f2b6",
+  "after_binary_sha256": "b813f70882564d8926418d20e5b792a860d9351bab61c1d508ba51f89f3d9e7c",
+  "after_source_sha256": "fdae26bfe35781f98cedf4a757a2072f9c349e49a5fc5b9ebfabac6d6c7520b8",
+  "before": "Malformed input exits0 and emits2RESULT rows; unchanged error gateFAIL",
+  "after": "Malformed input exits101 beforeanyRESULT;valid1frame yields2RESULTrows;existing MD5limitgatesPASS;releaseexampleclippyPASS",
+  "command": "just test-benchmark-errors <decode_md5> <profile_ivf>",
+  "scope": {
+    "before": {
+      "rc": 1,
+      "seconds": 0,
+      "peak_rss_gib": 0.02,
+      "min_available_mib": 26048,
+      "peak_load": 1.12
+    },
+    "after": {
+      "rc": 0,
+      "seconds": 19,
+      "peak_rss_gib": 1.28,
+      "min_available_mib": 24977,
+      "peak_load": 1.63
+    }
+  },
+  "logs": [
+    {
+      "stage": "before",
+      "path": "benchmarks/benchmark_errors_before_2026-10-08.log",
+      "sha256": "f9d46d7000c4d07670fd13725f6560650cb7c141c0fa85f548f3ae7a5accc64f"
+    },
+    {
+      "stage": "after",
+      "path": "benchmarks/benchmark_errors_after_2026-10-08.log",
+      "sha256": "4c5ff483d0a74711abbcc41fdaf4ed0ad631a10519ed3bb9e47ef8dda146ad09"
+    }
+  ],
+  "limitation": "Malformed-input oracle reproduces decode() error; drain/flush error handling is source-reviewed, not separately induced; no decoder throughput claim."
+}

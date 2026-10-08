@@ -978,7 +978,7 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
-- 2026-10-08: `profile_ivf` timing rows used the warm-up frame count without checking timed decodes. `7e48ed12` requires nonzero warm-up output and equal counts on every timed pass before emitting a result. The first archmage comparison was interrupted and preserved; no short decode was observed and no A/B performance conclusion was drawn. See `docs/BENCHMARK_TIMED_FRAMES.md`.
+- 2026-10-08: `profile_ivf` timing rows used the warm-up frame count without checking timed decodes. `7e48ed12` requires nonzero warm-up output and equal counts on every timed pass before emitting a result. The first archmage comparison was interrupted and preserved; no short decode was observed and no A/B performance conclusion was drawn. The example also fails on decode, frame-drain and flush errors; the unchanged malformed-input CLI oracle fails before repair and passes afterward alongside a valid-frame control. See `docs/BENCHMARK_TIMED_FRAMES.md`.
 
 - 2026-10-08: `decode_md5 --limit` stopped hashing but continued submitting
   later IVF/Annex-B packets and flushing. An enforced ARM scalar sidecar

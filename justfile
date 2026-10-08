@@ -122,6 +122,10 @@ decode-vector binary *args:
 test-decode-md5-limit binary:
     python3 tools/test_decode_md5_limit.py "{{binary}}"
 
+# A valid frame followed by malformed input must never yield benchmark results.
+test-benchmark-errors decode_md5 profile_ivf:
+    python3 tools/test_decode_md5_limit.py "{{decode_md5}}" --profile-binary "{{profile_ivf}}"
+
 # Matched performance binaries; use fresh target directories to preserve references.
 build-bench-modes tracked untracked:
     CARGO_TARGET_DIR="{{tracked}}" cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16" --example profile_ivf --example decode_md5
