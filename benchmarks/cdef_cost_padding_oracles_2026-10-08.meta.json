@@ -1,0 +1,79 @@
+{
+  "date": "2026-10-08",
+  "base_revision": "507890b7a56f2ed389e64ca0a4d0ab972384fc46",
+  "cpu": "Ryzen9 7900X (Zen4)",
+  "rustc": "1.99.0",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "source_sha256": {
+    "contiguous_cost_loop": "d8321faeb23536d7766564e285cb382fe69623efa201a33c7f494291995300e3",
+    "explicit_avx2_cost": "86e562254008d14301ec8c7e1a0f5d7aaf62d0e0f51c10c15833d492d1462785",
+    "direction_oracle": "9ecc3b181ef0dc4547b98701f6507a9b29bc2bb2bbfc0f9c92fd56b0940fd169"
+  },
+  "commands": [
+    "just test-cdef-direction-costs",
+    "just test-cdef-padding"
+  ],
+  "results": {
+    "contiguous": "1/1directionPASS0.015s+3/3paddingPASS",
+    "mutation": "8bitpaddingFAILoverlapcurrentread72..108/existingmut88..89,2otherselectedPASS",
+    "exact_restoration": "sourcehashd832restored,3/3paddingPASS",
+    "explicit": "1/1directionPASS0.015s+3/3paddingPASS"
+  },
+  "run_heavy": [
+    {
+      "stage": "current-oracles",
+      "rc": 0,
+      "seconds": 19,
+      "peak_rss_gib": 1.59,
+      "min_available_mib": 24330,
+      "peak_load": 3.01
+    },
+    {
+      "stage": "padding-hull-mutation",
+      "rc": 100,
+      "seconds": 14,
+      "peak_rss_gib": 1.61,
+      "min_available_mib": 24459,
+      "peak_load": 3.4
+    },
+    {
+      "stage": "padding-restored",
+      "rc": 0,
+      "seconds": 13,
+      "peak_rss_gib": 1.53,
+      "min_available_mib": 24496,
+      "peak_load": 2.59
+    },
+    {
+      "stage": "explicit-oracles",
+      "rc": 0,
+      "seconds": 14,
+      "peak_rss_gib": 1.72,
+      "min_available_mib": 24358,
+      "peak_load": 3.18
+    }
+  ],
+  "logs": [
+    {
+      "stage": "current-oracles",
+      "path": "benchmarks/cdef_current_oracles_2026-10-08.log",
+      "sha256": "cc6cf9d28713a122667a917474e3c91a191605022ad4243b4841b17e86b94dd1"
+    },
+    {
+      "stage": "padding-hull-mutation",
+      "path": "benchmarks/cdef_padding_hull_mutation_2026-10-08.log",
+      "sha256": "36b90af35ba943f9d02d5a3a15c89a05859d648ae9aeab49af986419d31658a1"
+    },
+    {
+      "stage": "padding-restored",
+      "path": "benchmarks/cdef_padding_restored_2026-10-08.log",
+      "sha256": "b94216ea2bdc7f9cd8c52752724dcf90fd1c12759d658aa508bfb78844be070e"
+    },
+    {
+      "stage": "explicit-oracles",
+      "path": "benchmarks/cdef_explicit_oracles_2026-10-08.log",
+      "sha256": "fcb03006f551edb50a98b91550e5e5ed778b3c431892ace8d966f50eba45dc17"
+    }
+  ],
+  "missing": "Production optimization, full decoder/sidecar/feature gates and matched performance comparison. Zen5 not measured."
+}
