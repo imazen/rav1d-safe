@@ -1,0 +1,13 @@
+{
+  "binary_sha256": "fbc12c783c750d59cf1e74a6670ebfedd080cd08bb00c1bf0764607ee94bd7c9",
+  "symbol": "_RNvNtNtNtCslG8uCnrPz0o_10rav1d_safe3src9safe_simd2mc16warp_h_pass_8bpc",
+  "instruction_occurrences_static": {
+    "vpmovzxbw": 4,
+    "vpmovsxbw": 4,
+    "vpmaddwd": 4,
+    "vphaddd": 4,
+    "vpmaddubsw": 0,
+    "panic_bounds_check": 0
+  },
+  "scope": "Static paired horizontal code generation, not dynamic profile or throughput"
+}

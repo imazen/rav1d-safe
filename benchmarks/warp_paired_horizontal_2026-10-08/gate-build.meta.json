@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-08",
+  "host": "r7900x",
+  "baseline_revision": "80069eb01c77f05ff5b7e0d0738cd20d1ee30b89",
+  "candidate_revision": "d3a424241d65f67699d646b2365dd6836a69a9ba",
+  "sources": {
+    "src/safe_simd/mc.rs": "245c8947959f27c96256b3b4e17417f2abf9c53a70d16625aa4673959fa8f05a",
+    "src/safe_simd/mc_warp_pair_tests.rs": "103a1187e44be0b7a2421d1e320891a88f8bf49eae4ce5256c08af9fc75aaa8d",
+    "src/mc.rs": "34685435ebf7464d184804fdc805d13f1f2933620bc72b55f9cac8cec64c69d3",
+    "src/mc_warp_scalar_tests.rs": "f48b8f6ca9aa1c78bb73bd0858626426bd5710e56b5070ad36bb5730ae64f89a",
+    "src/safe_simd/mc_reference.rs": "392afbc92ccd71d02dcf34c9ed29d3894e6e24fc77d80beec546253281966e16",
+    "Cargo.toml": "4783d4fbde91e5a4278bb03bfaae8b16177a5bb26edcc11230bb368e52454042",
+    "Cargo.lock": "315a1c4b47dd38cbd8d855514f4bf446e515834393b934c4fe836f31b51b6ce6",
+    "examples/profile_ivf.rs": "fdae26bfe35781f98cedf4a757a2072f9c349e49a5fc5b9ebfabac6d6c7520b8"
+  },
+  "binaries": {
+    "safe/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-paired-current-safe/release/examples/profile_ivf",
+      "bytes": 17222120,
+      "sha256": "fbc12c783c750d59cf1e74a6670ebfedd080cd08bb00c1bf0764607ee94bd7c9"
+    },
+    "safe/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-paired-current-safe/release/examples/decode_md5",
+      "bytes": 13584344,
+      "sha256": "0f39fe2a75b6a1a9b52f0ca1af860b255c02c3c75c6a7aa725f5559aee5fe2ec"
+    },
+    "untracked/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-paired-current-untracked/release/examples/profile_ivf",
+      "bytes": 16056440,
+      "sha256": "53e6f7f32e8c30e19b1862497600b212b76b7f02624ea2bba357f1fdcb375474"
+    },
+    "untracked/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-paired-current-untracked/release/examples/decode_md5",
+      "bytes": 12400824,
+      "sha256": "35bf13524ae4c7423ff98a4eb7e85e35667e766d905f173d272b3f6d42dfe49d"
+    }
+  },
+  "files": {
+    "gate-build.log": {
+      "bytes": 41943,
+      "sha256": "cd58a3a545952231702191219eb411ebda2a4957e033348a1f89ae2481d92791",
+      "parts": [
+        "gate-build.part01.log",
+        "gate-build.part02.log"
+      ]
+    },
+    "horizontal-codegen.asm": {
+      "bytes": 16886,
+      "sha256": "7c9e049ca1ed8f389eef03fbb3fbf08e1930ca290157a4d96c00c29f3a4be315",
+      "parts": [
+        "horizontal-codegen.asm"
+      ]
+    },
+    "horizontal-codegen.json": {
+      "bytes": 436,
+      "sha256": "39db2315b719ef4f8c6c18a96740c53d2ab3877402e1214d171ae63c1f0050dd",
+      "parts": [
+        "horizontal-codegen.json"
+      ]
+    },
+    "candidate.patch": {
+      "bytes": 9214,
+      "sha256": "130df514419f85f726ed7dd36a565cdba015e6f44fd8c3e1a6a778b18f9b55a8",
+      "parts": [
+        "candidate.patch"
+      ]
+    }
+  },
+  "command": "just test-mc-warp-paired && just check-mc-warp-paired-features && just build-bench-modes /home/lilith/work/zen/rav1d-safe/target/lead-warp-paired-current-safe /home/lilith/work/zen/rav1d-safe/target/lead-warp-paired-current-untracked",
+  "environment": {
+    "RUSTUP_TOOLCHAIN": "1.99.0",
+    "RUSTFLAGS": "",
+    "CARGO_ENCODED_RUSTFLAGS": "",
+    "CARGO_TARGET_DIR": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-paired-gate",
+    "TMPDIR": "/home/lilith/tmp"
+  },
+  "wrapper": "run-heavy --mem 16G --jobs 20",
+  "resources": "run-heavy: done rc=0 134s | peak-RSS 1.67GiB | min-avail 23859MiB | peak-load 4.10",
+  "results": "Six focused tests pass each mode; both release all-target lint modes and ARM/WASM/CFFI checks pass; matched release fat-LTO binaries built. Generic target; examples unify testable_dispatch.",
+  "missing": [
+    "Full decoder suites and forty sidecar configurations",
+    "Completed whole-clip MD5/error control gate",
+    "Matched sixteen-case AA/AB timing",
+    "Production landing"
+  ]
+}

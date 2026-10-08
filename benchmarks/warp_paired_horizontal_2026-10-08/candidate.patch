@@ -1,0 +1,227 @@
+diff --git a/justfile b/justfile
+index 238f835c18..99e333ec82 100644
+--- a/justfile
++++ b/justfile
+@@ -43,6 +43,16 @@
+ test-mc-warp-destination features="bitdepth_8,bitdepth_16":
+     cargo nextest run --cargo-profile release-thin --no-default-features --features "{{features}}" --lib -E 'test(warp_scalar_tests) | test(warp_reference_windows_cover_both_strides_and_all_depths)' --test-threads 1
+ 
++# Paired horizontal arithmetic plus original whole-warp scalar/row oracles.
++test-mc-warp-paired features="bitdepth_8,bitdepth_16":
++    cargo nextest run --cargo-profile release-thin --no-default-features --features "{{features}}" --lib -E 'test(warp_pair_tests) | test(warp_scalar_tests) | test(warp_reference_windows_cover_both_strides_and_all_depths)' --test-threads 1 --success-output immediate
++
++# Paired arithmetic at supported compiler/feature boundaries and both modes.
++check-mc-warp-paired-features: clippy clippy-untracked cross-aarch64
++    cargo check --target wasm32-unknown-unknown --no-default-features --features "bitdepth_8,bitdepth_16"
++    cargo check --no-default-features --features "bitdepth_8,bitdepth_16,c-ffi"
++    just test-mc-warp-paired bitdepth_8,bitdepth_16,untracked
++
+ # Validate the private destination-base helpers at supported feature boundaries.
+ check-mc-warp-destination-features: clippy clippy-untracked cross-aarch64
+     cargo check --target wasm32-unknown-unknown --no-default-features --features "bitdepth_8,bitdepth_16"
+diff --git a/src/safe_simd/mc.rs b/src/safe_simd/mc.rs
+index 0afcb00494..560cec3b71 100644
+--- a/src/safe_simd/mc.rs
++++ b/src/safe_simd/mc.rs
+@@ -14069,27 +14069,33 @@
+     false
+ }
+ 
+-/// SSE2 horizontal 8-tap dot product for warp affine.
++/// Two independent horizontal eight-tap warp dot products.
+ ///
+-/// Computes sum(filter[i] * src[off+i] for i in 0..8) using widened i16 multiply.
+-/// Avoids pmaddubsw saturation by widening to i16 first, then using pmaddwd.
++/// Each 128-bit lane owns one output. Widen before multiplying so the warp
++/// coefficients never pass through saturating byte-pair accumulation.
+ #[cfg(target_arch = "x86_64")]
+ #[rite]
+-fn warp_h_dot8(_t: Desktop64, src: &[u8], off: usize, filter: &[i8; 8]) -> i32 {
+-    // Load 8 source bytes (low 64 bits) and zero-extend to i16
+-    let s8 = loadu_64!(<&[u8; 8]>::try_from(&src[off..off + 8]).unwrap());
+-    let s16 = _mm_unpacklo_epi8(s8, _mm_setzero_si128()); // zero-extend u8 → i16
+-
+-    // Load 8 filter coefficients and sign-extend i8 → i16
+-    let f16 = _mm_cvtepi8_epi16(loadu_64!(filter));
+-
+-    // pmaddwd: multiply i16*i16 and add adjacent pairs → 4 i32 values (no saturation)
+-    let prod = _mm_madd_epi16(s16, f16);
+-
+-    // Sum 4 i32 values: hadd twice → single i32 in lane 0
+-    let sum1 = _mm_hadd_epi32(prod, prod);
+-    let sum2 = _mm_hadd_epi32(sum1, sum1);
+-    _mm_cvtsi128_si32(sum2)
++fn warp_h_pair8(
++    _t: Desktop64,
++    src: &[u8],
++    offsets: [usize; 2],
++    filters: [&[i8; 8]; 2],
++) -> [i32; 2] {
++    let pixels = _mm_unpacklo_epi64(
++        loadu_64!(<&[u8; 8]>::try_from(&src[offsets[0]..offsets[0] + 8]).unwrap()),
++        loadu_64!(<&[u8; 8]>::try_from(&src[offsets[1]..offsets[1] + 8]).unwrap()),
++    );
++    let coefficients = _mm_unpacklo_epi64(loadu_64!(filters[0]), loadu_64!(filters[1]));
++    let products = _mm256_madd_epi16(
++        _mm256_cvtepu8_epi16(pixels),
++        _mm256_cvtepi8_epi16(coefficients),
++    );
++    let pairs = _mm256_hadd_epi32(products, products);
++    let sums = _mm256_hadd_epi32(pairs, pairs);
++    [
++        _mm_cvtsi128_si32(_mm256_castsi256_si128(sums)),
++        _mm_cvtsi128_si32(_mm256_extracti128_si256::<1>(sums)),
++    ]
+ }
+ 
+ /// Warp affine horizontal pass: 15 rows × 8 pixels → mid[15][8] as i16.
+@@ -14117,14 +14123,19 @@
+         let row_base = (src_base as isize + (y as isize - 3) * src_stride - 3) as usize;
+         let mut tmx = mx + (y as i32) * beta;
+ 
+-        for x in 0..8usize {
+-            let fidx = (64 + ((tmx + 512) >> 10)) as usize;
+-            tmx += alpha;
+-            let filter = &dav1d_mc_warp_filter[fidx];
+-
+-            let off = row_base + x;
+-            let dot = warp_h_dot8(_t, src, off, filter);
+-            mid[x][y] = ((dot + round_h) >> shift_h) as i16;
++        for x in (0..8usize).step_by(2) {
++            let first = (64 + ((tmx + 512) >> 10)) as usize;
++            tmx += alpha;
++            let second = (64 + ((tmx + 512) >> 10)) as usize;
++            tmx += alpha;
++            let dots = warp_h_pair8(
++                _t,
++                src,
++                [row_base + x, row_base + x + 1],
++                [&dav1d_mc_warp_filter[first], &dav1d_mc_warp_filter[second]],
++            );
++            mid[x][y] = ((dots[0] + round_h) >> shift_h) as i16;
++            mid[x + 1][y] = ((dots[1] + round_h) >> shift_h) as i16;
+         }
+     }
+ }
+@@ -15502,3 +15513,12 @@
+         assert!(cases > 0, "table must exercise four-tap vertical kernels");
+     }
+ }
++
++#[cfg(all(
++    test,
++    target_arch = "x86_64",
++    feature = "bitdepth_8",
++    not(feature = "asm")
++))]
++#[path = "mc_warp_pair_tests.rs"]
++mod warp_pair_tests;
+diff --git a/src/safe_simd/mc_warp_pair_tests.rs b/src/safe_simd/mc_warp_pair_tests.rs
+new file mode 100644
+index 0000000000..bb40cecf00
+--- /dev/null
++++ b/src/safe_simd/mc_warp_pair_tests.rs
+@@ -0,0 +1,103 @@
++//! Warp pair arithmetic against independent scalar integer dot products.
++
++use crate::src::tables::dav1d_mc_warp_filter;
++use archmage::{Desktop64, SimdToken, arcane};
++
++#[arcane]
++fn paired(token: Desktop64, bytes: &[u8], filters: [&[i8; 8]; 2]) -> [i32; 2] {
++    super::warp_h_pair8(token, bytes, [0, 8], filters)
++}
++
++fn scalar(bytes: &[u8], filter: &[i8; 8]) -> i32 {
++    bytes
++        .iter()
++        .zip(filter)
++        .map(|(&p, &f)| i32::from(p) * i32::from(f))
++        .sum()
++}
++
++#[test]
++fn every_warp_filter_pair_matches_scalar_at_linear_extrema_and_random_pixels() {
++    let _lock = crate::src::safe_simd::token_test_lock();
++    let Some(token) = Desktop64::summon() else {
++        return;
++    };
++    let mut state = 0x6a09_e667_f3bc_c909u64;
++    let mut comparisons = 0;
++    for (i, first) in dav1d_mc_warp_filter.iter().enumerate() {
++        for (j, second) in dav1d_mc_warp_filter.iter().enumerate() {
++            for pattern in 0..3 {
++                let mut bytes = [0u8; 16];
++                for (lane, filter) in [first, second].into_iter().enumerate() {
++                    for tap in 0..8 {
++                        state ^= state << 13;
++                        state ^= state >> 7;
++                        state ^= state << 17;
++                        bytes[lane * 8 + tap] = match pattern {
++                            0 => {
++                                if filter[tap] > 0 {
++                                    255
++                                } else {
++                                    0
++                                }
++                            }
++                            1 => {
++                                if filter[tap] < 0 {
++                                    255
++                                } else {
++                                    0
++                                }
++                            }
++                            _ => state as u8,
++                        };
++                    }
++                }
++                assert_eq!(
++                    paired(token, &bytes, [first, second]),
++                    [scalar(&bytes[..8], first), scalar(&bytes[8..], second)],
++                    "filters={i},{j} pattern={pattern}"
++                );
++                comparisons += 1;
++            }
++        }
++    }
++    assert_eq!(comparisons, 193 * 193 * 3);
++}
++
++#[test]
++fn warp_pair_byte_values_and_impulses_match_scalar() {
++    let _lock = crate::src::safe_simd::token_test_lock();
++    let Some(token) = Desktop64::summon() else {
++        return;
++    };
++    for (i, filter) in dav1d_mc_warp_filter.iter().enumerate() {
++        // Each input-byte value, complementary lanes, and each coefficient's
++        // maximum impulse expose byte widening, sign extension and lane mixing.
++        for value in 0..=255u8 {
++            let mut bytes = [value; 16];
++            bytes[8..].fill(255 - value);
++            assert_eq!(
++                paired(token, &bytes, [filter, filter]),
++                [scalar(&bytes[..8], filter), scalar(&bytes[8..], filter)],
++                "filter={i} byte={value}"
++            );
++        }
++        for tap in 0..16 {
++            let mut bytes = [0u8; 16];
++            bytes[tap] = 255;
++            assert_eq!(
++                paired(token, &bytes, [filter, filter]),
++                [scalar(&bytes[..8], filter), scalar(&bytes[8..], filter)],
++                "filter={i} impulse={tap}"
++            );
++        }
++        // Even arbitrary signed-byte coefficients and every intermediate i32
++        // partial sum are bounded by 8 * 255 * 128, below i32::MAX.
++        let bound = filter
++            .iter()
++            .map(|&f| i64::from(f).abs() * 255)
++            .sum::<i64>();
++        assert!(bound <= 8 * 255 * 128);
++        assert!(bound < i64::from(i32::MAX));
++    }
++}
