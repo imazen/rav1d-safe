@@ -1,6 +1,6 @@
 # Archmage version-only performance comparison
 
-Missing: A/A controls and A/B timings. No performance effect is established.
+Missing: completed A/A controls and A/B timings using the strengthened timed-pass frame-count guard. No performance effect is established.
 
 On 2026-10-08, the live GitHub latest release and main revision and the
 package index resolve to archmage 0.9.30 / e2dbab66. The comparison uses the
@@ -34,3 +34,13 @@ endpoints and the sparse package index rather than a cached release page:
 [GitHub releases](https://github.com/imazen/archmage/releases),
 [main](https://github.com/imazen/archmage/tree/main),
 [package index](https://index.crates.io/ar/ch/archmage).
+
+The first timing campaign was interrupted after seven of eight tracked A/A
+cases when review found that timing rows used only the warm-up frame count.
+No A/B cases ran. [Full interrupted output](../benchmarks/archmage_first_campaign_incomplete_2026-10-08.meta.json)
+is preserved, including the failed phase without a completion marker. The
+767-second scope peaked at 0.21 GiB RSS, with minimum available 24,831 MiB
+and peak load 2.40. Replacement measurements rebuild both pins with the
+[same per-pass count check](BENCHMARK_TIMED_FRAMES.md). Earlier output-MD5
+checks still establish parity for their recorded executables, independently
+of the unfinished timing run.

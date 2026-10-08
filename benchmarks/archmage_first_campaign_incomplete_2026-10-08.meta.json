@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-08",
+  "base_revision": "ce7bddfb11899be12592eed55d6782aa5b78aa69",
+  "status": "INTERRUPTED, no complete marker; no A/B cases",
+  "reason": "Timed profile_ivf iterations report the warm-up frame count without checking each iteration count. A strengthened count guard and matched rebuild precede replacement timing.",
+  "cases_completed": 7,
+  "scope": {
+    "rc": 1,
+    "seconds": 767,
+    "peak_rss_gib": 0.21,
+    "min_available_mib": 24831,
+    "peak_load": 2.4
+  },
+  "logs": [
+    {
+      "path": "benchmarks/archmage_first_campaign_incomplete_2026-10-08.log",
+      "sha256": "5a142f82f01008c8e7760b606070fc89d57bf43afb1c302dbe478aa36eb4ca21"
+    },
+    {
+      "path": "benchmarks/archmage_first_control_incomplete_2026-10-08.jsonl",
+      "sha256": "cab0e79433dffb61e67994f369ed9c8e41e6ed59f7c88f7295907390f882d242"
+    }
+  ],
+  "performance_conclusion": "None"
+}
