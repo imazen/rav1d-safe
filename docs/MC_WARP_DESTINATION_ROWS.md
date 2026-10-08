@@ -1,8 +1,8 @@
 # Warp destination row addressing
 
-Missing: full decoder, sidecar and timing gates on the repair.
-Production remains unchanged while the isolated repaired source passes
-three scalar tests. [Raw before/after and compile logs](../benchmarks/warp_signed_destination_2026-10-08/meta.json)
+Missing: sidecar and timing gates and production landing of the repair.
+Production remains unchanged while the isolated repair passes both full
+decoder suites and three scalar tests. [Raw before/after and compile logs](../benchmarks/warp_signed_destination_2026-10-08/meta.json)
 record executable source fingerprints and wrapped resource lines.
 
 A whole-plane comparison with the original scalar warp reproduces a panic
@@ -38,3 +38,16 @@ reference-test name and selected nothing; this is not claimed as reference
 fixture coverage. The corrected focused recipe includes the real test,
 `warp_reference_windows_cover_both_strides_and_all_depths`, and its two-mode
 gate and complete decoder suites are now running. No assertion changed.
+
+## Complete decoder validation
+
+The [full two-mode gate](../benchmarks/warp_signed_destination_2026-10-08/full-modes.meta.json)
+passes all 240 tracked and 223 untracked selected tests, including Argon,
+generated threaded vectors, backpressure, MD5 and token permutations.
+Both modes pass the four focused warp/reference tests and ten active
+doctests. Eighteen existing ignored tests and thirteen ignored doctests
+per mode remain outside this scope. Source fingerprints were checked
+before and after execution; paired horizontal warp arithmetic is absent.
+The wrapped scope returned rc=0 after 1,824 seconds, peak RSS 1.54 GiB,
+minimum available 17,927 MiB and peak load 13.50. Full logs are preserved
+in ordered bounded parts. No throughput claim follows from these gates.

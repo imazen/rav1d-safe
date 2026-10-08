@@ -1,0 +1,194 @@
+[32;1m        PASS[0m [   0.003s] ( 38/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed8_api_rejects_invalid_views_before_writing[0m
+[32;1m        PASS[0m [   0.004s] ( 39/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed8_dispatch_cpu_permutations[0m
+[32;1m        PASS[0m [   0.008s] ( 40/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.007s] ( 41/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect16x4_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.007s] ( 42/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect4x16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.011s] ( 43/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect16x8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.005s] ( 44/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect4x8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.005s] ( 45/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect8x4_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.011s] ( 46/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect8x16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.009s] ( 47/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect_dispatch_cpu_permutations[0m
+[32;1m        PASS[0m [   0.005s] ( 48/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_4x4_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.013s] ( 49/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_8x8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.010s] ( 50/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_dispatch_cpu_permutations[0m
+[32;1m        PASS[0m [   0.042s] ( 51/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_16x16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.011s] ( 52/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect16x4_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.011s] ( 53/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect4x16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.020s] ( 54/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect16x8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.008s] ( 55/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect4x8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.008s] ( 56/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect8x4_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 57/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct16_col_pass_i16_matches_existing[0m
+[32;1m        PASS[0m [   0.003s] ( 58/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct16_col_pass_i16_vs_mullo_direct[0m
+[32;1m        PASS[0m [   0.003s] ( 59/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct16_row_pass_i16_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.021s] ( 60/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect8x16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 61/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct16_tx64_cols8_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 62/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct32_row_pass_i16_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 63/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct32_row_pass_i16_simd_sparse_batches[0m
+[32;1m        PASS[0m [   0.003s] ( 64/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct32_tx64_cols8_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 65/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct4_cols_avx512_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 66/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct64_cols8_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 67/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct8_col_pass_i16_matches_i32_col_pass[0m
+[32;1m        PASS[0m [   0.003s] ( 68/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct8_cols_avx512_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 69/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct8_row_pass_i16_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 70/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct_scalar_reference_helpers_are_deterministic[0m
+[32;1m        PASS[0m [   0.003s] ( 71/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_identity_cols_avx512_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 72/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_itx_mul2x_pack_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 73/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_simd_row_dct16_16rows_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 74/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_simd_row_dct32_16rows_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 75/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_simd_row_dct8_16rows_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 76/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_transpose_8x8_i32_roundtrip[0m
+[32;1m        PASS[0m [   0.003s] ( 77/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_wht4_basic[0m
+[32;1m        PASS[0m [   0.003s] ( 78/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_wht4_token_permutations[0m
+[32;1m        PASS[0m [   0.003s] ( 79/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::mask_parity_tests[0m[36m::[0m[34;1mtest_loopfilter_packed16_exact_span[0m
+[32;1m        PASS[0m [   0.004s] ( 80/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::mask_parity_tests[0m[36m::[0m[34;1mtest_loopfilter_packed16_production_grouping[0m
+[32;1m        PASS[0m [   0.006s] ( 81/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::mask_parity_tests[0m[36m::[0m[34;1mtest_loopfilter_packed6_production_grouping[0m
+[32;1m        PASS[0m [   0.032s] ( 82/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::mask_parity_tests[0m[36m::[0m[34;1mtest_loopfilter_masks_match_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 83/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::tests[0m[36m::[0m[34;1mtest_iclip_diff[0m
+[32;1m        PASS[0m [   0.003s] ( 84/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::looprestoration::tests[0m[36m::[0m[34;1mtest_max_restoration_width[0m
+[32;1m        PASS[0m [   0.024s] ( 85/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::mask_parity_tests_16bpc[0m[36m::[0m[34;1mtest_loopfilter_16bpc_masks_match_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 86/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::looprestoration::tests[0m[36m::[0m[34;1mtest_rest_unit_stride[0m
+[32;1m        PASS[0m [   0.003s] ( 87/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::four_tap_vertical_rows[0m[36m::[0m[34;1mfour_tap_vertical_uses_only_active_rows[0m
+[32;1m        PASS[0m [   0.003s] ( 88/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::reference::tests[0m[36m::[0m[34;1mwarp_reference_windows_cover_both_strides_and_all_depths[0m
+[32;1m        PASS[0m [   0.003s] ( 89/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mmask_w_avg_8bpc_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 90/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mtest_avg_8bpc_avx2_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 91/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mtest_avg_token_permutations[0m
+[32;1m        PASS[0m [   0.003s] ( 92/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mtest_avg_varying_data[0m
+[32;1m        PASS[0m [   0.003s] ( 93/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mtest_mask_8bpc_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 94/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mtest_w_avg_8bpc_avx2_matches_scalar[0m
+[32;1m        PASS[0m [   0.008s] ( 95/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mw_mask_16bpc_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.005s] ( 96/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mw_mask_8bpc_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.002s] ( 97/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mwiden_row_16bpc_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.002s] ( 98/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mpair_window_arithmetic_fits_i16_for_all_filter_rows[0m
+[32;1m        PASS[0m [   1.675s] ( 99/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mput_prep_8bpc_endpoint_and_tail_parity[0m
+[32;1m        PASS[0m [   2.095s] (100/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::reference::tests[0m[36m::[0m[34;1mmc_reference_windows_cover_all_filters_phases_widths_and_depths[0m
+[32;1m        PASS[0m [   0.605s] (101/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mreversed_source_rows_match_scalar_for_all_8tap_filters[0m
+[32;1m        PASS[0m [   0.017s] (102/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_prep_parity[0m[36m::[0m[34;1mprep_16bpc_matches_scalar[0m
+[32;1m        PASS[0m [   0.005s] (103/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_prep_parity[0m[36m::[0m[34;1mprep_8bpc_matches_scalar_control[0m
+[32;1m        PASS[0m [   0.019s] (104/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_prep_parity[0m[36m::[0m[34;1mput_16bpc_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] (105/223) [35;1mrav1d-safe[0m [36msrc::thread_task::grain_panic_tests[0m[36m::[0m[34;1mdelayed_grain_panic_preserves_live_worker_state[0m
+[32;1m        PASS[0m [   1.742s] (106/223) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mput_prep_8bpc_full_domain_parity[0m
+[32;1m        PASS[0m [   0.004s] (107/223) [35;1mrav1d-safe::cancellation[0m [34;1mcancel_at_first_sbrow_yields_cancelled[0m
+[32;1m        PASS[0m [   0.006s] (108/223) [35;1mrav1d-safe::cancellation[0m [34;1mcancel_mid_frame_yields_cancelled[0m
+[32;1m        PASS[0m [   0.004s] (109/223) [35;1mrav1d-safe::cancellation[0m [34;1mcancel_tile_threaded_yields_cancelled[0m
+[32;1m        PASS[0m [   0.008s] (110/223) [35;1mrav1d-safe::cancellation[0m [34;1mclearing_token_restores_normal_decode[0m
+[32;1m        PASS[0m [   0.008s] (111/223) [35;1mrav1d-safe::cancellation[0m [34;1mno_token_decodes_normally[0m
+[32;1m        PASS[0m [   0.008s] (112/223) [35;1mrav1d-safe::cancellation[0m [34;1munstoppable_token_decodes_normally[0m
+[32;1m        PASS[0m [   0.044s] (113/223) [35;1mrav1d-safe::decode_backpressure[0m [34;1mdecode_without_draining_loses_no_frames[0m
+[32;1m        PASS[0m [   0.009s] (114/223) [35;1mrav1d-safe::decode_backpressure[0m [34;1mreset_discards_frames_held_back_by_backpressure[0m
+[32;1m        PASS[0m [   0.026s] (115/223) [35;1mrav1d-safe::decode_concurrent_md5[0m [34;1msimultaneous_single_and_multi_thread_decoders_match_reference_md5[0m
+[32;1m        PASS[0m [   2.760s] (116/223) [35;1mrav1d-safe::decode_cpu_levels[0m [34;1mtest_cpu_levels_10bit_data[0m
+[32;1m        PASS[0m [   2.090s] (117/223) [35;1mrav1d-safe::decode_cpu_levels[0m [34;1mtest_cpu_levels_12bit_data[0m
+[32;1m        PASS[0m [ 110.645s] (118/223) [35;1mrav1d-safe::decode_cpu_levels[0m [34;1mtest_cpu_levels_8bit_data[0m
+[32;1m        PASS[0m [ 224.792s] (119/223) [35;1mrav1d-safe::argon_cover[0m [34;1margon_cover_streams_bit_exact_across_levels[0m
+[32;1m        PASS[0m [   0.004s] (120/223) [35;1mrav1d-safe::decode_cpu_levels[0m [34;1mtest_cpu_levels_smoke[0m
+[32;1m        PASS[0m [   2.693s] (121/223) [35;1mrav1d-safe::decode_cpu_levels[0m [34;1mtest_vq_suite_standalone[0m
+[32;1m        PASS[0m [   0.004s] (122/223) [35;1mrav1d-safe::decode_md5_committed[0m [34;1mcdef_12bpc_422_matches_c_oracle_per_frame[0m
+[32;1m        PASS[0m [   0.011s] (123/223) [35;1mrav1d-safe::decode_md5_committed[0m [34;1mcommitted_vectors_match_reference_md5[0m
+[32;1m        PASS[0m [   0.021s] (124/223) [35;1mrav1d-safe::decode_md5_committed[0m [34;1mlr_sgr_vectors_match_reference_md5[0m
+[32;1m        PASS[0m [   0.022s] (125/223) [35;1mrav1d-safe::decode_md5_committed[0m [34;1mlr_sgr_vectors_threaded_match_reference_md5[0m
+[32;1m        PASS[0m [   0.721s] (126/223) [35;1mrav1d-safe::decode_md5_verify[0m [34;1mtest_md5_verify_10bit_quantizer[0m
+[32;1m        PASS[0m [   0.009s] (127/223) [35;1mrav1d-safe::decode_md5_verify[0m [34;1mtest_md5_verify_8bit_cdfupdate[0m
+[32;1m        PASS[0m [   0.410s] (128/223) [35;1mrav1d-safe::decode_md5_verify[0m [34;1mtest_md5_verify_8bit_features[0m
+[32;1m        PASS[0m [   0.022s] (129/223) [35;1mrav1d-safe::decode_md5_verify[0m [34;1mtest_md5_verify_8bit_film_grain[0m
+[32;1m        PASS[0m [   0.658s] (130/223) [35;1mrav1d-safe::decode_md5_verify[0m [34;1mtest_md5_verify_8bit_issues[0m
+[32;1m        PASS[0m [   0.205s] (131/223) [35;1mrav1d-safe::decode_md5_verify[0m [34;1mtest_md5_verify_8bit_quantizer[0m
+[32;1m        PASS[0m [   0.054s] (132/223) [35;1mrav1d-safe::decode_md5_verify[0m [34;1mtest_md5_verify_8bit_size[0m
+[32;1m        PASS[0m [   0.678s] (133/223) [35;1mrav1d-safe::decode_md5_verify[0m [34;1mtest_md5_verify_8bit_vq_suite[0m
+[32;1m        PASS[0m [   0.386s] (134/223) [35;1mrav1d-safe::decode_md5_verify[0m [34;1mtest_md5_verify_all_10bit_data[0m
+[32;1m        PASS[0m [   0.262s] (135/223) [35;1mrav1d-safe::decode_md5_verify[0m [34;1mtest_md5_verify_all_12bit_data[0m
+[32;1m        PASS[0m [  10.517s] (136/223) [35;1mrav1d-safe::decode_md5_verify[0m [34;1mtest_md5_verify_all_8bit_data[0m
+[32;1m        PASS[0m [  14.919s] (137/223) [35;1mrav1d-safe::decode_md5_verify[0m [34;1mtest_md5_verify_comprehensive[0m
+[32;1m        PASS[0m [   0.004s] (138/223) [35;1mrav1d-safe::decode_md5_verify[0m [34;1mtest_md5_verify_first_8bit[0m
+[32;1m        PASS[0m [   0.020s] (139/223) [35;1mrav1d-safe::decode_md5_verify[0m [34;1mtest_md5_verify_single_00000002[0m
+[32;1m        PASS[0m [   6.332s] (140/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_10bit_data[0m
+[32;1m        PASS[0m [   1.176s] (141/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_10bit_features[0m
+[32;1m        PASS[0m [   0.439s] (142/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_10bit_film_grain[0m
+[32;1m        PASS[0m [ 148.123s] (143/223) [35;1mrav1d-safe::decode_cpu_levels[0m [34;1mtest_cpu_levels_comprehensive[0m
+[32;1m        PASS[0m [  10.059s] (144/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_10bit_issues[0m
+[32;1m        PASS[0m [  12.936s] (145/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_10bit_quantizer[0m
+[32;1m        PASS[0m [   0.031s] (146/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_12bit_features[0m
+[32;1m        PASS[0m [   0.085s] (147/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_8bit_cdfupdate[0m
+[32;1m        PASS[0m [   4.724s] (148/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_12bit_data[0m
+[32;1m        PASS[0m [   9.706s] (149/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_8bit_features[0m
+[32;1m        PASS[0m [   0.297s] (150/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_8bit_film_grain[0m
+[32;1m        PASS[0m [   1.523s] (151/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_8bit_intra[0m
+[32;1m        PASS[0m [   9.659s] (152/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_8bit_issues[0m
+[32;1m        PASS[0m [   0.162s] (153/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_8bit_mfmv[0m
+[32;1m        PASS[0m [   0.175s] (154/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_8bit_mv[0m
+[32;1m        PASS[0m [   3.807s] (155/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_8bit_quantizer[0m
+[32;1m        PASS[0m [   2.249s] (156/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_8bit_resize[0m
+[32;1m        PASS[0m [   1.044s] (157/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_8bit_size[0m
+[32;1m        PASS[0m [   0.004s] (158/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_smoke[0m
+[32;1m        PASS[0m [   0.357s] (159/223) [35;1mrav1d-safe::filmgrain_threads[0m [34;1mfilm_grain_frame_and_tile_threads_match_reference[0m
+[32;1m        PASS[0m [   0.055s] (160/223) [35;1mrav1d-safe::filmgrain_threads[0m [34;1mfilm_grain_independent_decoders_match_reference[0m
+[32;1m        PASS[0m [   0.468s] (161/223) [35;1mrav1d-safe::filmgrain_threads[0m [34;1mfilm_grain_md5_matches_at_1_2_4_8_threads[0m
+[32;1m        PASS[0m [   0.089s] (162/223) [35;1mrav1d-safe::filmgrain_threads[0m [34;1mgrain_actually_changes_pixels[0m
+[32;1m        PASS[0m [   0.052s] (163/223) [35;1mrav1d-safe::filmgrain_threads[0m [34;1msome_vector_spans_multiple_row_bands[0m
+[32;1m        PASS[0m [   0.029s] (164/223) [35;1mrav1d-safe::flush_drains[0m [34;1mflush_returns_frames_still_queued_in_the_last_chunk[0m
+[32;1m        PASS[0m [   0.028s] (165/223) [35;1mrav1d-safe::flush_drains[0m [34;1mflush_returns_in_flight_frames_under_frame_threading[0m
+[32;1m        PASS[0m [   0.020s] (166/223) [35;1mrav1d-safe::flush_drains[0m [34;1mflush_then_decode_again_starts_a_fresh_stream[0m
+[32;1m        PASS[0m [   0.009s] (167/223) [35;1mrav1d-safe::flush_drains[0m [34;1msingle_tu_at_one_thread_yields_one_frame[0m
+[32;1m        PASS[0m [   0.003s] (168/223) [35;1mrav1d-safe::fuzz_regression[0m [34;1mfuzz_regression_corpus_exercises_instrumented_kernels[0m
+[32;1m        PASS[0m [   0.103s] (169/223) [35;1mrav1d-safe::fuzz_regression[0m [34;1mfuzz_regression_seeds_do_not_panic[0m
+[32;1m        PASS[0m [   0.003s] (170/223) [35;1mrav1d-safe::fuzz_regression[0m [34;1mguarded_seeds_all_present[0m
+[32;1m        PASS[0m [   0.192s] (171/223) [35;1mrav1d-safe::gen_cover[0m [34;1mgen_cover_streams_bit_exact_across_levels[0m
+[32;1m        PASS[0m [   0.142s] (172/223) [35;1mrav1d-safe::gen_vectors_threaded[0m [34;1mcommitted_streams_are_thread_and_delay_invariant[0m
+[32;1m        PASS[0m [   0.003s] (173/223) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_ivf_parser[0m
+[32;1m        PASS[0m [   0.003s] (174/223) [35;1mrav1d-safe::managed_api_test[0m [34;1mtest_decode_empty_data[0m
+[32;1m        PASS[0m [   0.003s] (175/223) [35;1mrav1d-safe::managed_api_test[0m [34;1mtest_decoder_creation[0m
+[32;1m        PASS[0m [   0.003s] (176/223) [35;1mrav1d-safe::managed_api_test[0m [34;1mtest_decoder_with_custom_settings[0m
+[32;1m        PASS[0m [   0.002s] (177/223) [35;1mrav1d-safe::managed_api_test[0m [34;1mtest_plane_view_height_invariant_basic[0m
+[32;1m        PASS[0m [   0.004s] (178/223) [35;1mrav1d-safe::managed_packets[0m [34;1mbackpressure_keeps_packet_and_reset_discards_pending_output[0m
+[32;1m        PASS[0m [   0.003s] (179/223) [35;1mrav1d-safe::managed_packets[0m [34;1mempty_stream_ends_without_a_frame_and_empty_packets_are_rejected[0m
+[32;1m        PASS[0m [   0.003s] (180/223) [35;1mrav1d-safe::managed_packets[0m [34;1mend_input_waits_for_delayed_first_frame_without_an_earlier_poll[0m
+[32;1m        PASS[0m [   0.003s] (181/223) [35;1mrav1d-safe::managed_packets[0m [34;1mmapped_old_pixels_remain_borrowed_while_inter_frames_decode[0m
+[32;1m        PASS[0m [   0.004s] (182/223) [35;1mrav1d-safe::managed_packets[0m [34;1mpackets_preserve_timing_and_native_pixels_through_decoder_drop[0m
+[32;1m        PASS[0m [   0.003s] (183/223) [35;1mrav1d-safe::managed_packets[0m [34;1mraw_color_codes_and_chroma_position_survive_actual_sequence_parsing[0m
+[32;1m        PASS[0m [   0.003s] (184/223) [35;1mrav1d-safe::managed_packets[0m [34;1mretry_after_receiving_preserves_all_frames_and_packet_provenance[0m
+[32;1m        PASS[0m [   0.005s] (185/223) [35;1mrav1d-safe::mastering_display_units[0m [34;1mparsed_av1_mastering_display_uses_av1_fixed_point_units[0m
+[32;1m        PASS[0m [   0.834s] (186/223) [35;1mrav1d-safe::mt_stress[0m [34;1mmt_stress_4k[0m
+[32;1m        PASS[0m [   0.004s] (187/223) [35;1mrav1d-safe::panic_safety_test[0m [34;1mtest_decoder_drop_on_panic[0m
+[32;1m        PASS[0m [   0.003s] (188/223) [35;1mrav1d-safe::panic_safety_test[0m [34;1mtest_decoder_drop_without_flush[0m
+[32;1m        PASS[0m [   0.003s] (189/223) [35;1mrav1d-safe::panic_safety_test[0m [34;1mtest_decoder_multiple_decode_drop[0m
+[32;1m        PASS[0m [   0.003s] (190/223) [35;1mrav1d-safe::panic_safety_test[0m [34;1mtest_decoder_panic_during_decode[0m
+[32;1m        PASS[0m [   0.004s] (191/223) [35;1mrav1d-safe::presentation_provenance[0m [34;1mreordered_presentations_keep_their_own_flags_and_packet_offsets[0m
+[32;1m        PASS[0m [   0.003s] (192/223) [35;1mrav1d-safe::presentation_provenance[0m [34;1mshowing_an_older_key_picture_is_not_a_new_keyframe[0m
+[32;1m        PASS[0m [   0.003s] (193/223) [35;1mrav1d-safe::safe_simd_crashes[0m [34;1marm_aa_base_underflow_16bpc[0m
+[32;1m        PASS[0m [   0.003s] (194/223) [35;1mrav1d-safe::safe_simd_crashes[0m [34;1marm_aa_base_underflow_8bpc[0m
+[32;1m        PASS[0m [   0.003s] (195/223) [35;1mrav1d-safe::safe_simd_crashes[0m [34;1marm_boxsum3_oob_16bpc[0m
+[32;1m        PASS[0m [   0.003s] (196/223) [35;1mrav1d-safe::safe_simd_crashes[0m [34;1marm_boxsum3_oob_8bpc[0m
+[32;1m        PASS[0m [   0.003s] (197/223) [35;1mrav1d-safe::safe_simd_crashes[0m [34;1marm_mc16_avg_overshoot[0m
+[32;1m        PASS[0m [   0.003s] (198/223) [35;1mrav1d-safe::safe_simd_crashes[0m [34;1marm_mc16_blend_dir_overshoot[0m
+[32;1m        PASS[0m [   0.003s] (199/223) [35;1mrav1d-safe::safe_simd_crashes[0m [34;1marm_mc16_blend_overshoot[0m
+[32;1m        PASS[0m [   0.003s] (200/223) [35;1mrav1d-safe::safe_simd_crashes[0m [34;1marm_mc16_mask_overshoot[0m
+[32;1m        PASS[0m [   0.003s] (201/223) [35;1mrav1d-safe::safe_simd_crashes[0m [34;1marm_mc16_overshoot[0m
+[32;1m        PASS[0m [   0.003s] (202/223) [35;1mrav1d-safe::safe_simd_crashes[0m [34;1marm_mc16_w_mask_overshoot[0m
+[32;1m        PASS[0m [   0.003s] (203/223) [35;1mrav1d-safe::safe_simd_crashes[0m [34;1mipred_z2_bounds_circle[0m
+[32;1m        PASS[0m [   0.007s] (204/223) [35;1mrav1d-safe::safe_simd_crashes[0m [34;1mipred_z2_bounds_kodim03[0m
+[32;1m        PASS[0m [   0.003s] (205/223) [35;1mrav1d-safe::safe_simd_crashes[0m [34;1mloopfilter_slice_bounds_alpha_noispe[0m
+[32;1m        PASS[0m [   0.004s] (206/223) [35;1mrav1d-safe::safe_simd_crashes[0m [34;1mpicbuf_empty_vec[0m
+[32;1m        PASS[0m [   0.005s] (207/223) [35;1mrav1d-safe::safe_simd_crashes[0m [34;1mrange_start_bounds_colors_hdr[0m
+[32;1m        PASS[0m [   0.012s] (208/223) [35;1mrav1d-safe::strictness[0m [34;1mconforming_stream_is_identical_under_both[0m
+[32;1m        PASS[0m [   0.005s] (209/223) [35;1mrav1d-safe::strictness[0m [34;1mcorrupt_tile_padding_strict_rejects_lenient_conceals[0m
+[32;1m        PASS[0m [   0.003s] (210/223) [35;1mrav1d-safe::strictness[0m [34;1mdeprecated_strict_std_compliance_still_means_strict[0m
+[32;1m        PASS[0m [   0.004s] (211/223) [35;1mrav1d-safe::strictness[0m [34;1mdesynced_segment_ids_strict_rejects_lenient_conceals[0m
+[32;1m        PASS[0m [   0.004s] (212/223) [35;1mrav1d-safe::strictness[0m [34;1mfuzz_522_523_out_of_range_segment_id_is_rejected[0m
+[32;1m        PASS[0m [   0.003s] (213/223) [35;1mrav1d-safe::strictness[0m [34;1mlenient_is_below_strict_and_strict_is_the_default[0m
+[32;1m        PASS[0m [   0.055s] (214/223) [35;1mrav1d-safe::thread_cleanup_test[0m [34;1mtest_auto_detect_threads_cleanup[0m
+[32;1m        PASS[0m [   0.003s] (215/223) [35;1mrav1d-safe::thread_cleanup_test[0m [34;1mtest_drop_without_decode[0m
+[32;1m        PASS[0m [   0.053s] (216/223) [35;1mrav1d-safe::thread_cleanup_test[0m [34;1mtest_multi_threaded_cleanup[0m
+[32;1m        PASS[0m [   0.105s] (217/223) [35;1mrav1d-safe::thread_cleanup_test[0m [34;1mtest_multiple_decoder_cycles[0m
+[32;1m        PASS[0m [   0.003s] (218/223) [35;1mrav1d-safe::thread_cleanup_test[0m [34;1mtest_multiple_decoders_simultaneous[0m
+[32;1m        PASS[0m [   0.003s] (219/223) [35;1mrav1d-safe::thread_cleanup_test[0m [34;1mtest_single_threaded_no_leak[0m
+[32;1m        PASS[0m [   0.008s] (220/223) [35;1mrav1d-safe::tile_threading_parity[0m [34;1mparity_colors_hdr_rec2020_16bpc[0m
+[32;1m        PASS[0m [   0.008s] (221/223) [35;1mrav1d-safe::tile_threading_parity[0m [34;1mparity_disjoint_mut_tile_overlap[0m
+[32;1m        PASS[0m [   0.013s] (222/223) [35;1mrav1d-safe::tile_threading_parity[0m [34;1mparity_kodim03_8bpc_420[0m
+[32;1m        PASS[0m [ 239.945s] (223/223) [35;1mrav1d-safe::decode_permutations[0m [34;1mtest_permutations_8bit_data[0m
+────────────
+[32;1m     Summary[0m [ 520.576s] [1m223[0m tests run: [1m223[0m [32;1mpassed[0m, [1m18[0m [33;1mskipped[0m
+cargo test --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --doc
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 0.06s
+[1m[92m   Doc-tests[0m rav1d_safe
+
+running 23 tests
+test src/ctx.rs - src::ctx::case_set_al (line 161) ... ignored

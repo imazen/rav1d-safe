@@ -1,0 +1,27 @@
+test lib.rs - (line 12) - compile ... ok
+test lib.rs - src::managed (line 264) - compile ... ok
+test src/managed.rs - src::managed::Decoder::decode (line 899) - compile ... ok
+test src/managed.rs - src::managed::CpuLevel (line 443) - compile ... ok
+test src/managed.rs - src::managed::Decoder::set_stop (line 783) - compile ... ok
+test src/safe_simd/pixel_access.rs - src::safe_simd::pixel_access (line 12) ... ignored
+test src/safe_simd/pixel_access.rs - src::safe_simd::pixel_access::loadi32 (line 564) ... ignored
+test src/safe_simd/pixel_access.rs - src::safe_simd::pixel_access::loadi64 (line 603) ... ignored
+test src/safe_simd/pixel_access.rs - src::safe_simd::pixel_access::loadu_128 (line 512) ... ignored
+test src/safe_simd/pixel_access.rs - src::safe_simd::pixel_access::loadu_256 (line 433) ... ignored
+test src/safe_simd/pixel_access.rs - src::safe_simd::pixel_access::loadu_512 (line 473) ... ignored
+test src/safe_simd/pixel_access.rs - src::safe_simd::pixel_access::loadu_64 (line 532) ... ignored
+test src/safe_simd/pixel_access.rs - src::safe_simd::pixel_access::storei32 (line 583) ... ignored
+test src/safe_simd/pixel_access.rs - src::safe_simd::pixel_access::storei64 (line 623) ... ignored
+test src/safe_simd/pixel_access.rs - src::safe_simd::pixel_access::storeu_128 (line 550) ... ignored
+test src/safe_simd/pixel_access.rs - src::safe_simd::pixel_access::storeu_256 (line 453) ... ignored
+test src/safe_simd/pixel_access.rs - src::safe_simd::pixel_access::storeu_512 (line 493) ... ignored
+test src/managed.rs - src::managed::Decoder (line 592) - compile ... ok
+test src/itx_1d.rs - src::itx_1d (line 14) ... ok
+test src/itx_1d.rs - src::itx_1d (line 5) ... ok
+test src/managed.rs - src::managed::enabled_features (line 1809) ... ok
+test src/managed.rs - src::managed::Settings (line 169) ... ok
+
+test result: ok. 10 passed; 0 failed; 13 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 2.94s; merged doctests compilation took 2.94s
+run-heavy: done rc=0 1824s | peak-RSS 1.54GiB | min-avail 17927MiB | peak-load 13.50

@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-08",
+  "cpu": "AMD Ryzen9 7900X (Zen4); Zen5 unmeasured",
+  "compiler": "rustc1.99.0 (b940084d7 2026-09-28)",
+  "experimental_revision": "1e57f3b283f3d45fb98a968ce04e1c41797a7e16",
+  "source_sha256": {
+    "src/safe_simd/mc.rs": "c2b265303d58c114b40980fbbb81d3721a2b4e711bc1f124c7c01bd4db8cece8",
+    "src/mc.rs": "34685435ebf7464d184804fdc805d13f1f2933620bc72b55f9cac8cec64c69d3",
+    "src/mc_warp_scalar_tests.rs": "f48b8f6ca9aa1c78bb73bd0858626426bd5710e56b5070ad36bb5730ae64f89a",
+    "src/safe_simd/mc_reference.rs": "392afbc92ccd71d02dcf34c9ed29d3894e6e24fc77d80beec546253281966e16",
+    "justfile": "ecf7d81f4815c8b31a7444b5d947ab061439fe88a0b1f16957674d276490e7d2"
+  },
+  "command": "run-heavy --mem16G --jobs20 -- bash -c \"just test-mc-warp-pairs && just test-mc-warp-pairs bitdepth_8,bitdepth_16,untracked && just test-all-modes\"",
+  "working_directory": "rav1d-safe--lead-warp",
+  "focused": {
+    "tracked": 4,
+    "untracked": 4,
+    "reference_fixture": "warp_reference_windows_cover_both_strides_and_all_depths"
+  },
+  "tracked": {
+    "passed": 240,
+    "selected": 240,
+    "seconds": 1125.761,
+    "preexisting_skipped": 18,
+    "active_doctests_passed": 10,
+    "preexisting_ignored_doctests": 13
+  },
+  "untracked": {
+    "passed": 223,
+    "selected": 223,
+    "seconds": 520.576,
+    "preexisting_skipped": 18,
+    "active_doctests_passed": 10,
+    "preexisting_ignored_doctests": 13
+  },
+  "resource_line": "run-heavy: done rc=0 1824s | peak-RSS 1.54GiB | min-avail 17927MiB | peak-load 13.50",
+  "full_log_bytes": 85892,
+  "full_log_sha256": "9f7262fa26a77a69f08a32e871bf76b95444d75c70b16d36dbcac1bd369224b7",
+  "ordered_parts": [
+    {
+      "path": "full-modes.part01.log",
+      "bytes": 27976,
+      "sha256": "b17ba15f29ef1f6d2280cfaeba7a69bf5577586f47a5992e3ab91cc507c0c2e0"
+    },
+    {
+      "path": "full-modes.part02.log",
+      "bytes": 27882,
+      "sha256": "6e2867b1bbad78741d4c8a3ae2aee2d48902fd31e4f55b1238981b72daa34497"
+    },
+    {
+      "path": "full-modes.part03.log",
+      "bytes": 27964,
+      "sha256": "7ce80625d9645f030b0c70d00728e568c016a79f422b16e4e21aa135e9c650f9"
+    },
+    {
+      "path": "full-modes.part04.log",
+      "bytes": 2070,
+      "sha256": "ccd79ca28864e218c7d9f0008a2fd925b1c668761ac313cdf3eef499e0764272"
+    }
+  ],
+  "missing": [
+    "Fresh binaries and complete40configuration803-vector sidecar gate",
+    "Matched AA/AB throughput",
+    "Production source landing",
+    "C-FFI negative destination fixture coverage",
+    "Zen5 measurements"
+  ]
+}

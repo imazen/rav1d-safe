@@ -1,0 +1,252 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=25984MiB :: bash -c just test-mc-warp-pairs && just test-mc-warp-pairs bitdepth_8,bitdepth_16,untracked && just test-all-modes
+cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib -E 'test(warp_pair_tests) | test(warp_scalar_tests) | test(warp_reference_windows_cover_both_strides_and_all_depths)' --test-threads 1
+[1m[92m    Finished[0m `release-thin` profile [optimized + debuginfo] target(s) in 0.05s
+────────────
+[32;1m Nextest run[0m ID [1maf55b7ad-1b8e-45d1-a650-53909f66e141[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m4[0m tests across [1m1[0m binary ([1m119[0m tests [33;1mskipped[0m)
+[32;1m        PASS[0m [   0.004s] (1/4) [35;1mrav1d-safe[0m [36msrc::mc::warp_scalar_tests[0m[36m::[0m[34;1mwarp_put_high_depth_matches_scalar_with_signed_destination_rows[0m
+[32;1m        PASS[0m [   0.004s] (2/4) [35;1mrav1d-safe[0m [36msrc::mc::warp_scalar_tests[0m[36m::[0m[34;1mwarp_put_matches_scalar_with_negative_destination_rows[0m
+[32;1m        PASS[0m [   0.046s] (3/4) [35;1mrav1d-safe[0m [36msrc::mc::warp_scalar_tests[0m[36m::[0m[34;1mwarp_put_prep_match_scalar_with_signed_source_rows_and_all_filter_indices[0m
+[32;1m        PASS[0m [   0.003s] (4/4) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::reference::tests[0m[36m::[0m[34;1mwarp_reference_windows_cover_both_strides_and_all_depths[0m
+────────────
+[32;1m     Summary[0m [   0.056s] [1m4[0m tests run: [1m4[0m [32;1mpassed[0m, [1m119[0m [33;1mskipped[0m
+cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --lib -E 'test(warp_pair_tests) | test(warp_scalar_tests) | test(warp_reference_windows_cover_both_strides_and_all_depths)' --test-threads 1
+[1m[92m    Finished[0m `release-thin` profile [optimized + debuginfo] target(s) in 0.05s
+────────────
+[32;1m Nextest run[0m ID [1mfcd9aac8-e176-42ae-83e7-4e9db5a4a669[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m4[0m tests across [1m1[0m binary ([1m102[0m tests [33;1mskipped[0m)
+[32;1m        PASS[0m [   0.003s] (1/4) [35;1mrav1d-safe[0m [36msrc::mc::warp_scalar_tests[0m[36m::[0m[34;1mwarp_put_high_depth_matches_scalar_with_signed_destination_rows[0m
+[32;1m        PASS[0m [   0.003s] (2/4) [35;1mrav1d-safe[0m [36msrc::mc::warp_scalar_tests[0m[36m::[0m[34;1mwarp_put_matches_scalar_with_negative_destination_rows[0m
+[32;1m        PASS[0m [   0.012s] (3/4) [35;1mrav1d-safe[0m [36msrc::mc::warp_scalar_tests[0m[36m::[0m[34;1mwarp_put_prep_match_scalar_with_signed_source_rows_and_all_filter_indices[0m
+[32;1m        PASS[0m [   0.003s] (4/4) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::reference::tests[0m[36m::[0m[34;1mwarp_reference_windows_cover_both_strides_and_all_depths[0m
+────────────
+[32;1m     Summary[0m [   0.022s] [1m4[0m tests run: [1m4[0m [32;1mpassed[0m, [1m102[0m [33;1mskipped[0m
+cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --test-threads 2
+[1m[92m   Compiling[0m cfg-if v1.0.4
+[1m[92m   Compiling[0m bitflags v2.13.1
+[1m[92m   Compiling[0m memchr v2.8.3
+[1m[92m   Compiling[0m linux-raw-sys v0.12.1
+[1m[92m   Compiling[0m utf8parse v0.2.2
+[1m[92m   Compiling[0m itoa v1.0.18
+[1m[92m   Compiling[0m stable_deref_trait v1.2.1
+[1m[92m   Compiling[0m colorchoice v1.0.5
+[1m[92m   Compiling[0m anstyle v1.0.14
+[1m[92m   Compiling[0m anstyle-query v1.1.5
+[1m[92m   Compiling[0m is_terminal_polyfill v1.70.2
+[1m[92m   Compiling[0m libc v0.2.189
+[1m[92m   Compiling[0m clap_lex v1.1.0
+[1m[92m   Compiling[0m scopeguard v1.2.0
+[1m[92m   Compiling[0m serde_core v1.0.229
+[1m[92m   Compiling[0m bitflags v1.3.2
+[1m[92m   Compiling[0m anstyle-parse v1.0.0
+[1m[92m   Compiling[0m strsim v0.11.1
+[1m[92m   Compiling[0m zerocopy v0.8.56
+[1m[92m   Compiling[0m bytemuck v1.25.2
+[1m[92m   Compiling[0m equator v0.4.2
+[1m[92m   Compiling[0m zmij v1.0.23
+[1m[92m   Compiling[0m log v0.4.34
+[1m[92m   Compiling[0m enough v0.4.4
+[1m[92m   Compiling[0m once_cell v1.21.4
+[1m[92m   Compiling[0m lock_api v0.4.14
+[1m[92m   Compiling[0m arrayvec v0.7.8
+[1m[92m   Compiling[0m smallvec v1.16.0
+[1m[92m   Compiling[0m uuid v1.26.1
+[1m[92m   Compiling[0m whereat v0.1.5
+[1m[92m   Compiling[0m anstream v1.0.0
+[1m[92m   Compiling[0m memoffset v0.6.5
+[1m[92m   Compiling[0m as-slice v0.2.1
+[1m[92m   Compiling[0m gimli v0.32.3
+[1m[92m   Compiling[0m aligned-vec v0.6.4
+[1m[92m   Compiling[0m hashbrown v0.17.1
+[1m[92m   Compiling[0m rustc-demangle v0.1.28
+[1m[92m   Compiling[0m adler2 v2.0.1
+[1m[92m   Compiling[0m equivalent v1.0.2
+[1m[92m   Compiling[0m num-format v0.4.4
+[1m[92m   Compiling[0m rgb v0.8.53
+[1m[92m   Compiling[0m aligned v0.4.3
+[1m[92m   Compiling[0m cpp_demangle v0.4.5
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-warp)
+[1m[92m   Compiling[0m miniz_oxide v0.8.9
+[1m[92m   Compiling[0m rustix v1.1.4
+[1m[92m   Compiling[0m almost-enough v0.4.4
+[1m[92m   Compiling[0m safe_unaligned_simd v0.2.5
+[1m[92m   Compiling[0m debugid v0.8.0
+[1m[92m   Compiling[0m str_stack v0.1.1
+[1m[92m   Compiling[0m spin v0.12.3
+[1m[92m   Compiling[0m quick-xml v0.26.0
+[1m[92m   Compiling[0m zenpixels v0.2.16
+[1m[92m   Compiling[0m object v0.37.3
+[1m[92m   Compiling[0m fastrand v2.5.0
+[1m[92m   Compiling[0m lazy_static v1.5.0
+[1m[92m   Compiling[0m archmage v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m   Compiling[0m colored v2.2.0
+[1m[92m   Compiling[0m thiserror v1.0.69
+[1m[92m   Compiling[0m thiserror v2.0.21
+[1m[92m   Compiling[0m atomig v0.4.3
+[1m[92m   Compiling[0m strum v0.28.0
+[1m[92m   Compiling[0m likely_stable v0.1.3
+[1m[92m   Compiling[0m num-traits v0.2.19
+[1m[92m   Compiling[0m anyhow v1.0.104
+[1m[92m   Compiling[0m spin v0.10.1
+[1m[92m   Compiling[0m raw-cpuid v11.6.0
+[1m[92m   Compiling[0m bitreader v0.3.11
+[1m[92m   Compiling[0m fallible_collections v0.5.2
+[1m[92m   Compiling[0m indexmap v2.14.2
+[1m[92m   Compiling[0m assert_matches v1.5.0
+[1m[92m   Compiling[0m to_method v1.1.0
+[1m[92m   Compiling[0m zencodec v0.1.26
+[1m[92m   Compiling[0m condtype v1.3.0
+[1m[92m   Compiling[0m glob-match v0.2.1
+[1m[92m   Compiling[0m byteorder v1.5.0
+[1m[92m   Compiling[0m regex-lite v0.1.9
+[1m[92m   Compiling[0m leb128 v0.2.7
+[1m[92m   Compiling[0m md5 v0.8.1
+[1m[92m   Compiling[0m getrandom v0.2.17
+[1m[92m   Compiling[0m memmap2 v0.9.11
+[1m[92m   Compiling[0m getrandom v0.3.4
+[1m[92m   Compiling[0m is-terminal v0.4.17
+[1m[92m   Compiling[0m nix v0.23.2
+[1m[92m   Compiling[0m getrandom v0.4.3
+[1m[92m   Compiling[0m parking_lot_core v0.9.12
+[1m[92m   Compiling[0m findshlibs v0.10.2
+[1m[92m   Compiling[0m sysinfo v0.36.1
+[1m[92m   Compiling[0m nix v0.26.4
+[1m[92m   Compiling[0m rand_core v0.6.4
+[1m[92m   Compiling[0m symbolic-common v12.18.3
+[1m[92m   Compiling[0m parking_lot v0.12.5
+[1m[92m   Compiling[0m zenavif-parse v0.6.2
+[1m[92m   Compiling[0m symbolic-demangle v12.18.3
+[1m[92m   Compiling[0m serde_json v1.0.151
+[1m[92m   Compiling[0m serde v1.0.229
+[1m[92m   Compiling[0m terminal_size v0.4.4
+[1m[92m   Compiling[0m fs4 v1.1.0
+[1m[92m   Compiling[0m tempfile v3.27.0
+[1m[92m   Compiling[0m addr2line v0.25.1
+[1m[92m   Compiling[0m clap_builder v4.6.6
+[1m[92m   Compiling[0m jsonrpc-types v0.3.3
+[1m[92m   Compiling[0m backtrace v0.3.76
+[1m[92m   Compiling[0m ppv-lite86 v0.2.21
+[1m[92m   Compiling[0m ahash v0.8.12
+[1m[92m   Compiling[0m rav1d-disjoint-mut v0.4.0 (/home/lilith/work/zen/rav1d-safe--lead-warp/crates/rav1d-disjoint-mut)
+[1m[92m   Compiling[0m inferno v0.11.21
+[1m[92m   Compiling[0m rand_chacha v0.3.1
+[1m[92m   Compiling[0m rand v0.8.8
+[1m[92m   Compiling[0m clap v4.6.6
+[1m[92m   Compiling[0m divan v0.1.21
+[1m[92m   Compiling[0m zenbench v0.1.9
+[1m[92m   Compiling[0m pprof v0.15.0
+[1m[92m   Compiling[0m shared_memory v0.12.4
+[1m[92m   Compiling[0m tango-bench v0.8.0
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 1m 28s
+────────────
+[32;1m Nextest run[0m ID [1m2ae579c6-b9d5-46c2-9afb-cf4c2a5090d7[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m240[0m tests across [1m33[0m binaries ([1m18[0m tests [33;1mskipped[0m)
+[32;1m        PASS[0m [   0.004s] (  1/240) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mcompact_read_returns_picture_rows_top_down_on_a_negative_stride[0m
+[32;1m        PASS[0m [   0.004s] (  2/240) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mcompact_read_fast_hull_starts_at_the_last_row_on_a_negative_stride[0m
+[32;1m        PASS[0m [   0.003s] (  3/240) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mexplicit_picture_policy_controls_gap_reservations_after_global_promotion[0m
+[32;1m        PASS[0m [   0.003s] (  4/240) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mfor_rows_mut_never_reserves_an_inter_row_gap_when_tile_threading_is_on[0m
+[32;1m        PASS[0m [   0.004s] (  5/240) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mfor_rows_mut_reserves_the_strided_hull_when_tile_threading_is_off[0m
+[32;1m        PASS[0m [   0.004s] (  6/240) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mfor_rows_visits_picture_rows_top_down_on_a_negative_stride[0m
+[32;1m        PASS[0m [   0.004s] (  7/240) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mnarrow_guard_mut_reserves_exactly_the_block_hull_on_a_negative_stride[0m
+[32;1m        PASS[0m [   0.005s] (  8/240) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mlive_block_keeps_its_storage_when_another_decoder_changes_threading[0m
+[32;1m        PASS[0m [   0.003s] (  9/240) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::tile_threading_latch_tests[0m[36m::[0m[34;1mset_tile_threading_is_monotone[0m
+[32;1m        PASS[0m [   0.004s] ( 10/240) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mnarrow_guards_cover_the_block_on_a_negative_stride[0m
+[32;1m        PASS[0m [   0.003s] ( 11/240) [35;1mrav1d-safe[0m [36msrc::decode_test::tests[0m[36m::[0m[34;1mdecode_test_ivf[0m
+[32;1m        PASS[0m [   0.004s] ( 12/240) [35;1mrav1d-safe[0m [36msrc::env::left_split_parity[0m[36m::[0m[34;1msm_flag_left_matches_sm_flag[0m
+[32;1m        PASS[0m [   0.003s] ( 13/240) [35;1mrav1d-safe[0m [36msrc::env::left_split_parity[0m[36m::[0m[34;1mtrial_floor_is_not_vacuous[0m
+[32;1m        PASS[0m [   0.003s] ( 14/240) [35;1mrav1d-safe[0m [36msrc::error::errno_tests[0m[36m::[0m[34;1merrno_round_trips_on_this_platform[0m
+[32;1m        PASS[0m [   0.021s] ( 15/240) [35;1mrav1d-safe[0m [36msrc::env::left_split_parity[0m[36m::[0m[34;1mall_fifteen_helpers_match_the_pre_split_implementation[0m
+[32;1m        PASS[0m [   0.085s] ( 16/240) [35;1mrav1d-safe[0m [36msrc::filmgrain::row_tests[0m[36m::[0m[34;1mfilmgrain_rows_match_scalar_10bit[0m
+[32;1m        PASS[0m [   0.084s] ( 17/240) [35;1mrav1d-safe[0m [36msrc::filmgrain::row_tests[0m[36m::[0m[34;1mfilmgrain_rows_match_scalar_12bit[0m
+[32;1m        PASS[0m [   0.003s] ( 18/240) [35;1mrav1d-safe[0m [36msrc::internal::task_ctx_size[0m[36m::[0m[34;1mtask_context_stays_stack_light[0m
+[32;1m        PASS[0m [   0.003s] ( 19/240) [35;1mrav1d-safe[0m [36msrc::loopfilter::compact_window[0m[36m::[0m[34;1mh_window_fits_the_transform_that_selected_it[0m
+[32;1m        PASS[0m [   0.004s] ( 20/240) [35;1mrav1d-safe[0m [36msrc::loopfilter::compact_window[0m[36m::[0m[34;1missue_524_h_window_does_not_collide_with_the_next_rows_stitch[0m
+[32;1m        PASS[0m [   0.003s] ( 21/240) [35;1mrav1d-safe[0m [36msrc::loopfilter::compact_window[0m[36m::[0m[34;1missue_524_h_window_stays_inside_its_picture_row[0m
+[32;1m        PASS[0m [   0.005s] ( 22/240) [35;1mrav1d-safe[0m [36msrc::loopfilter::compact_window[0m[36m::[0m[34;1missue_524_harness_detects_a_window_that_does_lap[0m
+[32;1m        PASS[0m [   0.003s] ( 23/240) [35;1mrav1d-safe[0m [36msrc::loopfilter::run_reach[0m[36m::[0m[34;1mrun_reach_equals_the_widest_group_it_can_meet[0m
+[32;1m        PASS[0m [   0.003s] ( 24/240) [35;1mrav1d-safe[0m [36msrc::loopfilter::run_reach[0m[36m::[0m[34;1mrun_reach_fits_the_transform_that_selected_it[0m
+[32;1m        PASS[0m [   0.003s] ( 25/240) [35;1mrav1d-safe[0m [36msrc::managed::frame_delay_tests[0m[36m::[0m[34;1mauto_frame_delay_is_two_with_workers_and_one_without[0m
+[32;1m        PASS[0m [   0.004s] ( 26/240) [35;1mrav1d-safe[0m [36msrc::managed::frame_delay_tests[0m[36m::[0m[34;1mdecoder_context_count_follows_the_auto_rule[0m
+[32;1m        PASS[0m [   0.048s] ( 27/240) [35;1mrav1d-safe[0m [36msrc::filmgrain::row_tests[0m[36m::[0m[34;1mfilmgrain_rows_match_scalar_8bit[0m
+[32;1m        PASS[0m [   0.012s] ( 28/240) [35;1mrav1d-safe[0m [36msrc::managed::frame_tile_tests[0m[36m::[0m[34;1mcopied_picture_can_allocate_after_decoder_and_source_drop[0m
+[32;1m        PASS[0m [   0.100s] ( 29/240) [35;1mrav1d-safe[0m [36msrc::managed::frame_tile_tests[0m[36m::[0m[34;1mpicture_policy_is_local_and_survives_decoder_lifetimes[0m
+[32;1m        PASS[0m [   0.118s] ( 30/240) [35;1mrav1d-safe[0m [36msrc::managed::frame_tile_tests[0m[36m::[0m[34;1mserial_and_threaded_decoders_run_concurrently_with_local_policies[0m
+[32;1m        PASS[0m [   0.026s] ( 31/240) [35;1mrav1d-safe[0m [36msrc::managed::frame_tile_tests[0m[36m::[0m[34;1msingle_tile_frames_keep_hull_guards_at_any_thread_count[0m
+[32;1m        PASS[0m [   0.003s] ( 32/240) [35;1mrav1d-safe[0m [36msrc::mc::warp_scalar_tests[0m[36m::[0m[34;1mwarp_put_high_depth_matches_scalar_with_signed_destination_rows[0m
+[32;1m        PASS[0m [   0.249s] ( 33/240) [35;1mrav1d-safe[0m [36msrc::managed::frame_tile_tests[0m[36m::[0m[34;1mparallel_frame_tile_contexts_preserve_frames[0m
+[32;1m        PASS[0m [   0.003s] ( 34/240) [35;1mrav1d-safe[0m [36msrc::mc::warp_scalar_tests[0m[36m::[0m[34;1mwarp_put_matches_scalar_with_negative_destination_rows[0m
+[32;1m        PASS[0m [   0.004s] ( 35/240) [35;1mrav1d-safe[0m [36msrc::msac::tests[0m[36m::[0m[34;1madapt4_matches_reference_at_interval_boundaries_and_short_slices[0m
+[32;1m        PASS[0m [   0.003s] ( 36/240) [35;1mrav1d-safe[0m [36msrc::msac::tests[0m[36m::[0m[34;1madapt4_matches_reference_through_refills_and_preserves_unused_cdf[0m
+[32;1m        PASS[0m [   0.046s] ( 37/240) [35;1mrav1d-safe[0m [36msrc::mc::warp_scalar_tests[0m[36m::[0m[34;1mwarp_put_prep_match_scalar_with_signed_source_rows_and_all_filter_indices[0m
+[32;1m        PASS[0m [   0.003s] ( 38/240) [35;1mrav1d-safe[0m [36msrc::msac::tests[0m[36m::[0m[34;1mcdf_update_preserves_arithmetic_with_baseline_token_disabled[0m
+[32;1m        PASS[0m [   0.003s] ( 39/240) [35;1mrav1d-safe[0m [36msrc::owned_recon[0m[36m::[0m[34;1mordinary_build_keeps_owned_recon_enabled[0m
+[32;1m        PASS[0m [   0.003s] ( 40/240) [35;1mrav1d-safe[0m [36msrc::owned_recon::tests[0m[36m::[0m[34;1ma_row_above_the_band_panics_it_does_not_alias[0m
+[32;1m        PASS[0m [   0.003s] ( 41/240) [35;1mrav1d-safe[0m [36msrc::owned_recon::tests[0m[36m::[0m[34;1ma_row_below_the_band_panics[0m
+[32;1m        PASS[0m [   0.003s] ( 42/240) [35;1mrav1d-safe[0m [36msrc::owned_recon::tests[0m[36m::[0m[34;1mfor_rows_mut_walks_the_bands_own_stride_not_the_pictures[0m
+[32;1m        PASS[0m [   0.003s] ( 43/240) [35;1mrav1d-safe[0m [36msrc::owned_recon::tests[0m[36m::[0m[34;1mtranslation_is_plane_coordinates_minus_origin[0m
+[32;1m        PASS[0m [   0.004s] ( 44/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::cdef::tests_avx512[0m[36m::[0m[34;1mavx512_constrain_matches_avx2_and_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 45/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::ipred::v4x_dir_tests[0m[36m::[0m[34;1mcfl_ac_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 46/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::ipred::v4x_dir_tests[0m[36m::[0m[34;1msmooth_avx512_matches_avx2[0m
+[32;1m        PASS[0m [   0.004s] ( 47/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::ipred::v4x_dir_tests[0m[36m::[0m[34;1mz1_v4x_matches_avx2[0m
+[32;1m        PASS[0m [   0.005s] ( 48/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::ipred::v4x_dir_tests[0m[36m::[0m[34;1mz2_v4x_matches_avx2[0m
+[32;1m        PASS[0m [   0.070s] ( 49/240) [35;1mrav1d-safe[0m [36msrc::msac::tests[0m[36m::[0m[34;1mcdf_update_matches_directional_arithmetic_for_every_u16[0m
+[32;1m        PASS[0m [   0.003s] ( 50/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mprobe_rect4x16_row_pass[0m
+[32;1m        PASS[0m [   0.004s] ( 51/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::ipred::v4x_dir_tests[0m[36m::[0m[34;1mz3_v4x_matches_avx2[0m
+[32;1m        PASS[0m [   0.006s] ( 52/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed16_dispatch_cpu_permutations[0m
+[32;1m        PASS[0m [   0.003s] ( 53/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed8_api_rejects_invalid_views_before_writing[0m
+[32;1m        PASS[0m [   0.004s] ( 54/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed8_dispatch_cpu_permutations[0m
+[32;1m        PASS[0m [   0.011s] ( 55/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.026s] ( 56/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.010s] ( 57/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect16x4_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.015s] ( 58/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect16x8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.011s] ( 59/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect4x16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.008s] ( 60/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect4x8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.008s] ( 61/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect8x4_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.015s] ( 62/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect8x16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.012s] ( 63/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect_dispatch_cpu_permutations[0m
+[32;1m        PASS[0m [   0.010s] ( 64/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_4x4_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.020s] ( 65/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_8x8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.054s] ( 66/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_16x16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.016s] ( 67/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_dispatch_cpu_permutations[0m
+[32;1m        PASS[0m [   0.017s] ( 68/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect16x4_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.029s] ( 69/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect16x8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.017s] ( 70/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect4x16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.014s] ( 71/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect4x8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.013s] ( 72/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect8x4_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 73/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct16_col_pass_i16_matches_existing[0m
+[32;1m        PASS[0m [   0.029s] ( 74/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect8x16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 75/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct16_col_pass_i16_vs_mullo_direct[0m
+[32;1m        PASS[0m [   0.003s] ( 76/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct16_row_pass_i16_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 77/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct16_tx64_cols8_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 78/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct32_row_pass_i16_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 79/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct32_row_pass_i16_simd_sparse_batches[0m
+[32;1m        PASS[0m [   0.003s] ( 80/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct32_tx64_cols8_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 81/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct4_cols_avx512_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 82/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct64_cols8_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 83/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct8_col_pass_i16_matches_i32_col_pass[0m
+[32;1m        PASS[0m [   0.003s] ( 84/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct8_cols_avx512_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 85/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct8_row_pass_i16_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 86/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct_scalar_reference_helpers_are_deterministic[0m
+[32;1m        PASS[0m [   0.003s] ( 87/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_identity_cols_avx512_matches_scalar[0m
+[32;1m        PASS[0m [   0.004s] ( 88/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_itx_mul2x_pack_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 89/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_simd_row_dct16_16rows_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 90/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_simd_row_dct32_16rows_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 91/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_simd_row_dct8_16rows_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 92/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_transpose_8x8_i32_roundtrip[0m
+[32;1m        PASS[0m [   0.003s] ( 93/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_wht4_basic[0m
+[32;1m        PASS[0m [   0.003s] ( 94/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_wht4_token_permutations[0m
+[32;1m        PASS[0m [   0.003s] ( 95/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::mask_parity_tests[0m[36m::[0m[34;1mtest_loopfilter_packed16_exact_span[0m
+[32;1m        PASS[0m [   0.004s] ( 96/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::mask_parity_tests[0m[36m::[0m[34;1mtest_loopfilter_packed16_production_grouping[0m
+[32;1m        PASS[0m [   0.006s] ( 97/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::mask_parity_tests[0m[36m::[0m[34;1mtest_loopfilter_packed6_production_grouping[0m
+[32;1m        PASS[0m [   0.035s] ( 98/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::mask_parity_tests[0m[36m::[0m[34;1mtest_loopfilter_masks_match_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 99/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::tests[0m[36m::[0m[34;1mtest_iclip_diff[0m
+[32;1m        PASS[0m [   0.023s] (100/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::mask_parity_tests_16bpc[0m[36m::[0m[34;1mtest_loopfilter_16bpc_masks_match_scalar[0m
+[32;1m        PASS[0m [   0.003s] (101/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::looprestoration::tests[0m[36m::[0m[34;1mtest_rest_unit_stride[0m
+[32;1m        PASS[0m [   0.003s] (102/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::looprestoration::tests[0m[36m::[0m[34;1mtest_max_restoration_width[0m
+[32;1m        PASS[0m [   0.003s] (103/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::four_tap_vertical_rows[0m[36m::[0m[34;1mfour_tap_vertical_uses_only_active_rows[0m
+[32;1m        PASS[0m [   0.003s] (104/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::reference::tests[0m[36m::[0m[34;1mreference_window_reserves_its_full_hull_including_gaps[0m
+[32;1m        PASS[0m [   0.003s] (105/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::reference::tests[0m[36m::[0m[34;1mwarp_reference_windows_cover_both_strides_and_all_depths[0m
+[32;1m        PASS[0m [   0.003s] (106/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mmask_w_avg_8bpc_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] (107/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mtest_avg_8bpc_avx2_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] (108/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mtest_avg_token_permutations[0m
+[32;1m        PASS[0m [   0.003s] (109/240) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mtest_avg_varying_data[0m
