@@ -693,10 +693,7 @@ pub(crate) fn lf_run_reach(is_y: bool, vmask: &[u32; 3]) -> usize {
 /// discarded tails of 4-byte chunk loads in the 8bpc H kernels. Those loads
 /// now stop at the taps they use, so `after == before == lf_reach(wd)` holds
 /// for every kernel and this window can be symmetric.
-#[cfg_attr(
-    not(any(target_arch = "x86_64", target_arch = "wasm32", test)),
-    allow(dead_code)
-)]
+#[cfg_attr(not(any(target_arch = "x86_64", test)), allow(dead_code))]
 #[inline]
 pub(crate) fn lf_compact_window(
     is_v: bool,

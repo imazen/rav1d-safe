@@ -12,7 +12,6 @@
 use core::arch::wasm32::*;
 
 use crate::include::common::bitdepth::BitDepth;
-use crate::include::dav1d::picture::PicOffset;
 use crate::src::levels::TxfmSize;
 use crate::src::safe_simd::pixel_access::{wasm_loadi32, wasm_storei32};
 use zerocopy::IntoBytes;

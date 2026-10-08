@@ -102,6 +102,7 @@ mod tests {
     use crate::include::common::bitdepth::BitDepth16;
     use crate::include::dav1d::picture::Rav1dPictureDataComponent;
     use crate::src::with_offset::WithOffset;
+    #[cfg(not(feature = "untracked"))]
     use std::panic::{AssertUnwindSafe, catch_unwind};
     #[cfg(target_arch = "x86_64")]
     use zerocopy::IntoBytes;

@@ -15,4 +15,10 @@ The prepared tree passes release all-target clippy on Rust 1.98.1. It also
 passes ARM, WASM and C-FFI compilation and both isolated and eight-thread
 library runs: 115 tests in each run, no failures or ignored tests.
 `run-heavy`: rc=0, 42s, peak-RSS 1.50GiB, min-avail 25169MiB,
-peak-load 4.82. Remote Rust 1.99 results remain the CI gate.
+peak-load 4.82. The follow-up on Rust 1.99 also passes these gates, untracked all-target
+clippy, library clippy with C-FFI and `__probe_sites`, and a Rust 1.89
+library compile check. Its scope completed in 87s with peak-RSS 1.61GiB,
+min-avail 24800MiB and peak-load 4.69. WASM's unused import is removed;
+its unused compact-window helper has the same allowance as other non-x86
+builds. Panic helpers used only by tracked tests are cfg-gated accordingly.
+Remote CI remains the platform gate.
