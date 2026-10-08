@@ -1,0 +1,49 @@
+{
+  "purpose": "Complete x86 downstream gate for archmage e2dbab6",
+  "prepared_snapshot": "76d3dcb05f05d4e7ec9e2e4fc1be2e62d73dc132",
+  "published_base": "20717af6781e767aa19b1753c731bdb8881a5bd8",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "command": "cargo clippy --no-default-features --features bitdepth_8,bitdepth_16,__probe_sites -- -D warnings; just test-all-modes",
+  "tracked": {
+    "selected": 232,
+    "passed": 232,
+    "existing_ignored": 18,
+    "test_seconds": 1133.986,
+    "compiler": "1.98.1"
+  },
+  "untracked": {
+    "selected": 215,
+    "passed": 215,
+    "existing_ignored": 18,
+    "test_seconds": 522.384,
+    "compiler": "1.99.0"
+  },
+  "doctests_per_mode": {
+    "passed": 10,
+    "existing_ignored": 13,
+    "compiler": "1.99.0"
+  },
+  "compiler_note": "A cross version probe updated stable after the tracked executable was compiled; previously preserved benchmark binaries were not rebuilt. Both compiler phases are identified separately.",
+  "run_heavy": "rc=0; 1868s; peak-RSS 1.51GiB; min-avail 17590MiB; peak-load 15.72",
+  "limitations": "Native ARM execution, current-stable lint/MSRV follow-up and updated CI matrix pending. Existing ignored bodies are not claimed as validated. A test-only unused panic import in untracked is being cfg-gated.",
+  "raw_sha256": "9f8d5930200a92070880ee207a6b76ddb054acb8476e4d8c996e55188cb4acb3",
+  "reconstruct": "Concatenate the numbered log parts in order without separators.",
+  "parts": [
+    {
+      "path": "benchmarks/archmage_downstream_2026-10-08.part01.log",
+      "bytes": 27929,
+      "sha256": "d88f57d4daf3ec23a539ebb006ecdbb9f62cde9c913ecaf3a6e682a83d2ebf63"
+    },
+    {
+      "path": "benchmarks/archmage_downstream_2026-10-08.part02.log",
+      "bytes": 27983,
+      "sha256": "329f7d084438dccf278ea2d1c81e670c03d8cd3daaadd258dc480fd84071c071"
+    },
+    {
+      "path": "benchmarks/archmage_downstream_2026-10-08.part03.log",
+      "bytes": 26575,
+      "sha256": "432194ec168646c78b4754c347621fec54795d469868b14e81f30668f5f0f548"
+    }
+  ],
+  "prepared_snapshot_status": "Local jj snapshot, not published; base plus dependency pin and WASM warning-only changes. CI/recipe/doc edits do not enter runtime code."
+}
