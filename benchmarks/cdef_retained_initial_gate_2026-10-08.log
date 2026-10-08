@@ -1,0 +1,150 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=26080MiB :: bash -c just test-cdef-retained && just check-cdef-retained-features
+cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib -E 'test(retained_cdef_tests) | test(padding_parity_tests)' --test-threads 1
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker)
+[1m[92m    Finished[0m `release-thin` profile [optimized + debuginfo] target(s) in 13.24s
+────────────
+[32;1m Nextest run[0m ID [1m0ee24cfe-b4c1-4f10-be85-ca10b0f3bf75[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m4[0m tests across [1m1[0m binary ([1m119[0m tests [33;1mskipped[0m)
+[31;1m     SIGABRT[0m [   1.138s] (1/4) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::retained_cdef_tests[0m[36m::[0m[34;1mretained_cdef_rows_preserve_gaps_and_write_back_at_every_depth[0m
+[31;1m [0m [31;1mstdout[0m [31;1m───[0m
+
+    running 1 test[0m
+[31;1m [0m [31;1mstderr[0m [31;1m───[0m
+
+    thread 'include::dav1d::picture::retained_cdef_tests::retained_cdef_rows_preserve_gaps_and_write_back_at_every_depth' (2731647) panicked at include/dav1d/picture.rs:1311:19:
+    	overlapping DisjointMut:
+     current: &mut _[133..134] on ThreadId(2) at include/dav1d/picture.rs:1311:19
+    existing: &mut _[133..136]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+    thread 'include::dav1d::picture::retained_cdef_tests::retained_cdef_rows_preserve_gaps_and_write_back_at_every_depth' (2731647) panicked at include/dav1d/picture.rs:1311:19:
+    	overlapping DisjointMut:
+     current: &mut _[133..134] on ThreadId(2) at include/dav1d/picture.rs:1311:19
+    existing: &mut _[133..137]
+
+    thread 'include::dav1d::picture::retained_cdef_tests::retained_cdef_rows_preserve_gaps_and_write_back_at_every_depth' (2731647) panicked at include/dav1d/picture.rs:2876:17:
+    assertion failed: matches!(&block.storage, BlockMutStorage::Retained { .. })
+
+    thread 'include::dav1d::picture::retained_cdef_tests::retained_cdef_rows_preserve_gaps_and_write_back_at_every_depth' (2731647) panicked at crates/rav1d-disjoint-mut/src/tracker_shard.rs:1810:9:
+    DisjointMut poisoned: a thread panicked while holding a mutable borrow
+    stack backtrace:
+       0:     0x5c5a15db0e26 - std[c29fa2d9dbea2b0e]::backtrace_rs::backtrace::libunwind::trace
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/../../backtrace/src/backtrace/libunwind.rs:117:9
+       1:     0x5c5a15db0e26 - std[c29fa2d9dbea2b0e]::backtrace_rs::backtrace::trace_unsynchronized::<std[c29fa2d9dbea2b0e]::sys::backtrace::_print_fmt::{closure#1}>
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/../../backtrace/src/backtrace/mod.rs:66:14
+       2:     0x5c5a15db0e26 - std[c29fa2d9dbea2b0e]::sys::backtrace::_print_fmt
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/sys/backtrace.rs:74:9
+       3:     0x5c5a15db0e26 - <<std[c29fa2d9dbea2b0e]::sys::backtrace::BacktraceLock>::print::DisplayBacktrace as core[a9090a07a7fa7517]::fmt::Display>::fmt
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/sys/backtrace.rs:44:26
+       4:     0x5c5a159a441a - <core[a9090a07a7fa7517]::fmt::rt::Argument>::fmt
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/core/src/fmt/rt.rs:152:76
+       5:     0x5c5a159a441a - core[a9090a07a7fa7517]::fmt::write
+       6:     0x5c5a15db74dc - core[a9090a07a7fa7517]::io::write::default_write_fmt::<std[c29fa2d9dbea2b0e]::sys::stdio::unix::Stderr>
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/core/src/io/write.rs:402:11
+       7:     0x5c5a15db74dc - <std[c29fa2d9dbea2b0e]::sys::stdio::unix::Stderr as core[a9090a07a7fa7517]::io::write::Write>::write_fmt
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/core/src/io/write.rs:335:13
+       8:     0x5c5a15d8d6d2 - <std[c29fa2d9dbea2b0e]::sys::backtrace::BacktraceLock>::print
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/sys/backtrace.rs:47:9
+       9:     0x5c5a15d8d6d2 - std[c29fa2d9dbea2b0e]::panicking::default_hook::{closure#0}
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/panicking.rs:292:27
+      10:     0x5c5a15da8d56 - std[c29fa2d9dbea2b0e]::panicking::default_hook
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/panicking.rs:319:9
+      11:     0x5c5a15da91ab - std[c29fa2d9dbea2b0e]::panicking::panic_with_hook
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/panicking.rs:815:13
+      12:     0x5c5a15d8d7b4 - std[c29fa2d9dbea2b0e]::panicking::panic_handler::{closure#0}
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/panicking.rs:681:13
+      13:     0x5c5a15d864f9 - std[c29fa2d9dbea2b0e]::sys::backtrace::__rust_end_short_backtrace::<std[c29fa2d9dbea2b0e]::panicking::panic_handler::{closure#0}, !>
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/sys/backtrace.rs:182:18
+      14:     0x5c5a15d8e42d - __rustc[9d087a5ab36ea756]::rust_begin_unwind
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/panicking.rs:679:5
+      15:     0x5c5a159a4b0c - core[a9090a07a7fa7517]::panicking::panic_fmt
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/core/src/panicking.rs:80:14
+      16:     0x5c5a159bb5ca - <rav1d_disjoint_mut[f4fd1bcf8f9c9c28]::tracker_shard::BorrowTracker>::poisoned_panic
+                                   at /home/lilith/work/zen/rav1d-safe--lead-tracker/crates/rav1d-disjoint-mut/src/tracker_shard.rs:1810:9
+      17:     0x5c5a15cf1ab8 - add_slow<true>
+                                   at /home/lilith/work/zen/rav1d-safe--lead-tracker/crates/rav1d-disjoint-mut/src/tracker_shard.rs:2109:13
+      18:     0x5c5a15d43d85 - add_mut
+                                   at /home/lilith/work/zen/rav1d-safe--lead-tracker/crates/rav1d-disjoint-mut/src/tracker_shard.rs:1865:14
+      19:     0x5c5a15d43d85 - index_mut<rav1d_disjoint_mut::pic_buf::PicBuf, (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>)>
+                                   at /home/lilith/work/zen/rav1d-safe--lead-tracker/crates/rav1d-disjoint-mut/src/lib.rs:1001:25
+      20:     0x5c5a15d43d85 - mut_slice_as<rav1d_disjoint_mut::pic_buf::PicBuf, (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>), u8>
+                                   at /home/lilith/work/zen/rav1d-safe--lead-tracker/crates/rav1d-disjoint-mut/src/lib.rs:1163:26
+      21:     0x5c5a15d43d85 - slice_mut<rav1d_safe::include::common::bitdepth::BitDepth8, (core::ops::range::RangeFrom<usize>, core::ops::range::RangeTo<usize>)>
+                                   at /home/lilith/work/zen/rav1d-safe--lead-tracker/include/dav1d/picture.rs:1371:19
+      22:     0x5c5a15d43d85 - compact_write_back_per_row<rav1d_safe::include::common::bitdepth::BitDepth8>
+                                   at /home/lilith/work/zen/rav1d-safe--lead-tracker/include/dav1d/picture.rs:2028:47
+      23:     0x5c5a15cb56b5 - drop<rav1d_safe::include::common::bitdepth::BitDepth8>
+                                   at /home/lilith/work/zen/rav1d-safe--lead-tracker/include/dav1d/picture.rs:2818:22
+      24:     0x5c5a15d12b62 - drop_glue<rav1d_safe::include::dav1d::picture::BlockMut<rav1d_safe::include::common::bitdepth::BitDepth8>>
+                                   at /home/lilith/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ptr/mod.rs:847:1
+      25:     0x5c5a15d12b62 - check<rav1d_safe::include::common::bitdepth::BitDepth8>
+                                   at /home/lilith/work/zen/rav1d-safe--lead-tracker/include/dav1d/picture.rs:2905:13
+      26:     0x5c5a15d12b62 - retained_cdef_rows_preserve_gaps_and_write_back_at_every_depth
+                                   at /home/lilith/work/zen/rav1d-safe--lead-tracker/include/dav1d/picture.rs:2835:9
+      27:     0x5c5a15d12b62 - {closure#0}
+                                   at /home/lilith/work/zen/rav1d-safe--lead-tracker/include/dav1d/picture.rs:2834:72
+      28:     0x5c5a15d12b62 - call_once<rav1d_safe::include::dav1d::picture::retained_cdef_tests::retained_cdef_rows_preserve_gaps_and_write_back_at_every_depth::{closure_env#0}, ()>
+                                   at /home/lilith/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+      29:     0x5c5a15db836b - <fn() -> core[a9090a07a7fa7517]::result::Result<(), alloc[12ca63220423dfc2]::string::String> as core[a9090a07a7fa7517]::ops::function::FnOnce<()>>::call_once
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/core/src/ops/function.rs:250:5
+      30:     0x5c5a15db836b - test[de0ab365ed256f3]::__rust_begin_short_backtrace::<core[a9090a07a7fa7517]::result::Result<(), alloc[12ca63220423dfc2]::string::String>, fn() -> core[a9090a07a7fa7517]::result::Result<(), alloc[12ca63220423dfc2]::string::String>>
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/test/src/lib.rs:733:18
+      31:     0x5c5a15dc64c1 - <test[de0ab365ed256f3]::types::RunnableTest>::run
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/test/src/types.rs:145:40
+      32:     0x5c5a15dc64c1 - test[de0ab365ed256f3]::run_test_in_process::{closure#0}
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/test/src/lib.rs:756:74
+      33:     0x5c5a15dc64c1 - <core[a9090a07a7fa7517]::panic::unwind_safe::AssertUnwindSafe<test[de0ab365ed256f3]::run_test_in_process::{closure#0}> as core[a9090a07a7fa7517]::ops::function::FnOnce<()>>::call_once
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/core/src/panic/unwind_safe.rs:275:9
+      34:     0x5c5a15dc64c1 - std[c29fa2d9dbea2b0e]::panicking::catch_unwind::do_call::<core[a9090a07a7fa7517]::panic::unwind_safe::AssertUnwindSafe<test[de0ab365ed256f3]::run_test_in_process::{closure#0}>, core[a9090a07a7fa7517]::result::Result<(), alloc[12ca63220423dfc2]::string::String>>
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/panicking.rs:576:43
+      35:     0x5c5a15dc64c1 - std[c29fa2d9dbea2b0e]::panicking::catch_unwind::<core[a9090a07a7fa7517]::result::Result<(), alloc[12ca63220423dfc2]::string::String>, core[a9090a07a7fa7517]::panic::unwind_safe::AssertUnwindSafe<test[de0ab365ed256f3]::run_test_in_process::{closure#0}>>
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/panicking.rs:544:19
+      36:     0x5c5a15dc64c1 - std[c29fa2d9dbea2b0e]::panic::catch_unwind::<core[a9090a07a7fa7517]::panic::unwind_safe::AssertUnwindSafe<test[de0ab365ed256f3]::run_test_in_process::{closure#0}>, core[a9090a07a7fa7517]::result::Result<(), alloc[12ca63220423dfc2]::string::String>>
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/panic.rs:359:14
+      37:     0x5c5a15dc64c1 - test[de0ab365ed256f3]::run_test_in_process
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/test/src/lib.rs:756:27
+      38:     0x5c5a15dc64c1 - test[de0ab365ed256f3]::run_test::{closure#0}
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/test/src/lib.rs:677:43
+      39:     0x5c5a15dc0c34 - test[de0ab365ed256f3]::run_test::{closure#1}
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/test/src/lib.rs:707:41
+      40:     0x5c5a15dc0c34 - std[c29fa2d9dbea2b0e]::sys::backtrace::__rust_begin_short_backtrace::<test[de0ab365ed256f3]::run_test::{closure#1}, ()>
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/sys/backtrace.rs:166:18
+      41:     0x5c5a15dca2e2 - std[c29fa2d9dbea2b0e]::thread::lifecycle::spawn_unchecked::<test[de0ab365ed256f3]::run_test::{closure#1}, ()>::{closure#1}::{closure#0}
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/thread/lifecycle.rs:70:13
+      42:     0x5c5a15dca2e2 - <core[a9090a07a7fa7517]::panic::unwind_safe::AssertUnwindSafe<std[c29fa2d9dbea2b0e]::thread::lifecycle::spawn_unchecked<test[de0ab365ed256f3]::run_test::{closure#1}, ()>::{closure#1}::{closure#0}> as core[a9090a07a7fa7517]::ops::function::FnOnce<()>>::call_once
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/core/src/panic/unwind_safe.rs:275:9
+      43:     0x5c5a15dca2e2 - std[c29fa2d9dbea2b0e]::panicking::catch_unwind::do_call::<core[a9090a07a7fa7517]::panic::unwind_safe::AssertUnwindSafe<std[c29fa2d9dbea2b0e]::thread::lifecycle::spawn_unchecked<test[de0ab365ed256f3]::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()>
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/panicking.rs:576:43
+      44:     0x5c5a15dca2e2 - std[c29fa2d9dbea2b0e]::panicking::catch_unwind::<(), core[a9090a07a7fa7517]::panic::unwind_safe::AssertUnwindSafe<std[c29fa2d9dbea2b0e]::thread::lifecycle::spawn_unchecked<test[de0ab365ed256f3]::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>>
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/panicking.rs:544:19
+      45:     0x5c5a15dca2e2 - std[c29fa2d9dbea2b0e]::panic::catch_unwind::<core[a9090a07a7fa7517]::panic::unwind_safe::AssertUnwindSafe<std[c29fa2d9dbea2b0e]::thread::lifecycle::spawn_unchecked<test[de0ab365ed256f3]::run_test::{closure#1}, ()>::{closure#1}::{closure#0}>, ()>
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/panic.rs:359:14
+      46:     0x5c5a15dca2e2 - std[c29fa2d9dbea2b0e]::thread::lifecycle::spawn_unchecked::<test[de0ab365ed256f3]::run_test::{closure#1}, ()>::{closure#1}
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/thread/lifecycle.rs:68:26
+      47:     0x5c5a15dca2e2 - <std[c29fa2d9dbea2b0e]::thread::lifecycle::spawn_unchecked<test[de0ab365ed256f3]::run_test::{closure#1}, ()>::{closure#1} as core[a9090a07a7fa7517]::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/core/src/ops/function.rs:250:5
+      48:     0x5c5a15db004e - <alloc[12ca63220423dfc2]::boxed::Box<dyn core[a9090a07a7fa7517]::ops::function::FnOnce<(), Output = ()> + core[a9090a07a7fa7517]::marker::Send> as core[a9090a07a7fa7517]::ops::function::FnOnce<()>>::call_once
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/alloc/src/boxed.rs:2320:9
+      49:     0x5c5a15db004e - <std[c29fa2d9dbea2b0e]::sys::thread::unix::Thread>::new::thread_start
+                                   at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/std/src/sys/thread/unix.rs:123:17
+      50:     0x7452268a3dfa - start_thread
+                                   at ./nptl/pthread_create.c:454:8
+      51:     0x7452269375cc - __GI___clone3
+                                   at ./misc/../sysdeps/unix/sysv/linux/x86_64/clone3.S:78:0
+      52:                0x0 - <unknown>
+
+    [0m[31;1mthread 'include::dav1d::picture::retained_cdef_tests::retained_cdef_rows_preserve_gaps_and_write_back_at_every_depth' (2731647) panicked at /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library/core/src/panicking.rs:233:5:[0m
+    [31;1mpanic in a destructor during cleanup[0m
+    thread caused non-unwinding panic. aborting.[0m
+
+    (test [31;1maborted[0m with signal [1m6[0m: SIGABRT)
+
+[32;1m        PASS[0m [   0.005s] (2/4) [35;1mrav1d-safe[0m [36msrc::safe_simd::cdef::padding_parity_tests[0m[36m::[0m[34;1mpadding_16bpc_full_domain_parity[0m
+[32;1m        PASS[0m [   0.004s] (3/4) [35;1mrav1d-safe[0m [36msrc::safe_simd::cdef::padding_parity_tests[0m[36m::[0m[34;1mpadding_8bpc_full_domain_parity[0m
+[32;1m        PASS[0m [   0.004s] (4/4) [35;1mrav1d-safe[0m [36msrc::safe_simd::cdef::padding_parity_tests[0m[36m::[0m[34;1mrect_guard_arms_with_declared_stride[0m
+────────────
+[31;1m     Summary[0m [   1.152s] [1m4[0m tests run: [1m3[0m [32;1mpassed[0m, [1m1[0m [31;1mfailed[0m, [1m119[0m [33;1mskipped[0m
+[31;1m     SIGABRT[0m [   1.138s] (1/4) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::retained_cdef_tests[0m[36m::[0m[34;1mretained_cdef_rows_preserve_gaps_and_write_back_at_every_depth[0m
+[31;1merror[0m: test run failed
+error: recipe `test-cdef-retained` failed on line 48 with exit code 100
+run-heavy: done rc=100 14s | peak-RSS 1.56GiB | min-avail 24443MiB | peak-load 1.94
