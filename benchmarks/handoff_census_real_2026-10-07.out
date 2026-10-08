@@ -1,0 +1,7 @@
+c_aom_real720.ivf            warp=  1471.9 put/prep= 43660.5 compound=  7198.2 blend=     0.0 palette=     0.0 cdef=  7946.4 lr=    56.5   (per frame, 12 frames)
+c_svt_real720.ivf            warp=   471.0 put/prep= 14263.0 compound=  2998.5 blend=     0.0 palette=     0.0 cdef= 12276.0 lr=    13.0   (per frame, 12 frames)
+c_aom_real1080.ivf           warp=  3815.6 put/prep= 88476.5 compound= 14320.0 blend=     0.0 palette=    14.1 cdef= 20518.8 lr=   115.1   (per frame, 12 frames)
+c_svt_real1080.ivf           warp=   774.5 put/prep= 30168.2 compound=  6209.5 blend=     0.0 palette=     0.0 cdef= 29263.2 lr=    22.2   (per frame, 12 frames)
+c_aomnowarp_real1080.ivf     warp=     0.0 put/prep= 86757.3 compound= 13777.2 blend=     0.0 palette=     0.0 cdef= 20356.7 lr=   114.2   (per frame, 12 frames)
+c_aom_real4k.ivf             warp= 30054.0 put/prep=185844.0 compound= 26893.0 blend=     0.0 palette=     0.0 cdef=163985.2 lr=   553.7   (per frame, 6 frames)
+c_svt_real4k.ivf             warp=  3436.7 put/prep=123874.7 compound= 22327.0 blend=     0.0 palette=     0.0 cdef=237920.3 lr=   275.3   (per frame, 6 frames)
