@@ -1,0 +1,44 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=12/16 avail=29556MiB :: just test-conformance-token-tiers
+cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --example decode_md5 --test-threads 1
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/ubuntu/tmp/rav1d-safe-lead-checkout)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 27.27s
+────────────
+[32;1m Nextest run[0m ID [1m332d8f20-b00c-4317-a049-fc628b9f6370[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m1[0m test across [1m1[0m binary
+[31;1m        FAIL[0m [   0.006s] (1/1) [35;1mrav1d-safe::example/decode_md5[0m [36marm_scalar_tests[0m[36m::[0m[34;1mscalar_guard_disables_worker_tokens_and_restores_neon[0m
+[31;1m [0m [31;1mstdout[0m [31;1m───[0m
+
+    running 1 test
+    test arm_scalar_tests::scalar_guard_disables_worker_tokens_and_restores_neon ... FAILED
+
+    failures:
+
+    failures:
+        arm_scalar_tests::scalar_guard_disables_worker_tokens_and_restores_neon
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+    [0m
+[31;1m [0m [31;1mstderr[0m [31;1m───[0m
+
+    thread '<unnamed>' (564065) panicked at examples/decode_md5.rs:311:25:
+    assertion failed: archmage::Arm64::summon().is_none()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+    thread '<unnamed>' (564066) panicked at examples/decode_md5.rs:311:25:
+    assertion failed: archmage::Arm64::summon().is_none()
+
+    thread 'arm_scalar_tests::scalar_guard_disables_worker_tokens_and_restores_neon' (564064) panicked at examples/decode_md5.rs:319:27:
+    called `Result::unwrap()` on an `Err` value: Any { .. }
+
+    thread '<unnamed>' (564067) panicked at examples/decode_md5.rs:311:25:
+    assertion failed: archmage::Arm64::summon().is_none()
+
+    [0m[31;1mthread '<unnamed>' (564068) panicked at examples/decode_md5.rs:311:25:[0m
+    [31;1massertion failed: archmage::Arm64::summon().is_none()[0m[0m
+
+────────────
+[31;1m     Summary[0m [   0.008s] [1m1[0m test run: [1m0[0m [32;1mpassed[0m, [1m1[0m [31;1mfailed[0m, [1m0[0m [33;1mskipped[0m
+[31;1m        FAIL[0m [   0.006s] (1/1) [35;1mrav1d-safe::example/decode_md5[0m [36marm_scalar_tests[0m[36m::[0m[34;1mscalar_guard_disables_worker_tokens_and_restores_neon[0m
+[31;1merror[0m: test run failed
+error: recipe `test-conformance-token-tiers` failed on line 88 with exit code 100
+run-heavy: done rc=100 27s | peak-RSS 0.98GiB | min-avail 28863MiB | peak-load 3.95

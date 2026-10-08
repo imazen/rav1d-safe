@@ -1,0 +1,65 @@
+{
+  "date": "2026-10-08",
+  "cpu": "Neoverse-N1",
+  "rustc": "1.99.0",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "source_sha256": "1a057477f5646993dce49f63ff9fb0ba548ebd8ec8d3838b82dee6e7fb6f8e68",
+  "command": "just test-conformance-token-tiers",
+  "oracle": "Four concurrent workers each query NEON/V2/V3 tokens1000 times under scalar guard; tokens unavailable until decoder-scope guard is dropped, then NEON available again.",
+  "results": [
+    {
+      "stage": "guard",
+      "passed": 1,
+      "skipped": 0,
+      "run_heavy": {
+        "rc": 0,
+        "seconds": 42,
+        "peak_rss_gib": 0.98,
+        "min_available_mib": 27787,
+        "peak_load": 6.71
+      }
+    },
+    {
+      "stage": "mutation",
+      "mutation": "omit NEON token-disable call, keep assertions",
+      "failed": 1,
+      "run_heavy": {
+        "rc": 100,
+        "seconds": 27,
+        "peak_rss_gib": 0.98,
+        "min_available_mib": 28863,
+        "peak_load": 3.95
+      }
+    },
+    {
+      "stage": "restored",
+      "passed": 1,
+      "skipped": 0,
+      "run_heavy": {
+        "rc": 0,
+        "seconds": 28,
+        "peak_rss_gib": 0.98,
+        "min_available_mib": 28919,
+        "peak_load": 3.67
+      }
+    }
+  ],
+  "limits": "Native ARM guard and negative mutation only; x86 tests, decoder build and scalar sidecar matrix pending. Production managed CPU-mask behavior is unchanged.",
+  "logs": [
+    {
+      "path": "benchmarks/arm-token-tier-guard_2026-10-08.log",
+      "sha256": "a7f494fd60422a3944f8000822a353e31619f856090ef3ba69bfe914a5356a39",
+      "bytes": 7435
+    },
+    {
+      "path": "benchmarks/arm-token-tier-mutation_2026-10-08.log",
+      "sha256": "1ff8cd9716716318d6a73961d86c93f688e35294fe807714404881c9a7121d92",
+      "bytes": 2646
+    },
+    {
+      "path": "benchmarks/arm-token-tier-restored_2026-10-08.log",
+      "sha256": "7db81bbe992f4ce53a7e372cf827e3c0aa3db7d48d8a331dfedf5ebb38a92dc0",
+      "bytes": 1118
+    }
+  ]
+}
