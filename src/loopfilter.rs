@@ -1739,6 +1739,47 @@ mod compact_window {
     /// set) on every group of the run.
     const CHROMA_MASKS: [[u32; 3]; 2] = [[0xffff_ffff, 0, 0], [0xffff_ffff, 0xffff_ffff, 0]];
 
+    /// Run `body` in a CHILD PROCESS where no decoder has latched tile
+    /// threading, and check that it reached its end. `name` is the calling
+    /// test's full path (for `--exact`); `marker` is a line only the body
+    /// prints, checked instead of the bare exit status because libtest exits
+    /// 0 when a filter matches nothing.
+    ///
+    /// `TILE_THREADING` is a monotone process-global that other tests in this
+    /// binary latch (`filmgrain` row tests, every multi-threaded
+    /// `rav1d_open`); once on, the standing extent ceiling rejects the 384 B
+    /// row borrow these tests take at a `src/loopfilter.rs` site (ceiling 32
+    /// B) before the window check runs. Same idiom as
+    /// `row_guard_policy_tests::in_child_process` in `picture.rs`.
+    #[cfg(not(feature = "untracked"))]
+    fn in_child_process(name: &str, marker: &str, body: impl FnOnce()) {
+        if std::env::var_os("RAV1D_LF_WINDOW_CHILD").is_some() {
+            assert!(
+                !crate::include::dav1d::picture::tile_threading_active(),
+                "precondition: a fresh process, or this tests the other branch"
+            );
+            body();
+            println!("{marker}");
+            return;
+        }
+        let exe = std::env::current_exe().expect("test binary path");
+        let out = std::process::Command::new(exe)
+            .args(["--exact", name, "--nocapture"])
+            .env("RAV1D_LF_WINDOW_CHILD", "1")
+            .output()
+            .expect("re-exec the test binary");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains(marker),
+            "the child process did not reach the assertions (renamed test? \
+             libtest exits 0 on an empty filter). status={:?}\nstdout:\n{}\nstderr:\n{}",
+            out.status,
+            stdout,
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(out.status.success(), "child failed:\n{stdout}");
+    }
+
     /// The column analogue of [`run_reach::run_reach_fits_the_transform_that_selected_it`]:
     /// a run's reach never exceeds the columns the transform that selected it
     /// leaves to the right of the edge. That transform lies inside the coded
@@ -1817,38 +1858,50 @@ mod compact_window {
     #[cfg(not(feature = "untracked"))]
     #[test]
     fn issue_524_h_window_does_not_collide_with_the_next_rows_stitch() {
-        use crate::include::common::bitdepth::BitDepth8;
-        use crate::include::dav1d::picture::Rav1dPictureDataComponent;
-        use crate::src::with_offset::WithOffset;
-        use std::panic::{self, AssertUnwindSafe};
+        in_child_process(
+            "src::loopfilter::compact_window::issue_524_h_window_does_not_collide_with_the_next_rows_stitch",
+            "ISSUE524_STITCH_CHILD_RAN",
+            || {
+                use crate::include::common::bitdepth::BitDepth8;
+                use crate::include::dav1d::picture::Rav1dPictureDataComponent;
+                use crate::src::with_offset::WithOffset;
+                use std::panic::{self, AssertUnwindSafe};
 
-        // The row the next superblock row's stitch writes.
-        let next_sbrow = ROW0 + MAX_ITER * 4;
-        assert!(next_sbrow < ROWS);
+                // The row the next superblock row's stitch writes.
+                let next_sbrow = ROW0 + MAX_ITER * 4;
+                assert!(next_sbrow < ROWS);
 
-        for vmask in CHROMA_MASKS {
-            let mut px = vec![0u8; STRIDE * ROWS];
-            let pic = Rav1dPictureDataComponent::wrap_buf::<BitDepth8>(&mut px, STRIDE);
-            let (w, h, start, _base) =
-                lf_compact_window(false, false, &vmask, MAX_ITER, ROW0 * STRIDE + COL, STRIDE);
-            let held = pic.slice_mut::<BitDepth8, _>((next_sbrow * STRIDE.., ..STRIDE));
-            let at = WithOffset {
-                data: &pic,
-                offset: start,
-            };
-            let prev = panic::take_hook();
-            panic::set_hook(Box::new(|_| {}));
-            let read = panic::catch_unwind(AssertUnwindSafe(|| {
-                at.compact_read_per_row::<BitDepth8>(w, h);
-            }));
-            panic::set_hook(prev);
-            drop(held);
-            assert!(
-                read.is_ok(),
-                "mask={vmask:08x?}: the H compact read window [{start}..) {w}x{h} \
-                 overlaps the mutable borrow of picture row {next_sbrow}"
-            );
-        }
+                for vmask in CHROMA_MASKS {
+                    let mut px = vec![0u8; STRIDE * ROWS];
+                    let pic = Rav1dPictureDataComponent::wrap_buf::<BitDepth8>(&mut px, STRIDE);
+                    let (w, h, start, _base) = lf_compact_window(
+                        false,
+                        false,
+                        &vmask,
+                        MAX_ITER,
+                        ROW0 * STRIDE + COL,
+                        STRIDE,
+                    );
+                    let held = pic.slice_mut::<BitDepth8, _>((next_sbrow * STRIDE.., ..STRIDE));
+                    let at = WithOffset {
+                        data: &pic,
+                        offset: start,
+                    };
+                    let prev = panic::take_hook();
+                    panic::set_hook(Box::new(|_| {}));
+                    let read = panic::catch_unwind(AssertUnwindSafe(|| {
+                        at.compact_read_per_row::<BitDepth8>(w, h);
+                    }));
+                    panic::set_hook(prev);
+                    drop(held);
+                    assert!(
+                        read.is_ok(),
+                        "mask={vmask:08x?}: the H compact read window [{start}..) {w}x{h} \
+                         overlaps the mutable borrow of picture row {next_sbrow}"
+                    );
+                }
+            },
+        );
     }
 
     /// Liveness: the harness above CAN see an overlap, so a passing run means
@@ -1860,32 +1913,38 @@ mod compact_window {
     #[cfg(not(feature = "untracked"))]
     #[test]
     fn issue_524_harness_detects_a_window_that_does_lap() {
-        use crate::include::common::bitdepth::BitDepth8;
-        use crate::include::dav1d::picture::Rav1dPictureDataComponent;
-        use crate::src::with_offset::WithOffset;
-        use std::panic::{self, AssertUnwindSafe};
+        in_child_process(
+            "src::loopfilter::compact_window::issue_524_harness_detects_a_window_that_does_lap",
+            "ISSUE524_LAP_CHILD_RAN",
+            || {
+                use crate::include::common::bitdepth::BitDepth8;
+                use crate::include::dav1d::picture::Rav1dPictureDataComponent;
+                use crate::src::with_offset::WithOffset;
+                use std::panic::{self, AssertUnwindSafe};
 
-        let next_sbrow = ROW0 + MAX_ITER * 4;
-        let mut px = vec![0u8; STRIDE * ROWS];
-        let pic = Rav1dPictureDataComponent::wrap_buf::<BitDepth8>(&mut px, STRIDE);
-        // The pre-fix chroma H window: 3 before the edge, 5 after.
-        let (w, h, start) = (3 + 5, MAX_ITER * 4, ROW0 * STRIDE + COL - 3);
-        let held = pic.slice_mut::<BitDepth8, _>((next_sbrow * STRIDE.., ..STRIDE));
-        let at = WithOffset {
-            data: &pic,
-            offset: start,
-        };
-        let prev = panic::take_hook();
-        panic::set_hook(Box::new(|_| {}));
-        let read = panic::catch_unwind(AssertUnwindSafe(|| {
-            at.compact_read_per_row::<BitDepth8>(w, h);
-        }));
-        panic::set_hook(prev);
-        drop(held);
-        assert!(
-            read.is_err(),
-            "the pre-#524 window [{start}..) {w}x{h} laps into picture row \
-             {next_sbrow} but the guards did not report it"
+                let next_sbrow = ROW0 + MAX_ITER * 4;
+                let mut px = vec![0u8; STRIDE * ROWS];
+                let pic = Rav1dPictureDataComponent::wrap_buf::<BitDepth8>(&mut px, STRIDE);
+                // The pre-fix chroma H window: 3 before the edge, 5 after.
+                let (w, h, start) = (3 + 5, MAX_ITER * 4, ROW0 * STRIDE + COL - 3);
+                let held = pic.slice_mut::<BitDepth8, _>((next_sbrow * STRIDE.., ..STRIDE));
+                let at = WithOffset {
+                    data: &pic,
+                    offset: start,
+                };
+                let prev = panic::take_hook();
+                panic::set_hook(Box::new(|_| {}));
+                let read = panic::catch_unwind(AssertUnwindSafe(|| {
+                    at.compact_read_per_row::<BitDepth8>(w, h);
+                }));
+                panic::set_hook(prev);
+                drop(held);
+                assert!(
+                    read.is_err(),
+                    "the pre-#524 window [{start}..) {w}x{h} laps into picture row \
+                     {next_sbrow} but the guards did not report it"
+                );
+            },
         );
     }
 }

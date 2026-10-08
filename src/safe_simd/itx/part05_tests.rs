@@ -8,6 +8,7 @@ mod tests {
 
     #[test]
     fn test_wht4_basic() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         // WHT is used for lossless mode - test basic functionality
         if !is_x86_feature_detected!("avx2") {
             return;
@@ -34,6 +35,7 @@ mod tests {
     fn test_wht4_token_permutations() {
         use archmage::testing::{CompileTimePolicy, for_each_token_permutation};
 
+        let _lock = crate::src::safe_simd::token_test_lock();
         // Compute reference output once with tokens fully enabled
         let reference = {
             let Some(token) = crate::src::cpu::summon_avx2() else {
@@ -129,6 +131,7 @@ mod tests {
     /// arithmetic dav1d's C reference performs — match it bit-exactly.
     #[test]
     fn test_itx_mul2x_pack_matches_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx2() else {
             eprintln!("Skipping: AVX2 not available");
             return;
@@ -230,6 +233,7 @@ mod tests {
     /// input — i.e. `out[y*8 + x] == in[x*8 + y]` for all (x, y).
     #[test]
     fn test_transpose_8x8_i32_roundtrip() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx2() else {
             eprintln!("Skipping: AVX2 not available");
             return;
@@ -430,6 +434,7 @@ mod tests {
     /// to the function body must keep this test green.
     #[test]
     fn test_dct8_row_pass_i16_simd_matches_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx2() else {
             eprintln!("Skipping: AVX2 not available");
             return;
@@ -492,6 +497,7 @@ mod tests {
     /// now uses dct8_col_pass_i16) and the scalar reference, comparing dst output.
     #[test]
     fn test_dct8_col_pass_i16_matches_i32_col_pass() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx2() else {
             eprintln!("Skipping: AVX2 not available");
             return;
@@ -640,6 +646,7 @@ mod tests {
     /// pmaddwd column pass.
     #[test]
     fn test_dct16_col_pass_i16_matches_existing() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx2() else {
             eprintln!("Skipping: AVX2 not available");
             return;
@@ -764,6 +771,7 @@ mod tests {
 
     #[test]
     fn test_dct16_col_pass_i16_vs_mullo_direct() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx2() else {
             eprintln!("Skipping: AVX2 not available");
             return;
@@ -843,6 +851,7 @@ mod tests {
     /// `run_scalar_dct16_per_row` across a range of seeded inputs.
     #[test]
     fn test_dct16_row_pass_i16_simd_matches_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx2() else {
             eprintln!("Skipping: AVX2 not available");
             return;
@@ -912,6 +921,7 @@ mod tests {
     /// `run_scalar_dct32_per_row` across a range of seeded inputs.
     #[test]
     fn test_dct32_row_pass_i16_simd_matches_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx2() else {
             eprintln!("Skipping: AVX2 not available");
             return;
@@ -968,6 +978,7 @@ mod tests {
     /// per-row reference, which transforms the zero rows to zero.
     #[test]
     fn test_dct32_row_pass_i16_simd_sparse_batches() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx2() else {
             eprintln!("Skipping: AVX2 not available");
             return;
@@ -1006,6 +1017,7 @@ mod tests {
     /// run the AVX-512 16-row dct8 pass, compare each row against scalar dct8.
     #[test]
     fn test_simd_row_dct8_16rows_matches_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx512() else {
             eprintln!("Skipping: AVX-512 not available");
             return;
@@ -1070,6 +1082,7 @@ mod tests {
     /// dct16 16-row pass: 16x16 column-major input, full block in one call.
     #[test]
     fn test_simd_row_dct16_16rows_matches_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx512() else {
             eprintln!("Skipping: AVX-512 not available");
             return;
@@ -1118,6 +1131,7 @@ mod tests {
     /// compared against scalar dct32 per-row over 16 rows.
     #[test]
     fn test_simd_row_dct32_16rows_matches_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx512() else {
             eprintln!("Skipping: AVX-512 not available");
             return;
@@ -1184,6 +1198,7 @@ mod tests {
     /// (the Nx8 transform widths it is wired into) across 8 seeds. Bit-exact.
     #[test]
     fn test_dct8_cols_avx512_matches_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx512() else {
             eprintln!("Skipping: AVX-512 not available");
             return;
@@ -1267,6 +1282,7 @@ mod tests {
     /// column against the scalar `rav1d_inv_dct4_1d_c` oracle. 8 seeds, bit-exact.
     #[test]
     fn test_dct4_cols_avx512_matches_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx512() else {
             eprintln!("Skipping: AVX-512 not available");
             return;
@@ -1345,6 +1361,7 @@ mod tests {
     /// `identity16_cols_avx512` (2*in + ((in*1697+1024)>>11)).
     #[test]
     fn test_identity_cols_avx512_matches_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx512() else {
             eprintln!("Skipping: AVX-512 not available");
             return;
@@ -1481,6 +1498,7 @@ mod tests {
     /// Stage-bisect test: `dct16_1d_tx64_cols8` vs scalar `dct16_1d_tx64`.
     #[test]
     fn test_dct16_tx64_cols8_matches_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx2() else {
             eprintln!("Skipping: AVX2 not available");
             return;
@@ -1532,6 +1550,7 @@ mod tests {
     /// Stage-bisect test: `dct32_1d_tx64_cols8` vs scalar `dct32_1d_tx64`.
     #[test]
     fn test_dct32_tx64_cols8_matches_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx2() else {
             eprintln!("Skipping: AVX2 not available");
             return;
@@ -1585,6 +1604,7 @@ mod tests {
     /// Covers the full tx64 chain: dct64 -> dct32_tx64 -> dct16_tx64 -> dct8.
     #[test]
     fn test_dct64_cols8_matches_scalar() {
+        let _lock = crate::src::safe_simd::token_test_lock();
         let Some(token) = crate::src::cpu::summon_avx2() else {
             eprintln!("Skipping: AVX2 not available");
             return;
