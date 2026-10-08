@@ -1,7 +1,7 @@
 # Fused small-block MC experiment
 
-Missing: completed whole-clip identity/error checks, full decoder/sidecar
-gates and matched tracked/untracked A/A plus A/B timing.
+Missing: full decoder/sidecar gates, standard MC signed-destination validation
+and completed matched tracked/untracked A/A plus A/B timing.
 No throughput improvement is claimed.
 
 This isolated child shares the published signed warp destination repair
@@ -82,4 +82,4 @@ and eight static word multiply-adds. `just dump-simd-codegen` reproduces
 each exact address range; executable and raw-output hashes are recorded.
 These are static occurrences, not executed instruction counts, call
 frequency or measured savings from avoiding the pooled intermediate.
-The whole-clip controlled timing matrix remains pending.
+The whole-clip controlled timing matrix is running.
