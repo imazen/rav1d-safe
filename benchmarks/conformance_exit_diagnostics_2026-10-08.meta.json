@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-08",
+  "base_revision": "770fc6d6e6cd6e8c4e3bcda0bf079b1bd4aa6912",
+  "command": "just test-conformance-runner",
+  "oracle": "Fake decoder exit 17 and timeout exit 124 must reach the failing caller diagnostic; unchanged 120-second deadline. All previous boundary tests retained.",
+  "before": "Two diagnostic assertions fail.",
+  "after": "All seven tests pass.",
+  "logs": [
+    {
+      "path": "benchmarks/conformance_exit_diagnostics_before_2026-10-08.log",
+      "bytes": 1651,
+      "sha256": "96f33d4b54f8a9fb46b38df622d1b0867ad0579f3b23e283d645bc7c02499881"
+    },
+    {
+      "path": "benchmarks/conformance_exit_diagnostics_after_2026-10-08.log",
+      "bytes": 105,
+      "sha256": "52f71f740f285bba0652c149a940ace2b11d022f192d9411a1176fd21640213e"
+    }
+  ]
+}

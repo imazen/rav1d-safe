@@ -68,6 +68,14 @@ class ConformanceRunnerTests(unittest.TestCase):
         result = self.run_gate(exit_code=17)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("fail=1", result.stdout)
+        self.assertIn("decoder exit=17", result.stdout)
+
+    def test_timeout_status_reaches_caller(self):
+        self.write_manifest()
+        result = self.run_gate(exit_code=124)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("decoder exit=124", result.stdout)
+        self.assertIn("deadline=120s", result.stdout)
 
     def test_incomplete_selection_fails(self):
         self.write_manifest()

@@ -1,0 +1,21 @@
+F.....F
+======================================================================
+FAIL: test_decoder_failure_reaches_caller (__main__.ConformanceRunnerTests.test_decoder_failure_reaches_caller)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/lilith/work/zen/rav1d-safe/tools/test_conformance_runner.py", line 71, in test_decoder_failure_reaches_caller
+    self.assertIn("decoder exit=17", result.stdout)
+AssertionError: 'decoder exit=17' not found in 'Conformance: level=native threads=1 delay=0 binary=/home/lilith/tmp/tmph7xkdnal/decoder manifest=/home/lilith/tmp/tmph7xkdnal/vectors.tsv\nFAIL: 8-bit/data/fixture\n\nSUMMARY level=native threads=1 delay=0 total=1 pass=0 fail=1 errors=0 excluded=0\n'
+
+======================================================================
+FAIL: test_timeout_status_reaches_caller (__main__.ConformanceRunnerTests.test_timeout_status_reaches_caller)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/lilith/work/zen/rav1d-safe/tools/test_conformance_runner.py", line 77, in test_timeout_status_reaches_caller
+    self.assertIn("decoder exit=124", result.stdout)
+AssertionError: 'decoder exit=124' not found in 'Conformance: level=native threads=1 delay=0 binary=/home/lilith/tmp/tmpn2h3w_5n/decoder manifest=/home/lilith/tmp/tmpn2h3w_5n/vectors.tsv\nFAIL: 8-bit/data/fixture\n\nSUMMARY level=native threads=1 delay=0 total=1 pass=0 fail=1 errors=0 excluded=0\n'
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.678s
+
+FAILED (failures=2)

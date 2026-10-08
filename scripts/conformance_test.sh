@@ -87,8 +87,9 @@ run_tests() {
         if output=$(timeout 120 "$BINARY" "${args[@]}" 2>&1); then
             pass=$((pass + 1))
         else
+            local decoder_status="$?"
             fail=$((fail + 1))
-            echo "FAIL: $bitdepth/$category/$test_name"
+            echo "FAIL: $bitdepth/$category/$test_name (decoder exit=$decoder_status; deadline=120s)"
             echo "$output"
             if $STOP_ON_FAIL; then
                 echo "Stopped on first failure: pass=$pass fail=$fail errors=$error total=$total"

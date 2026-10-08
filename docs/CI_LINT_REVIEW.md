@@ -127,3 +127,14 @@ records the independent four-worker check.
 are running. Earlier [CPU-mask selections](../benchmarks/arm_cpu_mask_sidecars_2026-10-08.meta.json)
 pass24/24 legs but establish no fully scalar ARM sidecar claim. New x86
 sidecar executions remain candidate-specific work.
+
+A failed sidecar invocation now prints the decoder exit status and the unchanged
+120-second deadline. Fake-decoder controls for exit 17 and timeout status 124
+fail before this diagnostic change; all seven runner boundary tests pass
+afterward. [Before/after logs](../benchmarks/conformance_exit_diagnostics_2026-10-08.meta.json)
+make a timeout distinguishable from a reported pixel mismatch.
+
+Published revision `770fc6d6` passed all 33 jobs in the
+[complete CI run](https://github.com/imazen/rav1d-safe/actions/runs/37738399273),
+verified on 2026-10-08. The unpublished ARM signed-source changes remain
+subject to their separate decoder and sidecar gates.
