@@ -100,3 +100,30 @@ explicitly. `just build-bench-modes <tracked-target> <untracked-target>` expands
 the paired generic release commands; use fresh target directories to preserve
 reference binaries. Its command expansion is checked; each future candidate's
 actual builds and timing need their own evidence.
+
+ARM CPU masks do not disable every baseline NEON dispatcher. The x86 mask
+also leaves plain msac incants and autoversioned coefficient decoding free
+to select higher tokens. CPU-mask labels therefore do not prove fallback
+tier coverage. See [the existing ARM applicability review](X64_APPLICABILITY.md#a6-cpulevelscalar-does-not-disable-safe-simd-measurement-infrastructure-gap).
+
+The `decode_md5` example now holds archmage's token-testing lock and caps
+x86 tokens for scalar/v2/v3/v4. On ARM scalar selection it disables the NEON
+token and its descendants. Guards remain alive until decoder workers join;
+pre-decode assertions check the requested cap. Production managed CPU-mask
+behavior remains unchanged.
+
+`just test-conformance-token-tiers` passes natively on x86 and ARM. Removing
+token disabling makes each unchanged worker oracle fail; exact restoration
+passes again. CI calls this example gate on both conformance architectures.
+Release all-target clippy passes in both modes, and ARM cross-check passes.
+[Guard, mutation, lint and build evidence](../benchmarks/conformance_token_guards_2026-10-08.meta.json)
+records the x86 13/12/12-second scopes (1.29/1.29/1.30GiB peak RSS), 14-second
+lint scope (0.96GiB) and 127-second ARM binary build (0.91GiB).
+[Native ARM guard evidence](../benchmarks/arm_token_guard_2026-10-08.meta.json)
+records the independent four-worker check.
+
+`just conformance-scalar-modes <tracked-binary> <untracked-binary>` selects
+803 sidecars at 1/2/4/8 workers in both modes. Those enforced ARM scalar legs
+are running. Earlier [CPU-mask selections](../benchmarks/arm_cpu_mask_sidecars_2026-10-08.meta.json)
+pass24/24 legs but establish no fully scalar ARM sidecar claim. New x86
+sidecar executions remain candidate-specific work.

@@ -1,8 +1,9 @@
 # Archmage 0.9.30 update review
 
 The native ARM full suites, doctests and explicit integration selection are
-green with the local signed-source repair. Its separate all-tier/all-worker
-803-vector sidecar matrix and publication remain pending. The updated remote CI matrix
+green with the local signed-source repair. Its separate CPU-mask
+sidecar matrix passes24/24 legs. The explicit token-disabled scalar
+supplement is running; source publication remains pending. The updated remote CI matrix
 passes all 33 jobs on `ae6c26d8`: [CI run](https://github.com/imazen/rav1d-safe/actions/runs/37732635299).
 The manifest selects full revision
 `e2dbab66ef5aa08f8e23ed05248e7d1217f58475` for both normal and dev

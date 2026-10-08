@@ -1,0 +1,11 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=26087MiB :: just test-conformance-token-tiers
+cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --example decode_md5 --test-threads 1
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 11.95s
+────────────
+[32;1m Nextest run[0m ID [1m42adb1e1-d9fc-4f06-9bbd-37e4608bcd7d[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m1[0m test across [1m1[0m binary
+[32;1m        PASS[0m [   0.003s] (1/1) [35;1mrav1d-safe::example/decode_md5[0m [36mx86_tier_tests[0m[36m::[0m[34;1mtier_caps_apply_to_workers_and_restore_baseline_tokens[0m
+────────────
+[32;1m     Summary[0m [   0.003s] [1m1[0m test run: [1m1[0m [32;1mpassed[0m, [1m0[0m [33;1mskipped[0m
+run-heavy: done rc=0 12s | peak-RSS 1.30GiB | min-avail 25143MiB | peak-load 0.43

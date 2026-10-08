@@ -184,6 +184,146 @@ fn decode_frames(
     }
 }
 
+// ARM's CPU mask currently leaves several baseline NEON dispatchers active.
+// The sidecar oracle must select their real scalar fallback as well. Example
+// builds enable archmage's testable_dispatch dev dependency; keep its lock and
+// disable state alive until every decoder worker has joined.
+#[cfg(target_arch = "aarch64")]
+struct ArmScalarGuard {
+    _lock: archmage::testing::TokenTestGuard,
+}
+
+#[cfg(target_arch = "aarch64")]
+impl ArmScalarGuard {
+    fn new() -> Self {
+        let lock = archmage::testing::lock_token_testing();
+        archmage::Arm64::dangerously_disable_token_process_wide(true)
+            .expect("ARM scalar oracle needs testable_dispatch");
+        Self { _lock: lock }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+impl Drop for ArmScalarGuard {
+    fn drop(&mut self) {
+        archmage::Arm64::dangerously_disable_token_process_wide(false)
+            .expect("restore ARM tokens after scalar oracle");
+    }
+}
+
+// The x86 mask gates pixel DSP, but plain msac incants and autoversioned
+// coefficient decoding select tokens independently. Cap those tokens too so
+// the sidecar oracle exercises the requested fallback tier throughout decoding.
+#[cfg(target_arch = "x86_64")]
+struct X86TierGuard {
+    level: rav1d_safe::src::managed::CpuLevel,
+    _lock: archmage::testing::TokenTestGuard,
+}
+
+#[cfg(target_arch = "x86_64")]
+impl X86TierGuard {
+    fn for_level(level: rav1d_safe::src::managed::CpuLevel) -> Option<Self> {
+        use rav1d_safe::src::managed::CpuLevel as L;
+        let level = match level {
+            L::Native => return None,
+            L::X86V2 | L::X86V3 | L::X86V4 => level,
+            _ => L::Scalar,
+        };
+        let lock = archmage::testing::lock_token_testing();
+        Self::set_disabled(level, true);
+        Some(Self { level, _lock: lock })
+    }
+
+    fn set_disabled(level: rav1d_safe::src::managed::CpuLevel, disabled: bool) {
+        use rav1d_safe::src::managed::CpuLevel as L;
+        let result = match level {
+            L::X86V2 => archmage::X64V3Token::dangerously_disable_token_process_wide(disabled),
+            L::X86V3 => archmage::X64V4Token::dangerously_disable_token_process_wide(disabled),
+            L::X86V4 => {
+                archmage::Avx512Fp16Token::dangerously_disable_token_process_wide(disabled)
+                    .expect("x86 tier oracle needs testable_dispatch");
+                archmage::X64V4xToken::dangerously_disable_token_process_wide(disabled)
+            }
+            _ => archmage::X64V1Token::dangerously_disable_token_process_wide(disabled),
+        };
+        result.expect("x86 tier oracle needs testable_dispatch");
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+impl Drop for X86TierGuard {
+    fn drop(&mut self) {
+        Self::set_disabled(self.level, false);
+    }
+}
+
+#[cfg(all(test, target_arch = "x86_64"))]
+mod x86_tier_tests {
+    use super::X86TierGuard;
+    use archmage::SimdToken;
+    use rav1d_safe::src::managed::CpuLevel as L;
+
+    #[test]
+    fn tier_caps_apply_to_workers_and_restore_baseline_tokens() {
+        for level in [L::Scalar, L::X86V2, L::X86V3, L::X86V4] {
+            let guard = X86TierGuard::for_level(level).unwrap();
+            let workers: Vec<_> = (0..4)
+                .map(|_| {
+                    std::thread::spawn(move || {
+                        for _ in 0..1000 {
+                            if level == L::Scalar {
+                                assert!(archmage::X64V1Token::summon().is_none());
+                            } else {
+                                assert!(archmage::X64V1Token::summon().is_some());
+                            }
+                            if matches!(level, L::Scalar | L::X86V2) {
+                                assert!(archmage::X64V3Token::summon().is_none());
+                            }
+                            if level != L::X86V4 {
+                                assert!(archmage::X64V4Token::summon().is_none());
+                            }
+                            assert!(archmage::X64V4xToken::summon().is_none());
+                            assert!(archmage::Avx512Fp16Token::summon().is_none());
+                        }
+                    })
+                })
+                .collect();
+            for worker in workers {
+                worker.join().unwrap();
+            }
+            drop(guard);
+            assert!(archmage::X64V1Token::summon().is_some());
+        }
+    }
+}
+
+#[cfg(all(test, target_arch = "aarch64"))]
+mod arm_scalar_tests {
+    use super::ArmScalarGuard;
+    use archmage::SimdToken;
+
+    #[test]
+    fn scalar_guard_disables_worker_tokens_and_restores_neon() {
+        let guard = ArmScalarGuard::new();
+        let workers: Vec<_> = (0..4)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    for _ in 0..1000 {
+                        assert!(archmage::Arm64::summon().is_none());
+                        assert!(archmage::Arm64V2Token::summon().is_none());
+                        assert!(archmage::Arm64V3Token::summon().is_none());
+                    }
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        drop(guard);
+        assert!(archmage::Arm64::summon().is_some());
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -315,6 +455,33 @@ fn main() {
     }
     if let Some(ft) = decode_frame_type {
         settings.decode_frame_type = ft;
+    }
+    #[cfg(target_arch = "aarch64")]
+    let _arm_scalar_guard = (settings.cpu_level == rav1d_safe::src::managed::CpuLevel::Scalar)
+        .then(ArmScalarGuard::new);
+    #[cfg(target_arch = "x86_64")]
+    let _x86_tier_guard = X86TierGuard::for_level(settings.cpu_level);
+    #[cfg(target_arch = "x86_64")]
+    {
+        use archmage::SimdToken;
+        use rav1d_safe::src::managed::CpuLevel as L;
+        match settings.cpu_level {
+            L::Native => {}
+            L::X86V4 => {
+                assert!(archmage::X64V4xToken::summon().is_none());
+                assert!(archmage::Avx512Fp16Token::summon().is_none());
+            }
+            L::X86V3 => assert!(archmage::X64V4Token::summon().is_none()),
+            L::X86V2 => assert!(archmage::X64V3Token::summon().is_none()),
+            _ => assert!(archmage::X64V1Token::summon().is_none()),
+        }
+    }
+    #[cfg(target_arch = "aarch64")]
+    if settings.cpu_level == rav1d_safe::src::managed::CpuLevel::Scalar {
+        use archmage::SimdToken;
+        assert!(archmage::Arm64::summon().is_none());
+        assert!(archmage::Arm64V2Token::summon().is_none());
+        assert!(archmage::Arm64V3Token::summon().is_none());
     }
     let mut decoder = Decoder::with_settings(settings).expect("decoder creation failed");
     let mut hasher = md5::Context::new();

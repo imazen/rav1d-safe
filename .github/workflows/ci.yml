@@ -503,6 +503,8 @@ jobs:
       - name: Legacy integration corpus gate (explicit selection)
         run: just test-integration-selection test-vectors
         timeout-minutes: 10
+      - name: Sidecar token tier guards
+        run: just test-conformance-token-tiers
       - name: Film grain with threading and debug extent checks (#526)
         run: cargo nextest run --profile ci --test filmgrain_threads --test-threads 1
         timeout-minutes: 10

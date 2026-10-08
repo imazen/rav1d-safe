@@ -1,0 +1,11 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=26139MiB :: just clippy clippy-untracked cross-aarch64
+cargo clippy --release --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 6.18s
+cargo clippy --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --all-targets -- -D warnings
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 5.98s
+cargo check --target aarch64-unknown-linux-gnu --no-default-features --features "bitdepth_8,bitdepth_16"
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 1.35s
+run-heavy: done rc=0 14s | peak-RSS 0.96GiB | min-avail 24755MiB | peak-load 0.72

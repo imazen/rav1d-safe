@@ -1,0 +1,92 @@
+{
+  "date": "2026-10-08",
+  "rustc": "1.99.0",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "example_sha256": "1a057477f5646993dce49f63ff9fb0ba548ebd8ec8d3838b82dee6e7fb6f8e68",
+  "x86_cpu": "Zen4",
+  "commands": [
+    "just test-conformance-token-tiers",
+    "just clippy clippy-untracked cross-aarch64",
+    "just build-conformance-modes target/lead-token-tier-safe target/lead-token-tier-untracked"
+  ],
+  "results": [
+    {
+      "stage": "x86 guard",
+      "passed": 1,
+      "skipped": 0,
+      "scope_seconds": 13,
+      "peak_rss_gib": 1.29,
+      "min_available_mib": 25102,
+      "peak_load": 0.2,
+      "rc": 0
+    },
+    {
+      "stage": "x86 mutation",
+      "mutation": "scalar path clears disable instead of setting it; assertions unchanged",
+      "failed": 1,
+      "scope_seconds": 12,
+      "peak_rss_gib": 1.29,
+      "min_available_mib": 25158,
+      "peak_load": 0.39,
+      "rc": 100
+    },
+    {
+      "stage": "x86 exact restoration",
+      "passed": 1,
+      "skipped": 0,
+      "scope_seconds": 12,
+      "peak_rss_gib": 1.3,
+      "min_available_mib": 25143,
+      "peak_load": 0.43,
+      "rc": 0
+    },
+    {
+      "stage": "release all-target lint both modes and ARM cross check",
+      "scope_seconds": 14,
+      "peak_rss_gib": 0.96,
+      "min_available_mib": 24755,
+      "peak_load": 0.72,
+      "rc": 0
+    },
+    {
+      "stage": "ARM decoder builds both modes",
+      "scope_seconds": 127,
+      "peak_rss_gib": 0.91,
+      "min_available_mib": 26168,
+      "peak_load": 15.23,
+      "rc": 0
+    }
+  ],
+  "arm_binaries_sha256": {
+    "tracked": "36ec9b6b1f67b29f5261caf835de032d439a98959d6948866240a062e961f5f6",
+    "untracked": "a0894da9125d456ef835c9c4e34e0ed3643f10e5ef8ef9f5a3c0368c7d9628de"
+  },
+  "limits": "Worker token guard gates, mutation checks, lint and decoder build only. ARM scalar sidecar matrix remains running; no x86 scalar sidecar matrix for this example revision yet. Production CPU masks unchanged. Not measured on Zen5.",
+  "logs": [
+    {
+      "path": "benchmarks/x86-token-tier-guard_2026-10-08.log",
+      "sha256": "98a004415fa5fe158685f69a3b05f970f07f358a7048bfd5f235effd05674b86",
+      "bytes": 1019
+    },
+    {
+      "path": "benchmarks/x86-token-tier-mutation_2026-10-08.log",
+      "sha256": "66acdeff9239bb04808eee1610ec6fb743cd82e6543ae2da185acb8ae71c308f",
+      "bytes": 2657
+    },
+    {
+      "path": "benchmarks/x86-token-tier-restored_2026-10-08.log",
+      "sha256": "229b8601c082466d50f535ce8061fd950b38a40f8cead30f7c480a0c1b6152e9",
+      "bytes": 1019
+    },
+    {
+      "path": "benchmarks/token-tier-lint-cross_2026-10-08.log",
+      "sha256": "1b29fca03507e681625e056ac14b9287616d984115b415d17d25ae8274d8f611",
+      "bytes": 1023
+    },
+    {
+      "path": "benchmarks/arm-token-tier-build_2026-10-08.log",
+      "sha256": "89e2514be1583ffe225f03e650a90a126d14d2b03d471f9f13884cb9f6e4a92c",
+      "bytes": 10247
+    }
+  ]
+}

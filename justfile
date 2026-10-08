@@ -83,6 +83,20 @@ test-mc-reference:
 test-conformance-runner:
     python3 tools/test_conformance_runner.py
 
+# Native example guards check real fallback tier selection in workers.
+test-conformance-token-tiers:
+    cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --example decode_md5 --test-threads 1
+
+# Supplement a previously recorded native-tier matrix with enforced scalar legs.
+conformance-scalar-modes tracked untracked:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for binary in "{{tracked}}" "{{untracked}}"; do
+        for threads in 1 2 4 8; do
+            bash scripts/conformance_test.sh --binary "$binary" --threads "$threads" --delay 0 --level scalar --expected 803 --stop-on-fail
+        done
+    done
+
 conformance binary threads="1" delay="0":
     bash scripts/conformance_test.sh --binary "{{binary}}" --threads {{threads}} --delay {{delay}} --expected 803
 

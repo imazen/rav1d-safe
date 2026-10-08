@@ -976,6 +976,17 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+- 2026-10-08: the managed ARM `CpuLevel::Scalar` mask does not disable several
+  baseline NEON dispatchers, which summon `Arm64` directly. This is the existing
+  applicability-review A6 gap. CPU-mask sidecar labels alone do not establish
+  a real scalar decode. X86 msac incants and coefficient autoversion also
+  select tokens independently of pixel masks. The `decode_md5` token guards
+  pass native worker tests and fail deliberate disabling mutations on both
+  architectures; enforced ARM scalar sidecars are running. The separate
+  token-permutation suite passes. Production CPU-mask behavior is unchanged.
+  See `docs/ARM_MC_SOURCE_STRIDES.md`. The managed API limitation remains open.
+
+
 - 2026-10-08: `just test-integration` omitted release mode, while legacy
   integration bodies could pass missing corpus files. The recipe now selects
   its corpus explicitly and runs all nine bodies; missing data fails.
