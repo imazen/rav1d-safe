@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-08",
+  "build_provenance": "builds.meta.json",
+  "before_revision": "e8162a0d6bbae5543546f6f8532a651ac31e4a13",
+  "after_revision": "1e57f3b283f3d45fb98a968ce04e1c41797a7e16",
+  "md5_cases": 32,
+  "oracle": "1.5.3",
+  "matrix": "Four8/10bitclips; tracked/untracked before/after; one/four workers; delay1; grain enabled",
+  "binary_sha256": {
+    "/home/lilith/work/zen/rav1d-safe/target/lead-mc-final-after-safe/release/examples/decode_md5": "b1fd138e629f44f22f550002a8365fbb789c3c26362a0e43784a02d33492e246",
+    "/home/lilith/work/zen/rav1d-safe/target/lead-mc-final-after-untracked/release/examples/decode_md5": "5a68d68c180a4754bd3d8772cb57ef7e1f0cf596287a73cfb1de5a92e57e8eb1",
+    "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-safe/release/examples/decode_md5": "5ff5e0a567f66483752c84b3b8b2cda4ffadf7ae8d57fc1ce8e0e2ea3c2cd20a",
+    "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5": "57d31073dcb060d95dcd0030ef816e6e1d835a03d764cdd3b66733af6f076aa4"
+  },
+  "clip_resources": "run-heavy: done rc=0 120s | peak-RSS 0.20GiB | min-avail 25565MiB | peak-load 1.15",
+  "controls_resources": "run-heavy: done rc=0 0s | peak-RSS 0.02GiB | min-avail 25820MiB | peak-load 0.42",
+  "controls": "Both repaired modes reject valid-frame-then-malformed-packet timing without emitting RESULT; valid control has one warmup and one timed frame; MD5 limits0/1 obey stop semantics",
+  "files": {
+    "clips-md5.log": {
+      "bytes": 12562,
+      "sha256": "c6abcf61ad7e308f82fa7a5ace000252454e07183b33f063d2f9545406056604"
+    },
+    "error-controls.log": {
+      "bytes": 3913,
+      "sha256": "d045272561d716657f04c8bcd6030911539616dff60b0b279eab79d8ea4be768"
+    }
+  },
+  "missing": [
+    "Forty sidecar configurations",
+    "AA/AB throughput",
+    "Production landing"
+  ]
+}

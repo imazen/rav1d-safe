@@ -60,3 +60,13 @@ only the signed destination repair changes compiled production code.
 The 71-second build scope returned rc=0, peak RSS 1.30 GiB, minimum
 available 24,107 MiB and peak load 3.28. Whole-clip MD5, sidecar and
 throughput gates remain pending.
+
+[All 32 whole-clip comparisons](../benchmarks/warp_signed_destination_2026-10-08/clips.meta.json)
+match dav1d 1.5.3 with grain enabled, across four 8/10-bit clips, both
+modes, before/after and one/four workers at delay one. The 120-second
+scope returned rc=0, peak RSS 0.20 GiB, minimum available 25,565 MiB
+and peak load 1.15. Both new timing binaries also reject a malformed
+second packet without printing timing results; valid input and MD5
+frame-limit controls pass. That scope reports peak RSS 0.02 GiB,
+minimum available 25,820 MiB, peak load 0.42 and rc=0.
+The forty-configuration sidecar and A/A plus A/B gates remain pending.
