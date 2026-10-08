@@ -443,7 +443,7 @@ impl From<DecodeFrameType> for Rav1dDecodeFrameType {
 /// ```no_run
 /// use rav1d_safe::src::managed::{Decoder, Settings, CpuLevel};
 ///
-/// // Force scalar-only decode (no SIMD)
+/// // Select scalar pixel-dispatch flags (see the token-dispatch limit below).
 /// let mut settings = Settings::default();
 /// settings.cpu_level = CpuLevel::Scalar;
 /// let mut decoder = Decoder::with_settings(settings).unwrap();
@@ -452,7 +452,12 @@ impl From<DecodeFrameType> for Rav1dDecodeFrameType {
 #[non_exhaustive]
 #[derive(Default)]
 pub enum CpuLevel {
-    /// No SIMD — pure scalar Rust. Works on all platforms. Slowest.
+    /// Zero pixel-dispatch flags. Available on all platforms.
+    ///
+    /// Mask-gated DSP kernels use scalar fallbacks. Several baseline ARM
+    /// NEON dispatchers, and x86 entropy/coefficient token dispatchers, select
+    /// SIMD independently of this mask. For enforced fallback conformance,
+    /// use the token-permutation gate or the `decode_md5` example.
     Scalar,
 
     /// x86-64-v2: SSE2 + SSSE3 + SSE4.1.

@@ -59,6 +59,7 @@ doctests pass per mode (three existing ignored), and both explicit legacy
 integration selections pass all nine bodies without skips.
 [Complete logs and source catalog](../benchmarks/arm_decoder_full_2026-10-08.meta.json)
 record the 2856-second scope: peak-RSS 1.05 GiB, min-avail 23306 MiB,
-peak-load 17.37. All 262 catalogued runtime/test/build source files match the
-current local tree. The signed-source repair is not yet published; its
+peak-load 17.37. The catalog identifies all 262 runtime/test/build source files for that
+recorded run. Later conformance token/limit tool changes have their own
+[validation and hashes](CI_LINT_REVIEW.md). The signed-source repair is not yet published; its
 separate 803-vector all-tier/all-worker sidecar matrix remains pending.

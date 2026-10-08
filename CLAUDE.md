@@ -720,7 +720,7 @@ Generated via avifdec at `/home/lilith/work/libavif/build/avifdec`.
 |-------|------|-------------|
 | v3-avx2 | `0xFFFFFFFF` | AVX2 + FMA (default, full SIMD) |
 | v2-sse4 | `0b0111` (7) | SSE4.1 only (no AVX2 dispatch) |
-| scalar | `0` | No SIMD (pure Rust scalar) |
+| scalar | `0` | Zero pixel-dispatch flags; token-dispatched SIMD may remain active (see Known Bugs) |
 
 **Running comparisons:**
 ```bash

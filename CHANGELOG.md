@@ -5,6 +5,9 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- Correct CPU-mask documentation: pixel DSP gates consult masks, while
+  baseline ARM NEON and x86 entropy/coefficient token dispatch can remain
+  active. Conformance uses explicit token caps; managed behavior is unchanged.
 - The `decode_md5` example stops decoding further packets at its requested
   frame limit. A malformed next-packet regression and the formerly timed-out
   ARM 300-frame sidecar pass; the conformance deadline remains 120 seconds.

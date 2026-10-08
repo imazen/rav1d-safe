@@ -100,14 +100,23 @@ Also `ba74cc4`: one guard per tap row in the loop filter, not one per tap.
 
 ### A6. `CpuLevel::Scalar` does not disable safe SIMD (measurement infrastructure gap)
 
-Nothing under `src/safe_simd/` reads `rav1d_cpu_flags_mask`; every dispatcher gates on
-`archmage::<Token>::summon()`. So the documented way to get a scalar baseline **silently did
-nothing**. An ablation switch had to be built (`src/ablate.rs`, `__ablate` feature, 26 guard sites).
+The aarch64 review found baseline NEON dispatchers that summon tokens without
+consulting `rav1d_cpu_flags_mask`. A `Scalar` selection therefore left those
+kernels active. The per-family ablation switch (`src/ablate.rs`, `__ablate`)
+provides a separate measurement control.
 
-- **x64 expectation: THE SAME HOLE ALMOST CERTAINLY EXISTS.** Check before trusting any x64
-  "scalar vs SIMD" comparison — this invalidated a prior aarch64 conclusion
-  (`neon_tier_isolation_2026-07-28.meta`'s "vq_suite is NOT SIMD-related at all three CPU levels";
-  the premise was false, all 18 are SIMD).
+Verified on 2026-10-08: x86 pixel gates consult the mask, while plain msac
+incants and coefficient autoversion select tokens independently. A zero mask
+does not establish fully scalar decoding on either architecture. The
+`decode_md5` example now caps tokens through worker shutdown; native ARM and
+x86 worker tests pass and fail deliberate disabling mutations. See
+[conformance guard evidence](CI_LINT_REVIEW.md) for commands and coverage limits.
+
+- **x64 finding:** pixel masks work, but token-selected entropy/coefficient
+  paths remain outside those counters. Enforce token caps before attributing
+  complete-decoder scalar versus SIMD timings. The prior aarch64 conclusion
+  in `neon_tier_isolation_2026-07-28.meta` also relied on CPU-mask labels that
+  left baseline NEON active.
 - `src/ablate.rs` is written generically enough to extend to x86 tokens.
 
 ---
@@ -437,7 +446,7 @@ overlap is with the same worker, sequentially, in the same call.
 | **A3** exact-window CDEF padding guards | **CONFIRMED narrow on both x86-relevant files** | `src/safe_simd/cdef.rs` (portable, compiled on x86): top loop takes `left_ext = 0` when `!HAVE_LEFT` so the guard starts at `offset`, not `offset - 2`; both bottom loops (8bpc `:1392,1400`, 16bpc `:1851,1858`) take `bottom_row.offset + x_start` for `x_end - x_start`. Scalar `src/cdef.rs:487,514,516` likewise. |
 | **A4** sharded-tracker TOCTOU | **CONFIRMED, and the gate is proven to have TEETH on x86** | `crates/rav1d-disjoint-mut/tests/wide_exclusion.rs` passes on x86_64 in 0.61 s. Mutation planted (in-lock `state` re-read at `tracker_shard.rs:1476` replaced by `if false`), rebuilt, **FAILED 3/3 runs**; mutation reverted, green again. |
 | **A5** guard batching | **CONFIRMED present and arch-independent** | `LF_BATCH_MAX = 4` at `src/loopfilter.rs:345`, outside any `target_arch` gate; `LfBlock::close` writes back only `changed_span` per row. Re-fitting the factor is a timing question => not answerable here. |
-| **A6** `CpuLevel::Scalar` does not disable safe SIMD | **REFUTED on x86_64** | The three x86 gates (`cpu.rs::summon_avx2/summon_avx512/summon_avx512x`) each test `simd_enabled(...)`, i.e. `rav1d_cpu_flags_mask`, BEFORE summoning — 78 + 78 + 9 call sites, and nothing in `safe_simd/*.rs` summons an x86 token directly except four `#[cfg(all(feature = "asm", target_arch = "x86_64"))]` FFI wrappers in `safe_simd/loopfilter.rs:4188-4323`, which the file's own AUDITED banner records as having **no callers** (under `asm` the table resolves to the NASM symbol, not to these). Measured in F1: `Scalar` gives 0 grants / 337,378 refusals where `Native` gives 384,221 grants. **An x64 scalar-vs-SIMD A/B is valid**, unlike the aarch64 one; the `__ablate` feature is not needed on x86 (it stays the right tool for per-FAMILY ablation). |
+| **A6** `CpuLevel::Scalar` does not disable safe SIMD | **Mask gates pixel DSP on x86; complete scalar decoding is unproven by that mask** | The x86 pixel gates (`cpu.rs::summon_avx2/summon_avx512/summon_avx512x`) test `simd_enabled(...)` before summoning. Historical F1 measured 0 grants / 337,378 refusals for `Scalar` and 384,221 grants for `Native`; those counters cover the instrumented pixel gates. Current x86 msac incants and coefficient autoversion select tokens independently, so the earlier complete-decoder scalar A/B conclusion exceeded that evidence. The `decode_md5` tool now caps tokens as well; production CPU-mask behavior remains unchanged. See [guard validation](CI_LINT_REVIEW.md). |
 
 ### F5. Section B verdict: CONFIRMED for the AVX2 tier
 
