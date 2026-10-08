@@ -53,3 +53,12 @@ ratios: timed passes within one process share scheduling and caches. The
 report rejected the live unfinished campaign, then accepted all sixteen
 cases after completion. No winner threshold or significance claim is
 inferred by this report.
+
+A focused repeat can pass `--mode safe` or `--mode untracked` to
+`just bench-paired-modes`; the default still runs both modes. Use
+`just bench-paired-mode-report <directory> <mode>` for that repeat. It
+requires completed, matching A/A and A/B phases and recomputes every
+statistic from the raw observations. Unknown or repeated mode selectors
+are rejected before output creation. The default `bench-paired-report`
+still requires all four phases; a focused repeat supplements the full
+matrix and does not replace its other clips or modes.

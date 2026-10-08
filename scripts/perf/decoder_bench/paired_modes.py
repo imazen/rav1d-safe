@@ -21,7 +21,11 @@ def main():
     parser.add_argument("--passes", type=int, default=3)
     parser.add_argument("--first-cpu", type=int, default=8)
     parser.add_argument("--delay", type=int, default=1)
+    parser.add_argument("--mode", action="append", choices=("safe", "untracked"),
+                        help="select modes; default runs both")
     args = parser.parse_args()
+    if args.mode and len(set(args.mode)) != len(args.mode):
+        parser.error("--mode cannot repeat")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     common = ["--threads", args.threads, "--rounds", str(args.rounds),
@@ -30,7 +34,7 @@ def main():
     for stream in args.stream:
         common.extend(["--stream", stream])
     script = str(Path(__file__).with_name("ab_bench.py"))
-    for mode in ("safe", "untracked"):
+    for mode in args.mode or ("safe", "untracked"):
         before = f"{args.before_prefix}-{mode}/release/examples/profile_ivf"
         after = f"{args.after_prefix}-{mode}/release/examples/profile_ivf"
         for phase in ("aa", "ab"):

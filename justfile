@@ -47,13 +47,17 @@ bench-ab *args:
 bench-md5 *args:
     python3 scripts/perf/decoder_bench/compare_md5.py {{args}}
 
-# Sequential A/A and A/B runs for tracked and untracked target directories.
+# Sequential A/A and A/B; --mode safe or untracked selects a focused repeat.
 bench-paired-modes *args:
     python3 scripts/perf/decoder_bench/paired_modes.py {{args}}
 
 # Reject incomplete phases and recompute statistics from every raw observation.
 bench-paired-report directory:
     python3 scripts/perf/decoder_bench/report_paired.py "{{directory}}"
+
+# Focused repeats still require complete matched A/A and A/B phases.
+bench-paired-mode-report directory mode:
+    python3 scripts/perf/decoder_bench/report_paired.py "{{directory}}" --mode "{{mode}}"
 
 # Verify warm-up and every timed pass on an explicit benchmark clip.
 bench-frame-count binary stream threads="1" repetitions="3":

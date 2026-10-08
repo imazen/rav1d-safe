@@ -44,11 +44,15 @@ def phase(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
+    parser.add_argument("--mode", action="append", choices=("safe", "untracked"),
+                        help="report selected modes; default requires both")
     args = parser.parse_args()
+    if args.mode and len(set(args.mode)) != len(args.mode):
+        parser.error("--mode cannot repeat")
     comparisons = []
     inputs = {}
     common_cases = None
-    for mode in ("safe", "untracked"):
+    for mode in args.mode or ("safe", "untracked"):
         paths = [args.directory / f"{mode}-{p}.jsonl" for p in ("aa", "ab")]
         (aa_meta, aa), (ab_meta, ab) = [phase(path) for path in paths]
         if (aa_meta["before"] != aa_meta["after"]
