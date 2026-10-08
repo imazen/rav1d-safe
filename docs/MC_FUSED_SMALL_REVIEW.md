@@ -1,8 +1,9 @@
 # Fused small-block MC experiment
 
 Missing: full decoder/sidecar gates, standard MC signed-destination validation
-and completed matched tracked/untracked A/A plus A/B timing.
-No throughput improvement is claimed.
+and a performance decision on the completed timing matrix.
+The completed timing has case-specific gains and mixed effects; production
+acceptance remains pending.
 
 This isolated child shares the published signed warp destination repair
 `80069eb0` with its benchmark baseline.
@@ -70,7 +71,7 @@ and MD5 frame limits zero/one pass. The original no-limit MD5 example
 still reports its decode error separately and is not claimed repaired.
 The wrapped scope returned rc=0 after 120 seconds, peak RSS 0.20 GiB,
 minimum available 25,499 MiB and peak load 1.73. The controlled timing
-matrix is now running; full decoder/sidecar gates and a production landing
+matrix is complete; full decoder/sidecar gates and a production landing
 remain missing.
 
 ## Static code generation
@@ -82,4 +83,40 @@ and eight static word multiply-adds. `just dump-simd-codegen` reproduces
 each exact address range; executable and raw-output hashes are recorded.
 These are static occurrences, not executed instruction counts, call
 frequency or measured savings from avoiding the pooled intermediate.
-The whole-clip controlled timing matrix is running.
+The completed controlled timing results are below.
+
+## Controlled timing
+
+The [complete raw phases and provenance](../benchmarks/mc_fused_small_2026-10-08/artifacts.meta.json)
+contain sixteen A/B cases and sixteen A/A controls, four alternating process
+pairs per case and three timed passes per invocation. Positive percentages
+mean slower. All compared executable and stream fingerprints were reverified.
+
+| Mode | Clip | Workers | A/B median | A/B minimum | A/A median | A/A minimum |
+|---|---|---:|---:|---:|---:|---:|
+| safe | aom_real1080_96.ivf | 1 | -1.4168% | -1.5381% | -0.3419% | -0.0625% |
+| safe | aom_real1080_96.ivf | 4 | -1.7606% | -1.8635% | -0.6313% | -1.1502% |
+| safe | aom_real4k_48.ivf | 1 | -0.8776% | -0.7943% | -0.2991% | -0.1720% |
+| safe | aom_real4k_48.ivf | 4 | +0.1494% | +1.1682% | +0.4397% | +0.5288% |
+| safe | svt_real1080_96.ivf | 1 | -0.4128% | +0.1504% | -0.0928% | +0.5420% |
+| safe | svt_real1080_96.ivf | 4 | -0.3988% | +0.7887% | -2.3866% | -0.2369% |
+| safe | aom10_real1080.ivf | 1 | -0.3934% | +0.0012% | +0.0694% | -0.5758% |
+| safe | aom10_real1080.ivf | 4 | +0.5182% | -0.5653% | +1.0593% | -0.7111% |
+| untracked | aom_real1080_96.ivf | 1 | -0.8508% | -0.9301% | +0.8059% | +0.3854% |
+| untracked | aom_real1080_96.ivf | 4 | -2.0400% | -2.4694% | +0.4208% | +1.5918% |
+| untracked | aom_real4k_48.ivf | 1 | +0.2125% | +0.3456% | +0.7247% | +0.3376% |
+| untracked | aom_real4k_48.ivf | 4 | -0.2521% | -1.0992% | -0.1765% | +1.9737% |
+| untracked | svt_real1080_96.ivf | 1 | -0.0053% | +0.0844% | +0.3954% | +0.0629% |
+| untracked | svt_real1080_96.ivf | 4 | +1.6804% | +2.8678% | -0.0680% | +2.5756% |
+| untracked | aom10_real1080.ivf | 1 | -0.6606% | -0.3494% | +0.5038% | +0.4204% |
+| untracked | aom10_real1080.ivf | 4 | -0.5631% | -1.1525% | -0.4085% | -0.8055% |
+
+AOM 1080p improves at one and four workers in both modes. Tracked one-worker
+AOM 4K also improves in all four process-pair medians. Untracked one-worker
+4K is mixed. Untracked four-worker SVT has a slower median in three of four
+process pairs, with a variable A/A minimum; a shared throughput benefit is
+not established for that case. The candidate remains unlanded pending the
+standard MC signed-destination validation, performance decision and full
+decoder/sidecar gates. The scope returned rc=0 after 2,964 seconds, peak RSS
+0.21 GiB, minimum available 25,426 MiB and peak load 1.69. These binaries
+unify testable_dispatch; ordinary consumers and Zen 5 remain unmeasured.

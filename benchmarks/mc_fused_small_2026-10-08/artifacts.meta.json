@@ -1,0 +1,210 @@
+{
+  "state": "Complete16case AA/AB timing; pending signed destination validation and performance decision before production gates",
+  "argv": [
+    "just",
+    "bench-paired-modes",
+    "--before-prefix",
+    "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final",
+    "--after-prefix",
+    "/home/lilith/work/zen/rav1d-safe/target/lead-fused-current",
+    "--before-rev",
+    "1e57f3b283f3d45fb98a968ce04e1c41797a7e16",
+    "--after-rev",
+    "fe10bf79f774098460a81f187761e388135a1645",
+    "--threads",
+    "1,4",
+    "--rounds",
+    "4",
+    "--passes",
+    "3",
+    "--first-cpu",
+    "8",
+    "--delay",
+    "1",
+    "--stream",
+    "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real1080_96.ivf",
+    "--stream",
+    "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real4k_48.ivf",
+    "--stream",
+    "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/svt_real1080_96.ivf",
+    "--stream",
+    "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom10_real1080.ivf",
+    "--output",
+    "/home/lilith/tmp/handoff/rav1d-safe-lead/ci/fused-current-aaab"
+  ],
+  "binaries": {
+    "before/safe/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-safe/release/examples/profile_ivf",
+      "sha256": "9ed0eeea45a6839744ae0fc432704e31f5e6f9b61f4831d725823890ebfe31c4",
+      "bytes": 17221624
+    },
+    "before/safe/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-safe/release/examples/decode_md5",
+      "sha256": "5ff5e0a567f66483752c84b3b8b2cda4ffadf7ae8d57fc1ce8e0e2ea3c2cd20a",
+      "bytes": 13583784
+    },
+    "before/untracked/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/profile_ivf",
+      "sha256": "b7000abff48e73826102c7c39b2c610aaaaa064f95cd43b5e862b48801b6a3dd",
+      "bytes": 16055888
+    },
+    "before/untracked/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5",
+      "sha256": "57d31073dcb060d95dcd0030ef816e6e1d835a03d764cdd3b66733af6f076aa4",
+      "bytes": 12400272
+    },
+    "after/safe/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-fused-current-safe/release/examples/profile_ivf",
+      "bytes": 17236648,
+      "sha256": "ae3fedd212e673f341aee1d0f826bb3ae88a2d51f2767d404df17bfb42c6cae3"
+    },
+    "after/safe/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-fused-current-safe/release/examples/decode_md5",
+      "bytes": 13598896,
+      "sha256": "f224c1298826630801a3281b03715d4cfc21c62eabd212d9cf9c2a9c251de6ca"
+    },
+    "after/untracked/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-fused-current-untracked/release/examples/profile_ivf",
+      "bytes": 16070992,
+      "sha256": "30e82ca85445bc62fa0df08fba502df9c734d04057b573261ad951ec987cd512"
+    },
+    "after/untracked/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-fused-current-untracked/release/examples/decode_md5",
+      "bytes": 12415384,
+      "sha256": "cc0f42516636bdc06e7df0dc013f7f746f04687ff121ecb599a6b73c7f306525"
+    }
+  },
+  "streams": [
+    {
+      "path": "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real1080_96.ivf",
+      "sha256": "0a0584bfd7a21207da1449c3f749b63b0b2fe77a59ab18ce6bd4cf9e33ad1d32",
+      "bytes": 7430709
+    },
+    {
+      "path": "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real4k_48.ivf",
+      "sha256": "f5099176ce0656f0c7975d5fc23ee3f138043a01941ca0eaeca1684298a66c4a",
+      "bytes": 10079624
+    },
+    {
+      "path": "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/svt_real1080_96.ivf",
+      "sha256": "093140494057f49dfe48a4a5fa59bdc5d45be226fcd377c8e77bd568af323ab8",
+      "bytes": 9959733
+    },
+    {
+      "path": "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom10_real1080.ivf",
+      "sha256": "e21249f068ad20c51af8a249ad0a831f1d3fa42013efb1c6b087c659ecdc902c",
+      "bytes": 6585055
+    }
+  ],
+  "baseline_source_provenance": "benchmarks/warp_signed_destination_2026-10-08/builds.meta.json",
+  "candidate_source_provenance": "benchmarks/mc_fused_small_2026-10-08/gate-build.meta.json",
+  "source_scope": "Only fused 8-bit 4x4 four-tap horizontal+vertical MC changes compiled production; both arms share signed warp destination fix/compiler/dependencies/guarded timer",
+  "session": 34748,
+  "log": "ci/fused-current-aaab.log",
+  "report_command": [
+    "just",
+    "bench-paired-report",
+    "/home/lilith/tmp/handoff/rav1d-safe-lead/ci/fused-current-aaab"
+  ],
+  "resources": "run-heavy: done rc=0 2964s | peak-RSS 0.21GiB | min-avail 25426MiB | peak-load 1.69",
+  "observed_utc": "2026-10-08T18:13:05.486879+00:00",
+  "observations_per_arm_per_case": 12,
+  "process_pairs_per_case": 4,
+  "passes": 3,
+  "cases_per_phase": 8,
+  "phases": 4,
+  "outcome": "AOM1080 improves in both modes; untracked SVT4 slows with variable A/A minima. No universal benefit or production acceptance. Full decoder/sidecar gates not run for this candidate.",
+  "files": {
+    "timing.log": {
+      "bytes": 28599,
+      "sha256": "9c63e4c8230f2a9ec2f6032038c7ac0fc2e557970060192e8cfa1a366539144b",
+      "parts": [
+        {
+          "path": "timing.part01.log",
+          "bytes": 28000,
+          "sha256": "3bd52453a642044519fd2980dfd7d6b0270f4ac6982125971b9d740a04b9a41b"
+        },
+        {
+          "path": "timing.part02.log",
+          "bytes": 599,
+          "sha256": "024180a022479589e42406b738632c51d02f50c3530cc40110ed177ed837f824"
+        }
+      ]
+    },
+    "timing-safe-aa.jsonl": {
+      "bytes": 5648,
+      "sha256": "1da666c971b3266a4e7117767a9c5da3d21686da7eb5eae8390548da6ee40c66",
+      "parts": [
+        {
+          "path": "timing-safe-aa.jsonl",
+          "bytes": 5648,
+          "sha256": "1da666c971b3266a4e7117767a9c5da3d21686da7eb5eae8390548da6ee40c66"
+        }
+      ]
+    },
+    "timing-safe-ab.jsonl": {
+      "bytes": 5680,
+      "sha256": "8eb1eccef8bb842787c1387a2aa3ca0924ec4daade58b92f8fabf74799d745b8",
+      "parts": [
+        {
+          "path": "timing-safe-ab.jsonl",
+          "bytes": 5680,
+          "sha256": "8eb1eccef8bb842787c1387a2aa3ca0924ec4daade58b92f8fabf74799d745b8"
+        }
+      ]
+    },
+    "timing-untracked-aa.jsonl": {
+      "bytes": 5643,
+      "sha256": "a8abb2711eeccb0899a9164654e70a94182f1a752b0f2d87ae60df9b6ddb7b23",
+      "parts": [
+        {
+          "path": "timing-untracked-aa.jsonl",
+          "bytes": 5643,
+          "sha256": "a8abb2711eeccb0899a9164654e70a94182f1a752b0f2d87ae60df9b6ddb7b23"
+        }
+      ]
+    },
+    "timing-untracked-ab.jsonl": {
+      "bytes": 5633,
+      "sha256": "4bbcd302a104062987b2c1ee97d6172867d87550ece4868b46b478399692327f",
+      "parts": [
+        {
+          "path": "timing-untracked-ab.jsonl",
+          "bytes": 5633,
+          "sha256": "4bbcd302a104062987b2c1ee97d6172867d87550ece4868b46b478399692327f"
+        }
+      ]
+    },
+    "timing-analysis.json": {
+      "bytes": 11768,
+      "sha256": "19261d2a298c540c328032ed2ae1550bf8c30e6774e7f0cbb7957950c5201268",
+      "parts": [
+        {
+          "path": "timing-analysis.json",
+          "bytes": 11768,
+          "sha256": "19261d2a298c540c328032ed2ae1550bf8c30e6774e7f0cbb7957950c5201268"
+        }
+      ]
+    }
+  },
+  "recording_command": [
+    "python3",
+    "tools/record_benchmark_artifacts.py",
+    "--output",
+    "benchmarks/mc_fused_small_2026-10-08",
+    "--metadata",
+    "/home/lilith/tmp/handoff/rav1d-safe-lead/ci/fused-current-timing-complete-provenance.json",
+    "--input",
+    "timing.log=/home/lilith/tmp/handoff/rav1d-safe-lead/ci/fused-current-aaab.log",
+    "--input",
+    "timing-safe-aa.jsonl=/home/lilith/tmp/handoff/rav1d-safe-lead/ci/fused-current-aaab/safe-aa.jsonl",
+    "--input",
+    "timing-safe-ab.jsonl=/home/lilith/tmp/handoff/rav1d-safe-lead/ci/fused-current-aaab/safe-ab.jsonl",
+    "--input",
+    "timing-untracked-aa.jsonl=/home/lilith/tmp/handoff/rav1d-safe-lead/ci/fused-current-aaab/untracked-aa.jsonl",
+    "--input",
+    "timing-untracked-ab.jsonl=/home/lilith/tmp/handoff/rav1d-safe-lead/ci/fused-current-aaab/untracked-ab.jsonl",
+    "--input",
+    "timing-analysis.json=/home/lilith/tmp/handoff/rav1d-safe-lead/ci/fused-current-timing-analysis.json"
+  ]
+}
