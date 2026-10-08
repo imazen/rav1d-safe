@@ -1,0 +1,65 @@
+extest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m6[0m tests across [1m1[0m binary ([1m71[0m tests [33;1mskipped[0m)
+[32;1m        PASS[0m [   0.003s] (1/6) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::four_tap_vertical_rows[0m[36m::[0m[34;1mfour_tap_vertical_uses_only_active_rows[0m
+[32;1m [0m [32;1mstdout[0m [32;1m───[0m
+
+    running 1 test
+    test src::safe_simd::mc::four_tap_vertical_rows::four_tap_vertical_uses_only_active_rows ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 76 filtered out; finished in 0.00s
+    [0m
+
+[32;1m        PASS[0m [   0.003s] (2/6) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::v512_active_rows_tests[0m[36m::[0m[34;1mavx512_vertical_prep_reads_only_active_rows_at_legal_intermediate_extrema[0m
+[32;1m [0m [32;1mstdout[0m [32;1m───[0m
+
+    running 1 test
+    AVX512 prep scalar comparisons by four/six/eight taps: [1980, 720, 540]
+    test src::safe_simd::mc::v512_active_rows_tests::avx512_vertical_prep_reads_only_active_rows_at_legal_intermediate_extrema ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 76 filtered out; finished in 0.00s
+    [0m
+
+[32;1m        PASS[0m [   0.004s] (3/6) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::v512_active_rows_tests[0m[36m::[0m[34;1mavx512_vertical_put_reads_only_active_rows_at_full_i16_range[0m
+[32;1m [0m [32;1mstdout[0m [32;1m───[0m
+
+    running 1 test
+    AVX512 put scalar comparisons by four/six/eight taps: [2970, 1080, 810]
+    test src::safe_simd::mc::v512_active_rows_tests::avx512_vertical_put_reads_only_active_rows_at_full_i16_range ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 76 filtered out; finished in 0.00s
+    [0m
+
+[32;1m        PASS[0m [   0.003s] (4/6) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mpair_window_arithmetic_fits_i16_for_all_filter_rows[0m
+[32;1m [0m [32;1mstdout[0m [32;1m───[0m
+
+    running 1 test
+    test src::safe_simd::mc_x86_8bpc_parity::pair_window_arithmetic_fits_i16_for_all_filter_rows ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 76 filtered out; finished in 0.00s
+    [0m
+[32;1m [0m [32;1mstderr[0m [32;1m───[0m
+    8bpc filter pair bounds=(-3060, 20400), subset bounds=(-7140, 23460), max round=34[0m
+
+[32;1m        PASS[0m [   1.296s] (5/6) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mput_prep_8bpc_endpoint_and_tail_parity[0m
+[32;1m [0m [32;1mstdout[0m [32;1m───[0m
+
+    running 1 test
+    test src::safe_simd::mc_x86_8bpc_parity::put_prep_8bpc_endpoint_and_tail_parity ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 76 filtered out; finished in 1.29s
+    [0m
+
+[32;1m        PASS[0m [   1.324s] (6/6) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mput_prep_8bpc_full_domain_parity[0m
+[32;1m [0m [32;1mstdout[0m [32;1m───[0m
+
+    running 1 test
+    test src::safe_simd::mc_x86_8bpc_parity::put_prep_8bpc_full_domain_parity ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 76 filtered out; finished in 1.32s
+    [0m
+[32;1m [0m [32;1mstderr[0m [32;1m───[0m
+    x86 8bpc parity: 112640 cells across 22 block sizes and 10 filters[0m
+
+────────────
+[32;1m     Summary[0m [   2.633s] [1m6[0m tests run: [1m6[0m [32;1mpassed[0m, [1m71[0m [33;1mskipped[0m
+run-heavy: done rc=0 117s | peak-RSS 1.62GiB | min-avail 23970MiB | peak-load 3.52

@@ -1,0 +1,100 @@
+{
+  "observed_utc": "2026-10-08T22:47:47.594470+00:00",
+  "state": "Complete before-failure and after-focused/feature checks; no throughput or production acceptance",
+  "before_revision": "115066febfae9018c012190994379513692d53e3",
+  "after_revision": "2b2b04f38a146cf91744735bf46d8397e25d3151",
+  "source_sha256": {
+    "src/safe_simd/mc.rs": "f5f9edc0718e8e25c9e09d73069be10be9f4c010bcdc7f3434db776c06cf6582",
+    "src/safe_simd/mc_v512_active_rows_tests.rs": "740a0532b511f0a132554b3cd2ec1a92e0fc9fb8e1effc262b2d4ad376e74c2d",
+    "Cargo.toml": "4783d4fbde91e5a4278bb03bfaae8b16177a5bb26edcc11230bb368e52454042",
+    "Cargo.lock": "315a1c4b47dd38cbd8d855514f4bf446e515834393b934c4fe836f31b51b6ce6"
+  },
+  "compiler": "Rust1.99.0; empty RUSTFLAGS/CARGO_ENCODED_RUSTFLAGS; archmage0.9.30/e2dbab66",
+  "before_command": [
+    "just",
+    "test-mc-v512-rows"
+  ],
+  "after_command": "just test-mc-v512-rows && just check-mc-v512-features",
+  "before_resource_line": "run-heavy: done rc=100 19s | peak-RSS 1.59GiB | min-avail 23859MiB | peak-load 1.35",
+  "after_resource_line": "run-heavy: done rc=0 117s | peak-RSS 1.62GiB | min-avail 23970MiB | peak-load 3.52",
+  "executed_tests": {
+    "tracked": 11,
+    "untracked": 11,
+    "c-ffi": 6
+  },
+  "native_comparisons_each_mode": {
+    "put_4_6_8_taps": [
+      2970,
+      1080,
+      810
+    ],
+    "prep_4_6_8_taps": [
+      1980,
+      720,
+      540
+    ]
+  },
+  "before_observed_failure": "Native AVX512 put helper indexes row6 of a6-row intermediate for four taps; this establishes the helper extent defect, not a production decoder crash",
+  "after_result": "Focused tests and both release all-target lint modes, ARM/WASM/CFFI checks pass. Actual SIMD comparison counts printed in all three modes.",
+  "missing": [
+    "Refoundation on the separate standard MC signed-origin repair",
+    "Matched fat builds and whole-clip/error controls",
+    "Complete AA/AB timing",
+    "Full decoder/sidecar gates before source landing",
+    "Zen5/ordinary consumer measurements"
+  ],
+  "files": {
+    "before-extent.log": {
+      "bytes": 8712,
+      "sha256": "c6164d5f15e16fa9eff6f8cbf0c337250a68a3a36618e5e59d4a0ce992e0062d",
+      "parts": [
+        {
+          "path": "before-extent.log",
+          "bytes": 8712,
+          "sha256": "c6164d5f15e16fa9eff6f8cbf0c337250a68a3a36618e5e59d4a0ce992e0062d"
+        }
+      ]
+    },
+    "after-features.log": {
+      "bytes": 31616,
+      "sha256": "db6338cc1c213303dc784a7f31d04ce971e9674ceba2d7040f86a09431bedde9",
+      "parts": [
+        {
+          "path": "after-features.part01.log",
+          "bytes": 28000,
+          "sha256": "02e4720ca941bb418f1a17e0bef562552e874de04918ccd4515ce2b2ba5df196"
+        },
+        {
+          "path": "after-features.part02.log",
+          "bytes": 3616,
+          "sha256": "7e8d64a80c4847e9a7176b4c610e82379a28a21b2cf12d433908d9e2e80f4307"
+        }
+      ]
+    },
+    "candidate.patch": {
+      "bytes": 12250,
+      "sha256": "8cfdc17c32ae63fcecd228fe8c30087bac22b0bc55cf9475befbb549a35ee933",
+      "parts": [
+        {
+          "path": "candidate.patch",
+          "bytes": 12250,
+          "sha256": "8cfdc17c32ae63fcecd228fe8c30087bac22b0bc55cf9475befbb549a35ee933"
+        }
+      ]
+    }
+  },
+  "recording_command": [
+    "python3",
+    "tools/record_benchmark_artifacts.py",
+    "--output",
+    "benchmarks/mc_avx512_active_rows_2026-10-08",
+    "--metadata",
+    "/home/lilith/tmp/handoff/rav1d-safe-lead/ci/v512-focused-complete-provenance.json",
+    "--input",
+    "before-extent.log=/home/lilith/tmp/handoff/rav1d-safe-lead/ci/v512-before-extent.log",
+    "--input",
+    "after-features.log=/home/lilith/tmp/handoff/rav1d-safe-lead/ci/v512-after-focused-features.log",
+    "--input",
+    "candidate.patch=/home/lilith/tmp/handoff/rav1d-safe-lead/ci/v512-active-rows-candidate.patch"
+  ]
+}
