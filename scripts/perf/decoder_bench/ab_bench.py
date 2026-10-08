@@ -31,7 +31,7 @@ def run(binary, stream, threads, args):
             f"{args.first_cpu}-{args.first_cpu + 2 * threads - 1}")
     env = dict(os.environ, RAV1D_THREADS=str(threads),
                RAV1D_REPS=str(args.passes), RAV1D_FRAME_DELAY=str(args.delay),
-               RAV1D_LEVEL="native")
+               RAV1D_LEVEL="native", RAV1D_INLOOP="all")
     # Inherited diagnostic switches can invalidate a nominally identical A/B.
     for switch in ("RAV1D_ABLATE", "RAV1D_PPROF"):
         if switch in env:

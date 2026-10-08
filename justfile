@@ -51,6 +51,10 @@ bench-md5 *args:
 bench-paired-modes *args:
     python3 scripts/perf/decoder_bench/paired_modes.py {{args}}
 
+# Verify warm-up and every timed pass on an explicit benchmark clip.
+bench-frame-count binary stream threads="1" repetitions="3":
+    RAV1D_THREADS={{threads}} RAV1D_REPS={{repetitions}} RAV1D_FRAME_DELAY=1 RAV1D_LEVEL=native RAV1D_INLOOP=all "{{binary}}" "{{stream}}" 1
+
 # Download test vectors
 download-vectors:
     bash scripts/download-test-vectors.sh

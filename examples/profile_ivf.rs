@@ -161,6 +161,7 @@ fn main() {
 
     // Warmup
     let decoded = decode_ivf_frames(&frames);
+    assert!(decoded > 0, "benchmark warm-up decoded no frames");
     eprintln!("Frames decoded per iteration: {}", decoded);
 
     // `RAV1D_PPROF=<path>`: signal-based sampling (pprof, SIGPROF + libunwind
@@ -190,11 +191,14 @@ fn main() {
         let start = Instant::now();
         for _ in 0..iterations {
             let d = decode_ivf_frames(black_box(&frames));
+            assert_eq!(
+                d, decoded,
+                "timed pass frame count differs from benchmark warm-up"
+            );
             black_box(d);
         }
         let elapsed = start.elapsed();
-        let per_frame =
-            elapsed.as_secs_f64() * 1000.0 / (iterations as f64 * decoded.max(1) as f64);
+        let per_frame = elapsed.as_secs_f64() * 1000.0 / (iterations as f64 * decoded as f64);
         last = per_frame;
         println!("RESULT\t{label}\t{rep}\t{iterations}\t{decoded}\t{per_frame:.6}");
     }
