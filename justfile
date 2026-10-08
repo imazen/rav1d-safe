@@ -52,6 +52,20 @@ test-threading-races:
 clippy:
     cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings
 
+# Match the library-only CI lint gate; release-only integration tests are separate.
+clippy-lib:
+    cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16" -- -D warnings
+
+# Native ARM regression for concurrent reference-frame reconstruction.
+test-mc-reference:
+    cargo nextest run --cargo-profile release-thin --lib -E 'test(interpolation_reads_leave_unrelated_reconstruction_rows_available)'
+
+test-conformance-runner:
+    python3 tools/test_conformance_runner.py
+
+conformance binary threads="1" delay="0":
+    bash scripts/conformance_test.sh --binary "{{binary}}" --threads {{threads}} --delay {{delay}} --expected 803
+
 # Check code formatting
 fmt-check:
     cargo fmt --all -- --check
