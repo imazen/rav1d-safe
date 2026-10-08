@@ -1,0 +1,170 @@
+{
+  "argv": [
+    "just",
+    "bench-paired-modes",
+    "--before-prefix",
+    "/home/lilith/work/zen/rav1d-safe/target/lead-mc-final-after",
+    "--after-prefix",
+    "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final",
+    "--before-rev",
+    "e8162a0d6bbae5543546f6f8532a651ac31e4a13",
+    "--after-rev",
+    "1e57f3b283f3d45fb98a968ce04e1c41797a7e16",
+    "--threads",
+    "1,4",
+    "--rounds",
+    "4",
+    "--passes",
+    "3",
+    "--first-cpu",
+    "8",
+    "--delay",
+    "1",
+    "--output",
+    "/home/lilith/tmp/handoff/rav1d-safe-lead/ci/warp-destination-aaab-final",
+    "--stream",
+    "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real1080_96.ivf",
+    "--stream",
+    "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real4k_48.ivf",
+    "--stream",
+    "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/svt_real1080_96.ivf",
+    "--stream",
+    "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom10_real1080.ivf"
+  ],
+  "before_revision": "e8162a0d6bbae5543546f6f8532a651ac31e4a13",
+  "after_revision": "1e57f3b283f3d45fb98a968ce04e1c41797a7e16",
+  "binaries": {
+    "before/safe/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-mc-final-after-safe/release/examples/profile_ivf",
+      "sha256": "6467d6300fbc76bfb3c6c27a95f6dffba608be289d0573922037f5ac137744eb",
+      "bytes": 17345248
+    },
+    "before/safe/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-mc-final-after-safe/release/examples/decode_md5",
+      "sha256": "b1fd138e629f44f22f550002a8365fbb789c3c26362a0e43784a02d33492e246",
+      "bytes": 13627816
+    },
+    "before/untracked/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-mc-final-after-untracked/release/examples/profile_ivf",
+      "sha256": "a2883739f38bc0dd098da4fe1093800f8f4cd2808f466ccc5ad0adb90aa6d39a",
+      "bytes": 16176152
+    },
+    "before/untracked/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-mc-final-after-untracked/release/examples/decode_md5",
+      "sha256": "5a68d68c180a4754bd3d8772cb57ef7e1f0cf596287a73cfb1de5a92e57e8eb1",
+      "bytes": 12440840
+    },
+    "after/safe/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-safe/release/examples/profile_ivf",
+      "sha256": "9ed0eeea45a6839744ae0fc432704e31f5e6f9b61f4831d725823890ebfe31c4",
+      "bytes": 17221624
+    },
+    "after/safe/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-safe/release/examples/decode_md5",
+      "sha256": "5ff5e0a567f66483752c84b3b8b2cda4ffadf7ae8d57fc1ce8e0e2ea3c2cd20a",
+      "bytes": 13583784
+    },
+    "after/untracked/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/profile_ivf",
+      "sha256": "b7000abff48e73826102c7c39b2c610aaaaa064f95cd43b5e862b48801b6a3dd",
+      "bytes": 16055888
+    },
+    "after/untracked/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5",
+      "sha256": "57d31073dcb060d95dcd0030ef816e6e1d835a03d764cdd3b66733af6f076aa4",
+      "bytes": 12400272
+    }
+  },
+  "streams": [
+    {
+      "path": "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real1080_96.ivf",
+      "sha256": "0a0584bfd7a21207da1449c3f749b63b0b2fe77a59ab18ce6bd4cf9e33ad1d32",
+      "bytes": 7430709
+    },
+    {
+      "path": "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real4k_48.ivf",
+      "sha256": "f5099176ce0656f0c7975d5fc23ee3f138043a01941ca0eaeca1684298a66c4a",
+      "bytes": 10079624
+    },
+    {
+      "path": "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/svt_real1080_96.ivf",
+      "sha256": "093140494057f49dfe48a4a5fa59bdc5d45be226fcd377c8e77bd568af323ab8",
+      "bytes": 9959733
+    },
+    {
+      "path": "/home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom10_real1080.ivf",
+      "sha256": "e21249f068ad20c51af8a249ad0a831f1d3fa42013efb1c6b087c659ecdc902c",
+      "bytes": 6585055
+    }
+  ],
+  "modes": [
+    "safe",
+    "untracked"
+  ],
+  "workers": [
+    1,
+    4
+  ],
+  "delay": 1,
+  "phases": [
+    "aa",
+    "ab"
+  ],
+  "process_pairs_per_case": 4,
+  "timed_passes_per_invocation": 3,
+  "timed_observations_per_arm_per_case": 12,
+  "source_scope": "Signed warp destination addressing only; existing original MC production baseline, same compiler/dependencies/timer",
+  "date": "2026-10-08",
+  "host": "r7900x",
+  "build_provenance": "builds.meta.json",
+  "files": {
+    "timing-safe-aa.jsonl": {
+      "bytes": 5712,
+      "sha256": "f540c4fca97f6bdba87490feddb9b78f7750eb974ec8398bf17e5d2df7a046e8",
+      "parts": [
+        "timing-safe-aa.jsonl"
+      ]
+    },
+    "timing-safe-ab.jsonl": {
+      "bytes": 5718,
+      "sha256": "75296707220a0a5f51e64a7da2a63bd239fcd440d645eb7b0e2aea66165a72d1",
+      "parts": [
+        "timing-safe-ab.jsonl"
+      ]
+    },
+    "timing-untracked-aa.jsonl": {
+      "bytes": 5628,
+      "sha256": "2a371332298b1ad7515c45d8e273255ce942644763a4b0394e97652b70091b6b",
+      "parts": [
+        "timing-untracked-aa.jsonl"
+      ]
+    },
+    "timing-untracked-ab.jsonl": {
+      "bytes": 5596,
+      "sha256": "0eb2ab08db7183ecb508086cbb4c9d761ab729a3bb3fce1b3a2bf69c4352f6b0",
+      "parts": [
+        "timing-untracked-ab.jsonl"
+      ]
+    },
+    "timing.log": {
+      "bytes": 28675,
+      "sha256": "e65576fb0f15411d71e35161467f2e78e375c206b3ae990ee17b74aa3aa89e5a",
+      "parts": [
+        "timing.log"
+      ]
+    },
+    "timing-analysis.json": {
+      "bytes": 11801,
+      "sha256": "76d61b37b53607f00483355701b9992863239d48cc782be7cee5d4d7a72a7fe4",
+      "parts": [
+        "timing-analysis.json"
+      ]
+    }
+  },
+  "resources": "run-heavy: done rc=0 2971s | peak-RSS 0.21GiB | min-avail 25507MiB | peak-load 1.80",
+  "limits": [
+    "Generic release fat LTO; both examples unify testable_dispatch",
+    "Not measured on Zen 5 or ordinary consumers without testable_dispatch",
+    "Possible untracked4K one-worker cost under focused repeat; no performance-neutral claim"
+  ]
+}
