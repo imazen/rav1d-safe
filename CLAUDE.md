@@ -1229,10 +1229,14 @@ boundary as well as have a 64-byte-multiple length. That is a type invariant of
 `Rav1dPictureDataComponentInner` — `ExternalAsMutPtr::as_mut_ptr` `assume`s it,
 so violating it is unsound, not merely wrong — and it is the same alignment
 `Dav1dPicAllocator::alloc_picture_callback` already requires of C allocators.
-**The default build COPIES into a 64-byte-aligned `PicBuf` and checks neither
-the caller's alignment nor its length**, which is exactly how two harnesses came
-to violate it while passing everywhere anyone looked. A `Vec<BD::Pixel>` has
-alignment 1 (8bpc) or 2 (16bpc) — use `crate::src::safe_simd::aligned_plane`.
+**The default build COPIES into a 64-byte-aligned `PicBuf` and checks the
+byte length is a multiple of64; it does not require caller-pointer alignment.**
+That copy allowed unaligned fixture allocations to pass in default mode
+while violating C-FFI's zero-copy alignment requirement. A `Vec<BD::Pixel>`
+guarantees only alignment1 (8bpc) or2 (16bpc); use
+`crate::src::safe_simd::aligned_plane` and a64-byte-multiple byte length.
+Verified against `include/dav1d/picture.rs::wrap_buf` on2026-10-08; the default
+length assertion has been present since `0ce0957d`.
 
 Not a NEON or aarch64 property: it surfaced there only because those two are the
 only `wrap_buf` harnesses that survive the `c-ffi` cfg gates (the rest are

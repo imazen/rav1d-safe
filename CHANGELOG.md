@@ -8,7 +8,7 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 - The `decode_md5` conformance example caps archmage tokens alongside CPU
   masks so scalar/tier selections reach their actual fallbacks. Native ARM
   and x86 worker guard tests pass and fail disabling mutations; CI runs
-  both. Production managed CPU-mask behavior is unchanged.
+  both (`da9354be`). Production managed CPU-mask behavior is unchanged.
 - Default conformance extraction serializes excluded sanitizer rows with the
   same seven-column shape as MD5 rows; the end-to-end protocol gate now runs
   in CI (`54279978` restores extraction).
