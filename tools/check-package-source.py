@@ -18,7 +18,7 @@ import time
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--work-dir', type=Path, required=True)
 p.add_argument('--target', help='Optional Rust cross-compilation target')
-p.add_argument('--features', nargs='+', default=['default', 'unchecked', 'c-ffi', 'asm', 'partial_asm'])
+p.add_argument('--features', nargs='+', default=['default', 'untracked', 'c-ffi', 'asm', 'partial_asm'])
 a = p.parse_args()
 root = Path(__file__).resolve().parents[1]
 w = a.work_dir.resolve()
