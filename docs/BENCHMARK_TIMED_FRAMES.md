@@ -16,6 +16,9 @@ and CLI check took 31 seconds with peak RSS 1.28 GiB, minimum available
 
 `just bench-frame-count <binary> <stream> <threads> <repetitions>` reproduces
 the CLI check. A deliberately shortened timed count must fail before any
-RESULT row. That negative control is prepared next; its result is not yet
-established. Archmage A/A and A/B measurements will use matched rebuilt
+RESULT row. The deliberately shortened count (95 versus 96) fails before any RESULT
+row. Exact source restoration and a fresh rebuild pass all three timed
+decodes and release example clippy with warnings denied. [Full positive,
+mutation and restored logs](../benchmarks/timed_frame_count_2026-10-08.meta.json)
+record 19/34-second mutation/restored scopes, each peaking at 1.29 GiB RSS. Archmage A/A and A/B measurements will use matched rebuilt
 binaries containing this same guard in both arms.
