@@ -24,8 +24,8 @@ fused output, for every pair of current four-tap table rows, eight pixel
 patterns, both stride signs, and a source slice containing only 49 active
 bytes. Existing whole-buffer MC parity also covers 4x4 dispatch, direct
 AVX2 and available AVX-512 tiers, every phase, destination padding, and the
-bounded negative-source-stride fixture. These are prepared test scopes,
-not executed results for this child.
+bounded negative-source-stride fixture. Focused execution is recorded below; those tests do not establish full
+decoder coverage.
 
 Run `just test-mc-fused-small` and the full MC gates before building matched
 benchmark examples. Real-clip timing must include 8-bit and 10-bit clips,
@@ -55,7 +55,20 @@ lock and guarded timer. Both examples unify `testable_dispatch`.
 
 The wrapped scope returned rc=0 after 171 seconds, peak RSS 1.62 GiB,
 minimum available 23,861 MiB and peak load 3.65. Complete raw output and
-source/executable fingerprints are retained. Whole-clip identity and error
-controls are running. This focused result does not establish full decoder
+source/executable fingerprints are retained. The whole-clip identity and error
+control results are below. This focused result does not establish full decoder
 coverage or a performance benefit; Zen 5 and ordinary consumers remain
 unmeasured.
+
+## Whole-clip identity and error controls
+
+All [32 before/after cases](../benchmarks/mc_fused_small_2026-10-08/clips-controls.meta.json)
+match dav1d 1.5.3 with grain enabled: four 8/10-bit clips, tracked/untracked
+builds and one/four workers at delay one. Both candidate timing binaries
+reject a malformed second packet with rc101 and no RESULT; valid controls
+and MD5 frame limits zero/one pass. The original no-limit MD5 example
+still reports its decode error separately and is not claimed repaired.
+The wrapped scope returned rc=0 after 120 seconds, peak RSS 0.20 GiB,
+minimum available 25,499 MiB and peak load 1.73. The controlled timing
+matrix is now running; full decoder/sidecar gates and a production landing
+remain missing.

@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-08",
+  "before_revision": "1e57f3b283f3d45fb98a968ce04e1c41797a7e16",
+  "after_revision": "fe10bf79f774098460a81f187761e388135a1645",
+  "build_provenance": "gate-build.meta.json",
+  "start": {
+    "event": "start",
+    "binaries": {
+      "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-safe/release/examples/decode_md5": "5ff5e0a567f66483752c84b3b8b2cda4ffadf7ae8d57fc1ce8e0e2ea3c2cd20a",
+      "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5": "57d31073dcb060d95dcd0030ef816e6e1d835a03d764cdd3b66733af6f076aa4",
+      "/home/lilith/work/zen/rav1d-safe/target/lead-fused-current-safe/release/examples/decode_md5": "f224c1298826630801a3281b03715d4cfc21c62eabd212d9cf9c2a9c251de6ca",
+      "/home/lilith/work/zen/rav1d-safe/target/lead-fused-current-untracked/release/examples/decode_md5": "cc0f42516636bdc06e7df0dc013f7f746f04687ff121ecb599a6b73c7f306525"
+    },
+    "dav1d": "1.5.3",
+    "threads": [
+      1,
+      4
+    ],
+    "delay": 1,
+    "filmgrain": true
+  },
+  "cases": 32,
+  "resources": "run-heavy: done rc=0 120s | peak-RSS 0.20GiB | min-avail 25499MiB | peak-load 1.73",
+  "full_command": "run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=25775MiB :: bash -c just bench-md5 --binary /home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-safe/release/examples/decode_md5 --binary /home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked/release/examples/decode_md5 --binary /home/lilith/work/zen/rav1d-safe/target/lead-fused-current-safe/release/examples/decode_md5 --binary /home/lilith/work/zen/rav1d-safe/target/lead-fused-current-untracked/release/examples/decode_md5 --filmgrain --threads 1,4 --delay 1 --stream /home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real1080_96.ivf --stream /home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real4k_48.ivf --stream /home/lilith/tmp/rav1d-handoff-2026-10-07/streams/svt_real1080_96.ivf --stream /home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom10_real1080.ivf && just test-benchmark-errors /home/lilith/work/zen/rav1d-safe/target/lead-fused-current-safe/release/examples/decode_md5 /home/lilith/work/zen/rav1d-safe/target/lead-fused-current-safe/release/examples/profile_ivf && just test-benchmark-errors /home/lilith/work/zen/rav1d-safe/target/lead-fused-current-untracked/release/examples/decode_md5 /home/lilith/work/zen/rav1d-safe/target/lead-fused-current-untracked/release/examples/profile_ivf",
+  "log": {
+    "bytes": 16236,
+    "sha256": "49bb605e638a875967f530cf041c410111132c833deccdd76690d5558160ed86"
+  },
+  "controls": "Both new profile binaries reject malformed second packet with rc101/noRESULT; valid controls and MD5 limits0/1 pass. Original no-limit MD5 error behaviour retained separately.",
+  "missing": [
+    "Full decoder/race/sidecar gates",
+    "Complete AA/AB timing",
+    "Production source landing"
+  ]
+}
