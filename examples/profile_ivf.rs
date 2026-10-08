@@ -163,7 +163,14 @@ fn main() {
     // backtrace — no perf/PMU needed, works under perf_event_paranoid=4).
     // Writes <path>.svg flamegraph and <path>.collapsed folded stacks covering
     // the timed loop only.
+    #[cfg(not(unix))]
+    assert!(
+        std::env::var_os("RAV1D_PPROF").is_none(),
+        "RAV1D_PPROF requires a Unix target"
+    );
+    #[cfg(unix)]
     let pprof_path = std::env::var("RAV1D_PPROF").ok();
+    #[cfg(unix)]
     let pprof_guard = pprof_path.as_ref().map(|_| {
         pprof::ProfilerGuardBuilder::default()
             .frequency(999)
@@ -189,6 +196,7 @@ fn main() {
     }
     eprintln!("{label}: {last:.4} ms/frame");
 
+    #[cfg(unix)]
     if let (Some(path), Some(guard)) = (pprof_path, pprof_guard) {
         let report = guard.report().build().expect("pprof report");
         // Folded stacks: `root;...;leaf N` — same convention as inferno's
