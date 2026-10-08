@@ -1,0 +1,23 @@
+{
+  "published_base": "da85ea55f2d45d54c37e35f1505c216fa5850c6b",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "prepared_source": "Base plus dependency pin and warning-only fixes in 0edaaf8d.",
+  "command": "just check-lead-ci; just clippy-untracked; cargo clippy --no-default-features --features bitdepth_8,bitdepth_16,c-ffi -- -D warnings; cargo clippy --no-default-features --features bitdepth_8,bitdepth_16,__probe_sites -- -D warnings; cargo +1.89.0 check -p rav1d-safe --lib",
+  "compiler": "1.99.0 except explicitly selected 1.89.0 MSRV check",
+  "result": "All commands passed; both library runners passed 115/115.",
+  "run_heavy": "rc=0; 87s; peak-RSS 1.61GiB; min-avail 24800MiB; peak-load 4.69",
+  "raw_sha256": "0ce8511ddea0c58968e3dc26a68aa83b20985e7b21554cbae181db3d6341c78a",
+  "reconstruct": "Concatenate numbered parts without separators.",
+  "parts": [
+    {
+      "path": "benchmarks/archmage_stable_msrv_2026-10-08.part01.log",
+      "bytes": 27858,
+      "sha256": "78795eb85a937832bbd6045ff88e4e428455f4933902cda49a412b14a6c81e56"
+    },
+    {
+      "path": "benchmarks/archmage_stable_msrv_2026-10-08.part02.log",
+      "bytes": 25740,
+      "sha256": "fea9104548cb811ccec567be38bd636099a62f8543cdcec7aa6b51f0acfb2a12"
+    }
+  ]
+}
