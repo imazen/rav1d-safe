@@ -1,0 +1,64 @@
+{
+  "date": "2026-10-08",
+  "cpu": "AMD Ryzen 9 7900X, Zen 4",
+  "zen5": "not measured",
+  "compiler": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "profile": "release (fat LTO)",
+  "archmage_revision": "b8d6c0777e55e4ea8d26cde0879faae858cba662",
+  "binary_records": [
+    {
+      "sha256": "d35c11ae0d31d7fea178dbd3664cc4649d2a58da19f0b80df6e9e3dd159f1426",
+      "tls_sections": [
+        "  [20] .tdata            PROGBITS        0000000000480a50 47ea50 000230 00 WAT  0   0  8",
+        "  [21] .tbss             NOBITS          0000000000480c80 47ec80 002c68 00 WAT  0   0 16"
+      ],
+      "artifact": "lead-baseline-safe/release/examples/profile_ivf",
+      "source_revision": "5b51b144cf73216fffd1100bfc396bc7dc17b5bd"
+    },
+    {
+      "sha256": "cd2d839d9049bc633463fff7eb2c56a48bbe9f3721dd81e827c05f0f55f81382",
+      "tls_sections": [
+        "  [20] .tdata            PROGBITS        00000000004304a0 42e4a0 000230 00 WAT  0   0  8",
+        "  [21] .tbss             NOBITS          00000000004306d0 42e6d0 002c68 00 WAT  0   0 16"
+      ],
+      "artifact": "lead-baseline-untracked/release/examples/profile_ivf",
+      "source_revision": "5b51b144cf73216fffd1100bfc396bc7dc17b5bd"
+    },
+    {
+      "sha256": "81fb63d22d75157331b135c080fe3565b32721a505f5a04810beef698568ff90",
+      "tls_sections": [
+        "  [20] .tdata            PROGBITS        00000000004865a0 4845a0 000230 00 WAT  0   0  8",
+        "  [21] .tbss             NOBITS          00000000004867d0 4847d0 002c68 00 WAT  0   0 16"
+      ],
+      "artifact": "safe/release/examples/profile_ivf",
+      "source_revision": "25ef8af1124cecccab38c54efc521a69cae6b3d5"
+    },
+    {
+      "sha256": "fc425e147ea7cb756fb3ec5beebeefc6f5ca4b691ebc616ce647dba589a2901c",
+      "tls_sections": [
+        "  [20] .tdata            PROGBITS        0000000000436540 434540 000230 00 WAT  0   0  8",
+        "  [21] .tbss             NOBITS          0000000000436770 434770 002c68 00 WAT  0   0 16"
+      ],
+      "artifact": "untracked/release/examples/profile_ivf",
+      "source_revision": "25ef8af1124cecccab38c54efc521a69cae6b3d5"
+    }
+  ],
+  "old_reported_before": {
+    "reported_revision": "5b51b144",
+    "actual_revision": "unverified; predates boxed loop-restoration TLS",
+    "sha256": "81fdc633b779c47ba2d1efb68000c71f5883377a164a1330281644897f544d70",
+    "tls_sections": [
+      "  [20] .tdata            PROGBITS        000000000047c8c0 47a8c0 0001a0 00 WAT  0   0  8",
+      "  [21] .tbss             NOBITS          000000000047ca60 47aa60 1431c0 00 WAT  0   0 16"
+    ]
+  },
+  "finding": "The old before binary has 1323456 bytes of .tbss and inline LR scratch arrays. The MC candidate and freshly built exact 5b51b144 before binaries have 11368 bytes. Old MC ratios therefore compare different TLS implementations and cannot isolate MC. No MC speedup is established by this identity check.",
+  "build_commands": [
+    "TMPDIR=$HOME/tmp CARGO_TARGET_DIR=<new-directory> run-heavy --mem 16G -- cargo build --release --no-default-features --features bitdepth_8,bitdepth_16 --example profile_ivf --example decode_md5",
+    "Same with --features bitdepth_8,bitdepth_16,untracked"
+  ],
+  "build_logs": [
+    "mc_baseline_safe_2026-10-08.log",
+    "mc_baseline_untracked_2026-10-08.log"
+  ]
+}
