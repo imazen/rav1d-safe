@@ -1051,6 +1051,10 @@ and all three C-FFI fixture tests (2.718 seconds). Negative-stride C-FFI
 fixtures are not covered by the new default-only test. Full decoder/sidecar,
 cross-compile and current matched timing remain pending; the production
 MC performance candidate has not been published.
+A follow-up AVX2 four-tap extent test fails on inactive row 6 before
+the load omission and passes afterward. All five default and four C-FFI
+focused tests pass on that source; full gates and matched timing are still
+pending. See [four-tap evidence](benchmarks/mc_four_tap_rows_2026-10-08.meta.json).
 
 ### ARM MC negative source strides (2026-10-08) — FIXED
 

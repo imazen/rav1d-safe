@@ -1,0 +1,28 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=26086MiB :: bash -c just test-mc-pair-windows && just test-mc-pair-windows bitdepth_8,bitdepth_16,c-ffi
+cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib -E 'test(mc_x86_8bpc_parity) | test(four_tap_vertical_uses_only_active_rows)' --test-threads 1
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-mc)
+[1m[92m    Finished[0m `release-thin` profile [optimized + debuginfo] target(s) in 13.45s
+────────────
+[32;1m Nextest run[0m ID [1m6861d216-baf1-4eaf-bb08-3f6fc822a114[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m5[0m tests across [1m1[0m binary ([1m115[0m tests [33;1mskipped[0m)
+[32;1m        PASS[0m [   0.004s] (1/5) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::four_tap_vertical_rows[0m[36m::[0m[34;1mfour_tap_vertical_uses_only_active_rows[0m
+[32;1m        PASS[0m [   0.003s] (2/5) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mpair_window_arithmetic_fits_i16_for_all_filter_rows[0m
+[32;1m        PASS[0m [  11.993s] (3/5) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mput_prep_8bpc_endpoint_and_tail_parity[0m
+[32;1m        PASS[0m [  14.592s] (4/5) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mput_prep_8bpc_full_domain_parity[0m
+[32;1m        PASS[0m [   6.669s] (5/5) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mreversed_source_rows_match_scalar_for_all_8tap_filters[0m
+────────────
+[32;1m     Summary[0m [  33.261s] [1m5[0m tests run: [1m5[0m [32;1mpassed[0m, [1m115[0m [33;1mskipped[0m
+cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16,c-ffi" --lib -E 'test(mc_x86_8bpc_parity) | test(four_tap_vertical_uses_only_active_rows)' --test-threads 1
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-mc)
+[1m[92m   Compiling[0m rav1d-disjoint-mut v0.4.0 (/home/lilith/work/zen/rav1d-safe--lead-mc/crates/rav1d-disjoint-mut)
+[1m[92m    Finished[0m `release-thin` profile [optimized + debuginfo] target(s) in 13.23s
+────────────
+[32;1m Nextest run[0m ID [1mea984a0c-31a9-4ed0-97b6-6d44cd6405f3[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m4[0m tests across [1m1[0m binary ([1m71[0m tests [33;1mskipped[0m)
+[32;1m        PASS[0m [   0.003s] (1/4) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::four_tap_vertical_rows[0m[36m::[0m[34;1mfour_tap_vertical_uses_only_active_rows[0m
+[32;1m        PASS[0m [   0.003s] (2/4) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mpair_window_arithmetic_fits_i16_for_all_filter_rows[0m
+[32;1m        PASS[0m [   1.351s] (3/4) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mput_prep_8bpc_endpoint_and_tail_parity[0m
+[32;1m        PASS[0m [   1.321s] (4/4) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mput_prep_8bpc_full_domain_parity[0m
+────────────
+[32;1m     Summary[0m [   2.678s] [1m4[0m tests run: [1m4[0m [32;1mpassed[0m, [1m71[0m [33;1mskipped[0m
+run-heavy: done rc=0 63s | peak-RSS 1.54GiB | min-avail 24441MiB | peak-load 2.99

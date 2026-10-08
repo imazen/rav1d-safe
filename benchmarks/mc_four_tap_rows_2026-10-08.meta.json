@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-08",
+  "base_revision": "507890b7a56f2ed389e64ca0a4d0ab972384fc46",
+  "cpu": "Ryzen9 7900X (Zen4)",
+  "rustc": "1.99.0",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "before_source_sha256": "64a29ecd052746ba9bad9b0cf11c557e1c101a4a50626447196f91240713bbbd",
+  "after_source_sha256": "5eef8c20ef03bb11d1c922cecb47727edf96ca7cf002bc162f33b3dddc8dc8db",
+  "oracle_sha256": "0002a23dfb964af1c4e87999749c513fbafc4b8b6a71c5a07b93c5368a19295d",
+  "commands": [
+    "just test-mc-pair-windows",
+    "just test-mc-pair-windows bitdepth_8,bitdepth_16,c-ffi"
+  ],
+  "results": {
+    "before": "4/5PASS; four-tap extent oracleFAIL0.003s at mc.rs2864:40, row6 beyond len6",
+    "after": "5/5defaultPASS33.261s;4/4CFFIPASS2.678s",
+    "scope": "AVX2 four-tap put/prep only active rows2..6, all4tap table rows, widths4/8/17/128, full output incl padding; existing full-domain/endpoints/arithmetic/reversed-source gates unchanged"
+  },
+  "run_heavy": [
+    {
+      "stage": "before",
+      "rc": 100,
+      "seconds": 54,
+      "peak_rss_gib": 1.55,
+      "min_available_mib": 24355,
+      "peak_load": 2.49
+    },
+    {
+      "stage": "after",
+      "rc": 0,
+      "seconds": 63,
+      "peak_rss_gib": 1.54,
+      "min_available_mib": 24441,
+      "peak_load": 2.99
+    }
+  ],
+  "logs": [
+    {
+      "stage": "before",
+      "path": "benchmarks/mc_four_tap_rows_before_2026-10-08.log",
+      "sha256": "4a3aa0b14ffb49bcec8e7cf5603494e694d9fb73c668f4173f4e372e237a54f0"
+    },
+    {
+      "stage": "after",
+      "path": "benchmarks/mc_four_tap_rows_after_2026-10-08.log",
+      "sha256": "89ba91e9d1f842c883731e5e9010493ff4b6975e13b3b326df801b4e6d5e8154"
+    }
+  ],
+  "missing": "Candidate not published; full decoder/sidecar/feature checks and matched timings remain. Dynamic AVX512 inactive-row loads unchanged; negative CFFI strides not established; Zen5 unmeasured."
+}
