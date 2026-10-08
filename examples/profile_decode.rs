@@ -106,7 +106,7 @@ fn main() {
         eprintln!("CPU level: X86V3 (AVX2 max, no AVX-512)");
         CpuLevel::X86V3
     } else if args.iter().any(|a| a == "--scalar") {
-        eprintln!("CPU level: Scalar (no SIMD)");
+        eprintln!("CPU pixel mask: Scalar (token SIMD may remain active)");
         CpuLevel::Scalar
     } else {
         CpuLevel::Native

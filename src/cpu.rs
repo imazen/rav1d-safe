@@ -243,7 +243,8 @@ pub(crate) fn rav1d_get_cpu_flags() -> CpuFlags {
     let mask = rav1d_cpu_flags_mask.load(Ordering::SeqCst);
     // Note that `bitflags!` `struct`s are `#[repr(transparent)]`.
     // The mask applies to both runtime-detected AND compile-time flags,
-    // so rav1d_set_cpu_flags_mask(0) forces scalar even if compiled with -C target-feature=+avx2.
+    // so a zero mask disables mask-gated DSP branches even with compile-time AVX2.
+    // Token dispatch and compiler vectorization remain independent of this mask.
     CpuFlags::from_bits_truncate(flags & mask)
 }
 

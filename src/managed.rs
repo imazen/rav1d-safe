@@ -256,11 +256,11 @@ pub struct Settings {
 
     /// CPU feature level for SIMD dispatch.
     ///
-    /// Controls which instruction sets the decoder is allowed to use.
+    /// Selects flags for mask-gated pixel DSP dispatch.
     /// Default is `CpuLevel::Native` (use all detected features).
     ///
-    /// Set to a lower level to force the decoder through a specific code path,
-    /// e.g. `CpuLevel::Scalar` to test the pure-Rust fallback.
+    /// Token-dispatched kernels can select SIMD independently of these flags.
+    /// See [`CpuLevel::Scalar`] for the conformance-tool limitation and gates.
     pub cpu_level: CpuLevel,
 }
 

@@ -150,3 +150,9 @@ the real command. The x86 worker/CLI gates, both-mode all-target lint and ARM
 compile pass in a 42-second scope, peak-RSS 1.29 GiB, min-avail 24645 MiB,
 peak-load 0.93. [Before/after full logs and binary hashes](../benchmarks/decode_md5_limit_2026-10-08.meta.json)
 record the failure and repair; the full enforced ARM scalar rerun is separate.
+
+The repeated CPU-mask descriptions in `Settings::cpu_level`, the core flag
+comment, the profiling example label and the overlap-test header also identify
+pixel-dispatch selection. Token dispatch and compiler vectorization remain
+independent of that mask. No settings or decoder behavior changes accompany
+these documentation corrections.
