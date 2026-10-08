@@ -34,16 +34,17 @@ fn decode_ivf_frames(frames: &[ivf_parser::IvfFrame]) -> usize {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
-    // Tile threading only, matching `dav1d --framedelay 1` and the rest of the
-    // gap campaign. A no-op in the checked build, which pins n_fc = 1 anyway.
-    // `RAV1D_FRAME_DELAY=N` allows N frames in flight (0 = auto). Default 1 (tile
-    // threading only). Frame threading needs `untracked`; tracked builds clamp to 1.
+    // Default to tile threading, matching `dav1d --framedelay 1` and the gap
+    // campaign. `RAV1D_FRAME_DELAY=N` allows N frames in flight (0 = auto).
+    // Values above one enable frame threading in both tracked and untracked
+    // builds; the managed API resolves auto delay from the requested workers.
     settings.max_frame_delay = std::env::var("RAV1D_FRAME_DELAY")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
-    // `RAV1D_LEVEL=scalar|v2|v3|v4|native` caps the CPU tier (v3 = AVX2). Used to
-    // compare like-for-like against decoders limited to AVX2 (libgav1).
+    // `RAV1D_LEVEL=scalar|v2|v3|v4|native` selects managed pixel-DSP tiers
+    // (v3 = AVX2). Other token-dispatched SIMD may remain active; this setting
+    // does not enforce a whole-decoder instruction cap.
     if let Ok(level) = std::env::var("RAV1D_LEVEL") {
         use rav1d_safe::src::managed::CpuLevel as L;
         settings.cpu_level = match level.as_str() {
