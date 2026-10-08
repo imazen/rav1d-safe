@@ -8,7 +8,7 @@
 
 use rav1d_safe::src::managed::{Decoder, Settings};
 use std::sync::{Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Mutex to serialize ALL thread tests. Any test that creates a Decoder
 /// must hold this lock to avoid thread count interference.
@@ -80,8 +80,16 @@ fn test_multi_threaded_cleanup() {
 
         let _ = decoder.decode(&[]);
 
-        // Should have spawned workers
-        let workers = count_worker_threads();
+        // Rust assigns the OS name inside the new thread, after spawn can
+        // return. Wait for that observation; retain the four-worker assertion.
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let workers = loop {
+            let workers = count_worker_threads();
+            if workers >= 4 || Instant::now() >= deadline {
+                break workers;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        };
         assert!(workers >= 4, "Expected at least 4 workers, got {}", workers);
     }
 

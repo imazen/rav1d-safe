@@ -5,6 +5,8 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- Thread cleanup observes worker OS names for up to one second before its
+  unchanged four-worker assertion; a three-worker mutation still fails.
 - Release all-target lint recipes pass on native ARM in tracked and untracked
   modes; intentionally retained scalar references have item-scoped test
   allowances, and an empty test module follows its existing test cfgs.

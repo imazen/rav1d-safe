@@ -30,6 +30,11 @@ test-all-modes:
     cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --test-threads 2
     cargo test --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --doc
 
+# Reproduce startup observation and the committed 4K decoder stress fixture.
+test-thread-start features="bitdepth_8,bitdepth_16" repetitions="100":
+    cargo nextest run --release --no-default-features --features "{{features}}" --test thread_cleanup_test --test mt_stress --test-threads 1
+    cargo nextest run --release --no-default-features --features "{{features}}" --test thread_cleanup_test -E 'test(=test_multi_threaded_cleanup)' --stress-count {{repetitions}} --test-threads 1
+
 # Cast-range overflow and valid-alignment controls under Stacked Borrows.
 test-cast-miri:
     cargo +nightly miri test -p rav1d-disjoint-mut --test cast_range_overflow

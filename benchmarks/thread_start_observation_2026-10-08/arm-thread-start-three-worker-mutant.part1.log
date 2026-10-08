@@ -1,0 +1,30 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=12/16 avail=29059MiB :: cargo nextest run --release --no-default-features --features bitdepth_8,bitdepth_16 --test thread_cleanup_test -E test(=test_multi_threaded_cleanup) --retries 0 --test-threads 1
+   Compiling rav1d-safe v0.6.0 (/home/ubuntu/tmp/rav1d-safe-lead-checkout)
+    Finished `release` profile [optimized + debuginfo] target(s) in 41.47s
+────────────
+ Nextest run ID 97773c3d-4950-444e-b66e-32af0cc98da9 with nextest profile: default
+    Starting 1 test across 1 binary (5 tests skipped)
+        FAIL [   1.013s] (1/1) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+  stdout ───
+
+    running 1 test
+    test test_multi_threaded_cleanup ... FAILED
+
+    failures:
+
+    failures:
+        test_multi_threaded_cleanup
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.01s
+
+  stderr ───
+
+    thread 'test_multi_threaded_cleanup' (399911) panicked at tests/thread_cleanup_test.rs:93:9:
+    Expected at least 4 workers, got 3
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   1.015s] 1 test run: 0 passed, 1 failed, 5 skipped
+        FAIL [   1.013s] (1/1) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+error: test run failed
+run-heavy: done rc=100 43s | peak-RSS 0.73GiB | min-avail 28508MiB | peak-load 6.73

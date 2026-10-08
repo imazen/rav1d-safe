@@ -1,0 +1,46 @@
+psed so far, 11 iterations remaining)
+        PASS [   0.064s] [ 90/100] (1/1) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+ Stress test [   0.066s] iteration 90/100: 1 test run: 1 passed, 5 skipped
+────────────
+ Stress test iteration 91/100 (00:00:05 elapsed so far, 10 iterations remaining)
+        PASS [   0.064s] [ 91/100] (1/1) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+ Stress test [   0.065s] iteration 91/100: 1 test run: 1 passed, 5 skipped
+────────────
+ Stress test iteration 92/100 (00:00:06 elapsed so far, 9 iterations remaining)
+        PASS [   0.064s] [ 92/100] (1/1) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+ Stress test [   0.066s] iteration 92/100: 1 test run: 1 passed, 5 skipped
+────────────
+ Stress test iteration 93/100 (00:00:06 elapsed so far, 8 iterations remaining)
+        PASS [   0.065s] [ 93/100] (1/1) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+ Stress test [   0.066s] iteration 93/100: 1 test run: 1 passed, 5 skipped
+────────────
+ Stress test iteration 94/100 (00:00:06 elapsed so far, 7 iterations remaining)
+        PASS [   0.064s] [ 94/100] (1/1) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+ Stress test [   0.065s] iteration 94/100: 1 test run: 1 passed, 5 skipped
+────────────
+ Stress test iteration 95/100 (00:00:06 elapsed so far, 6 iterations remaining)
+        PASS [   0.064s] [ 95/100] (1/1) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+ Stress test [   0.065s] iteration 95/100: 1 test run: 1 passed, 5 skipped
+────────────
+ Stress test iteration 96/100 (00:00:06 elapsed so far, 5 iterations remaining)
+        PASS [   0.071s] [ 96/100] (1/1) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+ Stress test [   0.072s] iteration 96/100: 1 test run: 1 passed, 5 skipped
+────────────
+ Stress test iteration 97/100 (00:00:06 elapsed so far, 4 iterations remaining)
+        PASS [   0.066s] [ 97/100] (1/1) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+ Stress test [   0.068s] iteration 97/100: 1 test run: 1 passed, 5 skipped
+────────────
+ Stress test iteration 98/100 (00:00:06 elapsed so far, 3 iterations remaining)
+        PASS [   0.068s] [ 98/100] (1/1) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+ Stress test [   0.068s] iteration 98/100: 1 test run: 1 passed, 5 skipped
+────────────
+ Stress test iteration 99/100 (00:00:06 elapsed so far, 2 iterations remaining)
+        PASS [   0.066s] [ 99/100] (1/1) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+ Stress test [   0.067s] iteration 99/100: 1 test run: 1 passed, 5 skipped
+────────────
+ Stress test iteration 100/100 (00:00:06 elapsed so far, 1 iteration remaining)
+        PASS [   0.069s] [100/100] (1/1) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+ Stress test [   0.071s] iteration 100/100: 1 test run: 1 passed, 5 skipped
+────────────
+     Summary [   6.611s] 100/100 stress run iterations: 100 passed
+run-heavy: done rc=0 53s | peak-RSS 0.75GiB | min-avail 28372MiB | peak-load 6.62

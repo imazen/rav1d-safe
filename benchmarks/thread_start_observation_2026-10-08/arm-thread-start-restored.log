@@ -1,0 +1,28 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=12/16 avail=29125MiB :: just test-thread-start bitdepth_8,bitdepth_16 1
+cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --test thread_cleanup_test --test mt_stress --test-threads 1
+   Compiling rav1d-safe v0.6.0 (/home/ubuntu/tmp/rav1d-safe-lead-checkout)
+    Finished `release` profile [optimized + debuginfo] target(s) in 41.36s
+────────────
+ Nextest run ID a8f8af37-a23f-4342-8a21-75023585cdfd with nextest profile: default
+    Starting 7 tests across 2 binaries
+        PASS [   3.006s] (1/7) rav1d-safe::mt_stress mt_stress_4k
+        PASS [   0.075s] (2/7) rav1d-safe::thread_cleanup_test test_auto_detect_threads_cleanup
+        PASS [   0.019s] (3/7) rav1d-safe::thread_cleanup_test test_drop_without_decode
+        PASS [   0.065s] (4/7) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+        PASS [   0.122s] (5/7) rav1d-safe::thread_cleanup_test test_multiple_decoder_cycles
+        PASS [   0.013s] (6/7) rav1d-safe::thread_cleanup_test test_multiple_decoders_simultaneous
+        PASS [   0.009s] (7/7) rav1d-safe::thread_cleanup_test test_single_threaded_no_leak
+────────────
+     Summary [   3.312s] 7 tests run: 7 passed, 0 skipped
+cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --test thread_cleanup_test -E 'test(=test_multi_threaded_cleanup)' --stress-count 1 --test-threads 1
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.14s
+────────────
+ Nextest run ID 5ad7015e-78ea-44c8-8fce-943e40339046 with nextest profile: default
+    Starting 1 test across 1 binary (5 tests skipped)
+────────────
+ Stress test iteration 1/1 (00:00:00 elapsed so far, 1 iteration remaining)
+        PASS [   0.065s] [1/1] (1/1) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+ Stress test [   0.066s] iteration 1/1: 1 test run: 1 passed, 5 skipped
+────────────
+     Summary [   0.066s] 1/1 stress run iteration: 1 passed
+run-heavy: done rc=0 45s | peak-RSS 0.75GiB | min-avail 28371MiB | peak-load 6.74

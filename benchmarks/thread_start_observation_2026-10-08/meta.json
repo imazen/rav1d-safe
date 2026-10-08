@@ -1,0 +1,58 @@
+{
+  "date": "2026-10-08",
+  "cpu": "Neoverse-N1",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "test_source_sha256": "cfb6235b446a3432f6e7392f981dcecb1dd3d2a6f840bfd3f494ea253b2b81a4",
+  "commands": [
+    "just test-thread-start",
+    "cargo nextest run --release --no-default-features --features bitdepth_8,bitdepth_16 --test thread_cleanup_test -E test(=test_multi_threaded_cleanup) --retries 0 --test-threads 1 (intentional three-worker mutant)"
+  ],
+  "approved": {
+    "tests_passed": 7,
+    "stress_iterations_passed": 100,
+    "run_heavy": "rc=0;53s;peak-RSS 0.75GiB;min-avail 28372MiB;peak-load 6.62"
+  },
+  "mutation": {
+    "expected_exit_code": 100,
+    "observed": "Expected at least 4 workers, got 3",
+    "test_seconds": 1.013,
+    "run_heavy": "rc=100;43s;peak-RSS 0.73GiB;min-avail 28508MiB;peak-load 6.73"
+  },
+  "logs": {
+    "arm-thread-start-approved": {
+      "full_sha256": "91f514b89f1bd0ee2bcb4f6ed10ccd46a16e74379733a0db37e3c88c4667d973",
+      "parts": [
+        {
+          "path": "arm-thread-start-approved.part1.log",
+          "bytes": 28000,
+          "sha256": "0edef1df0c9776dadb58c7ef3f211812ef45be61a83accb0dd6a0f4bfaf86d4a"
+        },
+        {
+          "path": "arm-thread-start-approved.part2.log",
+          "bytes": 3332,
+          "sha256": "914f37d3553091c18104b1f464febf8e35b5a5cd6beb3020c1a9c1399c01bb66"
+        }
+      ]
+    },
+    "arm-thread-start-three-worker-mutant": {
+      "full_sha256": "3e22afa02284cc65998e43d2015120e1045e8b09d9406ba8cb3bd6eaa2c6f278",
+      "parts": [
+        {
+          "path": "arm-thread-start-three-worker-mutant.part1.log",
+          "bytes": 1458,
+          "sha256": "3e22afa02284cc65998e43d2015120e1045e8b09d9406ba8cb3bd6eaa2c6f278"
+        }
+      ]
+    },
+    "restored": {
+      "path": "arm-thread-start-restored.log",
+      "sha256": "81bddb650d2d048a13a7d67145fb544a2a1dbb7139af4d4de6b672fa98e345c0"
+    }
+  },
+  "restored": {
+    "tests_passed": 7,
+    "stress_iterations_passed": 1,
+    "run_heavy": "rc=0;45s;peak-RSS 0.75GiB;min-avail 28371MiB;peak-load 6.74"
+  }
+}
