@@ -1,0 +1,277 @@
+{
+  "observed_utc": "2026-10-08T17:07:23.305666+00:00",
+  "repository": "imazen/rav1d-safe",
+  "run_id": 37809793574,
+  "run_url": "https://github.com/imazen/rav1d-safe/actions/runs/37809793574",
+  "head_sha": "187a6e0088a8e18402b6c553eaf955a279bc8ea5",
+  "status": "completed",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "databaseId": 113423734428,
+      "name": "Cross-compile (x86_64-unknown-linux-musl)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:53Z",
+      "completedAt": "2026-10-08T16:35:29Z"
+    },
+    {
+      "databaseId": 113423734717,
+      "name": "Cross-compile (aarch64-unknown-linux-gnu)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:53Z",
+      "completedAt": "2026-10-08T16:35:37Z"
+    },
+    {
+      "databaseId": 113423734726,
+      "name": "SIMD Permutation Tests (x86_64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:53Z",
+      "completedAt": "2026-10-08T16:37:00Z"
+    },
+    {
+      "databaseId": 113423734834,
+      "name": "Packaged source feature builds (ubuntu-24.04-arm)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:36:37Z"
+    },
+    {
+      "databaseId": 113423734850,
+      "name": "SIMD Permutation Tests (aarch64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:56Z",
+      "completedAt": "2026-10-08T16:35:55Z"
+    },
+    {
+      "databaseId": 113423734904,
+      "name": "Clippy",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:53Z",
+      "completedAt": "2026-10-08T16:35:31Z"
+    },
+    {
+      "databaseId": 113423734907,
+      "name": "Format",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:53Z",
+      "completedAt": "2026-10-08T16:35:14Z"
+    },
+    {
+      "databaseId": 113423734919,
+      "name": "Guard-extent gate (bounds map invariant)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:36:39Z"
+    },
+    {
+      "databaseId": 113423734921,
+      "name": "Conformance (decode permutations, aarch64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:56Z",
+      "completedAt": "2026-10-08T16:56:14Z"
+    },
+    {
+      "databaseId": 113423734926,
+      "name": "Decoder MSRV (1.89)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:35:33Z"
+    },
+    {
+      "databaseId": 113423734974,
+      "name": "Coverage",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:53Z",
+      "completedAt": "2026-10-08T16:55:13Z"
+    },
+    {
+      "databaseId": 113423734977,
+      "name": "i686 container tests (cross)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:37:08Z"
+    },
+    {
+      "databaseId": 113423734984,
+      "name": "Packaged source feature builds (ubuntu-latest)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:56Z",
+      "completedAt": "2026-10-08T16:37:32Z"
+    },
+    {
+      "databaseId": 113423734986,
+      "name": "Diagnostic feature and environment policy",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:56Z",
+      "completedAt": "2026-10-08T16:36:30Z"
+    },
+    {
+      "databaseId": 113423734988,
+      "name": "Threading race gates",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:37:52Z"
+    },
+    {
+      "databaseId": 113423735024,
+      "name": "Tile Threading",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:36:09Z"
+    },
+    {
+      "databaseId": 113423735025,
+      "name": "Conformance runner protocol",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:35:00Z"
+    },
+    {
+      "databaseId": 113423735030,
+      "name": "Conformance (decode permutations, x86_64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:58:51Z"
+    },
+    {
+      "databaseId": 113423735070,
+      "name": "Build & Test (macos-latest, safe-simd)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:35:01Z",
+      "completedAt": "2026-10-08T16:46:47Z"
+    },
+    {
+      "databaseId": 113423735086,
+      "name": "Wrapper feature contracts",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:35:26Z"
+    },
+    {
+      "databaseId": 113423735109,
+      "name": "Build & Test (ubuntu-latest, i686)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:53Z",
+      "completedAt": "2026-10-08T16:37:29Z"
+    },
+    {
+      "databaseId": 113423735181,
+      "name": "FFI allocator ownership (Miri, stacked)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:35:48Z"
+    },
+    {
+      "databaseId": 113423735197,
+      "name": "Build & Test (ubuntu-24.04-arm, safe-simd-arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:46:04Z"
+    },
+    {
+      "databaseId": 113423735236,
+      "name": "Build & Test (windows-latest, i686)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:41:01Z"
+    },
+    {
+      "databaseId": 113423735251,
+      "name": "Build & Test (windows-latest, safe-simd)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:54Z",
+      "completedAt": "2026-10-08T16:43:37Z"
+    },
+    {
+      "databaseId": 113423735279,
+      "name": "FFI allocator ownership (Miri, tree)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:36:01Z"
+    },
+    {
+      "databaseId": 113423735293,
+      "name": "Cross-compile (wasm32-wasip1)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:35:20Z"
+    },
+    {
+      "databaseId": 113423735371,
+      "name": "Build & Test (ubuntu-24.04-arm, asm-arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:56Z",
+      "completedAt": "2026-10-08T16:37:42Z"
+    },
+    {
+      "databaseId": 113423735397,
+      "name": "Build & Test (ubuntu-latest, safe-simd)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:56Z",
+      "completedAt": "2026-10-08T16:42:57Z"
+    },
+    {
+      "databaseId": 113423735503,
+      "name": "Build & Test (windows-11-arm, safe-simd-arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:47:12Z"
+    },
+    {
+      "databaseId": 113423735530,
+      "name": "Build & Test (ubuntu-latest, asm)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:55Z",
+      "completedAt": "2026-10-08T16:40:43Z"
+    },
+    {
+      "databaseId": 113423735637,
+      "name": "Build & Test (ubuntu-24.04-arm, c-ffi-arm64)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:56Z",
+      "completedAt": "2026-10-08T16:38:25Z"
+    },
+    {
+      "databaseId": 113423735654,
+      "name": "Build & Test (macos-26-intel, safe-simd)",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-10-08T16:34:59Z",
+      "completedAt": "2026-10-08T16:56:58Z"
+    }
+  ],
+  "full_capture_sha256": "c30b16d9e13affc5e92e7876b2bd15f3eef7123ac4306457b2ae6df2c0d63240",
+  "scope": "Full job outcome projection; step logs retained by GitHub. Exact head includes signed warp destination source80069eb0."
+}

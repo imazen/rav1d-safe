@@ -235,3 +235,15 @@ refer to their named revisions; later commits do not extend those runs'
 coverage. The new repair's local exact-source gates are recorded in
 [the warp row review](MC_WARP_DESTINATION_ROWS.md); its current remote
 platform gate must be checked against the actual head revision.
+
+## Published signed-destination source gate
+
+[CI run 37809793574](https://github.com/imazen/rav1d-safe/actions/runs/37809793574)
+completed all 33 jobs successfully on exact head
+`187a6e0088a8e18402b6c553eaf955a279bc8ea5`. This head includes the signed
+warp destination repair `80069eb0`, covering the native ARM and x86 legs,
+Windows ARM, macOS Intel and i686 through cross. The
+[bounded full job-outcome record](../benchmarks/ci_warp_destination_2026-10-08.json)
+retains each job's identity, conclusion and timestamps plus the full capture
+hash. This gate covers that published source; it does not cover the rejected
+paired-horizontal candidate or other isolated performance experiments.
