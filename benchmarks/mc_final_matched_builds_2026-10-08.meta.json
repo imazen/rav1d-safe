@@ -1,0 +1,144 @@
+{
+  "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "baseline_revision": "bb4cded48baf878d7ae404db78006b6b572b0633",
+  "candidate_revision": "e8162a0d6bbae5543546f6f8532a651ac31e4a13",
+  "shared_Cargo_lock_sha256": "315a1c4b47dd38cbd8d855514f4bf446e515834393b934c4fe836f31b51b6ce6",
+  "shared_profile_source_sha256": "fdae26bfe35781f98cedf4a757a2072f9c349e49a5fc5b9ebfabac6d6c7520b8",
+  "baseline_prefix": "/home/lilith/work/zen/rav1d-safe/target/lead-mc-final-before",
+  "candidate_prefix": "/home/lilith/work/zen/rav1d-safe/target/lead-mc-final-after",
+  "matching_rust_sources": 256,
+  "rust_source_differences": [
+    {
+      "path": "src/safe_simd/mc.rs",
+      "before": "a453814033eff112c32e7f62da12a48a00dcfd7f4140589b0d87d7c50f77a041",
+      "after": "5eef8c20ef03bb11d1c922cecb47727edf96ca7cf002bc162f33b3dddc8dc8db"
+    },
+    {
+      "path": "src/safe_simd/mc_source_stride_tests.rs",
+      "before": "c658add2829e9bf2c3517f4d422f4bc7a7140ff8272db13abb66d5bb0a2d2fb4",
+      "after": null
+    },
+    {
+      "path": "src/safe_simd/mc_x86_8bpc_parity.rs",
+      "before": null,
+      "after": "40721492c782663f7898dc2c9507830a360828b3c9f9a00bcb2bcc3cb9fc0345"
+    },
+    {
+      "path": "src/safe_simd/mod.rs",
+      "before": "dc46f4ba1fdc3d9f500a974c582d5381b97097b1260dd130e81d816913f02847",
+      "after": "52653e761e8074cfb32e4dd380da2d7e88c66a3105bdefc49682c7917b1b3dde"
+    }
+  ],
+  "date": "2026-10-08",
+  "cpu": "AMD Ryzen 9 7900X (Zen 4)",
+  "profile": "release fat LTO, generic empty RUSTFLAGS, archmage testable_dispatch enabled in both example builds",
+  "builds": [
+    {
+      "stage": "before",
+      "seconds": 65,
+      "peak_rss_gib": 1.29,
+      "min_available_mib": 23723,
+      "peak_load": 3.6,
+      "rc": 0
+    },
+    {
+      "stage": "after",
+      "seconds": 65,
+      "peak_rss_gib": 1.29,
+      "min_available_mib": 24014,
+      "peak_load": 4.83,
+      "rc": 0
+    }
+  ],
+  "binary_inventory": {
+    "before/safe/profile_ivf": {
+      "path": "target/lead-mc-final-before-safe/release/examples/profile_ivf",
+      "sha256": "fc43ff063d77b8a33fd1f70cbaeab706795b1c89195651bb93ede73065c2ff2e",
+      "tls_bytes": 11368,
+      "compiler_comment": "String dump of section '.comment':\n  [     1]  rustc version 1.99.0 (b940084d7 2026-09-28)\n  [    2d]  GCC: (Ubuntu 15.2.0-16ubuntu1) 15.2.0\n  [    53]  Linker: LLD 23.1.1 (/checkout/src/llvm-project/llvm 1b9c0d5ff9bbe7634aead059efe6b11a7eeba145)"
+    },
+    "before/safe/decode_md5": {
+      "path": "target/lead-mc-final-before-safe/release/examples/decode_md5",
+      "sha256": "07c2d494146a44080dee708139bfa243ede20b2ed1b608209625ec8655099e23",
+      "tls_bytes": 11232,
+      "compiler_comment": "String dump of section '.comment':\n  [     1]  rustc version 1.99.0 (b940084d7 2026-09-28)\n  [    2d]  GCC: (Ubuntu 15.2.0-16ubuntu1) 15.2.0\n  [    53]  Linker: LLD 23.1.1 (/checkout/src/llvm-project/llvm 1b9c0d5ff9bbe7634aead059efe6b11a7eeba145)"
+    },
+    "before/untracked/profile_ivf": {
+      "path": "target/lead-mc-final-before-untracked/release/examples/profile_ivf",
+      "sha256": "74777b2f62a9e007debdee3cc2c7a9d8eb57b1c3b106732b9c2874f72f71c570",
+      "tls_bytes": 11368,
+      "compiler_comment": "String dump of section '.comment':\n  [     1]  rustc version 1.99.0 (b940084d7 2026-09-28)\n  [    2d]  GCC: (Ubuntu 15.2.0-16ubuntu1) 15.2.0\n  [    53]  Linker: LLD 23.1.1 (/checkout/src/llvm-project/llvm 1b9c0d5ff9bbe7634aead059efe6b11a7eeba145)"
+    },
+    "before/untracked/decode_md5": {
+      "path": "target/lead-mc-final-before-untracked/release/examples/decode_md5",
+      "sha256": "254581908981b6de94645b38892cc3ff5a4f28bb75628fad4584d51b389c1b6e",
+      "tls_bytes": 11232,
+      "compiler_comment": "String dump of section '.comment':\n  [     1]  rustc version 1.99.0 (b940084d7 2026-09-28)\n  [    2d]  GCC: (Ubuntu 15.2.0-16ubuntu1) 15.2.0\n  [    53]  Linker: LLD 23.1.1 (/checkout/src/llvm-project/llvm 1b9c0d5ff9bbe7634aead059efe6b11a7eeba145)"
+    },
+    "after/safe/profile_ivf": {
+      "path": "target/lead-mc-final-after-safe/release/examples/profile_ivf",
+      "sha256": "6467d6300fbc76bfb3c6c27a95f6dffba608be289d0573922037f5ac137744eb",
+      "tls_bytes": 11368,
+      "compiler_comment": "String dump of section '.comment':\n  [     1]  rustc version 1.99.0 (b940084d7 2026-09-28)\n  [    2d]  GCC: (Ubuntu 15.2.0-16ubuntu1) 15.2.0\n  [    53]  Linker: LLD 23.1.1 (/checkout/src/llvm-project/llvm 1b9c0d5ff9bbe7634aead059efe6b11a7eeba145)"
+    },
+    "after/safe/decode_md5": {
+      "path": "target/lead-mc-final-after-safe/release/examples/decode_md5",
+      "sha256": "b1fd138e629f44f22f550002a8365fbb789c3c26362a0e43784a02d33492e246",
+      "tls_bytes": 11232,
+      "compiler_comment": "String dump of section '.comment':\n  [     1]  rustc version 1.99.0 (b940084d7 2026-09-28)\n  [    2d]  GCC: (Ubuntu 15.2.0-16ubuntu1) 15.2.0\n  [    53]  Linker: LLD 23.1.1 (/checkout/src/llvm-project/llvm 1b9c0d5ff9bbe7634aead059efe6b11a7eeba145)"
+    },
+    "after/untracked/profile_ivf": {
+      "path": "target/lead-mc-final-after-untracked/release/examples/profile_ivf",
+      "sha256": "a2883739f38bc0dd098da4fe1093800f8f4cd2808f466ccc5ad0adb90aa6d39a",
+      "tls_bytes": 11368,
+      "compiler_comment": "String dump of section '.comment':\n  [     1]  rustc version 1.99.0 (b940084d7 2026-09-28)\n  [    2d]  GCC: (Ubuntu 15.2.0-16ubuntu1) 15.2.0\n  [    53]  Linker: LLD 23.1.1 (/checkout/src/llvm-project/llvm 1b9c0d5ff9bbe7634aead059efe6b11a7eeba145)"
+    },
+    "after/untracked/decode_md5": {
+      "path": "target/lead-mc-final-after-untracked/release/examples/decode_md5",
+      "sha256": "5a68d68c180a4754bd3d8772cb57ef7e1f0cf596287a73cfb1de5a92e57e8eb1",
+      "tls_bytes": 11232,
+      "compiler_comment": "String dump of section '.comment':\n  [     1]  rustc version 1.99.0 (b940084d7 2026-09-28)\n  [    2d]  GCC: (Ubuntu 15.2.0-16ubuntu1) 15.2.0\n  [    53]  Linker: LLD 23.1.1 (/checkout/src/llvm-project/llvm 1b9c0d5ff9bbe7634aead059efe6b11a7eeba145)"
+    }
+  },
+  "logs": [
+    {
+      "path": "benchmarks/mc_final_before_build_2026-10-08.log",
+      "sha256": "71104f5bb45b402e66f5536aa28b0bb9d1376b42e15bcd6a7dfe3e5fa8f99400"
+    },
+    {
+      "path": "benchmarks/mc_final_after_build_2026-10-08.log",
+      "sha256": "d7ab2bbf3b388da087811b86fa6ad5f2c80ce51aeb6f4560f1461272d335831d"
+    },
+    {
+      "path": "benchmarks/mc_final_matched_md5_2026-10-08.log",
+      "sha256": "09b4af090eed0df86706948057be53fa52677151b3466e1ec3215c30a039b15a"
+    },
+    {
+      "path": "benchmarks/mc_final_timing_controls_2026-10-08.log",
+      "sha256": "7e491250639c51c6f4a8a2877c97b16fd068942fe705d2be248997dded688549"
+    }
+  ],
+  "matched_output": {
+    "comparisons": 32,
+    "result": "All four clips match dav1d 1.5.3 with grain enabled in both decoders, both modes, one/four workers, delay one",
+    "seconds": 123,
+    "peak_rss_gib": 0.2,
+    "min_available_mib": 25504,
+    "peak_load": 5.01,
+    "rc": 0
+  },
+  "timing_controls": {
+    "binary_pairs": 4,
+    "result": "All malformed timing controls fail before RESULT; valid timing controls and both MD5 frame-limit checks pass",
+    "seconds": 0,
+    "peak_rss_gib": 0.02,
+    "min_available_mib": 26047,
+    "peak_load": 0.16,
+    "rc": 0
+  },
+  "missing": [
+    "40-leg sidecar gate running",
+    "Complete matched A/A and A/B throughput",
+    "Zen 5 unmeasured"
+  ]
+}

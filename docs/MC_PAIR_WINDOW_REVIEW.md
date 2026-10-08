@@ -27,7 +27,7 @@ candidate have 11,368 bytes. Earlier reported ratios cannot isolate MC.
 records the corrected baseline. [The complete tracked A/A control](../benchmarks/mc_exact_control_safe_2026-10-08.meta.json)
 records per-case observations before any optimization conclusion.
 
-The current comparison uses Rust 1.99.0 and archmage `e2dbab6`, with
+The first current-pin build pair used Rust 1.99.0 and archmage `e2dbab6`, with
 target-CPU flags unset and release fat LTO. The preserved baseline at
 `2b96f04d` and first MC snapshot `f910b2f2` use identical lockfiles and
 compiler/dependency versions.
@@ -119,3 +119,17 @@ The latter feature retains an existing private-interface warning in
 scope peaks at 1.62 GiB RSS, minimum available 24,421 MiB, peak load 3.84,
 rc=0. The both-mode 803-vector sidecar matrix and matched throughput remain
 pending; production source is still unpublished.
+
+The [fresh final MC pair](../benchmarks/mc_final_matched_builds_2026-10-08.meta.json)
+compares the independently repaired pre-optimization source with the
+candidate on identical Rust 1.99, archmage 0.9.30 and lockfile records.
+Only MC production source and test-only modules differ; both use the same
+guarded profile example. Both two-mode builds finish in 65 seconds with
+peak RSS 1.29 GiB. All four timing binaries have 11,368 bytes of TLS; all
+four MD5 binaries have 11,232 bytes, matching before/after within each kind.
+All 32 grain-enabled clip comparisons match dav1d 1.5.3 at one/four workers
+and delay one. That 123-second scope peaks at 0.20 GiB RSS, minimum available
+25,504 MiB, peak load 5.01. Four malformed/valid timing controls and the
+MD5 frame-limit checks also pass; the control scope peaks at 0.02 GiB.
+The full actual-token sidecar gate is running; no A/A or A/B throughput
+claim follows from these build and output checks.
