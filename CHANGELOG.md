@@ -5,6 +5,16 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- Restore the missing symbol-count argument in the ARM assembly adapt16 call;
+  native ARM `asm` and `c-ffi` compile checks pass. Included with formatting
+  in `a076772f`.
+- Safe ARM MC put/prep reserve the interpolation window instead of whole
+  reference planes, allowing concurrent reconstruction outside that window.
+  A held-write regression checks both reservations against scalar output.
+- ARM 12-bit bilinear put rounds the horizontal intermediate before its
+  vertical pass, matching scalar at subpixel phases that previously differed
+  by one pixel value.
+
 - Convert managed AV1 mastering-display metadata using its actual fixed-point
   units: chromaticities / 65536, maximum luminance / 256, and minimum luminance
   / 16384. A 1000-nit maximum previously returned 25.6 nits. Raw fields retain

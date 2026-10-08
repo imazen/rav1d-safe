@@ -1,0 +1,146 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=12/16 avail=27949MiB :: bash -c set -e; for mode in safe untracked; do for threads in 1 2 4 8; do bash scripts/conformance_test.sh --binary target/lead-$mode/release-thin/examples/decode_md5 --threads "$threads" --delay 0 --manifest /home/ubuntu/tmp/rav1d-safe-lead-tools/vectors.tsv --expected 803 --level native; done; done
+Conformance: level=native threads=1 delay=0 binary=target/lead-safe/release-thin/examples/decode_md5 manifest=/home/ubuntu/tmp/rav1d-safe-lead-tools/vectors.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=native threads=1 delay=0 total=803 pass=803 fail=0 errors=0 excluded=0
+Conformance: level=native threads=2 delay=0 binary=target/lead-safe/release-thin/examples/decode_md5 manifest=/home/ubuntu/tmp/rav1d-safe-lead-tools/vectors.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=native threads=2 delay=0 total=803 pass=803 fail=0 errors=0 excluded=0
+Conformance: level=native threads=4 delay=0 binary=target/lead-safe/release-thin/examples/decode_md5 manifest=/home/ubuntu/tmp/rav1d-safe-lead-tools/vectors.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=native threads=4 delay=0 total=803 pass=803 fail=0 errors=0 excluded=0
+Conformance: level=native threads=8 delay=0 binary=target/lead-safe/release-thin/examples/decode_md5 manifest=/home/ubuntu/tmp/rav1d-safe-lead-tools/vectors.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=native threads=8 delay=0 total=803 pass=803 fail=0 errors=0 excluded=0
+Conformance: level=native threads=1 delay=0 binary=target/lead-untracked/release-thin/examples/decode_md5 manifest=/home/ubuntu/tmp/rav1d-safe-lead-tools/vectors.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=native threads=1 delay=0 total=803 pass=803 fail=0 errors=0 excluded=0
+Conformance: level=native threads=2 delay=0 binary=target/lead-untracked/release-thin/examples/decode_md5 manifest=/home/ubuntu/tmp/rav1d-safe-lead-tools/vectors.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=native threads=2 delay=0 total=803 pass=803 fail=0 errors=0 excluded=0
+Conformance: level=native threads=4 delay=0 binary=target/lead-untracked/release-thin/examples/decode_md5 manifest=/home/ubuntu/tmp/rav1d-safe-lead-tools/vectors.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=native threads=4 delay=0 total=803 pass=803 fail=0 errors=0 excluded=0
+Conformance: level=native threads=8 delay=0 binary=target/lead-untracked/release-thin/examples/decode_md5 manifest=/home/ubuntu/tmp/rav1d-safe-lead-tools/vectors.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=native threads=8 delay=0 total=803 pass=803 fail=0 errors=0 excluded=0
+run-heavy: done rc=0 914s | peak-RSS 0.24GiB | min-avail 27290MiB | peak-load 11.14

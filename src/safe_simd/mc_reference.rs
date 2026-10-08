@@ -1,4 +1,4 @@
-//! Bounded source reservations for the x86 interpolation kernels.
+//! Bounded source reservations for the interpolation kernels.
 //!
 //! These replace whole-component read guards on reference pictures / private
 //! edge-emulation buffers. Unlike reconstruction writes, they may cover row
@@ -23,7 +23,7 @@ type SourceGuard<'a, BD> =
     any(debug_assertions, feature = "__probe_sites", feature = "__probe_usage"),
     track_caller
 )]
-pub(super) fn read_guard<BD: BitDepth>(
+pub(in crate::src::safe_simd) fn read_guard<BD: BitDepth>(
     src: PicOffset<'_>,
     w: usize,
     h: usize,
@@ -74,7 +74,7 @@ pub(super) fn read_guard<BD: BitDepth>(
     any(debug_assertions, feature = "__probe_sites", feature = "__probe_usage"),
     track_caller
 )]
-pub(super) fn filter_guard<BD: BitDepth>(
+pub(in crate::src::safe_simd) fn filter_guard<BD: BitDepth>(
     src: PicOffset<'_>,
     filter: Filter2d,
     w: i32,
@@ -97,10 +97,13 @@ pub(super) fn filter_guard<BD: BitDepth>(
 #[cfg(all(test, not(feature = "c-ffi")))]
 mod tests {
     use super::*;
-    use crate::include::common::bitdepth::{BitDepth8, BitDepth16};
+    use crate::include::common::bitdepth::BitDepth8;
+    #[cfg(target_arch = "x86_64")]
+    use crate::include::common::bitdepth::BitDepth16;
     use crate::include::dav1d::picture::Rav1dPictureDataComponent;
     use crate::src::with_offset::WithOffset;
     use std::panic::{AssertUnwindSafe, catch_unwind};
+    #[cfg(target_arch = "x86_64")]
     use zerocopy::IntoBytes;
 
     // Asserts a tracker refusal; `untracked` has no tracker.
@@ -138,6 +141,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_arch = "x86_64")]
     #[test]
     fn warp_reference_windows_cover_both_strides_and_all_depths() {
         let _lock = archmage::testing::lock_token_testing();
@@ -250,6 +254,7 @@ mod tests {
 
     /// Compare each dispatch on its exact tap window with the same dispatch on
     /// a generously padded source. Any SIMD over-read must fail the tight arm.
+    #[cfg(target_arch = "x86_64")]
     #[test]
     fn mc_reference_windows_cover_all_filters_phases_widths_and_depths() {
         let _lock = archmage::testing::lock_token_testing();
@@ -323,6 +328,7 @@ mod tests {
         eprintln!("MC exact-window modes (AVX-512 enabled): {modes:?}; 53760 cases per mode");
     }
 
+    #[cfg(target_arch = "x86_64")]
     fn check_filter<BD: BitDepth>(
         token: archmage::Desktop64,
         filter: Filter2d,
@@ -413,12 +419,12 @@ mod tests {
                     }
                 }
                 BPC::BPC16 => {
-                    let data = zerocopy::Ref::<_, [u16]>::new_slice(data)
-                        .unwrap()
-                        .into_slice();
-                    let dst = zerocopy::Ref::<_, [u16]>::new_slice(&mut put[i][..])
-                        .unwrap()
-                        .into_mut_slice();
+                    let data = zerocopy::Ref::into_ref(
+                        zerocopy::Ref::<_, [u16]>::from_bytes(data).unwrap(),
+                    );
+                    let dst = zerocopy::Ref::into_mut(
+                        zerocopy::Ref::<_, [u16]>::from_bytes(&mut put[i][..]).unwrap(),
+                    );
                     let max = bd.into_c();
                     if filter == Filter2d::Bilinear {
                         if let Some(wide) = crate::src::cpu::summon_avx512() {

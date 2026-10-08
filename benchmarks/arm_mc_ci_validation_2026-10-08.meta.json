@@ -1,0 +1,38 @@
+{
+  "purpose": "Native ARM MC CI reservation and 12-bit rounding repair validation",
+  "source_base": "b1b2e6194962423a93845d815930f495b6135306",
+  "archmage_revision": "b8d6c0777e55e4ea8d26cde0879faae858cba662",
+  "status": "Eight complete 803-vector native-tier legs; ARM repair is independently validated and adoption of archmage 0.9.30 has a separate downstream gate",
+  "isa": "AArch64 NEON; Neoverse-N1",
+  "threads": [
+    1,
+    2,
+    4,
+    8
+  ],
+  "modes": [
+    "tracked",
+    "untracked"
+  ],
+  "delay": 0,
+  "vectors_per_leg": 803,
+  "failures_per_leg": 0,
+  "errors_per_leg": 0,
+  "excluded_per_leg": 0,
+  "run_heavy": "rc=0; 914s; peak-RSS 0.24GiB; min-avail 27290MiB; peak-load 11.14",
+  "feature_checks": "Native asm and c-ffi check pass; tracked and untracked release-thin decoder builds pass",
+  "feature_build_resource": "rc=0; 124s; peak-RSS 0.94GiB; min-avail 25656MiB; peak-load 11.67",
+  "sha256_provenance": [
+    "d2ac324a0fd6df6b39f5f2a22b50944e1121b2be9a9b978ed02ec95c857485e1  Cargo.toml",
+    "d020ddec3a330153d1e0491508789e8541b9a5746747b6fbe93219eed8c3c18a  Cargo.lock",
+    "810a62646933ea2c5809a787d0ea8447ce22b829e15fedb6897ae5af287a117f  src/msac.rs",
+    "c3a73a1fcac333caa1d1ca59c432d3ba8d77c4f16214bed228acd7f99352ae1f  src/safe_simd/mc.rs",
+    "278718506aeeb5795d1431a6b7b31d74ed043d70e83d86de6956c6e7ef3be6cd  src/safe_simd/mc_reference.rs",
+    "63e98b991ad027c5145b772509f0b963d5f8b2b3db2df4c56e6263ddda6de84f  src/safe_simd/mc_arm.rs",
+    "0fc8f2acca922c76e5f22a1c17836a4e4fd2ff5ad801c02563aa8cbd7b4aefc6  src/safe_simd/mc_arm_reference_tests.rs",
+    "3ae3b2ce05aaabbbac16df49168f396a6a97e8efe01cc4f44e695605180b1447  target/lead-safe/release-thin/examples/decode_md5",
+    "cfab2472502d41ecb3c606e5bb9e32110ca90e9bfd0530cf8c59ed63dcf8b45c  target/lead-untracked/release-thin/examples/decode_md5",
+    "2c9bdeeb6b945ceed4bbdfc9b30bdeaa0f3f9dacf4af3d29b022d774d97574c6  /home/ubuntu/tmp/rav1d-safe-lead-tools/vectors.tsv"
+  ],
+  "limitations": "Full nextest and scalar/token-permutation/Argon downstream gates pending; no ARM throughput claim."
+}

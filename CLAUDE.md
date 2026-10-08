@@ -972,6 +972,35 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+### ARM MC source reservations and 12-bit bilinear rounding (2026-10-08)
+
+The safe ARM put/prep dispatchers reserved entire reference planes. With frame
+threading, that read conflicts with CDEF or reconstruction writing unrelated
+rows of the same plane. CI reproduced it in `filmgrain_threads`. Reserve the
+bounded block-plus-filter-taps hull through `mc_reference::filter_guard`; the
+complete Rust slice, including row gaps, remains registered. Do not remove
+tracker checks or widen reconstruction extent limits. The native ARM regression
+holds an unrelated last-row write during put/prep; restoring either whole-plane
+read independently makes the unchanged test fail immediately.
+
+That scalar-parity sweep also exposed a 12-bit bilinear put mismatch: a 2x2
+block at phase (1,10) yielded 2344 where scalar yielded 2345. The horizontal
+intermediate must be rounded before the vertical pass, using the bit-depth
+specific intermediate precision. Combining both passes into one final shift
+changes pixels. Coverage includes 8/10/12 bits, all ten filter combinations,
+all 256 phase pairs, two source patterns (including 0/max and random full-range
+pixels), odd widths, and 128x128 blocks. Negative source strides are not covered
+by that kernel sweep; the shared reservation helper has separate signed-stride
+coverage. Native ARM film-grain/threaded generated-vector/backpressure gates
+also pass. Native tracked and untracked builds each pass all 803 vectors at
+1/2/4/8 threads with delay 0. The matrix used archmage b8d6c077; the 0.9.30
+adoption has separate downstream gates. `run-heavy`: rc=0, 914s,
+peak-RSS 0.24GiB, min-avail 27290MiB, peak-load 11.14. Raw results and source
+hashes are in `benchmarks/arm_mc_ci_validation_2026-10-08.{log,meta.json}`.
+Complete suites and token/Argon coverage remain separate gates.
+
+
+
 - 2026-09-07: retained-picture allocation could dereference a default allocator cookie into a dropped decoder in `c-ffi`/`asm` builds. PR #528 retains the pool in each internal allocator clone, passes owned handles directly, and makes default-address recognition optional for correctness. The formerly crashing lifecycle test, a 16-generation copy test, and a minimal Stacked/Tree Borrows Miri gate cover it. See `docs/FFI_ALLOCATOR_LIFETIME.md`.
 
 ### Differential fuzz #522/#523: same malformed segment-ID repro

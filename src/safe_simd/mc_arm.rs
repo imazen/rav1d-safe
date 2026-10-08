@@ -45,6 +45,10 @@ use crate::src::safe_simd::pixel_access::Flex;
 use crate::src::strided::Strided as _;
 use crate::src::tables::dav1d_mc_subpel_filters;
 
+#[cfg(all(test, not(feature = "untracked"), not(feature = "c-ffi")))]
+#[path = "mc_arm_reference_tests.rs"]
+mod reference_tests;
+
 // ============================================================================
 // AVG - Average two buffers
 // ============================================================================
@@ -2430,6 +2434,11 @@ fn put_bilin_16bpc_inner(
 ) {
     let mut dst = dst.flex_mut();
     let src = src.flex();
+    let intermediate_bits = (bitdepth_max as u16).leading_zeros() as u8 - 2;
+    let sh1 = 4 - intermediate_bits;
+    let rnd1 = (1i32 << sh1) >> 1;
+    let sh2 = 4 + intermediate_bits;
+    let rnd2 = (1i32 << sh2) >> 1;
     match (mx, my) {
         (0, 0) => {
             // Simple copy
@@ -2470,7 +2479,9 @@ fn put_bilin_16bpc_inner(
                     let s0 = src_row[x] as i32;
                     let s1 = src_row[x + 1] as i32;
                     let pixel = coeff0 * s0 + coeff1 * s1;
-                    dst_row[x] = ((pixel + 8) >> 4).clamp(0, bitdepth_max) as u16;
+                    let mid = (pixel + rnd1) >> sh1;
+                    let rounded = (mid + ((1 << intermediate_bits) >> 1)) >> intermediate_bits;
+                    dst_row[x] = rounded.clamp(0, bitdepth_max) as u16;
                 }
             }
         }
@@ -2493,7 +2504,7 @@ fn put_bilin_16bpc_inner(
                 for x in 0..w {
                     let s0 = src_row[x] as i32;
                     let s1 = src_row[x + 1] as i32;
-                    mid_row[x] = h_coeff0 * s0 + h_coeff1 * s1;
+                    mid_row[x] = (h_coeff0 * s0 + h_coeff1 * s1 + rnd1) >> sh1;
                 }
             }
 
@@ -2507,8 +2518,7 @@ fn put_bilin_16bpc_inner(
                     let r0 = mid_row0[x];
                     let r1 = mid_row1[x];
                     let pixel = v_coeff0 * r0 + v_coeff1 * r1;
-                    // Double shift: (pixel + 128) >> 8
-                    dst_row[x] = ((pixel + 128) >> 8).clamp(0, bitdepth_max) as u16;
+                    dst_row[x] = ((pixel + rnd2) >> sh2).clamp(0, bitdepth_max) as u16;
                 }
             }
         }
@@ -6034,7 +6044,8 @@ pub(crate) fn mc_put_dispatch_inner<BD: BitDepth>(
         let h_u = h as usize;
         let mx_u = mx as usize;
         let my_u = my as usize;
-        let (src_guard, src_base) = src.full_guard::<BD>();
+        let (src_guard, src_base) =
+            super::mc::reference::filter_guard::<BD>(src, filter, w, h, mx, my);
         let src_stride_raw = src.stride();
 
         match BD::BPC {
@@ -6245,7 +6256,8 @@ pub fn mct_prep_dispatch<BD: BitDepth>(
         let mx_u = mx as usize;
         let my_u = my as usize;
         let tmp_slice = &mut tmp[..(w_u * h_u)];
-        let (src_guard, src_base) = src.full_guard::<BD>();
+        let (src_guard, src_base) =
+            super::mc::reference::filter_guard::<BD>(src, filter, w, h, mx, my);
         let src_stride_raw = src.stride();
 
         match BD::BPC {

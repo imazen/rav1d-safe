@@ -45,9 +45,12 @@ use crate::src::strided::Strided as _;
 
 use std::cell::Cell;
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(
+    target_arch = "x86_64",
+    all(target_arch = "aarch64", not(feature = "asm"))
+))]
 #[path = "mc_reference.rs"]
-mod reference;
+pub(super) mod reference;
 
 type Mid16x135 = Box<[[i16; MID_STRIDE]; 135]>;
 type Mid32x135 = Box<[[i32; MID_STRIDE]; 135]>;
