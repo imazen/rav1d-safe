@@ -92,4 +92,11 @@ record the distinction. The separate full sidecar matrix remains pending.
 The dedicated `Conformance runner protocol` CI job now runs all six boundary
 tests on pushes, including the default extraction path. Actionlint 1.7.12
 accepts the updated workflow. This adds one job to the previously green
-32-job matrix; the new 33-job remote result remains pending.
+32-job matrix. All 33 jobs pass at `ae6c26d8` in the
+[complete CI run](https://github.com/imazen/rav1d-safe/actions/runs/37732635299).
+[The captured result](../benchmarks/ci_main_2026-10-08.json) identifies every job
+and the full revision. `just ci-status <run-id>` queries this repository
+explicitly. `just build-bench-modes <tracked-target> <untracked-target>` expands
+the paired generic release commands; use fresh target directories to preserve
+reference binaries. Its command expansion is checked; each future candidate's
+actual builds and timing need their own evidence.

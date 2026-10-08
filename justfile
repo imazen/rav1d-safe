@@ -86,6 +86,11 @@ test-conformance-runner:
 conformance binary threads="1" delay="0":
     bash scripts/conformance_test.sh --binary "{{binary}}" --threads {{threads}} --delay {{delay}} --expected 803
 
+# Matched performance binaries; use fresh target directories to preserve references.
+build-bench-modes tracked untracked:
+    CARGO_TARGET_DIR="{{tracked}}" cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16" --example profile_ivf --example decode_md5
+    CARGO_TARGET_DIR="{{untracked}}" cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --example profile_ivf --example decode_md5
+
 # Complete sidecar oracle at every runtime tier and 1/2/4/8 workers in both modes.
 build-conformance-modes tracked untracked:
     CARGO_TARGET_DIR="{{tracked}}" cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16" --example decode_md5
@@ -110,6 +115,10 @@ check-lead-ci: clippy cross-aarch64
 # Validate workflow expressions and runner/action schemas (requires actionlint).
 lint-ci-workflow checker="actionlint":
     "{{checker}}" -shellcheck="" .github/workflows/ci.yml
+
+# Read the intended repository explicitly, including unfinished and failed jobs.
+ci-status run:
+    gh run view {{run}} --repo imazen/rav1d-safe --json status,conclusion,jobs --jq '{status,conclusion,counts:(.jobs|group_by(.conclusion)|map({conclusion:.[0].conclusion,count:length})),unfinished:[.jobs[]|select(.status!="completed")|{name,status}],failures:[.jobs[]|select(.conclusion=="failure")|{name,databaseId}]}'
 
 # Check code formatting
 fmt-check:

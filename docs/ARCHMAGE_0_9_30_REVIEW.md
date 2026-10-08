@@ -3,7 +3,7 @@
 The native ARM full suites, doctests and explicit integration selection are
 green with the local signed-source repair. Its separate all-tier/all-worker
 803-vector sidecar matrix and publication remain pending. The updated remote CI matrix
-passes all 32 jobs on `83c928d3`: [CI run](https://github.com/imazen/rav1d-safe/actions/runs/37721109550).
+passes all 33 jobs on `ae6c26d8`: [CI run](https://github.com/imazen/rav1d-safe/actions/runs/37732635299).
 The manifest selects full revision
 `e2dbab66ef5aa08f8e23ed05248e7d1217f58475` for both normal and dev
 archmage dependencies. The previous pin was
