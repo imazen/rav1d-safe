@@ -5,6 +5,8 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- Legacy integration recipe uses release mode and an explicit corpus selection;
+  missing/empty corpus data fails instead of passing without decoding.
 - Restore the missing symbol-count argument in the ARM assembly adapt16 call;
   native ARM `asm` and `c-ffi` compile checks pass. Included with formatting
   in `a076772f`.

@@ -482,13 +482,18 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@nextest
+      - name: Install test tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest,just
       - name: Download test vectors
         run: |
           if [ ! -d test-vectors/dav1d-test-data ]; then
             git clone --depth 1 https://code.videolan.org/videolan/dav1d-test-data.git test-vectors/dav1d-test-data
           fi
+      - name: Legacy integration corpus gate (explicit selection)
+        run: just test-integration-selection test-vectors
+        timeout-minutes: 10
       - name: Film grain with threading and debug extent checks (#526)
         run: cargo nextest run --profile ci --test filmgrain_threads --test-threads 1
         timeout-minutes: 10

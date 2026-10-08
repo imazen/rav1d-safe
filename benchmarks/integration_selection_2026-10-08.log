@@ -1,0 +1,210 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=26604MiB :: bash -c set -e; just test-integration-selection test-vectors; if just test-integration-selection /home/lilith/tmp/handoff/rav1d-safe-lead/absent-corpus; then echo "ERROR: absent corpus unexpectedly passed"; exit 1; fi; just clippy
+RAV1D_TEST_VECTORS="test-vectors" cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --test integration_decode --run-ignored all --test-threads 2
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 0.07s
+────────────
+[32;1m Nextest run[0m ID [1m8dc4d9ee-0dd2-4d70-8b6e-8af144ee707c[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m9[0m tests across [1m1[0m binary
+[32;1m        PASS[0m [   0.232s] (1/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_12bit_vectors[0m
+[32;1m        PASS[0m [   0.539s] (2/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_10bit_vectors[0m
+[32;1m        PASS[0m [   6.864s] (3/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_8bit_vectors[0m
+[32;1m        PASS[0m [   0.005s] (4/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_hdr_metadata[0m
+[32;1m        PASS[0m [   0.005s] (5/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_real_bitstream[0m
+[32;1m        PASS[0m [   0.003s] (6/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_ivf_parser[0m
+[32;1m        PASS[0m [   0.025s] (7/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_obmc_blend_h_regression_00000327[0m
+[32;1m        PASS[0m [   0.025s] (8/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_obmc_blend_v_regression_00000315[0m
+[32;1m        PASS[0m [   8.847s] (9/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_vectors_comprehensive[0m
+────────────
+[32;1m     Summary[0m [   9.386s] [1m9[0m tests run: [1m9[0m [32;1mpassed[0m, [1m0[0m [33;1mskipped[0m
+RAV1D_TEST_VECTORS="/home/lilith/tmp/handoff/rav1d-safe-lead/absent-corpus" cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --test integration_decode --run-ignored all --test-threads 2
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 0.06s
+────────────
+[32;1m Nextest run[0m ID [1m90818f82-3538-44f4-a1f2-0296e4d35f7a[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m9[0m tests across [1m1[0m binary
+[31;1m        FAIL[0m [   0.003s] (1/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_10bit_vectors[0m
+[31;1m [0m [31;1mstdout[0m [31;1m───[0m
+
+    running 1 test
+    test test_decode_all_10bit_vectors ... FAILED
+
+    failures:
+
+    failures:
+        test_decode_all_10bit_vectors
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+    [0m
+[31;1m [0m [31;1mstderr[0m [31;1m───[0m
+
+    [0m[31;1mthread 'test_decode_all_10bit_vectors' (1871989) panicked at tests/integration_decode.rs:253:5:[0m
+    [31;1mrequired vectors missing: /home/lilith/tmp/handoff/rav1d-safe-lead/absent-corpus/dav1d-test-data/10-bit/data[0m
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace[0m
+
+[31;1m        FAIL[0m [   0.004s] (2/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_12bit_vectors[0m
+[31;1m [0m [31;1mstdout[0m [31;1m───[0m
+
+    running 1 test
+    test test_decode_all_12bit_vectors ... FAILED
+
+    failures:
+
+    failures:
+        test_decode_all_12bit_vectors
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+    [0m
+[31;1m [0m [31;1mstderr[0m [31;1m───[0m
+
+    [0m[31;1mthread 'test_decode_all_12bit_vectors' (1871988) panicked at tests/integration_decode.rs:253:5:[0m
+    [31;1mrequired vectors missing: /home/lilith/tmp/handoff/rav1d-safe-lead/absent-corpus/dav1d-test-data/12-bit/data[0m
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace[0m
+
+[31;1m        FAIL[0m [   0.003s] (3/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_8bit_vectors[0m
+[31;1m [0m [31;1mstdout[0m [31;1m───[0m
+
+    running 1 test
+    test test_decode_all_8bit_vectors ... FAILED
+
+    failures:
+
+    failures:
+        test_decode_all_8bit_vectors
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+    [0m
+[31;1m [0m [31;1mstderr[0m [31;1m───[0m
+
+    [0m[31;1mthread 'test_decode_all_8bit_vectors' (1871993) panicked at tests/integration_decode.rs:253:5:[0m
+    [31;1mrequired vectors missing: /home/lilith/tmp/handoff/rav1d-safe-lead/absent-corpus/dav1d-test-data/8-bit/data[0m
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace[0m
+
+[31;1m        FAIL[0m [   0.003s] (4/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_vectors_comprehensive[0m
+[31;1m [0m [31;1mstdout[0m [31;1m───[0m
+
+    running 1 test
+    test test_decode_all_vectors_comprehensive ... FAILED
+
+    failures:
+
+    failures:
+        test_decode_all_vectors_comprehensive
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+    [0m
+[31;1m [0m [31;1mstderr[0m [31;1m───[0m
+
+    [0m[31;1mthread 'test_decode_all_vectors_comprehensive' (1871992) panicked at tests/integration_decode.rs:253:5:[0m
+    [31;1mrequired vectors missing: /home/lilith/tmp/handoff/rav1d-safe-lead/absent-corpus/dav1d-test-data/8-bit/data[0m
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace[0m
+
+[31;1m        FAIL[0m [   0.003s] (5/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_real_bitstream[0m
+[31;1m [0m [31;1mstdout[0m [31;1m───[0m
+
+    running 1 test
+    test test_decode_real_bitstream ... FAILED
+
+    failures:
+
+    failures:
+        test_decode_real_bitstream
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+    [0m
+[31;1m [0m [31;1mstderr[0m [31;1m───[0m
+
+    [0m[31;1mthread 'test_decode_real_bitstream' (1871996) panicked at tests/integration_decode.rs:51:10:[0m
+    [31;1mselected test vector directory has no required IVF; run just download-vectors[0m
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace[0m
+
+[31;1m        FAIL[0m [   0.003s] (6/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_hdr_metadata[0m
+[31;1m [0m [31;1mstdout[0m [31;1m───[0m
+
+    running 1 test
+    test test_decode_hdr_metadata ... FAILED
+
+    failures:
+
+    failures:
+        test_decode_hdr_metadata
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+    [0m
+[31;1m [0m [31;1mstderr[0m [31;1m───[0m
+
+    [0m[31;1mthread 'test_decode_hdr_metadata' (1871997) panicked at tests/integration_decode.rs:192:5:[0m
+    [31;1mselected test vector directory has no required HDR IVF[0m
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace[0m
+
+[31;1m        FAIL[0m [   0.003s] (7/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_ivf_parser[0m
+[31;1m [0m [31;1mstdout[0m [31;1m───[0m
+
+    running 1 test
+    test test_ivf_parser ... FAILED
+
+    failures:
+
+    failures:
+        test_ivf_parser
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+    [0m
+[31;1m [0m [31;1mstderr[0m [31;1m───[0m
+
+    [0m[31;1mthread 'test_ivf_parser' (1872001) panicked at tests/integration_decode.rs:352:32:[0m
+    [31;1mselected test vector directory has no required IVF[0m
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace[0m
+
+[31;1m        FAIL[0m [   0.003s] (8/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_obmc_blend_h_regression_00000327[0m
+[31;1m [0m [31;1mstdout[0m [31;1m───[0m
+
+    running 1 test
+    test test_obmc_blend_h_regression_00000327 ... FAILED
+
+    failures:
+
+    failures:
+        test_obmc_blend_h_regression_00000327
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+    [0m
+[31;1m [0m [31;1mstderr[0m [31;1m───[0m
+
+    [0m[31;1mthread 'test_obmc_blend_h_regression_00000327' (1872002) panicked at tests/integration_decode.rs:241:5:[0m
+    [31;1mrequired test vector missing: /home/lilith/tmp/handoff/rav1d-safe-lead/absent-corpus/dav1d-test-data/8-bit/data/00000327.ivf[0m
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace[0m
+
+[31;1m        FAIL[0m [   0.003s] (9/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_obmc_blend_v_regression_00000315[0m
+[31;1m [0m [31;1mstdout[0m [31;1m───[0m
+
+    running 1 test
+    test test_obmc_blend_v_regression_00000315 ... FAILED
+
+    failures:
+
+    failures:
+        test_obmc_blend_v_regression_00000315
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+    [0m
+[31;1m [0m [31;1mstderr[0m [31;1m───[0m
+
+    [0m[31;1mthread 'test_obmc_blend_v_regression_00000315' (1872004) panicked at tests/integration_decode.rs:227:5:[0m
+    [31;1mrequired test vector missing: /home/lilith/tmp/handoff/rav1d-safe-lead/absent-corpus/dav1d-test-data/8-bit/data/00000315.ivf[0m
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace[0m
+
+────────────
+[31;1m     Summary[0m [   0.016s] [1m9[0m tests run: [1m0[0m [32;1mpassed[0m, [1m9[0m [31;1mfailed[0m, [1m0[0m [33;1mskipped[0m
+[31;1m        FAIL[0m [   0.003s] (1/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_10bit_vectors[0m
+[31;1m        FAIL[0m [   0.004s] (2/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_12bit_vectors[0m
+[31;1m        FAIL[0m [   0.003s] (3/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_8bit_vectors[0m
+[31;1m        FAIL[0m [   0.003s] (4/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_vectors_comprehensive[0m
+[31;1m        FAIL[0m [   0.003s] (5/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_real_bitstream[0m
+[31;1m        FAIL[0m [   0.003s] (6/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_hdr_metadata[0m
+[31;1m        FAIL[0m [   0.003s] (7/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_ivf_parser[0m
+[31;1m        FAIL[0m [   0.003s] (8/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_obmc_blend_h_regression_00000327[0m
+[31;1m        FAIL[0m [   0.003s] (9/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_obmc_blend_v_regression_00000315[0m
+[31;1merror[0m: test run failed
+error: recipe `test-integration-selection` failed on line 51 with exit code 100
+cargo clippy --release --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 6.05s
+run-heavy: done rc=0 15s | peak-RSS 0.97GiB | min-avail 25346MiB | peak-load 0.73

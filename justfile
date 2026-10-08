@@ -44,7 +44,11 @@ download-vectors:
 
 # Run integration tests (requires test vectors)
 test-integration: download-vectors
-    cargo nextest run --no-default-features --features "bitdepth_8,bitdepth_16" --test integration_decode --run-ignored ignored-only
+    just test-integration-selection test-vectors
+
+# Explicit caller-selected corpus; no fetch or implicit fallback for this path.
+test-integration-selection vectors:
+    RAV1D_TEST_VECTORS="{{vectors}}" cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --test integration_decode --run-ignored all --test-threads 2
 
 # Threading-race regression gates (zenavif#30 + the original overlap class):
 # the ignored tile_threading_overlap tests (incl. multi_threaded_cdef_lpf_race,

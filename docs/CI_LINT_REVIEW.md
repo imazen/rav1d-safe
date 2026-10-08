@@ -37,3 +37,13 @@ The first revised workflow was rejected before jobs started: `runner.temp`
 is unavailable in job-level environment expressions. Container options now
 live in the test step's environment. Actionlint 1.7.12 validates the workflow;
 `just lint-ci-workflow` retains that check for future expression edits.
+
+`just test-integration` now uses release mode and calls the explicit corpus
+recipe. `just test-integration-selection <directory>` selects that path and
+runs all nine bodies, including the existing eight ignored tests without
+changing their attributes. Missing files/directories, empty eligible sweeps,
+and a stream that produces no HDR frame fail the gate. The existing corpus
+passes 9/9; an absent selected corpus fails 9/9. All-target clippy passes.
+[Raw positive/negative results](../benchmarks/integration_selection_2026-10-08.meta.json)
+record a 15s scope, peak-RSS 0.97GiB, min-avail 25346MiB and peak-load 0.73.
+The conformance workflow calls the explicit selection on both architectures.

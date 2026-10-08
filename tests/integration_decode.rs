@@ -14,7 +14,14 @@ mod ivf_parser;
 
 fn test_vectors_dir() -> PathBuf {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    PathBuf::from(manifest_dir).join("test-vectors")
+    let selected = std::env::var_os("RAV1D_TEST_VECTORS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("test-vectors"));
+    assert!(
+        !selected.as_os_str().is_empty(),
+        "test vector directory must not be empty"
+    );
+    PathBuf::from(manifest_dir).join(selected)
 }
 
 fn find_test_ivf() -> Option<PathBuf> {
@@ -40,13 +47,8 @@ fn find_test_ivf() -> Option<PathBuf> {
 #[test]
 #[ignore] // Only run when test vectors are available
 fn test_decode_real_bitstream() {
-    let vector_path = match find_test_ivf() {
-        Some(path) => path,
-        None => {
-            eprintln!("No test vectors found. Run: bash scripts/download-test-vectors.sh");
-            return;
-        }
-    };
+    let vector_path = find_test_ivf()
+        .expect("selected test vector directory has no required IVF; run just download-vectors");
 
     eprintln!("Testing with: {}", vector_path.display());
 
@@ -152,9 +154,11 @@ fn test_decode_hdr_metadata() {
 
         let mut decoder = Decoder::new().expect("Failed to create decoder");
 
-        // Decode first frame
+        // Decode first frame; an empty or rejected stream cannot pass this gate.
+        let mut decoded = false;
         for ivf_frame in &frames {
             if let Ok(Some(frame)) = decoder.decode(&ivf_frame.data) {
+                decoded = true;
                 // Check color info
                 let color = frame.color_info();
                 eprintln!("  Primaries: {:?}", color.primaries);
@@ -177,10 +181,15 @@ fn test_decode_hdr_metadata() {
             }
         }
 
+        assert!(
+            decoded,
+            "HDR test must decode a frame from {}",
+            path.display()
+        );
         return;
     }
 
-    eprintln!("No HDR test vectors found");
+    panic!("selected test vector directory has no required HDR IVF");
 }
 
 /// Decode all frames from an IVF file, asserting no panics and at least one frame produced.
@@ -215,10 +224,11 @@ fn decode_ivf_file(path: &std::path::Path) {
 #[ignore] // requires test vectors
 fn test_obmc_blend_v_regression_00000315() {
     let path = test_vectors_dir().join("dav1d-test-data/8-bit/data/00000315.ivf");
-    if !path.exists() {
-        eprintln!("Skipping: test vector not found at {}", path.display());
-        return;
-    }
+    assert!(
+        path.exists(),
+        "required test vector missing: {}",
+        path.display()
+    );
     decode_ivf_file(&path);
 }
 
@@ -228,10 +238,11 @@ fn test_obmc_blend_v_regression_00000315() {
 #[ignore] // requires test vectors
 fn test_obmc_blend_h_regression_00000327() {
     let path = test_vectors_dir().join("dav1d-test-data/8-bit/data/00000327.ivf");
-    if !path.exists() {
-        eprintln!("Skipping: test vector not found at {}", path.display());
-        return;
-    }
+    assert!(
+        path.exists(),
+        "required test vector missing: {}",
+        path.display()
+    );
     decode_ivf_file(&path);
 }
 
@@ -239,10 +250,7 @@ fn test_obmc_blend_h_regression_00000327() {
 /// Catches regressions across the dav1d test suite.
 fn sweep_vectors(subdir: &str, max_bytes: u64) {
     let dir = test_vectors_dir().join(subdir);
-    if !dir.exists() {
-        eprintln!("Skipping: vectors not found at {}", dir.display());
-        return;
-    }
+    assert!(dir.exists(), "required vectors missing: {}", dir.display());
 
     let mut entries: Vec<_> = std::fs::read_dir(&dir)
         .expect("Failed to read dir")
@@ -251,6 +259,11 @@ fn sweep_vectors(subdir: &str, max_bytes: u64) {
         .filter(|e| e.metadata().map(|m| m.len() <= max_bytes).unwrap_or(false))
         .collect();
     entries.sort_by_key(|e| e.file_name());
+    assert!(
+        !entries.is_empty(),
+        "no eligible IVF vectors in {}",
+        dir.display()
+    );
 
     let mut passed = 0;
     let mut failed = Vec::new();
@@ -335,8 +348,9 @@ fn test_decode_all_vectors_comprehensive() {
 
 #[test]
 fn test_ivf_parser() {
-    // Test IVF parser with a real file if available
-    if let Some(path) = find_test_ivf() {
+    // Corpus selection belongs to the caller; missing data is a failed gate.
+    let path = find_test_ivf().expect("selected test vector directory has no required IVF");
+    {
         let file = File::open(&path).expect("Failed to open test vector");
         let mut reader = BufReader::new(file);
 

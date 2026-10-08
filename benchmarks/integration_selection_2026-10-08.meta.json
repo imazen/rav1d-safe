@@ -1,0 +1,10 @@
+{
+  "published_base": "acf140566f8ba519e58d4b3f0adbbac95e03a0d2",
+  "command": "just test-integration-selection test-vectors; require failure from just test-integration-selection <absent directory>; just clippy",
+  "source_changes": "Release recipe, explicit caller corpus path, missing/empty corpus assertions and decoded-frame requirement; existing assertions and ignore attributes preserved.",
+  "compiler": "1.99.0",
+  "positive": "9/9 passed; zero skipped",
+  "negative": "9/9 failed on missing selected data; zero passed or skipped",
+  "run_heavy": "rc=0; 15s; peak-RSS 0.97GiB; min-avail 25346MiB; peak-load 0.73",
+  "raw_sha256": "7053f8e140c082f98457690c3ce0d84a101335410c5b52b3431b4791d577c931"
+}

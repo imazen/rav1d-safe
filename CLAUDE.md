@@ -976,6 +976,12 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+- 2026-10-08: `just test-integration` omitted release mode, while legacy
+  integration bodies could pass missing corpus files. The recipe now selects
+  its corpus explicitly and runs all nine bodies; missing data fails.
+  Valid selection passes 9/9 and an absent selection fails 9/9. See
+  [CI lint review](docs/CI_LINT_REVIEW.md) for commands and recorded results.
+
 - 2026-10-08: job-level container options referenced `runner.temp`, which GitHub
   rejects before scheduling CI jobs. The options now live in step-level `env`;
   `just lint-ci-workflow` validates workflow contexts with actionlint.
