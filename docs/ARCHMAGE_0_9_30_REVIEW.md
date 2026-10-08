@@ -1,6 +1,8 @@
 # Archmage 0.9.30 update review
 
-The expanded native ARM suite remains pending. The updated remote CI matrix
+The native ARM full suites, doctests and explicit integration selection are
+green with the local signed-source repair. Its separate all-tier/all-worker
+803-vector sidecar matrix and publication remain pending. The updated remote CI matrix
 passes all 32 jobs on `83c928d3`: [CI run](https://github.com/imazen/rav1d-safe/actions/runs/37721109550).
 The manifest selects full revision
 `e2dbab66ef5aa08f8e23ed05248e7d1217f58475` for both normal and dev
@@ -50,4 +52,12 @@ Rust 1.99 release all-target clippy passes in both modes; C-FFI and
 and both library runners (115/115 each) pass on current stable. Rust 1.89
 compiles the library. [Follow-up logs and commands](../benchmarks/archmage_stable_msrv_2026-10-08.meta.json)
 record an 87s scope, peak-RSS 1.61GiB, min-avail 24800MiB and peak-load 4.69.
-Native ARM execution remains a separate pending gate.
+Native Neoverse-N1 execution with Rust 1.99.0 passes 226/226 tracked tests
+and 208/208 untracked tests, with 26 existing skips per mode. Ten active
+doctests pass per mode (three existing ignored), and both explicit legacy
+integration selections pass all nine bodies without skips.
+[Complete logs and source catalog](../benchmarks/arm_decoder_full_2026-10-08.meta.json)
+record the 2856-second scope: peak-RSS 1.05 GiB, min-avail 23306 MiB,
+peak-load 17.37. All 262 catalogued runtime/test/build source files match the
+current local tree. The signed-source repair is not yet published; its
+separate 803-vector all-tier/all-worker sidecar matrix remains pending.

@@ -1,0 +1,273 @@
+ (/home/ubuntu/tmp/rav1d-safe-lead-checkout)
+   Compiling rav1d-disjoint-mut v0.4.0 (/home/ubuntu/tmp/rav1d-safe-lead-checkout/crates/rav1d-disjoint-mut)
+    Finished `release` profile [optimized + debuginfo] target(s) in 3m 38s
+────────────
+ Nextest run ID 70ef0647-d66e-43cb-88b3-4bcd0e99d82f with nextest profile: default
+    Starting 208 tests across 33 binaries (26 tests skipped)
+        PASS [   0.008s] (  1/208) rav1d-safe include::dav1d::picture::tile_threading_latch_tests::set_tile_threading_is_monotone
+        PASS [   0.009s] (  2/208) rav1d-safe src::decode_test::tests::decode_test_ivf
+        PASS [   0.012s] (  3/208) rav1d-safe src::env::left_split_parity::sm_flag_left_matches_sm_flag
+        PASS [   0.008s] (  4/208) rav1d-safe src::env::left_split_parity::trial_floor_is_not_vacuous
+        PASS [   0.007s] (  5/208) rav1d-safe src::error::errno_tests::errno_round_trips_on_this_platform
+        PASS [   0.036s] (  6/208) rav1d-safe src::env::left_split_parity::all_fifteen_helpers_match_the_pre_split_implementation
+        PASS [   0.186s] (  7/208) rav1d-safe src::filmgrain::row_tests::filmgrain_rows_match_scalar_10bit
+        PASS [   0.186s] (  8/208) rav1d-safe src::filmgrain::row_tests::filmgrain_rows_match_scalar_12bit
+        PASS [   0.007s] (  9/208) rav1d-safe src::internal::task_ctx_size::task_context_stays_stack_light
+        PASS [   0.007s] ( 10/208) rav1d-safe src::loopfilter::compact_window::h_window_fits_the_transform_that_selected_it
+        PASS [   0.010s] ( 11/208) rav1d-safe src::loopfilter::compact_window::issue_524_h_window_stays_inside_its_picture_row
+        PASS [   0.085s] ( 12/208) rav1d-safe src::filmgrain::row_tests::filmgrain_rows_match_scalar_8bit
+        PASS [   0.077s] ( 13/208) rav1d-safe src::loopfilter::neon_parity::neon_diff_span_matches_scalar
+        PASS [   0.157s] ( 14/208) rav1d-safe src::loopfilter::neon_parity::neon_matches_scalar_10bpc
+        PASS [   0.143s] ( 15/208) rav1d-safe src::loopfilter::neon_parity::neon_matches_scalar_12bpc
+        PASS [   0.007s] ( 16/208) rav1d-safe src::loopfilter::run_reach::run_reach_equals_the_widest_group_it_can_meet
+        PASS [   0.010s] ( 17/208) rav1d-safe src::loopfilter::run_reach::run_reach_fits_the_transform_that_selected_it
+        PASS [   0.010s] ( 18/208) rav1d-safe src::managed::frame_delay_tests::auto_frame_delay_is_two_with_workers_and_one_without
+        PASS [   0.013s] ( 19/208) rav1d-safe src::managed::frame_delay_tests::decoder_context_count_follows_the_auto_rule
+        PASS [   0.012s] ( 20/208) rav1d-safe src::msac::tests::adapt4_matches_reference_at_interval_boundaries_and_short_slices
+        PASS [   0.009s] ( 21/208) rav1d-safe src::msac::tests::adapt4_matches_reference_through_refills_and_preserves_unused_cdf
+        PASS [   0.147s] ( 22/208) rav1d-safe src::loopfilter::neon_parity::neon_matches_scalar_8bpc
+        PASS [   0.007s] ( 23/208) rav1d-safe src::owned_recon::ordinary_build_keeps_owned_recon_enabled
+        PASS [   0.007s] ( 24/208) rav1d-safe src::owned_recon::tests::a_row_above_the_band_panics_it_does_not_alias
+        PASS [   0.007s] ( 25/208) rav1d-safe src::owned_recon::tests::a_row_below_the_band_panics
+        PASS [   0.006s] ( 26/208) rav1d-safe src::owned_recon::tests::for_rows_mut_walks_the_bands_own_stride_not_the_pictures
+        PASS [   0.007s] ( 27/208) rav1d-safe src::owned_recon::tests::translation_is_plane_coordinates_minus_origin
+        PASS [   0.006s] ( 28/208) rav1d-safe src::safe_simd::cdef_arm::tests::constrain_neutralises_sentinel_over_full_param_space
+        PASS [   0.012s] ( 29/208) rav1d-safe src::safe_simd::cdef_arm::tests::neon_dir_matches_scalar
+        PASS [   0.135s] ( 30/208) rav1d-safe src::msac::tests::cdf_update_matches_directional_arithmetic_for_every_u16
+        PASS [   0.022s] ( 31/208) rav1d-safe src::safe_simd::cdef_arm::tests::neon_row_matches_oracle_10bpc
+        PASS [   0.022s] ( 32/208) rav1d-safe src::safe_simd::cdef_arm::tests::neon_row_matches_oracle_12bpc
+        PASS [   0.019s] ( 33/208) rav1d-safe src::safe_simd::cdef_arm::tests::neon_row_matches_oracle_8bpc
+        PASS [   0.014s] ( 34/208) rav1d-safe src::safe_simd::ipred_arm::cfl_ac_parity::cfl_ac_10bpc_matches_scalar
+        PASS [   0.009s] ( 35/208) rav1d-safe src::safe_simd::ipred_arm::cfl_ac_parity::cfl_ac_12bpc_matches_scalar
+        PASS [   0.013s] ( 36/208) rav1d-safe src::safe_simd::ipred_arm::cfl_ac_parity::cfl_ac_8bpc_matches_scalar
+        PASS [   0.011s] ( 37/208) rav1d-safe src::safe_simd::ipred_arm::cfl_parity::cfl_pred_10bpc_matches_scalar
+        PASS [   0.069s] ( 38/208) rav1d-safe src::safe_simd::cdef_arm::tests::sentinel_must_not_raise_max
+        PASS [   0.010s] ( 39/208) rav1d-safe src::safe_simd::ipred_arm::cfl_parity::cfl_pred_12bpc_matches_scalar
+        PASS [   0.008s] ( 40/208) rav1d-safe src::safe_simd::itx_arm_neon_16x16::tests::test_dc_only_16x16
+        PASS [   0.012s] ( 41/208) rav1d-safe src::safe_simd::ipred_arm::cfl_parity::cfl_pred_8bpc_matches_scalar
+        PASS [   0.007s] ( 42/208) rav1d-safe src::safe_simd::itx_arm_neon_16x16::tests::test_identity_identity_16x16_neon_vs_scalar
+        PASS [   0.008s] ( 43/208) rav1d-safe src::safe_simd::itx_arm_neon_16x16::tests::test_dct_dct_16x16_neon_vs_scalar
+        PASS [   0.006s] ( 44/208) rav1d-safe src::safe_simd::itx_arm_neon_32::tests::test_scalar_dct32_dc_only
+        PASS [   0.009s] ( 45/208) rav1d-safe src::safe_simd::itx_arm_neon_32::tests::test_scalar_dct4
+        PASS [   0.015s] ( 46/208) rav1d-safe src::safe_simd::itx_arm_neon_32::tests::test_scalar_dct32_roundtrip
+        PASS [   0.007s] ( 47/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_adst_adst_4x4_neon_matches_scalar
+        PASS [   0.008s] ( 48/208) rav1d-safe src::safe_simd::itx_arm_neon_32::tests::test_scalar_idct32_odd_zero
+        PASS [   0.008s] ( 49/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_adst_dct_4x4_neon_matches_scalar
+        PASS [   0.009s] ( 50/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_adst_flipadst_4x4_neon_matches_scalar
+        PASS [   0.007s] ( 51/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_adst_identity_4x4_neon_matches_scalar
+        PASS [   0.010s] ( 52/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_dct_adst_4x4_neon_matches_scalar
+        PASS [   0.007s] ( 53/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_dct_dct_4x4_neon_matches_scalar
+        PASS [   0.010s] ( 54/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_dct_dct_dc_only_4x4
+        PASS [   0.009s] ( 55/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_dct_flipadst_4x4_neon_matches_scalar
+        PASS [   0.009s] ( 56/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_dct_identity_4x4_neon_matches_scalar
+        PASS [   0.007s] ( 57/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_flipadst_adst_4x4_neon_matches_scalar
+        PASS [   0.008s] ( 58/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_flipadst_dct_4x4_neon_matches_scalar
+        PASS [   0.008s] ( 59/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_flipadst_flipadst_4x4_neon_matches_scalar
+        PASS [   0.010s] ( 60/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_flipadst_identity_4x4_neon_matches_scalar
+        PASS [   0.008s] ( 61/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_identity_adst_4x4_neon_matches_scalar
+        PASS [   0.006s] ( 62/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_identity_dct_4x4_neon_matches_scalar
+        PASS [   0.011s] ( 63/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_identity_flipadst_4x4_neon_matches_scalar
+        PASS [   0.017s] ( 64/208) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_identity_identity_4x4_neon_matches_scalar
+        PASS [   0.014s] ( 65/208) rav1d-safe src::safe_simd::itx_arm_neon_8x8::tests::test_adst_adst_8x8_neon_vs_scalar
+        PASS [   0.009s] ( 66/208) rav1d-safe src::safe_simd::itx_arm_neon_8x8::tests::test_dct_adst_8x8_neon_vs_scalar
+        PASS [   0.009s] ( 67/208) rav1d-safe src::safe_simd::itx_arm_neon_8x8::tests::test_dct_dct_8x8_dc_only
+        PASS [   0.012s] ( 68/208) rav1d-safe src::safe_simd::itx_arm_neon_8x8::tests::test_identity_identity_8x8_neon_vs_scalar
+        PASS [   0.012s] ( 69/208) rav1d-safe src::safe_simd::itx_arm_neon_8x8::tests::test_dct_dct_8x8_neon_vs_scalar
+        PASS [   0.012s] ( 70/208) rav1d-safe src::safe_simd::itx_arm_neon_8x8::tests::test_transpose_8x8h
+        PASS [   0.014s] ( 71/208) rav1d-safe src::safe_simd::itx_arm_neon_wht::tests::test_wht_4x4_neon_matches_scalar
+        PASS [   0.008s] ( 72/208) rav1d-safe src::safe_simd::itx_arm_neon_wht::tests::test_wht_4x4_neon_saturation
+        PASS [   0.020s] ( 73/208) rav1d-safe src::safe_simd::itx_arm_parity::itx_10bpc_matches_scalar_large_coeffs
+        PASS [   0.019s] ( 74/208) rav1d-safe src::safe_simd::itx_arm_parity::itx_10bpc_matches_scalar_small_coeffs
+        PASS [   0.059s] ( 75/208) rav1d-safe src::safe_simd::itx_arm_parity::itx_10bpc_every_eob_small_coeffs
+        PASS [   0.017s] ( 76/208) rav1d-safe src::safe_simd::itx_arm_parity::itx_12bpc_matches_scalar_large_coeffs
+        PASS [   0.028s] ( 77/208) rav1d-safe src::safe_simd::itx_arm_parity::itx_8bpc_matches_scalar_medium_coeffs
+        PASS [   0.023s] ( 78/208) rav1d-safe src::safe_simd::itx_arm_parity::itx_8bpc_matches_scalar_small_coeffs
+        PASS [   0.010s] ( 79/208) rav1d-safe src::safe_simd::itx_arm_parity::reachable_positions_track_the_transform_class
+        PASS [   0.012s] ( 80/208) rav1d-safe src::safe_simd::mc_arm::compound_parity::compound_16bpc_shift_tracks_bitdepth
+        PASS [   0.022s] ( 81/208) rav1d-safe src::safe_simd::mc_arm::compound_parity::compound_16bpc_values_match_scalar
+        PASS [   0.012s] ( 82/208) rav1d-safe src::safe_simd::mc_arm::compound_parity::compound_8bpc_matches_scalar
+        PASS [   0.010s] ( 83/208) rav1d-safe src::safe_simd::mc_arm::compound_parity::oracle_constants_come_from_the_bitdepth_not_a_literal
+        PASS [   0.009s] ( 84/208) rav1d-safe src::safe_simd::mc_arm::compound_parity::w_mask_16bpc_segmentation_mask_matches_scalar
+        PASS [   0.010s] ( 85/208) rav1d-safe src::safe_simd::mc_arm::tests::test_arm_token_available
+        PASS [   0.008s] ( 86/208) rav1d-safe src::safe_simd::mc_arm::tests::test_arm_token_permutations
+        PASS [   0.022s] ( 87/208) rav1d-safe src::safe_simd::mc_arm::tests::test_dotprod_bias_correction_bit_exact
+        PASS [   0.051s] ( 88/208) rav1d-safe src::safe_simd::mc_arm_prep_parity::prep_16bpc_matches_scalar
+        PASS [   0.018s] ( 89/208) rav1d-safe src::safe_simd::mc_arm_prep_parity::prep_8bpc_matches_scalar_control
+        PASS [   0.010s] ( 90/208) rav1d-safe src::thread_task::grain_panic_tests::delayed_grain_panic_preserves_live_worker_state
+        PASS [   0.340s] ( 91/208) rav1d-safe src::safe_simd::itx_arm_parity::itx_8bpc_every_eob_small_coeffs
+        PASS [   0.010s] ( 92/208) rav1d-safe::cancellation cancel_at_first_sbrow_yields_cancelled
+        PASS [   0.019s] ( 93/208) rav1d-safe::cancellation cancel_mid_frame_yields_cancelled
+        PASS [   0.022s] ( 94/208) rav1d-safe::cancellation cancel_tile_threaded_yields_cancelled
+        PASS [   0.023s] ( 95/208) rav1d-safe::cancellation clearing_token_restores_normal_decode
+        PASS [   0.026s] ( 96/208) rav1d-safe::cancellation no_token_decodes_normally
+        PASS [   0.026s] ( 97/208) rav1d-safe::cancellation unstoppable_token_decodes_normally
+        PASS [   0.161s] ( 98/208) rav1d-safe::decode_backpressure decode_without_draining_loses_no_frames
+        PASS [   0.027s] ( 99/208) rav1d-safe::decode_backpressure reset_discards_frames_held_back_by_backpressure
+        PASS [   0.114s] (100/208) rav1d-safe::decode_concurrent_md5 simultaneous_single_and_multi_thread_decoders_match_reference_md5
+        PASS [   5.463s] (101/208) rav1d-safe::decode_cpu_levels test_cpu_levels_10bit_data
+        PASS [   3.965s] (102/208) rav1d-safe::decode_cpu_levels test_cpu_levels_12bit_data
+        PASS [ 174.935s] (103/208) rav1d-safe::decode_cpu_levels test_cpu_levels_8bit_data
+        SLOW [>300.000s] (───────) rav1d-safe::argon_cover argon_cover_streams_bit_exact_across_levels
+        PASS [ 244.386s] (104/208) rav1d-safe::decode_cpu_levels test_cpu_levels_comprehensive
+        PASS [   0.019s] (105/208) rav1d-safe::decode_cpu_levels test_cpu_levels_smoke
+        PASS [   4.236s] (106/208) rav1d-safe::decode_cpu_levels test_vq_suite_standalone
+        PASS [   0.028s] (107/208) rav1d-safe::decode_md5_committed cdef_12bpc_422_matches_c_oracle_per_frame
+        PASS [   0.036s] (108/208) rav1d-safe::decode_md5_committed committed_vectors_match_reference_md5
+        PASS [   0.064s] (109/208) rav1d-safe::decode_md5_committed lr_sgr_vectors_match_reference_md5
+        PASS [   0.107s] (110/208) rav1d-safe::decode_md5_committed lr_sgr_vectors_threaded_match_reference_md5
+        PASS [   2.177s] (111/208) rav1d-safe::decode_md5_verify test_md5_verify_10bit_quantizer
+        PASS [   0.032s] (112/208) rav1d-safe::decode_md5_verify test_md5_verify_8bit_cdfupdate
+        PASS [   1.557s] (113/208) rav1d-safe::decode_md5_verify test_md5_verify_8bit_features
+        PASS [   0.062s] (114/208) rav1d-safe::decode_md5_verify test_md5_verify_8bit_film_grain
+        PASS [   1.641s] (115/208) rav1d-safe::decode_md5_verify test_md5_verify_8bit_issues
+        PASS [   0.650s] (116/208) rav1d-safe::decode_md5_verify test_md5_verify_8bit_quantizer
+        PASS [   0.176s] (117/208) rav1d-safe::decode_md5_verify test_md5_verify_8bit_size
+        PASS [   1.955s] (118/208) rav1d-safe::decode_md5_verify test_md5_verify_8bit_vq_suite
+        PASS [   1.144s] (119/208) rav1d-safe::decode_md5_verify test_md5_verify_all_10bit_data
+        PASS [   0.834s] (120/208) rav1d-safe::decode_md5_verify test_md5_verify_all_12bit_data
+        PASS [ 449.192s] (121/208) rav1d-safe::argon_cover argon_cover_streams_bit_exact_across_levels
+        PASS [  36.021s] (122/208) rav1d-safe::decode_md5_verify test_md5_verify_all_8bit_data
+        PASS [   0.014s] (123/208) rav1d-safe::decode_md5_verify test_md5_verify_first_8bit
+        PASS [   0.068s] (124/208) rav1d-safe::decode_md5_verify test_md5_verify_single_00000002
+        PASS [  10.874s] (125/208) rav1d-safe::decode_permutations test_permutations_10bit_data
+        PASS [   1.964s] (126/208) rav1d-safe::decode_permutations test_permutations_10bit_features
+        PASS [   0.756s] (127/208) rav1d-safe::decode_permutations test_permutations_10bit_film_grain
+        PASS [  49.006s] (128/208) rav1d-safe::decode_md5_verify test_md5_verify_comprehensive
+        PASS [  18.415s] (129/208) rav1d-safe::decode_permutations test_permutations_10bit_issues
+        PASS [  20.869s] (130/208) rav1d-safe::decode_permutations test_permutations_10bit_quantizer
+        PASS [   0.065s] (131/208) rav1d-safe::decode_permutations test_permutations_12bit_features
+        PASS [   0.152s] (132/208) rav1d-safe::decode_permutations test_permutations_8bit_cdfupdate
+        PASS [   8.243s] (133/208) rav1d-safe::decode_permutations test_permutations_12bit_data
+        PASS [  15.858s] (134/208) rav1d-safe::decode_permutations test_permutations_8bit_features
+        PASS [   0.463s] (135/208) rav1d-safe::decode_permutations test_permutations_8bit_film_grain
+        PASS [   2.397s] (136/208) rav1d-safe::decode_permutations test_permutations_8bit_intra
+        PASS [  15.447s] (137/208) rav1d-safe::decode_permutations test_permutations_8bit_issues
+        PASS [   0.261s] (138/208) rav1d-safe::decode_permutations test_permutations_8bit_mfmv
+        PASS [   0.281s] (139/208) rav1d-safe::decode_permutations test_permutations_8bit_mv
+        PASS [   5.991s] (140/208) rav1d-safe::decode_permutations test_permutations_8bit_quantizer
+        PASS [   3.698s] (141/208) rav1d-safe::decode_permutations test_permutations_8bit_resize
+        PASS [   1.604s] (142/208) rav1d-safe::decode_permutations test_permutations_8bit_size
+        PASS [   0.014s] (143/208) rav1d-safe::decode_permutations test_permutations_smoke
+        PASS [   1.391s] (144/208) rav1d-safe::filmgrain_threads film_grain_frame_and_tile_threads_match_reference
+        PASS [   0.203s] (145/208) rav1d-safe::filmgrain_threads film_grain_independent_decoders_match_reference
+        PASS [   2.109s] (146/208) rav1d-safe::filmgrain_threads film_grain_md5_matches_at_1_2_4_8_threads
+        PASS [   0.244s] (147/208) rav1d-safe::filmgrain_threads grain_actually_changes_pixels
+        PASS [   0.145s] (148/208) rav1d-safe::filmgrain_threads some_vector_spans_multiple_row_bands
+        PASS [   0.109s] (149/208) rav1d-safe::flush_drains flush_returns_frames_still_queued_in_the_last_chunk
+        PASS [   0.103s] (150/208) rav1d-safe::flush_drains flush_returns_in_flight_frames_under_frame_threading
+        PASS [   0.067s] (151/208) rav1d-safe::flush_drains flush_then_decode_again_starts_a_fresh_stream
+        PASS [   0.026s] (152/208) rav1d-safe::flush_drains single_tu_at_one_thread_yields_one_frame
+        PASS [   0.019s] (153/208) rav1d-safe::fuzz_regression fuzz_regression_corpus_exercises_instrumented_kernels
+        PASS [   0.307s] (154/208) rav1d-safe::fuzz_regression fuzz_regression_seeds_do_not_panic
+        PASS [   0.008s] (155/208) rav1d-safe::fuzz_regression guarded_seeds_all_present
+        PASS [   0.394s] (156/208) rav1d-safe::gen_cover gen_cover_streams_bit_exact_across_levels
+        PASS [   0.647s] (157/208) rav1d-safe::gen_vectors_threaded committed_streams_are_thread_and_delay_invariant
+        PASS [   0.012s] (158/208) rav1d-safe::integration_decode test_ivf_parser
+        PASS [   0.014s] (159/208) rav1d-safe::managed_api_test test_decode_empty_data
+        PASS [   0.015s] (160/208) rav1d-safe::managed_api_test test_decoder_creation
+        PASS [   0.020s] (161/208) rav1d-safe::managed_api_test test_decoder_with_custom_settings
+        PASS [   0.011s] (162/208) rav1d-safe::managed_api_test test_plane_view_height_invariant_basic
+        PASS [   0.030s] (163/208) rav1d-safe::managed_packets backpressure_keeps_packet_and_reset_discards_pending_output
+        PASS [   0.010s] (164/208) rav1d-safe::managed_packets empty_stream_ends_without_a_frame_and_empty_packets_are_rejected
+        PASS [   0.014s] (165/208) rav1d-safe::managed_packets end_input_waits_for_delayed_first_frame_without_an_earlier_poll
+        PASS [   0.015s] (166/208) rav1d-safe::managed_packets mapped_old_pixels_remain_borrowed_while_inter_frames_decode
+        PASS [   0.014s] (167/208) rav1d-safe::managed_packets packets_preserve_timing_and_native_pixels_through_decoder_drop
+        PASS [   0.015s] (168/208) rav1d-safe::managed_packets raw_color_codes_and_chroma_position_survive_actual_sequence_parsing
+        PASS [   0.017s] (169/208) rav1d-safe::managed_packets retry_after_receiving_preserves_all_frames_and_packet_provenance
+        PASS [   0.031s] (170/208) rav1d-safe::mastering_display_units parsed_av1_mastering_display_uses_av1_fixed_point_units
+        PASS [   2.288s] (171/208) rav1d-safe::mt_stress mt_stress_4k
+        PASS [   0.012s] (172/208) rav1d-safe::panic_safety_test test_decoder_drop_on_panic
+        PASS [   0.014s] (173/208) rav1d-safe::panic_safety_test test_decoder_drop_without_flush
+        PASS [   0.018s] (174/208) rav1d-safe::panic_safety_test test_decoder_multiple_decode_drop
+        PASS [   0.008s] (175/208) rav1d-safe::panic_safety_test test_decoder_panic_during_decode
+        PASS [   0.026s] (176/208) rav1d-safe::presentation_provenance reordered_presentations_keep_their_own_flags_and_packet_offsets
+        PASS [   0.011s] (177/208) rav1d-safe::presentation_provenance showing_an_older_key_picture_is_not_a_new_keyframe
+        PASS [   0.010s] (178/208) rav1d-safe::safe_simd_crashes arm_aa_base_underflow_16bpc
+        PASS [   0.018s] (179/208) rav1d-safe::safe_simd_crashes arm_aa_base_underflow_8bpc
+        PASS [   0.015s] (180/208) rav1d-safe::safe_simd_crashes arm_boxsum3_oob_16bpc
+        PASS [   0.009s] (181/208) rav1d-safe::safe_simd_crashes arm_boxsum3_oob_8bpc
+        PASS [   0.012s] (182/208) rav1d-safe::safe_simd_crashes arm_mc16_avg_overshoot
+        PASS [   0.015s] (183/208) rav1d-safe::safe_simd_crashes arm_mc16_blend_dir_overshoot
+        PASS [   0.011s] (184/208) rav1d-safe::safe_simd_crashes arm_mc16_blend_overshoot
+        PASS [   0.015s] (185/208) rav1d-safe::safe_simd_crashes arm_mc16_mask_overshoot
+        PASS [   0.011s] (186/208) rav1d-safe::safe_simd_crashes arm_mc16_overshoot
+        PASS [   0.012s] (187/208) rav1d-safe::safe_simd_crashes arm_mc16_w_mask_overshoot
+        PASS [   0.015s] (188/208) rav1d-safe::safe_simd_crashes ipred_z2_bounds_circle
+        PASS [   0.027s] (189/208) rav1d-safe::safe_simd_crashes ipred_z2_bounds_kodim03
+        PASS [   0.013s] (190/208) rav1d-safe::safe_simd_crashes loopfilter_slice_bounds_alpha_noispe
+        PASS [   0.013s] (191/208) rav1d-safe::safe_simd_crashes picbuf_empty_vec
+        PASS [   0.021s] (192/208) rav1d-safe::safe_simd_crashes range_start_bounds_colors_hdr
+        PASS [   0.050s] (193/208) rav1d-safe::strictness conforming_stream_is_identical_under_both
+        PASS [   0.023s] (194/208) rav1d-safe::strictness corrupt_tile_padding_strict_rejects_lenient_conceals
+        PASS [   0.010s] (195/208) rav1d-safe::strictness deprecated_strict_std_compliance_still_means_strict
+        PASS [   0.015s] (196/208) rav1d-safe::strictness desynced_segment_ids_strict_rejects_lenient_conceals
+        PASS [   0.014s] (197/208) rav1d-safe::strictness fuzz_522_523_out_of_range_segment_id_is_rejected
+        PASS [   0.011s] (198/208) rav1d-safe::strictness lenient_is_below_strict_and_strict_is_the_default
+        PASS [   0.080s] (199/208) rav1d-safe::thread_cleanup_test test_auto_detect_threads_cleanup
+        PASS [   0.012s] (200/208) rav1d-safe::thread_cleanup_test test_drop_without_decode
+        PASS [   0.064s] (201/208) rav1d-safe::thread_cleanup_test test_multi_threaded_cleanup
+        PASS [   0.120s] (202/208) rav1d-safe::thread_cleanup_test test_multiple_decoder_cycles
+        PASS [   0.019s] (203/208) rav1d-safe::thread_cleanup_test test_multiple_decoders_simultaneous
+        PASS [   0.018s] (204/208) rav1d-safe::thread_cleanup_test test_single_threaded_no_leak
+        PASS [   0.037s] (205/208) rav1d-safe::tile_threading_parity parity_colors_hdr_rec2020_16bpc
+        PASS [   0.036s] (206/208) rav1d-safe::tile_threading_parity parity_disjoint_mut_tile_overlap
+        PASS [   0.048s] (207/208) rav1d-safe::tile_threading_parity parity_kodim03_8bpc_420
+        SLOW [>300.000s] (───────) rav1d-safe::decode_permutations test_permutations_8bit_data
+        PASS [ 361.584s] (208/208) rav1d-safe::decode_permutations test_permutations_8bit_data
+────────────
+     Summary [ 882.103s] 208 tests run: 208 passed (2 slow), 26 skipped
+cargo test --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --doc
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.16s
+   Doc-tests rav1d_safe
+
+running 13 tests
+test src/ctx.rs - src::ctx::case_set_al (line 161) ... ignored
+test src/safe_simd/pixel_access.rs - src::safe_simd::pixel_access (line 12) ... ignored
+test src/safe_simd/pixel_access.rs - src::safe_simd::pixel_access::neon_ld1q_u8 (line 648) ... ignored
+test src/managed.rs - src::managed::Settings (line 169) ... ok
+test src/itx_1d.rs - src::itx_1d (line 14) ... ok
+test src/managed.rs - src::managed::CpuLevel (line 443) - compile ... ok
+test lib.rs - (line 12) - compile ... ok
+test src/managed.rs - src::managed::Decoder (line 587) - compile ... ok
+test src/managed.rs - src::managed::Decoder::set_stop (line 778) - compile ... ok
+test src/managed.rs - src::managed::Decoder::decode (line 894) - compile ... ok
+test src/managed.rs - src::managed::enabled_features (line 1804) ... ok
+test lib.rs - src::managed (line 264) - compile ... ok
+test src/itx_1d.rs - src::itx_1d (line 5) ... ok
+
+test result: ok. 10 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+all doctests ran in 8.31s; merged doctests compilation took 8.29s
+RAV1D_TEST_VECTORS="test-vectors" cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --test integration_decode --run-ignored all --test-threads 2
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.14s
+────────────
+ Nextest run ID dcccda28-a7fc-4166-9be5-bdb3f62a1a6c with nextest profile: default
+    Starting 9 tests across 1 binary
+        PASS [   0.908s] (1/9) rav1d-safe::integration_decode test_decode_all_12bit_vectors
+        PASS [   1.661s] (2/9) rav1d-safe::integration_decode test_decode_all_10bit_vectors
+        PASS [  25.215s] (3/9) rav1d-safe::integration_decode test_decode_all_8bit_vectors
+        PASS [   0.014s] (4/9) rav1d-safe::integration_decode test_decode_hdr_metadata
+        PASS [   0.015s] (5/9) rav1d-safe::integration_decode test_decode_real_bitstream
+        PASS [   0.016s] (6/9) rav1d-safe::integration_decode test_ivf_parser
+        PASS [   0.110s] (7/9) rav1d-safe::integration_decode test_obmc_blend_h_regression_00000327
+        PASS [   0.101s] (8/9) rav1d-safe::integration_decode test_obmc_blend_v_regression_00000315
+        PASS [  33.690s] (9/9) rav1d-safe::integration_decode test_decode_all_vectors_comprehensive
+────────────
+     Summary [  35.353s] 9 tests run: 9 passed, 0 skipped
+RAV1D_TEST_VECTORS="test-vectors" cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --test integration_decode --run-ignored all --test-threads 2
+    Finished `release` profile [optimized + debuginfo] target(s) in 0.15s
+────────────
+ Nextest run ID c1fc8a86-4f3f-4147-adbe-ad3ac013f037 with nextest profile: default
+    Starting 9 tests across 1 binary
+        PASS [   0.739s] (1/9) rav1d-safe::integration_decode test_decode_all_12bit_vectors
+        PASS [   1.002s] (2/9) rav1d-safe::integration_decode test_decode_all_10bit_vectors
+        PASS [  15.275s] (3/9) rav1d-safe::integration_decode test_decode_all_8bit_vectors
+        PASS [   0.015s] (4/9) rav1d-safe::integration_decode test_decode_hdr_metadata
+        PASS [   0.013s] (5/9) rav1d-safe::integration_decode test_decode_real_bitstream
+        PASS [   0.008s] (6/9) rav1d-safe::integration_decode test_ivf_parser
+        PASS [   0.077s] (7/9) rav1d-safe::integration_decode test_obmc_blend_h_regression_00000327
+        PASS [   0.075s] (8/9) rav1d-safe::integration_decode test_obmc_blend_v_regression_00000315
+        PASS [  20.599s] (9/9) rav1d-safe::integration_decode test_decode_all_vectors_comprehensive
+────────────
+     Summary [  21.602s] 9 tests run: 9 passed, 0 skipped
+run-heavy: done rc=0 2856s | peak-RSS 1.05GiB | min-avail 23306MiB | peak-load 17.37

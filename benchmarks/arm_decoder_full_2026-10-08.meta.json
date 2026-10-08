@@ -1,0 +1,72 @@
+{
+  "date": "2026-10-08",
+  "cpu": "Neoverse-N1",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "source_catalog": "arm_decoder_full_2026-10-08.source.json",
+  "commands": [
+    "just test-all-modes",
+    "just test-integration-selection test-vectors",
+    "just test-integration-selection test-vectors bitdepth_8,bitdepth_16,untracked"
+  ],
+  "environment": {
+    "RUSTUP_TOOLCHAIN": "1.99.0",
+    "RUSTFLAGS": "",
+    "CARGO_ENCODED_RUSTFLAGS": "",
+    "cargo_rustc": "actual rustup binaries, bypassing mise shims"
+  },
+  "results": {
+    "tracked": {
+      "passed": 226,
+      "skipped": 26,
+      "seconds": 1675.307
+    },
+    "untracked": {
+      "passed": 208,
+      "skipped": 26,
+      "seconds": 882.103
+    },
+    "doctests_per_mode": {
+      "passed": 10,
+      "ignored": 3
+    },
+    "selected_integration_tracked": {
+      "passed": 9,
+      "skipped": 0,
+      "seconds": 35.353
+    },
+    "selected_integration_untracked": {
+      "passed": 9,
+      "skipped": 0,
+      "seconds": 21.602
+    }
+  },
+  "run_heavy": {
+    "exit_code": 0,
+    "seconds": 2856,
+    "peak_rss_gib": 1.05,
+    "min_available_mib": 23306,
+    "peak_load": 17.37,
+    "memory_limit": "16G",
+    "jobs": 12
+  },
+  "fixture": {
+    "name": "photo_4k.avif",
+    "bytes": 286171,
+    "sha256": "cb5b2f133c52ea3163544c75e3e45f16f7900d0fdcdbad596f68b6b385d3dab6"
+  },
+  "full_log_sha256": "f2a815ef92bc646e6baca928276e61c1a25764332f02e737e1353f9720f6cced",
+  "parts": [
+    {
+      "path": "benchmarks/arm_decoder_full_2026-10-08.part01.log",
+      "sha256": "e23f6607396d40348f887ecd690458ee4c05c320f65d5b17f28c5881c4b74b9d",
+      "bytes": 28000
+    },
+    {
+      "path": "benchmarks/arm_decoder_full_2026-10-08.part02.log",
+      "sha256": "ebaed2c4edb07b30f46e689ab421d768f0da5f81daa9fd24ac4bf7a282f2ed9f",
+      "bytes": 27228
+    }
+  ],
+  "limits": "Native full nextest/doctest/explicit integration gates only. Separate803-vector all-native-tier x1/2/4/8worker sidecar matrix remains pending for this source revision. No speedup is claimed."
+}
