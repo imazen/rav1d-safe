@@ -1,0 +1,93 @@
+{
+  "date": "2026-10-08",
+  "cpu": "AMD Ryzen9 7900X (Zen4); Zen5 unmeasured",
+  "compiler": "rustc1.99.0 (b940084d7 2026-09-28)",
+  "before_revision": "e8162a0d6bbae5543546f6f8532a651ac31e4a13",
+  "before_prefix": "/home/lilith/work/zen/rav1d-safe/target/lead-mc-final-after",
+  "before_provenance": "../mc_final_matched_builds_2026-10-08.meta.json",
+  "after_revision": "1e57f3b283f3d45fb98a968ce04e1c41797a7e16",
+  "after_prefix": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final",
+  "source_sha256": {
+    "Cargo.toml": "4783d4fbde91e5a4278bb03bfaae8b16177a5bb26edcc11230bb368e52454042",
+    "Cargo.lock": "315a1c4b47dd38cbd8d855514f4bf446e515834393b934c4fe836f31b51b6ce6",
+    "examples/decode_md5.rs": "9d25da85938745fe96aeff8958bbdbeef285316bbe491c147f1273121979b5b8",
+    "examples/profile_ivf.rs": "fdae26bfe35781f98cedf4a757a2072f9c349e49a5fc5b9ebfabac6d6c7520b8",
+    "src/safe_simd/mc.rs": "c2b265303d58c114b40980fbbb81d3721a2b4e711bc1f124c7c01bd4db8cece8",
+    "src/mc.rs": "34685435ebf7464d184804fdc805d13f1f2933620bc72b55f9cac8cec64c69d3",
+    "src/mc_warp_scalar_tests.rs": "f48b8f6ca9aa1c78bb73bd0858626426bd5710e56b5070ad36bb5730ae64f89a",
+    "src/safe_simd/mc_reference.rs": "392afbc92ccd71d02dcf34c9ed29d3894e6e24fc77d80beec546253281966e16"
+  },
+  "compiled_source_delta": [
+    "M src/mc.rs",
+    "A src/mc_warp_scalar_tests.rs",
+    "M src/safe_simd/mc.rs",
+    "M src/safe_simd/mc_reference.rs",
+    "A src/safe_simd/mc_warp_pair_tests.rs"
+  ],
+  "profile": "release fat LTO, generic empty RUSTFLAGS and CARGO_ENCODED_RUSTFLAGS; archmage0.9.30/e2dbab66; testable_dispatch enabled in both examples",
+  "command": "env RUSTUP_TOOLCHAIN=1.99.0 RUSTFLAGS= CARGO_ENCODED_RUSTFLAGS= run-heavy --mem16G --jobs20 -- just build-bench-modes /home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-safe /home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final-untracked",
+  "resource_line": "run-heavy: done rc=0 71s | peak-RSS 1.30GiB | min-avail 24107MiB | peak-load 3.28",
+  "resource_note": "Scope includes auto-installation of an explicit1.99.0 toolchain with the same compiler build as the preexisting stable baseline.",
+  "binary_inventory": {
+    "safe/profile_ivf": {
+      "path": "target/lead-warp-destination-final-safe/release/examples/profile_ivf",
+      "bytes": 17221624,
+      "sha256": "9ed0eeea45a6839744ae0fc432704e31f5e6f9b61f4831d725823890ebfe31c4",
+      "tls_sections_bytes": {
+        ".tbss": 11368,
+        ".tdata": 560
+      },
+      "compiler_comment": "String dump of section '.comment':\n  [     1]  rustc version 1.99.0 (b940084d7 2026-09-28)\n  [    2d]  GCC: (Ubuntu 15.2.0-16ubuntu1) 15.2.0\n  [    53]  Linker: LLD 23.1.1 (/checkout/src/llvm-project/llvm 1b9c0d5ff9bbe7634aead059efe6b11a7eeba145)"
+    },
+    "safe/decode_md5": {
+      "path": "target/lead-warp-destination-final-safe/release/examples/decode_md5",
+      "bytes": 13583784,
+      "sha256": "5ff5e0a567f66483752c84b3b8b2cda4ffadf7ae8d57fc1ce8e0e2ea3c2cd20a",
+      "tls_sections_bytes": {
+        ".tbss": 11232,
+        ".tdata": 560
+      },
+      "compiler_comment": "String dump of section '.comment':\n  [     1]  rustc version 1.99.0 (b940084d7 2026-09-28)\n  [    2d]  GCC: (Ubuntu 15.2.0-16ubuntu1) 15.2.0\n  [    53]  Linker: LLD 23.1.1 (/checkout/src/llvm-project/llvm 1b9c0d5ff9bbe7634aead059efe6b11a7eeba145)"
+    },
+    "untracked/profile_ivf": {
+      "path": "target/lead-warp-destination-final-untracked/release/examples/profile_ivf",
+      "bytes": 16055888,
+      "sha256": "b7000abff48e73826102c7c39b2c610aaaaa064f95cd43b5e862b48801b6a3dd",
+      "tls_sections_bytes": {
+        ".tbss": 11368,
+        ".tdata": 560
+      },
+      "compiler_comment": "String dump of section '.comment':\n  [     1]  rustc version 1.99.0 (b940084d7 2026-09-28)\n  [    2d]  GCC: (Ubuntu 15.2.0-16ubuntu1) 15.2.0\n  [    53]  Linker: LLD 23.1.1 (/checkout/src/llvm-project/llvm 1b9c0d5ff9bbe7634aead059efe6b11a7eeba145)"
+    },
+    "untracked/decode_md5": {
+      "path": "target/lead-warp-destination-final-untracked/release/examples/decode_md5",
+      "bytes": 12400272,
+      "sha256": "57d31073dcb060d95dcd0030ef816e6e1d835a03d764cdd3b66733af6f076aa4",
+      "tls_sections_bytes": {
+        ".tbss": 11232,
+        ".tdata": 560
+      },
+      "compiler_comment": "String dump of section '.comment':\n  [     1]  rustc version 1.99.0 (b940084d7 2026-09-28)\n  [    2d]  GCC: (Ubuntu 15.2.0-16ubuntu1) 15.2.0\n  [    53]  Linker: LLD 23.1.1 (/checkout/src/llvm-project/llvm 1b9c0d5ff9bbe7634aead059efe6b11a7eeba145)"
+    }
+  },
+  "baseline_binary_sha256_verified": {
+    "safe/profile_ivf": "6467d6300fbc76bfb3c6c27a95f6dffba608be289d0573922037f5ac137744eb",
+    "safe/decode_md5": "b1fd138e629f44f22f550002a8365fbb789c3c26362a0e43784a02d33492e246",
+    "untracked/profile_ivf": "a2883739f38bc0dd098da4fe1093800f8f4cd2808f466ccc5ad0adb90aa6d39a",
+    "untracked/decode_md5": "5a68d68c180a4754bd3d8772cb57ef7e1f0cf596287a73cfb1de5a92e57e8eb1"
+  },
+  "full_log_sha256": "8b4b5d994c959bbc906745c369560d82a250749696d8cd2bcc408723aaf9c57d",
+  "ordered_log_parts": [
+    {
+      "path": "builds.part01.log",
+      "bytes": 14377,
+      "sha256": "8b4b5d994c959bbc906745c369560d82a250749696d8cd2bcc408723aaf9c57d"
+    }
+  ],
+  "missing": [
+    "Whole-clip grain MD5 gate",
+    "Forty configuration sidecar gate",
+    "AA/AB throughput",
+    "Production landing"
+  ]
+}

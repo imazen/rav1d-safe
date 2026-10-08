@@ -51,3 +51,12 @@ before and after execution; paired horizontal warp arithmetic is absent.
 The wrapped scope returned rc=0 after 1,824 seconds, peak RSS 1.54 GiB,
 minimum available 17,927 MiB and peak load 13.50. Full logs are preserved
 in ordered bounded parts. No throughput claim follows from these gates.
+
+[Fresh matched binaries](../benchmarks/warp_signed_destination_2026-10-08/builds.meta.json)
+use Rust 1.99.0, archmage 0.9.30, the same lockfile and guarded timing
+example, generic code generation and release fat LTO in both modes.
+The preserved before binaries match published MC production source;
+only the signed destination repair changes compiled production code.
+The 71-second build scope returned rc=0, peak RSS 1.30 GiB, minimum
+available 24,107 MiB and peak load 3.28. Whole-clip MD5, sidecar and
+throughput gates remain pending.
