@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-08",
+  "cpu": "AMD Ryzen 9 7900X (Zen 4)",
+  "build_proof": "benchmarks/archmage_guarded_builds_2026-10-08.meta.json",
+  "old_archmage": "0.9.29 / b8d6c0777e55e4ea8d26cde0879faae858cba662",
+  "new_archmage": "0.9.30 / e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "decoder_source": "f010130aefa99c61b45618f9f28e33035dba2824",
+  "old_manifest_revision": "43432b6d410f749c311dc5d7989ee9d3297445e3",
+  "protocol": {
+    "modes": [
+      "tracked",
+      "untracked"
+    ],
+    "threads": [
+      1,
+      4
+    ],
+    "frame_delay": 1,
+    "rounds": 4,
+    "timed_passes_per_process": 3,
+    "untimed_warmups_per_process": 1,
+    "inloop_filters": "all",
+    "grain": true,
+    "runtime_dispatch": "native",
+    "first_cpu": 8
+  },
+  "command_log": "benchmarks/archmage_version_campaign_2026-10-08.log",
+  "resource_scope": {
+    "seconds": 3003,
+    "peak_rss_gib": 0.21,
+    "min_available_mib": 24637,
+    "peak_load": 5.13,
+    "rc": 0
+  },
+  "parity": {
+    "path": "benchmarks/archmage_grain_output_2026-10-08.log",
+    "comparisons": 32,
+    "result": "All match dav1d 1.5.3 and the corresponding prior grain-disabled clip MD5s",
+    "sha256": "1b3092bf963c31ef75c1bb6cf7dd95d29e7d0179265323b7c055334e836c2b52"
+  },
+  "files": [
+    {
+      "path": "benchmarks/archmage_version_analysis_2026-10-08.json",
+      "bytes": 11759,
+      "sha256": "9b902379a26e74a90e2c0622e65e8e6bf461faa536d618eb86392691f4cddda0"
+    },
+    {
+      "path": "benchmarks/archmage_version_campaign_2026-10-08.log",
+      "bytes": 28270,
+      "sha256": "7c425dc2eb27e77ef1249f23a1bcce8172d684a0db895a651b20dc952f5d1893"
+    },
+    {
+      "path": "benchmarks/archmage_version_safe_aa_2026-10-08.jsonl",
+      "bytes": 5691,
+      "sha256": "38479a64088ae86687255b8e25839889f4bf380b6ef6789238158bf9fc316d5f"
+    },
+    {
+      "path": "benchmarks/archmage_version_safe_ab_2026-10-08.jsonl",
+      "bytes": 5670,
+      "sha256": "b3e4c5734e071b5e05265a6a7a0ee92562f8502c935aecadffd6edc8da5b9fe3"
+    },
+    {
+      "path": "benchmarks/archmage_version_untracked_aa_2026-10-08.jsonl",
+      "bytes": 5645,
+      "sha256": "003432b25bf932e377a6ab3dbffabcbe746910e55624d32f7ecc9652b4790fe6"
+    },
+    {
+      "path": "benchmarks/archmage_version_untracked_ab_2026-10-08.jsonl",
+      "bytes": 5647,
+      "sha256": "5d7df350b44f9badbb17d20672bcf5f4254ad8d39c8ca61004e615381f7cc24c"
+    }
+  ],
+  "limits": [
+    "Zen 5 unmeasured",
+    "Both example builds unify archmage testable_dispatch through development dependencies; consumers without that feature unmeasured",
+    "Four process pairs per case; within-process timed passes are grouped observations",
+    "Four-worker signs and medians show scheduling sensitivity; no significance threshold inferred"
+  ],
+  "report_tool_revision": "f41fa4a01e1024587f455e6408c8685b6ba4a88d"
+}
