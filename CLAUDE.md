@@ -978,6 +978,20 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+### Archmage 0.9.30 performance observation (2026-10-08)
+
+The matched 0.9.29/0.9.30 comparison completes both-mode A/A and A/B runs
+on four 8/10-bit clips at one/four workers. Tracked AOM 1080p at one worker
+has median +0.534% and minimum +0.654% time, with all four process-pair
+medians positive; its A/A median is +0.098%. Other one-worker median
+changes range from -0.070% to +0.269%; four-worker signs vary alongside
+noisy A/A controls. All 32 grain-enabled MD5 comparisons match dav1d.
+The 3,003-second timing scope peaks at 0.21 GiB RSS, minimum available
+24,637 MiB, peak load 5.13. Both example builds unify testable_dispatch;
+consumers without it and Zen 5 are unmeasured. No broad speedup is claimed.
+See [the complete comparison](docs/ARCHMAGE_PERF_AB.md) (`c23e8cfd`).
+
+
 - 2026-10-08: `profile_ivf` timing rows used the warm-up frame count without checking timed decodes. `7e48ed12` requires nonzero warm-up output and equal counts on every timed pass before emitting a result. The first archmage comparison was interrupted and preserved; no short decode was observed and no A/B performance conclusion was drawn. The example also fails on decode, frame-drain and flush errors; the unchanged malformed-input CLI oracle fails before repair and passes afterward alongside a valid-frame control. See `docs/BENCHMARK_TIMED_FRAMES.md`.
 
 - 2026-10-08: `decode_md5 --limit` stopped hashing but continued submitting

@@ -54,6 +54,9 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   retries the same packet. Applies to every thread count.
 
 ### Changed
+- Record the matched archmage 0.9.29/0.9.30 A/B comparison (`c23e8cfd`):
+  a small tracked 1080p slowdown, variable four-worker results, and exact
+  grain-enabled output parity. See [measurements and limits](docs/ARCHMAGE_PERF_AB.md).
 - Pin archmage 0.9.30 to reviewed revision `e2dbab6`, including the token-cache
   publication fix and macro attribute corrections. Both x86 release suites,
   doctests, current-stable lint and library MSRV checks pass; see
