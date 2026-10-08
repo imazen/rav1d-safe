@@ -978,6 +978,19 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+### x86 warp negative destination stride (2026-10-08) — OPEN
+
+An independent scalar whole-plane oracle reproduces an index-out-of-bounds
+panic on the current MC source when warp put receives a negative destination
+stride under the direct one-worker picture policy. The SIMD dispatcher slices
+away the destination prefix, then the vertical pass casts a negative row
+offset to usize. The same oracle fails with and without the proposed paired
+horizontal warp arithmetic; that arithmetic is not the cause. Signed-source
+put/prep parity passes. A full-window/base-index repair and 10/12-bit
+destination coverage pass the focused scalar gate; full decoder, feature,
+sidecar and timing validation remain pending. No expectation has been relaxed.
+[Evidence and repair scope](docs/MC_WARP_DESTINATION_ROWS.md).
+
 ### x86 MC bounded signed rows and four-tap extent (2026-10-08) — FIXED
 
 Batched horizontal and vertical-only byte kernels converted signed source

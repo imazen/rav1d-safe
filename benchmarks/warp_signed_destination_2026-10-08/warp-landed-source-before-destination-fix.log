@@ -1,0 +1,33 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=25921MiB :: just test-mc-warp-pairs
+cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib -E 'test(warp_pair_tests) | test(warp_scalar_tests)' --test-threads 1
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-warp)
+[1m[92m    Finished[0m `release-thin` profile [optimized + debuginfo] target(s) in 13.43s
+────────────
+[32;1m Nextest run[0m ID [1m2182ca82-53b6-4aaa-b8a9-64833f4512d6[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m2[0m tests across [1m1[0m binary ([1m120[0m tests [33;1mskipped[0m)
+[31;1m        FAIL[0m [   0.003s] (1/2) [35;1mrav1d-safe[0m [36msrc::mc::warp_scalar_tests[0m[36m::[0m[34;1mwarp_put_matches_scalar_with_negative_destination_rows[0m
+[31;1m [0m [31;1mstdout[0m [31;1m───[0m
+
+    running 1 test
+    test src::mc::warp_scalar_tests::warp_put_matches_scalar_with_negative_destination_rows ... FAILED
+
+    failures:
+
+    failures:
+        src::mc::warp_scalar_tests::warp_put_matches_scalar_with_negative_destination_rows
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 121 filtered out; finished in 0.00s
+    [0m
+[31;1m [0m [31;1mstderr[0m [31;1m───[0m
+
+    [0m[31;1mthread 'src::mc::warp_scalar_tests::warp_put_matches_scalar_with_negative_destination_rows' (3405131) panicked at src/safe_simd/mc.rs:14164:13:[0m
+    [31;1mindex out of bounds: the len is 8 but the index is 18446744073709551552[0m
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace[0m
+
+[32;1m        PASS[0m [   0.042s] (2/2) [35;1mrav1d-safe[0m [36msrc::mc::warp_scalar_tests[0m[36m::[0m[34;1mwarp_put_prep_match_scalar_with_signed_source_rows_and_all_filter_indices[0m
+────────────
+[31;1m     Summary[0m [   0.045s] [1m2[0m tests run: [1m1[0m [32;1mpassed[0m, [1m1[0m [31;1mfailed[0m, [1m120[0m [33;1mskipped[0m
+[31;1m        FAIL[0m [   0.003s] (1/2) [35;1mrav1d-safe[0m [36msrc::mc::warp_scalar_tests[0m[36m::[0m[34;1mwarp_put_matches_scalar_with_negative_destination_rows[0m
+[31;1merror[0m: test run failed
+error: recipe `test-mc-warp-pairs` failed on line 44 with exit code 100
+run-heavy: done rc=100 14s | peak-RSS 1.61GiB | min-avail 24306MiB | peak-load 2.13

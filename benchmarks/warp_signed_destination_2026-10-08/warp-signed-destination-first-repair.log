@@ -1,0 +1,113 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=25930MiB :: just test-mc-warp-pairs
+cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib -E 'test(warp_pair_tests) | test(warp_scalar_tests)' --test-threads 1
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-warp)
+[1m[91merror[E0061][0m[1m: this function takes 10 arguments but 9 arguments were supplied[0m
+     [1m[94m--> [0msrc/safe_simd/mc_reference.rs:189:37
+      [1m[94m|[0m
+[1m[94m  189[0m [1m[94m|[0m [1m[94m...[0m                   super::super::warp_affine_8x8_8bpc_avx2(
+      [1m[94m|[0m                       [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[94m...[0m
+[1m[94m  193[0m [1m[94m|[0m [1m[94m...[0m                       data,
+      [1m[94m|[0m                           [1m[94m----[0m [1m[94margument #4 of type `isize` is missing[0m
+[1m[94m  194[0m [1m[94m|[0m [1m[94m...[0m                       base,
+[1m[94m  195[0m [1m[94m|[0m [1m[94m...[0m                       stride,
+      [1m[94m|[0m                           [1m[94m------[0m [1m[94mexpected `i32`, found `isize`[0m
+[1m[94m  196[0m [1m[94m|[0m [1m[94m...[0m                       &abcd,
+      [1m[94m|[0m                           [1m[94m-----[0m [1m[94mexpected `isize`, found `&[{integer}; 4]`[0m
+[1m[94m  197[0m [1m[94m|[0m [1m[94m...[0m                       mx,
+      [1m[94m|[0m                           [1m[94m--[0m [1m[94mexpected `&[i16; 4]`, found `{integer}`[0m
+      [1m[94m|[0m
+[1m[92mnote[0m: function defined here
+     [1m[94m--> [0msrc/safe_simd/mc.rs:14210:4
+      [1m[94m|[0m
+[1m[94m14210[0m [1m[94m|[0m fn warp_affine_8x8_8bpc_avx2(
+      [1m[94m|[0m    [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[94m...[0m
+[1m[94m14214[0m [1m[94m|[0m     dst_stride: isize,
+      [1m[94m|[0m     [1m[94m-----------------[0m
+[1m[94m...[0m
+[1m[94m14220[0m [1m[94m|[0m     my: i32,
+      [1m[94m|[0m     [1m[94m-------[0m
+[1m[96mhelp[0m: you can convert an `isize` to an `i32` and panic if the converted value doesn't fit
+      [1m[94m|[0m
+[1m[94m  195[0m [1m[94m| [0m                                        stride[92m.try_into().unwrap()[0m,
+      [1m[94m|[0m                                               [92m++++++++++++++++++++[0m
+[1m[96mhelp[0m: did you mean
+      [1m[94m|[0m
+[1m[94m  189[0m [92m~ [0m                                    super::super::warp_affine_8x8_8bpc_avx2[92m([0m
+[1m[94m  190[0m [92m+                                         token,[0m
+[1m[94m  191[0m [92m+                                         &mut put[i],[0m
+[1m[94m  192[0m [92m+                                         8,[0m
+[1m[94m  193[0m [92m+                                         /* isize */,[0m
+[1m[94m  194[0m [92m+                                         data,[0m
+[1m[94m  195[0m [92m+                                         base,[0m
+[1m[94m  196[0m [92m+                                         mx,[0m
+[1m[94m  197[0m [92m+                                         &abcd,[0m
+[1m[94m  198[0m [92m+                                         my,[0m
+[1m[94m  199[0m [92m+                                         /* i32 */,[0m
+[1m[94m  200[0m [92m~                                     )[0m;
+      [1m[94m|[0m
+
+[1m[91merror[E0061][0m[1m: this function takes 12 arguments but 11 arguments were supplied[0m
+     [1m[94m--> [0msrc/safe_simd/mc_reference.rs:222:37
+      [1m[94m|[0m
+[1m[94m  222[0m [1m[94m|[0m [1m[94m...[0m                   super::super::warp_affine_8x8_16bpc_avx2(
+      [1m[94m|[0m                       [1m[91m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[94m...[0m
+[1m[94m  226[0m [1m[94m|[0m [1m[94m...[0m                       data,
+      [1m[94m|[0m                           [1m[94m----[0m [1m[94margument #4 of type `isize` is missing[0m
+      [1m[94m|[0m
+[1m[92mnote[0m: function defined here
+     [1m[94m--> [0msrc/safe_simd/mc.rs:14418:4
+      [1m[94m|[0m
+[1m[94m14418[0m [1m[94m|[0m fn warp_affine_8x8_16bpc_avx2(
+      [1m[94m|[0m    [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[94m...[0m
+[1m[94m14422[0m [1m[94m|[0m     dst_stride: isize,
+      [1m[94m|[0m     [1m[94m-----------------[0m
+[1m[96mhelp[0m: provide the argument
+      [1m[94m|[0m
+[1m[94m  222[0m [92m~ [0m                                    super::super::warp_affine_8x8_16bpc_avx2[92m([0m
+[1m[94m  223[0m [92m+                                         token,[0m
+[1m[94m  224[0m [92m+                                         &mut put[i],[0m
+[1m[94m  225[0m [92m+                                         16,[0m
+[1m[94m  226[0m [92m+                                         /* isize */,[0m
+[1m[94m  227[0m [92m+                                         data,[0m
+[1m[94m  228[0m [92m+                                         base * ps,[0m
+[1m[94m  229[0m [92m+                                         stride,[0m
+[1m[94m  230[0m [92m+                                         &abcd,[0m
+[1m[94m  231[0m [92m+                                         my,[0m
+[1m[94m  232[0m [92m+                                         intermediate,[0m
+[1m[94m  233[0m [92m+                                         (1 << bits) - 1,[0m
+[1m[94m  234[0m [92m+                                         mx,[0m
+[1m[94m  235[0m [92m~                                     )[0m;
+      [1m[94m|[0m
+
+[1m[91merror[E0308][0m[1m: mismatched types[0m
+     [1m[94m--> [0msrc/safe_simd/mc_reference.rs:245:41
+      [1m[94m|[0m
+[1m[94m  235[0m [1m[94m|[0m [1m[94m...[0m                   super::super::warp_affine_8x8t_16bpc_avx2(
+      [1m[94m|[0m                       [1m[94m-----------------------------------------[0m [1m[94marguments to this function are incorrect[0m
+[1m[94m...[0m
+[1m[94m  245[0m [1m[94m|[0m [1m[94m...[0m                       intermediate,
+      [1m[94m|[0m                           [1m[91m^^^^^^^^^^^^[0m [1m[91mexpected `u8`, found `i32`[0m
+      [1m[94m|[0m
+[1m[92mnote[0m: function defined here
+     [1m[94m--> [0msrc/safe_simd/mc.rs:14461:4
+      [1m[94m|[0m
+[1m[94m14461[0m [1m[94m|[0m fn warp_affine_8x8t_16bpc_avx2(
+      [1m[94m|[0m    [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+[1m[94m...[0m
+[1m[94m14471[0m [1m[94m|[0m     intermediate_bits: u8,
+      [1m[94m|[0m     [1m[94m---------------------[0m
+[1m[96mhelp[0m: you can convert an `i32` to a `u8` and panic if the converted value doesn't fit
+      [1m[94m|[0m
+[1m[94m  245[0m [1m[94m| [0m                                        intermediate[92m.try_into().unwrap()[0m,
+      [1m[94m|[0m                                                     [92m++++++++++++++++++++[0m
+
+[1mSome errors have detailed explanations: E0061, E0308.[0m
+[1mFor more information about an error, try `rustc --explain E0061`.[0m
+[1m[91merror[0m: could not compile `rav1d-safe` (lib test) due to 3 previous errors
+[31;1merror[0m: command `[1m/home/lilith/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo test --no-run --message-format json-render-diagnostics --lib --features bitdepth_8,bitdepth_16 --no-default-features --profile release-thin[0m` exited with code [1m101[0m
+error: recipe `test-mc-warp-pairs` failed on line 44 with exit code 101
+run-heavy: done rc=101 6s | peak-RSS 0.95GiB | min-avail 25337MiB | peak-load 1.22

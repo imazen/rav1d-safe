@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-08",
+  "compiler": "Rust 1.99.0; archmage 0.9.30/e2dbab66; generic target flags",
+  "before_mc_sha256": "5eef8c20ef03bb11d1c922cecb47727edf96ca7cf002bc162f33b3dddc8dc8db",
+  "command": "env PATH=/home/lilith/.cargo/bin:$PATH TMPDIR=/home/lilith/tmp RUSTFLAGS= CARGO_ENCODED_RUSTFLAGS= /home/lilith/work/claudehints/scripts/run-heavy --mem 16G --jobs 20 -- just test-mc-warp-pairs",
+  "after_source_sha256": {
+    "src/safe_simd/mc.rs": "c2b265303d58c114b40980fbbb81d3721a2b4e711bc1f124c7c01bd4db8cece8",
+    "src/mc.rs": "34685435ebf7464d184804fdc805d13f1f2933620bc72b55f9cac8cec64c69d3",
+    "src/mc_warp_scalar_tests.rs": "f48b8f6ca9aa1c78bb73bd0858626426bd5710e56b5070ad36bb5730ae64f89a",
+    "src/safe_simd/mc_reference.rs": "392afbc92ccd71d02dcf34c9ed29d3894e6e24fc77d80beec546253281966e16"
+  },
+  "scope": "Paired horizontal arithmetic is removed in the isolated before and repaired snapshots. Before fails negative destination and passes broad signed-source put/prep; first repair compile gate catches two test-callers missing the new base argument. Expanded repaired default snapshot passes three scalar tests, including 8/10/12-bit negative destinations. Full decoder/feature/sidecar/timing gates remain pending.",
+  "resource": "run-heavy: done rc=0 14s | peak-RSS 1.62GiB | min-avail 24181MiB | peak-load 0.82",
+  "files": [
+    {
+      "name": "warp-prepared-first-gate.log",
+      "sha256": "746d526aedff2375b0bccdae153924892e55dc835aeae754e4aaf0b7e7f269d4",
+      "bytes": 9215
+    },
+    {
+      "name": "warp-landed-source-before-destination-fix.log",
+      "sha256": "20d503d3541e42d089b28f47f0cb0579e1c894e163419181e6d5f69692e10ee6",
+      "bytes": 2425
+    },
+    {
+      "name": "warp-signed-destination-first-repair.log",
+      "sha256": "50fc8ad88d5c2497273e4cf9863fd11041235a2f39f8c46cb595dcb8fe4e6f7c",
+      "bytes": 7711
+    },
+    {
+      "name": "warp-signed-destination-expanded-gate.log",
+      "sha256": "8d2d02af1241eb8cc249126f3c7f5a0c6c2075346f7282f3a9a0eba3cf6ec3b2",
+      "bytes": 1497
+    }
+  ]
+}
