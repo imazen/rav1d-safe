@@ -30,6 +30,10 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   retries the same packet. Applies to every thread count.
 
 ### Changed
+- Pin archmage 0.9.30 to reviewed revision `e2dbab6`, including the token-cache
+  publication fix and macro attribute corrections. Both x86 release suites,
+  doctests, current-stable lint and library MSRV checks pass; see
+  [the update review](docs/ARCHMAGE_0_9_30_REVIEW.md) for scope and pending gates.
 - **Loop-restoration scratch moved off thread-local storage.** The x86-64 Wiener/SGR
   scratch (~1.3 MiB: six `const`-initialised `thread_local!` struct arrays) put ~1.29 MiB of
   `.tbss` into EVERY thread of any program linking the crate, and glibc places a thread's
