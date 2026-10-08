@@ -1,0 +1,142 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=4/24 avail=26454MiB :: just test-i686-cross
+cross test --target i686-unknown-linux-gnu --no-default-features --features "bitdepth_8,bitdepth_16" --release --lib --test decode_md5_committed --test safe_simd_crashes --test fuzz_regression -- --test-threads 1
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.99.0 (b940084d7 2026-09-28)
+
+info: checking for self-update (current version: 1.29.1)
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/project)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 17.46s
+[1m[92m     Running[0m unittests lib.rs (/target/i686-unknown-linux-gnu/release/deps/rav1d_safe-53b04905c429f8bc)
+
+running 38 tests
+test include::dav1d::picture::row_guard_policy_tests::compact_read_fast_hull_starts_at_the_last_row_on_a_negative_stride ... ok
+test include::dav1d::picture::row_guard_policy_tests::compact_read_returns_picture_rows_top_down_on_a_negative_stride ... ok
+test include::dav1d::picture::row_guard_policy_tests::explicit_picture_policy_controls_gap_reservations_after_global_promotion ... ok
+test include::dav1d::picture::row_guard_policy_tests::for_rows_mut_never_reserves_an_inter_row_gap_when_tile_threading_is_on ... ok
+test include::dav1d::picture::row_guard_policy_tests::for_rows_mut_reserves_the_strided_hull_when_tile_threading_is_off ... ok
+test include::dav1d::picture::row_guard_policy_tests::for_rows_visits_picture_rows_top_down_on_a_negative_stride ... ok
+test include::dav1d::picture::row_guard_policy_tests::live_block_keeps_its_storage_when_another_decoder_changes_threading ... ok
+test include::dav1d::picture::row_guard_policy_tests::narrow_guard_mut_reserves_exactly_the_block_hull_on_a_negative_stride ... ok
+test include::dav1d::picture::row_guard_policy_tests::narrow_guards_cover_the_block_on_a_negative_stride ... ok
+test include::dav1d::picture::tile_threading_latch_tests::set_tile_threading_is_monotone ... ok
+test src::decode_test::tests::decode_test_ivf ... ok
+test src::env::left_split_parity::all_fifteen_helpers_match_the_pre_split_implementation ... ok
+test src::env::left_split_parity::sm_flag_left_matches_sm_flag ... ok
+test src::env::left_split_parity::trial_floor_is_not_vacuous ... ok
+test src::error::errno_tests::errno_round_trips_on_this_platform ... ok
+test src::internal::task_ctx_size::task_context_stays_stack_light ... ok
+test src::loopfilter::compact_window::h_window_fits_the_transform_that_selected_it ... ok
+test src::loopfilter::compact_window::issue_524_h_window_does_not_collide_with_the_next_rows_stitch ... ok
+test src::loopfilter::compact_window::issue_524_h_window_stays_inside_its_picture_row ... ok
+test src::loopfilter::compact_window::issue_524_harness_detects_a_window_that_does_lap ... ok
+test src::loopfilter::run_reach::run_reach_equals_the_widest_group_it_can_meet ... ok
+test src::loopfilter::run_reach::run_reach_fits_the_transform_that_selected_it ... ok
+test src::managed::frame_delay_tests::auto_frame_delay_is_two_with_workers_and_one_without ... ok
+test src::managed::frame_delay_tests::decoder_context_count_follows_the_auto_rule ... ok
+test src::managed::frame_tile_tests::copied_picture_can_allocate_after_decoder_and_source_drop ... ok
+test src::managed::frame_tile_tests::parallel_frame_tile_contexts_preserve_frames ... ok
+test src::managed::frame_tile_tests::picture_policy_is_local_and_survives_decoder_lifetimes ... ok
+test src::managed::frame_tile_tests::serial_and_threaded_decoders_run_concurrently_with_local_policies ... ok
+test src::managed::frame_tile_tests::single_tile_frames_keep_hull_guards_at_any_thread_count ... ok
+test src::msac::tests::adapt4_matches_reference_at_interval_boundaries_and_short_slices ... ok
+test src::msac::tests::adapt4_matches_reference_through_refills_and_preserves_unused_cdf ... ok
+test src::msac::tests::cdf_update_matches_directional_arithmetic_for_every_u16 ... ok
+test src::owned_recon::ordinary_build_keeps_owned_recon_enabled ... ok
+test src::owned_recon::tests::a_row_above_the_band_panics_it_does_not_alias - should panic ... ok
+test src::owned_recon::tests::a_row_below_the_band_panics - should panic ... ok
+test src::owned_recon::tests::for_rows_mut_walks_the_bands_own_stride_not_the_pictures ... ok
+test src::owned_recon::tests::translation_is_plane_coordinates_minus_origin ... ok
+test src::thread_task::grain_panic_tests::delayed_grain_panic_preserves_live_worker_state ... ok
+
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.45s
+
+[1m[92m     Running[0m tests/decode_md5_committed.rs (/target/i686-unknown-linux-gnu/release/deps/decode_md5_committed-dc23e3262deed61e)
+
+running 4 tests
+test cdef_12bpc_422_matches_c_oracle_per_frame ... ok
+test committed_vectors_match_reference_md5 ... ok
+test lr_sgr_vectors_match_reference_md5 ... ok
+test lr_sgr_vectors_threaded_match_reference_md5 ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+[1m[92m     Running[0m tests/fuzz_regression.rs (/target/i686-unknown-linux-gnu/release/deps/fuzz_regression-b009d379a272f9ca)
+
+running 3 tests
+test fuzz_regression_corpus_exercises_instrumented_kernels ... ok
+test fuzz_regression_seeds_do_not_panic ... ok
+test guarded_seeds_all_present ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+
+[1m[92m     Running[0m tests/safe_simd_crashes.rs (/target/i686-unknown-linux-gnu/release/deps/safe_simd_crashes-991f38dff1876e7a)
+
+running 15 tests
+test arm_aa_base_underflow_16bpc ... ok
+test arm_aa_base_underflow_8bpc ... ok
+test arm_boxsum3_oob_16bpc ... ok
+test arm_boxsum3_oob_8bpc ... ok
+test arm_mc16_avg_overshoot ... ok
+test arm_mc16_blend_dir_overshoot ... ok
+test arm_mc16_blend_overshoot ... ok
+test arm_mc16_mask_overshoot ... ok
+test arm_mc16_overshoot ... ok
+test arm_mc16_w_mask_overshoot ... ok
+test ipred_z2_bounds_circle ... ok
+test ipred_z2_bounds_kodim03 ... ok
+test loopfilter_slice_bounds_alpha_noispe ... ok
+test picbuf_empty_vec ... ok
+test range_start_bounds_colors_hdr ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+cross test --target i686-unknown-linux-gnu --no-default-features --features "bitdepth_8,bitdepth_16" --test decode_md5_committed --test safe_simd_crashes --test fuzz_regression -- --test-threads 1
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.99.0 (b940084d7 2026-09-28)
+
+info: checking for self-update (current version: 1.29.1)
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/project)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.76s
+[1m[92m     Running[0m tests/decode_md5_committed.rs (/target/i686-unknown-linux-gnu/debug/deps/decode_md5_committed-51e4d2057851dbc3)
+
+running 4 tests
+test cdef_12bpc_422_matches_c_oracle_per_frame ... ok
+test committed_vectors_match_reference_md5 ... ok
+test lr_sgr_vectors_match_reference_md5 ... ok
+test lr_sgr_vectors_threaded_match_reference_md5 ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.74s
+
+[1m[92m     Running[0m tests/fuzz_regression.rs (/target/i686-unknown-linux-gnu/debug/deps/fuzz_regression-0b0e0f4a196342bb)
+
+running 3 tests
+test fuzz_regression_corpus_exercises_instrumented_kernels ... ok
+test fuzz_regression_seeds_do_not_panic ... ok
+test guarded_seeds_all_present ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.08s
+
+[1m[92m     Running[0m tests/safe_simd_crashes.rs (/target/i686-unknown-linux-gnu/debug/deps/safe_simd_crashes-804a6f6ff8a43615)
+
+running 15 tests
+test arm_aa_base_underflow_16bpc ... ok
+test arm_aa_base_underflow_8bpc ... ok
+test arm_boxsum3_oob_16bpc ... ok
+test arm_boxsum3_oob_8bpc ... ok
+test arm_mc16_avg_overshoot ... ok
+test arm_mc16_blend_dir_overshoot ... ok
+test arm_mc16_blend_overshoot ... ok
+test arm_mc16_mask_overshoot ... ok
+test arm_mc16_overshoot ... ok
+test arm_mc16_w_mask_overshoot ... ok
+test ipred_z2_bounds_circle ... ok
+test ipred_z2_bounds_kodim03 ... ok
+test loopfilter_slice_bounds_alpha_noispe ... ok
+test picbuf_empty_vec ... ok
+test range_start_bounds_colors_hdr ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+
+run-heavy: done rc=0 32s | peak-RSS 0.09GiB | min-avail 24913MiB | peak-load 2.14

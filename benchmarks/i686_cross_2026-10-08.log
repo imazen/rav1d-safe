@@ -1,0 +1,498 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=4/24 avail=26679MiB :: just test-i686-cross
+cross test --target i686-unknown-linux-gnu --no-default-features --features "bitdepth_8,bitdepth_16" --release --lib --test decode_md5_committed --test safe_simd_crashes --test fuzz_regression -- --test-threads 1
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.99.0 (b940084d7 2026-09-28)
+
+info: checking for self-update (current version: 1.29.1)
+Unable to find image 'ghcr.io/cross-rs/i686-unknown-linux-gnu:0.2.5' locally
+0.2.5: Pulling from cross-rs/i686-unknown-linux-gnu
+58690f9b18fc: Pulling fs layer
+7812f9249327: Pulling fs layer
+b51569e7c507: Pulling fs layer
+cf88728a2784: Pulling fs layer
+d53f7e279586: Pulling fs layer
+da8ef40b9eca: Pulling fs layer
+fe5526b6ebaa: Pulling fs layer
+acb669b56422: Pulling fs layer
+bc14e3cfc292: Pulling fs layer
+769f1f794aea: Pulling fs layer
+46d2a70b51ed: Pulling fs layer
+a0bd99ae6296: Pulling fs layer
+fb15d46c38dc: Pulling fs layer
+e0e7ed8e6d4d: Pulling fs layer
+f193ec48d2fd: Pulling fs layer
+3737a30db1dd: Pulling fs layer
+5401647a58d6: Pulling fs layer
+783b83cb5580: Pulling fs layer
+4624fe8a1292: Download complete
+cf88728a2784: Download complete
+b51569e7c507: Download complete
+d53f7e279586: Download complete
+46d2a70b51ed: Download complete
+e0e7ed8e6d4d: Download complete
+bc14e3cfc292: Download complete
+fb15d46c38dc: Download complete
+da8ef40b9eca: Download complete
+fe5526b6ebaa: Download complete
+5401647a58d6: Download complete
+783b83cb5580: Download complete
+acb669b56422: Download complete
+769f1f794aea: Download complete
+a0bd99ae6296: Download complete
+f193ec48d2fd: Download complete
+58690f9b18fc: Download complete
+3737a30db1dd: Download complete
+b51569e7c507: Pull complete
+46d2a70b51ed: Pull complete
+fb15d46c38dc: Pull complete
+da8ef40b9eca: Pull complete
+58690f9b18fc: Pull complete
+7812f9249327: Download complete
+7812f9249327: Pull complete
+d53f7e279586: Pull complete
+fe5526b6ebaa: Pull complete
+f193ec48d2fd: Pull complete
+769f1f794aea: Pull complete
+e0e7ed8e6d4d: Pull complete
+a0bd99ae6296: Pull complete
+cf88728a2784: Pull complete
+5401647a58d6: Pull complete
+783b83cb5580: Pull complete
+3737a30db1dd: Pull complete
+bc14e3cfc292: Pull complete
+acb669b56422: Pull complete
+Digest: sha256:2647400f884dd399a3ce6f6d918fec0776d43e73f471f52e310cbe664ac1671f
+Status: Downloaded newer image for ghcr.io/cross-rs/i686-unknown-linux-gnu:0.2.5
+[1m[92m   Compiling[0m proc-macro2 v1.0.107
+[1m[92m   Compiling[0m quote v1.0.47
+[1m[92m   Compiling[0m unicode-ident v1.0.24
+[1m[92m   Compiling[0m libc v0.2.189
+[1m[92m   Compiling[0m cfg-if v1.0.4
+[1m[92m   Compiling[0m bitflags v2.13.1
+[1m[92m   Compiling[0m zerocopy v0.8.56
+[1m[92m   Compiling[0m rustix v1.1.4
+[1m[92m   Compiling[0m memchr v2.8.3
+[1m[92m   Compiling[0m syn v2.0.119
+[1m[92m   Compiling[0m syn v3.0.6
+[1m[92m   Compiling[0m linux-raw-sys v0.12.1
+[1m[92m   Compiling[0m autocfg v1.5.1
+[1m[92m   Compiling[0m find-msvc-tools v0.1.12
+[1m[92m   Compiling[0m heck v0.5.0
+[1m[92m   Compiling[0m shlex v2.0.1
+[1m[92m   Compiling[0m cc v1.4.5
+[1m[92m   Compiling[0m utf8parse v0.2.2
+[1m[92m   Compiling[0m stable_deref_trait v1.2.1
+[1m[92m   Compiling[0m itoa v1.0.18
+[1m[92m   Compiling[0m serde_core v1.0.229
+[1m[92m   Compiling[0m zerocopy-derive v0.8.56
+[1m[92m   Compiling[0m anstyle-parse v1.0.0
+[1m[92m   Compiling[0m zmij v1.0.23
+[1m[92m   Compiling[0m bytemuck_derive v1.12.0
+[1m[92m   Compiling[0m anstyle v1.0.14
+[1m[92m   Compiling[0m is_terminal_polyfill v1.70.2
+[1m[92m   Compiling[0m colorchoice v1.0.5
+[1m[92m   Compiling[0m anstyle-query v1.1.5
+[1m[92m   Compiling[0m anstream v1.0.0
+[1m[92m   Compiling[0m bytemuck v1.25.2
+[1m[92m   Compiling[0m equator-macro v0.4.2
+[1m[92m   Compiling[0m terminal_size v0.4.4
+[1m[92m   Compiling[0m memoffset v0.6.5
+[1m[92m   Compiling[0m getrandom v0.2.17
+[1m[92m   Compiling[0m scopeguard v1.2.0
+[1m[92m   Compiling[0m serde v1.0.229
+[1m[92m   Compiling[0m getrandom v0.3.4
+[1m[92m   Compiling[0m semver v1.0.28
+[1m[92m   Compiling[0m bitflags v1.3.2
+[1m[92m   Compiling[0m version_check v0.9.5
+[1m[92m   Compiling[0m clap_lex v1.1.0
+[1m[92m   Compiling[0m strsim v0.11.1
+[1m[92m   Compiling[0m serde_json v1.0.151
+[1m[92m   Compiling[0m clap_builder v4.6.6
+[1m[92m   Compiling[0m ahash v0.8.12
+[1m[92m   Compiling[0m rustc_version v0.4.1
+[1m[92m   Compiling[0m equator v0.4.2
+[1m[92m   Compiling[0m lock_api v0.4.14
+[1m[92m   Compiling[0m rand_core v0.6.4
+[1m[92m   Compiling[0m jobserver v0.1.35
+[1m[92m   Compiling[0m serde_derive v1.0.229
+[1m[92m   Compiling[0m clap_derive v4.6.4
+[1m[92m   Compiling[0m ppv-lite86 v0.2.21
+[1m[92m   Compiling[0m cpp_demangle v0.4.5
+[1m[92m   Compiling[0m enough v0.4.4
+[1m[92m   Compiling[0m arrayvec v0.7.8
+[1m[92m   Compiling[0m once_cell v1.21.4
+[1m[92m   Compiling[0m uuid v1.26.1
+[1m[92m   Compiling[0m object v0.37.3
+[1m[92m   Compiling[0m whereat v0.1.5
+[1m[92m   Compiling[0m getrandom v0.4.3
+[1m[92m   Compiling[0m log v0.4.34
+[1m[92m   Compiling[0m smallvec v1.16.0
+[1m[92m   Compiling[0m parking_lot_core v0.9.12
+[1m[92m   Compiling[0m nasm-rs v0.3.2
+[1m[92m   Compiling[0m debugid v0.8.0
+[1m[92m   Compiling[0m clap v4.6.6
+[1m[92m   Compiling[0m rand_chacha v0.3.1
+[1m[92m   Compiling[0m likely_stable v0.1.3
+[1m[92m   Compiling[0m aligned-vec v0.6.4
+[1m[92m   Compiling[0m as-slice v0.2.1
+[1m[92m   Compiling[0m findshlibs v0.10.2
+[1m[92m   Compiling[0m num-traits v0.2.19
+[1m[92m   Compiling[0m memmap2 v0.9.11
+[1m[92m   Compiling[0m thiserror v2.0.21
+[1m[92m   Compiling[0m rustc-demangle v0.1.28
+[1m[92m   Compiling[0m paste v1.0.15
+[1m[92m   Compiling[0m hashbrown v0.17.1
+[1m[92m   Compiling[0m equivalent v1.0.2
+[1m[92m   Compiling[0m gimli v0.32.3
+[1m[92m   Compiling[0m adler2 v2.0.1
+[1m[92m   Compiling[0m symbolic-demangle v12.18.3
+[1m[92m   Compiling[0m thiserror v1.0.69
+[1m[92m   Compiling[0m anyhow v1.0.104
+[1m[92m   Compiling[0m indexmap v2.14.2
+[1m[92m   Compiling[0m miniz_oxide v0.8.9
+[1m[92m   Compiling[0m symbolic-common v12.18.3
+[1m[92m   Compiling[0m aligned v0.4.3
+[1m[92m   Compiling[0m nix v0.23.2
+[1m[92m   Compiling[0m rand v0.8.8
+[1m[92m   Compiling[0m addr2line v0.25.1
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/project)
+[1m[92m   Compiling[0m zenpixels v0.2.16
+[1m[92m   Compiling[0m num-format v0.4.4
+[1m[92m   Compiling[0m almost-enough v0.4.4
+[1m[92m   Compiling[0m rgb v0.8.53
+[1m[92m   Compiling[0m thiserror-impl v2.0.21
+[1m[92m   Compiling[0m archmage-macros v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m   Compiling[0m thiserror-impl v1.0.69
+[1m[92m   Compiling[0m atomig-macro v0.4.0
+[1m[92m   Compiling[0m strum_macros v0.28.0
+[1m[92m   Compiling[0m is-terminal v0.4.17
+[1m[92m   Compiling[0m quick-xml v0.26.0
+[1m[92m   Compiling[0m lazy_static v1.5.0
+[1m[92m   Compiling[0m fastrand v2.5.0
+[1m[92m   Compiling[0m spin v0.12.3
+[1m[92m   Compiling[0m safe_unaligned_simd v0.2.5
+[1m[92m   Compiling[0m pprof v0.15.0
+[1m[92m   Compiling[0m str_stack v0.1.1
+[1m[92m   Compiling[0m inferno v0.11.21
+[1m[92m   Compiling[0m archmage v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m   Compiling[0m atomig v0.4.3
+[1m[92m   Compiling[0m rav1d-disjoint-mut v0.4.0 (/project/crates/rav1d-disjoint-mut)
+[1m[92m   Compiling[0m tempfile v3.27.0
+[1m[92m   Compiling[0m colored v2.2.0
+[1m[92m   Compiling[0m backtrace v0.3.76
+[1m[92m   Compiling[0m zencodec v0.1.26
+[1m[92m   Compiling[0m strum v0.28.0
+[1m[92m   Compiling[0m shared_memory v0.12.4
+[1m[92m   Compiling[0m parking_lot v0.12.5
+[1m[92m   Compiling[0m jsonrpc-types v0.3.3
+[1m[92m   Compiling[0m spin v0.10.1
+[1m[92m   Compiling[0m nix v0.26.4
+[1m[92m   Compiling[0m divan-macros v0.1.21
+[1m[92m   Compiling[0m fs4 v1.1.0
+[1m[92m   Compiling[0m sysinfo v0.36.1
+[1m[92m   Compiling[0m raw-cpuid v11.6.0
+[1m[92m   Compiling[0m bitreader v0.3.11
+[1m[92m   Compiling[0m leb128 v0.2.7
+[1m[92m   Compiling[0m regex-lite v0.1.9
+[1m[92m   Compiling[0m to_method v1.1.0
+[1m[92m   Compiling[0m condtype v1.3.0
+[1m[92m   Compiling[0m assert_matches v1.5.0
+[1m[92m   Compiling[0m fallible_collections v0.5.2
+[1m[92m   Compiling[0m byteorder v1.5.0
+[1m[92m   Compiling[0m glob-match v0.2.1
+[1m[92m   Compiling[0m divan v0.1.21
+[1m[92m   Compiling[0m tango-bench v0.8.0
+[1m[92m   Compiling[0m zenavif-parse v0.6.2
+[1m[92m   Compiling[0m zenbench v0.1.9
+[1m[92m   Compiling[0m md5 v0.8.1
+[1m[33mwarning[0m[1m: function `token_test_lock` is never used[0m
+  [1m[94m--> [0msrc/safe_simd/mod.rs:29:15
+   [1m[94m|[0m
+[1m[94m29[0m [1m[94m|[0m pub(crate) fn token_test_lock() -> std::sync::MutexGuard<'static, ()> {
+   [1m[94m|[0m               [1m[33m^^^^^^^^^^^^^^^[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: function `aligned_plane` is never used[0m
+  [1m[94m--> [0msrc/safe_simd/mod.rs:53:15
+   [1m[94m|[0m
+[1m[94m53[0m [1m[94m|[0m pub(crate) fn aligned_plane<T: Copy + Default>(
+   [1m[94m|[0m               [1m[33m^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m: `rav1d-safe` (lib test) generated 2 warnings
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 32.08s
+[1m[92m     Running[0m unittests lib.rs (/target/i686-unknown-linux-gnu/release/deps/rav1d_safe-53b04905c429f8bc)
+
+running 38 tests
+test include::dav1d::picture::row_guard_policy_tests::compact_read_fast_hull_starts_at_the_last_row_on_a_negative_stride ... ok
+test include::dav1d::picture::row_guard_policy_tests::compact_read_returns_picture_rows_top_down_on_a_negative_stride ... ok
+test include::dav1d::picture::row_guard_policy_tests::explicit_picture_policy_controls_gap_reservations_after_global_promotion ... ok
+test include::dav1d::picture::row_guard_policy_tests::for_rows_mut_never_reserves_an_inter_row_gap_when_tile_threading_is_on ... ok
+test include::dav1d::picture::row_guard_policy_tests::for_rows_mut_reserves_the_strided_hull_when_tile_threading_is_off ... ok
+test include::dav1d::picture::row_guard_policy_tests::for_rows_visits_picture_rows_top_down_on_a_negative_stride ... ok
+test include::dav1d::picture::row_guard_policy_tests::live_block_keeps_its_storage_when_another_decoder_changes_threading ... ok
+test include::dav1d::picture::row_guard_policy_tests::narrow_guard_mut_reserves_exactly_the_block_hull_on_a_negative_stride ... ok
+test include::dav1d::picture::row_guard_policy_tests::narrow_guards_cover_the_block_on_a_negative_stride ... ok
+test include::dav1d::picture::tile_threading_latch_tests::set_tile_threading_is_monotone ... ok
+test src::decode_test::tests::decode_test_ivf ... ok
+test src::env::left_split_parity::all_fifteen_helpers_match_the_pre_split_implementation ... ok
+test src::env::left_split_parity::sm_flag_left_matches_sm_flag ... ok
+test src::env::left_split_parity::trial_floor_is_not_vacuous ... ok
+test src::error::errno_tests::errno_round_trips_on_this_platform ... ok
+test src::internal::task_ctx_size::task_context_stays_stack_light ... ok
+test src::loopfilter::compact_window::h_window_fits_the_transform_that_selected_it ... ok
+test src::loopfilter::compact_window::issue_524_h_window_does_not_collide_with_the_next_rows_stitch ... ok
+test src::loopfilter::compact_window::issue_524_h_window_stays_inside_its_picture_row ... ok
+test src::loopfilter::compact_window::issue_524_harness_detects_a_window_that_does_lap ... ok
+test src::loopfilter::run_reach::run_reach_equals_the_widest_group_it_can_meet ... ok
+test src::loopfilter::run_reach::run_reach_fits_the_transform_that_selected_it ... ok
+test src::managed::frame_delay_tests::auto_frame_delay_is_two_with_workers_and_one_without ... ok
+test src::managed::frame_delay_tests::decoder_context_count_follows_the_auto_rule ... ok
+test src::managed::frame_tile_tests::copied_picture_can_allocate_after_decoder_and_source_drop ... ok
+test src::managed::frame_tile_tests::parallel_frame_tile_contexts_preserve_frames ... ok
+test src::managed::frame_tile_tests::picture_policy_is_local_and_survives_decoder_lifetimes ... ok
+test src::managed::frame_tile_tests::serial_and_threaded_decoders_run_concurrently_with_local_policies ... ok
+test src::managed::frame_tile_tests::single_tile_frames_keep_hull_guards_at_any_thread_count ... ok
+test src::msac::tests::adapt4_matches_reference_at_interval_boundaries_and_short_slices ... ok
+test src::msac::tests::adapt4_matches_reference_through_refills_and_preserves_unused_cdf ... ok
+test src::msac::tests::cdf_update_matches_directional_arithmetic_for_every_u16 ... ok
+test src::owned_recon::ordinary_build_keeps_owned_recon_enabled ... ok
+test src::owned_recon::tests::a_row_above_the_band_panics_it_does_not_alias - should panic ... ok
+test src::owned_recon::tests::a_row_below_the_band_panics - should panic ... ok
+test src::owned_recon::tests::for_rows_mut_walks_the_bands_own_stride_not_the_pictures ... ok
+test src::owned_recon::tests::translation_is_plane_coordinates_minus_origin ... ok
+test src::thread_task::grain_panic_tests::delayed_grain_panic_preserves_live_worker_state ... ok
+
+test result: ok. 38 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.48s
+
+[1m[92m     Running[0m tests/decode_md5_committed.rs (/target/i686-unknown-linux-gnu/release/deps/decode_md5_committed-dc23e3262deed61e)
+
+running 4 tests
+test cdef_12bpc_422_matches_c_oracle_per_frame ... ok
+test committed_vectors_match_reference_md5 ... ok
+test lr_sgr_vectors_match_reference_md5 ... ok
+test lr_sgr_vectors_threaded_match_reference_md5 ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+[1m[92m     Running[0m tests/fuzz_regression.rs (/target/i686-unknown-linux-gnu/release/deps/fuzz_regression-b009d379a272f9ca)
+
+running 3 tests
+test fuzz_regression_corpus_exercises_instrumented_kernels ... ok
+test fuzz_regression_seeds_do_not_panic ... ok
+test guarded_seeds_all_present ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+
+[1m[92m     Running[0m tests/safe_simd_crashes.rs (/target/i686-unknown-linux-gnu/release/deps/safe_simd_crashes-991f38dff1876e7a)
+
+running 15 tests
+test arm_aa_base_underflow_16bpc ... ok
+test arm_aa_base_underflow_8bpc ... ok
+test arm_boxsum3_oob_16bpc ... ok
+test arm_boxsum3_oob_8bpc ... ok
+test arm_mc16_avg_overshoot ... ok
+test arm_mc16_blend_dir_overshoot ... ok
+test arm_mc16_blend_overshoot ... ok
+test arm_mc16_mask_overshoot ... ok
+test arm_mc16_overshoot ... ok
+test arm_mc16_w_mask_overshoot ... ok
+test ipred_z2_bounds_circle ... ok
+test ipred_z2_bounds_kodim03 ... ok
+test loopfilter_slice_bounds_alpha_noispe ... ok
+test picbuf_empty_vec ... ok
+test range_start_bounds_colors_hdr ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+cross test --target i686-unknown-linux-gnu --no-default-features --features "bitdepth_8,bitdepth_16" --test decode_md5_committed --test safe_simd_crashes --test fuzz_regression -- --test-threads 1
+info: syncing channel updates for stable-x86_64-unknown-linux-gnu
+
+  stable-x86_64-unknown-linux-gnu unchanged - rustc 1.99.0 (b940084d7 2026-09-28)
+
+info: checking for self-update (current version: 1.29.1)
+[1m[92m   Compiling[0m proc-macro2 v1.0.107
+[1m[92m   Compiling[0m quote v1.0.47
+[1m[92m   Compiling[0m unicode-ident v1.0.24
+[1m[92m   Compiling[0m libc v0.2.189
+[1m[92m   Compiling[0m cfg-if v1.0.4
+[1m[92m   Compiling[0m bitflags v2.13.1
+[1m[92m   Compiling[0m zerocopy v0.8.56
+[1m[92m   Compiling[0m rustix v1.1.4
+[1m[92m   Compiling[0m linux-raw-sys v0.12.1
+[1m[92m   Compiling[0m syn v2.0.119
+[1m[92m   Compiling[0m syn v3.0.6
+[1m[92m   Compiling[0m memchr v2.8.3
+[1m[92m   Compiling[0m autocfg v1.5.1
+[1m[92m   Compiling[0m find-msvc-tools v0.1.12
+[1m[92m   Compiling[0m heck v0.5.0
+[1m[92m   Compiling[0m shlex v2.0.1
+[1m[92m   Compiling[0m cc v1.4.5
+[1m[92m   Compiling[0m utf8parse v0.2.2
+[1m[92m   Compiling[0m itoa v1.0.18
+[1m[92m   Compiling[0m stable_deref_trait v1.2.1
+[1m[92m   Compiling[0m serde_core v1.0.229
+[1m[92m   Compiling[0m anstyle-parse v1.0.0
+[1m[92m   Compiling[0m zmij v1.0.23
+[1m[92m   Compiling[0m anstyle v1.0.14
+[1m[92m   Compiling[0m anstyle-query v1.1.5
+[1m[92m   Compiling[0m is_terminal_polyfill v1.70.2
+[1m[92m   Compiling[0m colorchoice v1.0.5
+[1m[92m   Compiling[0m anstream v1.0.0
+[1m[92m   Compiling[0m zerocopy-derive v0.8.56
+[1m[92m   Compiling[0m equator-macro v0.4.2
+[1m[92m   Compiling[0m bytemuck_derive v1.12.0
+[1m[92m   Compiling[0m terminal_size v0.4.4
+[1m[92m   Compiling[0m memoffset v0.6.5
+[1m[92m   Compiling[0m getrandom v0.2.17
+[1m[92m   Compiling[0m serde v1.0.229
+[1m[92m   Compiling[0m scopeguard v1.2.0
+[1m[92m   Compiling[0m bytemuck v1.25.2
+[1m[92m   Compiling[0m version_check v0.9.5
+[1m[92m   Compiling[0m getrandom v0.3.4
+[1m[92m   Compiling[0m semver v1.0.28
+[1m[92m   Compiling[0m bitflags v1.3.2
+[1m[92m   Compiling[0m serde_json v1.0.151
+[1m[92m   Compiling[0m strsim v0.11.1
+[1m[92m   Compiling[0m clap_lex v1.1.0
+[1m[92m   Compiling[0m clap_builder v4.6.6
+[1m[92m   Compiling[0m rustc_version v0.4.1
+[1m[92m   Compiling[0m ahash v0.8.12
+[1m[92m   Compiling[0m lock_api v0.4.14
+[1m[92m   Compiling[0m rand_core v0.6.4
+[1m[92m   Compiling[0m equator v0.4.2
+[1m[92m   Compiling[0m jobserver v0.1.35
+[1m[92m   Compiling[0m serde_derive v1.0.229
+[1m[92m   Compiling[0m clap_derive v4.6.4
+[1m[92m   Compiling[0m ppv-lite86 v0.2.21
+[1m[92m   Compiling[0m log v0.4.34
+[1m[92m   Compiling[0m whereat v0.1.5
+[1m[92m   Compiling[0m parking_lot_core v0.9.12
+[1m[92m   Compiling[0m cpp_demangle v0.4.5
+[1m[92m   Compiling[0m enough v0.4.4
+[1m[92m   Compiling[0m arrayvec v0.7.8
+[1m[92m   Compiling[0m once_cell v1.21.4
+[1m[92m   Compiling[0m uuid v1.26.1
+[1m[92m   Compiling[0m object v0.37.3
+[1m[92m   Compiling[0m smallvec v1.16.0
+[1m[92m   Compiling[0m getrandom v0.4.3
+[1m[92m   Compiling[0m debugid v0.8.0
+[1m[92m   Compiling[0m nasm-rs v0.3.2
+[1m[92m   Compiling[0m clap v4.6.6
+[1m[92m   Compiling[0m rand_chacha v0.3.1
+[1m[92m   Compiling[0m aligned-vec v0.6.4
+[1m[92m   Compiling[0m likely_stable v0.1.3
+[1m[92m   Compiling[0m findshlibs v0.10.2
+[1m[92m   Compiling[0m as-slice v0.2.1
+[1m[92m   Compiling[0m num-traits v0.2.19
+[1m[92m   Compiling[0m memmap2 v0.9.11
+[1m[92m   Compiling[0m adler2 v2.0.1
+[1m[92m   Compiling[0m paste v1.0.15
+[1m[92m   Compiling[0m symbolic-demangle v12.18.3
+[1m[92m   Compiling[0m thiserror v2.0.21
+[1m[92m   Compiling[0m rustc-demangle v0.1.28
+[1m[92m   Compiling[0m hashbrown v0.17.1
+[1m[92m   Compiling[0m equivalent v1.0.2
+[1m[92m   Compiling[0m anyhow v1.0.104
+[1m[92m   Compiling[0m thiserror v1.0.69
+[1m[92m   Compiling[0m gimli v0.32.3
+[1m[92m   Compiling[0m indexmap v2.14.2
+[1m[92m   Compiling[0m miniz_oxide v0.8.9
+[1m[92m   Compiling[0m symbolic-common v12.18.3
+[1m[92m   Compiling[0m aligned v0.4.3
+[1m[92m   Compiling[0m nix v0.23.2
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/project)
+[1m[92m   Compiling[0m rand v0.8.8
+[1m[92m   Compiling[0m addr2line v0.25.1
+[1m[92m   Compiling[0m num-format v0.4.4
+[1m[92m   Compiling[0m almost-enough v0.4.4
+[1m[92m   Compiling[0m zenpixels v0.2.16
+[1m[92m   Compiling[0m rgb v0.8.53
+[1m[92m   Compiling[0m archmage-macros v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m   Compiling[0m thiserror-impl v2.0.21
+[1m[92m   Compiling[0m strum_macros v0.28.0
+[1m[92m   Compiling[0m atomig-macro v0.4.0
+[1m[92m   Compiling[0m thiserror-impl v1.0.69
+[1m[92m   Compiling[0m is-terminal v0.4.17
+[1m[92m   Compiling[0m quick-xml v0.26.0
+[1m[92m   Compiling[0m pprof v0.15.0
+[1m[92m   Compiling[0m str_stack v0.1.1
+[1m[92m   Compiling[0m safe_unaligned_simd v0.2.5
+[1m[92m   Compiling[0m fastrand v2.5.0
+[1m[92m   Compiling[0m spin v0.12.3
+[1m[92m   Compiling[0m lazy_static v1.5.0
+[1m[92m   Compiling[0m colored v2.2.0
+[1m[92m   Compiling[0m rav1d-disjoint-mut v0.4.0 (/project/crates/rav1d-disjoint-mut)
+[1m[92m   Compiling[0m tempfile v3.27.0
+[1m[92m   Compiling[0m strum v0.28.0
+[1m[92m   Compiling[0m archmage v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m   Compiling[0m inferno v0.11.21
+[1m[92m   Compiling[0m atomig v0.4.3
+[1m[92m   Compiling[0m backtrace v0.3.76
+[1m[92m   Compiling[0m zencodec v0.1.26
+[1m[92m   Compiling[0m shared_memory v0.12.4
+[1m[92m   Compiling[0m parking_lot v0.12.5
+[1m[92m   Compiling[0m jsonrpc-types v0.3.3
+[1m[92m   Compiling[0m spin v0.10.1
+[1m[92m   Compiling[0m nix v0.26.4
+[1m[92m   Compiling[0m divan-macros v0.1.21
+[1m[92m   Compiling[0m fs4 v1.1.0
+[1m[92m   Compiling[0m sysinfo v0.36.1
+[1m[92m   Compiling[0m raw-cpuid v11.6.0
+[1m[92m   Compiling[0m bitreader v0.3.11
+[1m[92m   Compiling[0m condtype v1.3.0
+[1m[92m   Compiling[0m assert_matches v1.5.0
+[1m[92m   Compiling[0m fallible_collections v0.5.2
+[1m[92m   Compiling[0m to_method v1.1.0
+[1m[92m   Compiling[0m byteorder v1.5.0
+[1m[92m   Compiling[0m leb128 v0.2.7
+[1m[92m   Compiling[0m regex-lite v0.1.9
+[1m[92m   Compiling[0m glob-match v0.2.1
+[1m[92m   Compiling[0m tango-bench v0.8.0
+[1m[92m   Compiling[0m divan v0.1.21
+[1m[92m   Compiling[0m zenavif-parse v0.6.2
+[1m[92m   Compiling[0m zenbench v0.1.9
+[1m[92m   Compiling[0m md5 v0.8.1
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 16.33s
+[1m[92m     Running[0m tests/decode_md5_committed.rs (/target/i686-unknown-linux-gnu/debug/deps/decode_md5_committed-51e4d2057851dbc3)
+
+running 4 tests
+test cdef_12bpc_422_matches_c_oracle_per_frame ... ok
+test committed_vectors_match_reference_md5 ... ok
+test lr_sgr_vectors_match_reference_md5 ... ok
+test lr_sgr_vectors_threaded_match_reference_md5 ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.75s
+
+[1m[92m     Running[0m tests/fuzz_regression.rs (/target/i686-unknown-linux-gnu/debug/deps/fuzz_regression-0b0e0f4a196342bb)
+
+running 3 tests
+test fuzz_regression_corpus_exercises_instrumented_kernels ... ok
+test fuzz_regression_seeds_do_not_panic ... ok
+test guarded_seeds_all_present ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.05s
+
+[1m[92m     Running[0m tests/safe_simd_crashes.rs (/target/i686-unknown-linux-gnu/debug/deps/safe_simd_crashes-804a6f6ff8a43615)
+
+running 15 tests
+test arm_aa_base_underflow_16bpc ... ok
+test arm_aa_base_underflow_8bpc ... ok
+test arm_boxsum3_oob_16bpc ... ok
+test arm_boxsum3_oob_8bpc ... ok
+test arm_mc16_avg_overshoot ... ok
+test arm_mc16_blend_dir_overshoot ... ok
+test arm_mc16_blend_overshoot ... ok
+test arm_mc16_mask_overshoot ... ok
+test arm_mc16_overshoot ... ok
+test arm_mc16_w_mask_overshoot ... ok
+test ipred_z2_bounds_circle ... ok
+test ipred_z2_bounds_kodim03 ... ok
+test loopfilter_slice_bounds_alpha_noispe ... ok
+test picbuf_empty_vec ... ok
+test range_start_bounds_colors_hdr ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.49s
+
+run-heavy: done rc=0 74s | peak-RSS 0.09GiB | min-avail 24788MiB | peak-load 2.31

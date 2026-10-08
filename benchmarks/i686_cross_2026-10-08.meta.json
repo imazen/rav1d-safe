@@ -1,0 +1,24 @@
+{
+  "published_base": "367baea204669fca1a9dd2798eed5de9f56bc5f2",
+  "command": "just test-i686-cross",
+  "compiler": "1.99.0",
+  "cross": "0.2.5",
+  "image_digest": "sha256:2647400f884dd399a3ce6f6d918fec0776d43e73f471f52e310cbe664ac1671f",
+  "result": "60/60 release tests and 22/22 dev regression tests; repeated without warnings after architecture-gating unused test helpers.",
+  "container_limits": "16GiB memory, equal memory-swap (no swap), four CPUs; scratch bound to disk path via TMPDIR.",
+  "initial_scope": "rc=0; 74s; peak-RSS 0.09GiB; min-avail 24788MiB; peak-load 2.31",
+  "clean_scope": "rc=0; 32s; peak-RSS 0.09GiB; min-avail 24913MiB; peak-load 2.14",
+  "rss_limit": "run-heavy parent-scope RSS excludes the Docker-daemon-owned container; no total peak memory claim.",
+  "files": [
+    {
+      "path": "benchmarks/i686_cross_2026-10-08.log",
+      "bytes": 23987,
+      "sha256": "7e4f2ef2d07508345ffd012d718ed4aa9be7912beb8ba84420b6ba4510014c8c"
+    },
+    {
+      "path": "benchmarks/i686_cross_clean_2026-10-08.log",
+      "bytes": 8528,
+      "sha256": "6e687cb38557a59b86129b4ccd5cf306b49e8452bc4baa6cf3276f011b8fc2d0"
+    }
+  ]
+}
