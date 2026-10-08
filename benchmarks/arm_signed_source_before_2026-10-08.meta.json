@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-08",
+  "cpu": "Neoverse-N1",
+  "rustc": "1.99.0",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "source_sha256": "63e98b991ad027c5145b772509f0b963d5f8b2b3db2df4c56e6263ddda6de84f",
+  "oracle_before_sha256": "611c000f11d3bf88770a6480127e25c53d107cd0f9b1fae6cc7656b14f29461c",
+  "oracle_after_sha256": "4c0a2fcee1c0e6551506117145e043bd5e1608b64f2ca3173596e655850f2ce3",
+  "oracle_difference": "Unused Strided import removed and rustfmt reflow only; test assertions and inputs unchanged.",
+  "command": "just test-all-modes; subsequent requested integration/lint/feature commands were not reached",
+  "failure": {
+    "test": "interpolation_reads_leave_unrelated_reconstruction_rows_available",
+    "seconds": 199.832,
+    "source": "src/safe_simd/mc_arm.rs:3521:42",
+    "message": "index out of bounds: the len is 2 but the index is 18446744073709551424"
+  },
+  "scope": {
+    "exit_code": 130,
+    "seconds": 540,
+    "peak_rss_gib": 1.06,
+    "min_available_mib": 21524,
+    "peak_load": 17.78,
+    "memory_limit": "16G",
+    "jobs": 12
+  },
+  "limits": "Incomplete tracked nextest run interrupted after the MC regression failed: 119 passing tests, one assertion failure, two interrupted tests; 104 selected tests unrun. No complete-suite claim. Before source SHA matches published main through ad75177b.",
+  "parts": [
+    {
+      "path": "benchmarks/arm_signed_source_before_2026-10-08.part01.log",
+      "bytes": 28000,
+      "sha256": "8a30ea3ea2bca433a0a5523d8fb8be86b00c59ec117eb76e3add65f6e424ae3b"
+    },
+    {
+      "path": "benchmarks/arm_signed_source_before_2026-10-08.part02.log",
+      "bytes": 9469,
+      "sha256": "ad479e0abbaddbab1b307aabd74ce500ad31224e1d18b79f309d8d6903809df0"
+    }
+  ],
+  "full_log_sha256": "732cb9de4f78ddf58b010845024a34acaab1c375aef436ba103ba5276a93785a"
+}

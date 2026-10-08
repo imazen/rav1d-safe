@@ -9,6 +9,11 @@ The expanded put/prep oracle exposed a negative source pitch converted to
 `usize` before computing vertical-filter tail addresses. The 16-bit dispatch
 also divided that unsigned representation by two, losing the original sign.
 A negative-stride source therefore indexed beyond its registered slice.
+[The independent pre-repair failure](../benchmarks/arm_signed_source_before_2026-10-08.meta.json)
+records a 199.832-second oracle failure at the vertical tail. Its 540-second
+scope was interrupted afterward, peaked at 1.06 GiB RSS, and establishes no
+complete-suite result. The before source hash matches published main through
+`ad75177b`; the restored test changes only formatting and an unused import.
 
 Keep the byte pitch signed and divide it by pixel size before converting
 coordinates. Put/prep receive the complete bounded source slice and a separate
@@ -52,6 +57,6 @@ worker shutdown. The worker guard passes, fails when token disabling is delibera
 and passes after exact source restoration. The unchanged assertions check
 four concurrent workers and token restoration.
 [Guard and mutation evidence](../benchmarks/arm_token_guard_2026-10-08.meta.json)
-records the42/27/28-second scopes, each peaking at0.98GiB RSS. Fresh decoder
+records the 42/27/28-second scopes, each peaking at 0.98 GiB RSS. Fresh decoder
 builds and eight scalar sidecar legs remain pending. The managed API's ARM
 mask limitation remains open.

@@ -1,0 +1,96 @@
+fl_parity::cfl_pred_10bpc_matches_scalar
+        PASS [   0.068s] ( 54/226) rav1d-safe src::safe_simd::cdef_arm::tests::sentinel_must_not_raise_max
+        PASS [   0.016s] ( 55/226) rav1d-safe src::safe_simd::ipred_arm::cfl_parity::cfl_pred_12bpc_matches_scalar
+        PASS [   0.015s] ( 56/226) rav1d-safe src::safe_simd::ipred_arm::cfl_parity::cfl_pred_8bpc_matches_scalar
+        PASS [   0.009s] ( 57/226) rav1d-safe src::safe_simd::itx_arm_neon_16x16::tests::test_dc_only_16x16
+        PASS [   0.007s] ( 58/226) rav1d-safe src::safe_simd::itx_arm_neon_16x16::tests::test_dct_dct_16x16_neon_vs_scalar
+        PASS [   0.009s] ( 59/226) rav1d-safe src::safe_simd::itx_arm_neon_32::tests::test_scalar_dct32_dc_only
+        PASS [   0.012s] ( 60/226) rav1d-safe src::safe_simd::itx_arm_neon_16x16::tests::test_identity_identity_16x16_neon_vs_scalar
+        PASS [   0.008s] ( 61/226) rav1d-safe src::safe_simd::itx_arm_neon_32::tests::test_scalar_dct32_roundtrip
+        PASS [   0.009s] ( 62/226) rav1d-safe src::safe_simd::itx_arm_neon_32::tests::test_scalar_dct4
+        PASS [   0.007s] ( 63/226) rav1d-safe src::safe_simd::itx_arm_neon_32::tests::test_scalar_idct32_odd_zero
+        PASS [   0.008s] ( 64/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_adst_adst_4x4_neon_matches_scalar
+        PASS [   0.011s] ( 65/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_adst_dct_4x4_neon_matches_scalar
+        PASS [   0.008s] ( 66/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_adst_flipadst_4x4_neon_matches_scalar
+        PASS [   0.008s] ( 67/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_dct_adst_4x4_neon_matches_scalar
+        PASS [   0.013s] ( 68/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_adst_identity_4x4_neon_matches_scalar
+        PASS [   0.007s] ( 69/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_dct_dct_dc_only_4x4
+        PASS [   0.012s] ( 70/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_dct_dct_4x4_neon_matches_scalar
+        PASS [   0.008s] ( 71/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_dct_identity_4x4_neon_matches_scalar
+        PASS [   0.009s] ( 72/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_dct_flipadst_4x4_neon_matches_scalar
+        PASS [   0.008s] ( 73/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_flipadst_adst_4x4_neon_matches_scalar
+        PASS [   0.009s] ( 74/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_flipadst_dct_4x4_neon_matches_scalar
+        PASS [   0.006s] ( 75/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_flipadst_flipadst_4x4_neon_matches_scalar
+        PASS [   0.008s] ( 76/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_flipadst_identity_4x4_neon_matches_scalar
+        PASS [   0.008s] ( 77/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_identity_adst_4x4_neon_matches_scalar
+        PASS [   0.009s] ( 78/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_identity_dct_4x4_neon_matches_scalar
+        PASS [   0.007s] ( 79/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_identity_flipadst_4x4_neon_matches_scalar
+        PASS [   0.008s] ( 80/226) rav1d-safe src::safe_simd::itx_arm_neon_4x4::tests::test_identity_identity_4x4_neon_matches_scalar
+        PASS [   0.008s] ( 81/226) rav1d-safe src::safe_simd::itx_arm_neon_8x8::tests::test_adst_adst_8x8_neon_vs_scalar
+        PASS [   0.009s] ( 82/226) rav1d-safe src::safe_simd::itx_arm_neon_8x8::tests::test_dct_adst_8x8_neon_vs_scalar
+        PASS [   0.007s] ( 83/226) rav1d-safe src::safe_simd::itx_arm_neon_8x8::tests::test_dct_dct_8x8_dc_only
+        PASS [   0.007s] ( 84/226) rav1d-safe src::safe_simd::itx_arm_neon_8x8::tests::test_dct_dct_8x8_neon_vs_scalar
+        PASS [   0.008s] ( 85/226) rav1d-safe src::safe_simd::itx_arm_neon_8x8::tests::test_identity_identity_8x8_neon_vs_scalar
+        PASS [   0.007s] ( 86/226) rav1d-safe src::safe_simd::itx_arm_neon_8x8::tests::test_transpose_8x8h
+        PASS [   0.008s] ( 87/226) rav1d-safe src::safe_simd::itx_arm_neon_wht::tests::test_wht_4x4_neon_matches_scalar
+        PASS [   0.010s] ( 88/226) rav1d-safe src::safe_simd::itx_arm_neon_wht::tests::test_wht_4x4_neon_saturation
+        PASS [   0.026s] ( 89/226) rav1d-safe src::safe_simd::itx_arm_parity::itx_10bpc_matches_scalar_large_coeffs
+        PASS [   0.028s] ( 90/226) rav1d-safe src::safe_simd::itx_arm_parity::itx_10bpc_matches_scalar_small_coeffs
+        PASS [   0.082s] ( 91/226) rav1d-safe src::safe_simd::itx_arm_parity::itx_10bpc_every_eob_small_coeffs
+        PASS [   0.024s] ( 92/226) rav1d-safe src::safe_simd::itx_arm_parity::itx_12bpc_matches_scalar_large_coeffs
+        PASS [   0.029s] ( 93/226) rav1d-safe src::safe_simd::itx_arm_parity::itx_8bpc_matches_scalar_medium_coeffs
+        PASS [   0.031s] ( 94/226) rav1d-safe src::safe_simd::itx_arm_parity::itx_8bpc_matches_scalar_small_coeffs
+        PASS [   0.007s] ( 95/226) rav1d-safe src::safe_simd::itx_arm_parity::reachable_positions_track_the_transform_class
+        PASS [   0.010s] ( 96/226) rav1d-safe src::safe_simd::mc::reference::tests::reference_window_reserves_its_full_hull_including_gaps
+        PASS [   0.012s] ( 97/226) rav1d-safe src::safe_simd::mc_arm::compound_parity::compound_16bpc_shift_tracks_bitdepth
+        PASS [   0.018s] ( 98/226) rav1d-safe src::safe_simd::mc_arm::compound_parity::compound_16bpc_values_match_scalar
+        PASS [   0.017s] ( 99/226) rav1d-safe src::safe_simd::mc_arm::compound_parity::compound_8bpc_matches_scalar
+        PASS [   0.008s] (100/226) rav1d-safe src::safe_simd::mc_arm::compound_parity::oracle_constants_come_from_the_bitdepth_not_a_literal
+        PASS [   0.014s] (101/226) rav1d-safe src::safe_simd::mc_arm::compound_parity::w_mask_16bpc_segmentation_mask_matches_scalar
+        PASS [   0.360s] (102/226) rav1d-safe src::safe_simd::itx_arm_parity::itx_8bpc_every_eob_small_coeffs
+        PASS [   0.007s] (103/226) rav1d-safe src::safe_simd::mc_arm::tests::test_arm_token_available
+        PASS [   0.011s] (104/226) rav1d-safe src::safe_simd::mc_arm::tests::test_arm_token_permutations
+        PASS [   0.021s] (105/226) rav1d-safe src::safe_simd::mc_arm::tests::test_dotprod_bias_correction_bit_exact
+        PASS [   0.229s] (106/226) rav1d-safe src::safe_simd::mc_arm_prep_parity::prep_16bpc_matches_scalar
+        PASS [   0.069s] (107/226) rav1d-safe src::safe_simd::mc_arm_prep_parity::prep_8bpc_matches_scalar_control
+        PASS [   0.008s] (108/226) rav1d-safe src::thread_task::grain_panic_tests::delayed_grain_panic_preserves_live_worker_state
+        FAIL [ 199.832s] (109/226) rav1d-safe src::safe_simd::mc_arm::reference_tests::interpolation_reads_leave_unrelated_reconstruction_rows_available
+  stdout ───
+
+    running 1 test
+    test src::safe_simd::mc_arm::reference_tests::interpolation_reads_leave_unrelated_reconstruction_rows_available has been running for over 60 seconds
+    test src::safe_simd::mc_arm::reference_tests::interpolation_reads_leave_unrelated_reconstruction_rows_available ... FAILED
+
+    failures:
+
+    failures:
+        src::safe_simd::mc_arm::reference_tests::interpolation_reads_leave_unrelated_reconstruction_rows_available
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 116 filtered out; finished in 199.82s
+
+  stderr ───
+
+    thread 'src::safe_simd::mc_arm::reference_tests::interpolation_reads_leave_unrelated_reconstruction_rows_available' (379324) panicked at src/safe_simd/mc_arm.rs:3521:42:
+    index out of bounds: the len is 2 but the index is 18446744073709551424
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        PASS [   0.013s] (110/226) rav1d-safe::cancellation cancel_at_first_sbrow_yields_cancelled
+        PASS [   0.020s] (111/226) rav1d-safe::cancellation cancel_mid_frame_yields_cancelled
+        PASS [   0.011s] (112/226) rav1d-safe::cancellation cancel_tile_threaded_yields_cancelled
+        PASS [   0.024s] (113/226) rav1d-safe::cancellation clearing_token_restores_normal_decode
+        PASS [   0.026s] (114/226) rav1d-safe::cancellation no_token_decodes_normally
+        PASS [   0.029s] (115/226) rav1d-safe::cancellation unstoppable_token_decodes_normally
+        PASS [   0.186s] (116/226) rav1d-safe::decode_backpressure decode_without_draining_loses_no_frames
+        PASS [   0.030s] (117/226) rav1d-safe::decode_backpressure reset_discards_frames_held_back_by_backpressure
+        PASS [   0.142s] (118/226) rav1d-safe::decode_concurrent_md5 simultaneous_single_and_multi_thread_decoders_match_reference_md5
+        PASS [   8.953s] (119/226) rav1d-safe::decode_cpu_levels test_cpu_levels_10bit_data
+        PASS [   4.714s] (120/226) rav1d-safe::decode_cpu_levels test_cpu_levels_12bit_data
+  Cancelling due to interrupt: 2 tests still running
+      SIGINT [  51.733s] (121/226) rav1d-safe::decode_cpu_levels test_cpu_levels_8bit_data
+      SIGINT [ 265.219s] (122/226) rav1d-safe::argon_cover argon_cover_streams_bit_exact_across_levels
+────────────
+     Summary [ 267.704s] 122/226 tests run: 119 passed, 3 failed, 26 skipped
+warning: 104/226 tests were not run due to interrupt
+error: test run failed
+error: recipe `test-all-modes` was terminated on line 28 by signal 2
+run-heavy: done rc=130 540s | peak-RSS 1.06GiB | min-avail 21524MiB | peak-load 17.78

@@ -1,0 +1,664 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=12/16 avail=27672MiB :: bash -c set -e; rustc --version; cargo --version; just test-all-modes; just test-integration-selection test-vectors; just clippy; just clippy-untracked; cargo check --no-default-features --features bitdepth_8,bitdepth_16,c-ffi; cargo check --features asm
+rustc 1.99.0 (b940084d7 2026-09-28)
+cargo 1.99.0 (5f94df478 2026-08-27)
+cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --test-threads 2
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.24
+   Compiling libc v0.2.189
+   Compiling cfg-if v1.0.4
+   Compiling zerocopy v0.8.56
+   Compiling bitflags v2.13.1
+   Compiling rustix v1.1.4
+   Compiling linux-raw-sys v0.12.1
+   Compiling memchr v2.8.3
+   Compiling autocfg v1.5.1
+   Compiling find-msvc-tools v0.1.12
+   Compiling heck v0.5.0
+   Compiling shlex v2.0.1
+   Compiling itoa v1.0.18
+   Compiling cc v1.4.5
+   Compiling serde_core v1.0.229
+   Compiling stable_deref_trait v1.2.1
+   Compiling utf8parse v0.2.2
+   Compiling anstyle-query v1.1.5
+   Compiling zmij v1.0.23
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling anstyle-parse v1.0.0
+   Compiling colorchoice v1.0.5
+   Compiling anstyle v1.0.14
+   Compiling memoffset v0.6.5
+   Compiling semver v1.0.28
+   Compiling anstream v1.0.0
+   Compiling getrandom v0.3.4
+   Compiling clap_lex v1.1.0
+   Compiling serde v1.0.229
+   Compiling scopeguard v1.2.0
+   Compiling strsim v0.11.1
+   Compiling syn v2.0.119
+   Compiling syn v3.0.6
+   Compiling version_check v0.9.5
+   Compiling bitflags v1.3.2
+   Compiling serde_json v1.0.151
+   Compiling lock_api v0.4.14
+   Compiling rustc_version v0.4.1
+   Compiling ahash v0.8.12
+   Compiling object v0.37.3
+   Compiling smallvec v1.16.0
+   Compiling whereat v0.1.5
+   Compiling getrandom v0.4.3
+   Compiling log v0.4.34
+   Compiling jobserver v0.1.35
+   Compiling uuid v1.26.1
+   Compiling enough v0.4.4
+   Compiling once_cell v1.21.4
+   Compiling cpp_demangle v0.4.5
+   Compiling arrayvec v0.7.8
+   Compiling parking_lot_core v0.9.12
+   Compiling nasm-rs v0.3.2
+   Compiling getrandom v0.2.17
+   Compiling debugid v0.8.0
+   Compiling memmap2 v0.9.11
+   Compiling rand_core v0.6.4
+   Compiling findshlibs v0.10.2
+   Compiling likely_stable v0.1.3
+   Compiling num-traits v0.2.19
+   Compiling as-slice v0.2.1
+   Compiling symbolic-demangle v12.18.3
+   Compiling paste v1.0.15
+   Compiling thiserror v1.0.69
+   Compiling anyhow v1.0.104
+   Compiling thiserror v2.0.21
+   Compiling equivalent v1.0.2
+   Compiling rustc-demangle v0.1.28
+   Compiling gimli v0.32.3
+   Compiling hashbrown v0.17.1
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling aligned v0.4.3
+   Compiling terminal_size v0.4.4
+   Compiling nix v0.23.2
+   Compiling rav1d-safe v0.6.0 (/home/ubuntu/tmp/rav1d-safe-lead-checkout)
+   Compiling clap_builder v4.6.6
+   Compiling indexmap v2.14.2
+   Compiling symbolic-common v12.18.3
+   Compiling num-format v0.4.4
+   Compiling is-terminal v0.4.17
+   Compiling almost-enough v0.4.4
+   Compiling quick-xml v0.26.0
+   Compiling fastrand v2.5.0
+   Compiling lazy_static v1.5.0
+   Compiling pprof v0.15.0
+   Compiling spin v0.12.3
+   Compiling str_stack v0.1.1
+   Compiling safe_unaligned_simd v0.2.5
+   Compiling tempfile v3.27.0
+   Compiling colored v2.2.0
+   Compiling bytemuck_derive v1.12.0
+   Compiling serde_derive v1.0.229
+   Compiling zerocopy-derive v0.8.56
+   Compiling equator-macro v0.4.2
+   Compiling clap_derive v4.6.4
+   Compiling atomig-macro v0.4.0
+   Compiling strum_macros v0.28.0
+   Compiling thiserror-impl v1.0.69
+   Compiling thiserror-impl v2.0.21
+   Compiling equator v0.4.2
+   Compiling aligned-vec v0.6.4
+   Compiling bytemuck v1.25.2
+   Compiling archmage-macros v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+   Compiling zenpixels v0.2.16
+   Compiling rgb v0.8.53
+   Compiling addr2line v0.25.1
+   Compiling atomig v0.4.3
+   Compiling divan-macros v0.1.21
+   Compiling zencodec v0.1.26
+   Compiling clap v4.6.6
+   Compiling backtrace v0.3.76
+   Compiling parking_lot v0.12.5
+   Compiling strum v0.28.0
+   Compiling fs4 v1.1.0
+   Compiling sysinfo v0.36.1
+   Compiling nix v0.26.4
+   Compiling archmage v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+   Compiling spin v0.10.1
+   Compiling raw-cpuid v11.6.0
+   Compiling bitreader v0.3.11
+   Compiling leb128 v0.2.7
+   Compiling fallible_collections v0.5.2
+   Compiling assert_matches v1.5.0
+   Compiling to_method v1.1.0
+   Compiling glob-match v0.2.1
+   Compiling byteorder v1.5.0
+   Compiling regex-lite v0.1.9
+   Compiling condtype v1.3.0
+   Compiling jsonrpc-types v0.3.3
+   Compiling zenavif-parse v0.6.2
+   Compiling md5 v0.8.1
+   Compiling zenbench v0.1.9
+   Compiling divan v0.1.21
+   Compiling ppv-lite86 v0.2.21
+   Compiling rav1d-disjoint-mut v0.4.0 (/home/ubuntu/tmp/rav1d-safe-lead-checkout/crates/rav1d-disjoint-mut)
+   Compiling inferno v0.11.21
+   Compiling rand_chacha v0.3.1
+   Compiling rand v0.8.8
+   Compiling shared_memory v0.12.4
+   Compiling tango-bench v0.8.0
+warning: unused variable: `sqrt2x2`
+    --> src/safe_simd/itx_arm_neon_16x16.rs:1469:13
+     |
+1469 |         let sqrt2x2 = 5793i32; // sqrt(2) * 4096
+     |             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_sqrt2x2`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: type alias `ptrdiff_t` is never used
+  --> src/safe_simd/itx_arm.rs:49:6
+   |
+49 | type ptrdiff_t = isize;
+   |      ^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `inv_txfm_add_wht_wht_4x4_16bpc_inner` is never used
+   --> src/safe_simd/itx_arm.rs:124:4
+    |
+124 | fn inv_txfm_add_wht_wht_4x4_16bpc_inner(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `DCT4_C1` is never used
+   --> src/safe_simd/itx_arm.rs:194:7
+    |
+194 | const DCT4_C1: i32 = 2896; // cos(pi/8) * 4096
+    |       ^^^^^^^
+
+warning: constant `DCT4_C2` is never used
+   --> src/safe_simd/itx_arm.rs:195:7
+    |
+195 | const DCT4_C2: i32 = 2896; // cos(3pi/8) * 4096
+    |       ^^^^^^^
+
+warning: constant `DCT4_C3` is never used
+   --> src/safe_simd/itx_arm.rs:196:7
+    |
+196 | const DCT4_C3: i32 = 1567; // sin(pi/8) * 4096
+    |       ^^^^^^^
+
+warning: constant `DCT4_C4` is never used
+   --> src/safe_simd/itx_arm.rs:197:7
+    |
+197 | const DCT4_C4: i32 = 3784; // sin(3pi/8) * 4096
+    |       ^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_4x4_16bpc_inner` is never used
+   --> src/safe_simd/itx_arm.rs:273:4
+    |
+273 | fn inv_txfm_add_dct_dct_4x4_16bpc_inner(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `COS_PI_1_16` is never used
+   --> src/safe_simd/itx_arm.rs:326:7
+    |
+326 | const COS_PI_1_16: i32 = 4017; // cos(pi/16) * 4096
+    |       ^^^^^^^^^^^
+
+warning: constant `COS_PI_2_16` is never used
+   --> src/safe_simd/itx_arm.rs:327:7
+    |
+327 | const COS_PI_2_16: i32 = 3784; // cos(2*pi/16) * 4096
+    |       ^^^^^^^^^^^
+
+warning: constant `COS_PI_3_16` is never used
+   --> src/safe_simd/itx_arm.rs:328:7
+    |
+328 | const COS_PI_3_16: i32 = 3406; // cos(3*pi/16) * 4096
+    |       ^^^^^^^^^^^
+
+warning: constant `COS_PI_4_16` is never used
+   --> src/safe_simd/itx_arm.rs:329:7
+    |
+329 | const COS_PI_4_16: i32 = 2896; // cos(4*pi/16) * 4096 = sqrt(2)/2 * 4096
+    |       ^^^^^^^^^^^
+
+warning: constant `COS_PI_5_16` is never used
+   --> src/safe_simd/itx_arm.rs:330:7
+    |
+330 | const COS_PI_5_16: i32 = 2276; // cos(5*pi/16) * 4096
+    |       ^^^^^^^^^^^
+
+warning: constant `COS_PI_6_16` is never used
+   --> src/safe_simd/itx_arm.rs:331:7
+    |
+331 | const COS_PI_6_16: i32 = 1567; // cos(6*pi/16) * 4096
+    |       ^^^^^^^^^^^
+
+warning: constant `COS_PI_7_16` is never used
+   --> src/safe_simd/itx_arm.rs:332:7
+    |
+332 | const COS_PI_7_16: i32 = 799; // cos(7*pi/16) * 4096
+    |       ^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_8x8_16bpc_inner` is never used
+   --> src/safe_simd/itx_arm.rs:421:4
+    |
+421 | fn inv_txfm_add_dct_dct_8x8_16bpc_inner(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_16x16_16bpc_inner` is never used
+   --> src/safe_simd/itx_arm.rs:576:4
+    |
+576 | fn inv_txfm_add_dct_dct_16x16_16bpc_inner(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_identity_identity_4x4_16bpc_inner` is never used
+   --> src/safe_simd/itx_arm.rs:655:4
+    |
+655 | fn inv_txfm_add_identity_identity_4x4_16bpc_inner(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_identity_identity_8x8_16bpc_inner` is never used
+   --> src/safe_simd/itx_arm.rs:711:4
+    |
+711 | fn inv_txfm_add_identity_identity_8x8_16bpc_inner(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_identity_identity_16x16_8bpc_inner` is never used
+   --> src/safe_simd/itx_arm.rs:737:4
+    |
+737 | fn inv_txfm_add_identity_identity_16x16_8bpc_inner(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_identity_identity_16x16_16bpc_inner` is never used
+   --> src/safe_simd/itx_arm.rs:767:4
+    |
+767 | fn inv_txfm_add_identity_identity_16x16_16bpc_inner(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_adst_adst_4x4_16bpc_inner` is never used
+   --> src/safe_simd/itx_arm.rs:883:4
+    |
+883 | fn inv_txfm_add_adst_adst_4x4_16bpc_inner(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_adst_adst_8x8_8bpc_inner` is never used
+   --> src/safe_simd/itx_arm.rs:996:4
+    |
+996 | fn inv_txfm_add_adst_adst_8x8_8bpc_inner(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_adst_adst_8x8_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:1040:4
+     |
+1040 | fn inv_txfm_add_adst_adst_8x8_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_flipadst_flipadst_4x4_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:1141:4
+     |
+1141 | fn inv_txfm_add_flipadst_flipadst_4x4_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_adst_4x4_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:1290:4
+     |
+1290 | fn inv_txfm_add_dct_adst_4x4_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_adst_dct_4x4_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:1337:4
+     |
+1337 | fn inv_txfm_add_adst_dct_4x4_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_flipadst_4x4_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:1482:4
+     |
+1482 | fn inv_txfm_add_dct_flipadst_4x4_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_flipadst_dct_4x4_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:1529:4
+     |
+1529 | fn inv_txfm_add_flipadst_dct_4x4_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_adst_flipadst_4x4_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:1674:4
+     |
+1674 | fn inv_txfm_add_adst_flipadst_4x4_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_flipadst_adst_4x4_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:1721:4
+     |
+1721 | fn inv_txfm_add_flipadst_adst_4x4_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_4x8_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:3167:4
+     |
+3167 | fn inv_txfm_add_dct_dct_4x8_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_4x8_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:3214:4
+     |
+3214 | fn inv_txfm_add_dct_dct_4x8_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_8x4_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:3259:4
+     |
+3259 | fn inv_txfm_add_dct_dct_8x4_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_8x4_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:3306:4
+     |
+3306 | fn inv_txfm_add_dct_dct_8x4_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_8x16_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:3355:4
+     |
+3355 | fn inv_txfm_add_dct_dct_8x16_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_8x16_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:3401:4
+     |
+3401 | fn inv_txfm_add_dct_dct_8x16_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_16x8_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:3445:4
+     |
+3445 | fn inv_txfm_add_dct_dct_16x8_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_16x8_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:3491:4
+     |
+3491 | fn inv_txfm_add_dct_dct_16x8_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_adst_8x8_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:3539:4
+     |
+3539 | fn inv_txfm_add_dct_adst_8x8_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_adst_dct_8x8_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:3583:4
+     |
+3583 | fn inv_txfm_add_adst_dct_8x8_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_adst_8x8_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:3627:4
+     |
+3627 | fn inv_txfm_add_dct_adst_8x8_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_adst_dct_8x8_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:3671:4
+     |
+3671 | fn inv_txfm_add_adst_dct_8x8_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_32x32_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:4306:4
+     |
+4306 | fn inv_txfm_add_dct_dct_32x32_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_4x16_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:4354:4
+     |
+4354 | fn inv_txfm_add_dct_dct_4x16_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_4x16_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:4401:4
+     |
+4401 | fn inv_txfm_add_dct_dct_4x16_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_16x4_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:4446:4
+     |
+4446 | fn inv_txfm_add_dct_dct_16x4_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_16x4_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:4493:4
+     |
+4493 | fn inv_txfm_add_dct_dct_16x4_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_16x32_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:4542:4
+     |
+4542 | fn inv_txfm_add_dct_dct_16x32_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_16x32_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:4588:4
+     |
+4588 | fn inv_txfm_add_dct_dct_16x32_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_32x16_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:4632:4
+     |
+4632 | fn inv_txfm_add_dct_dct_32x16_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_32x16_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:4678:4
+     |
+4678 | fn inv_txfm_add_dct_dct_32x16_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_64x64_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:5156:4
+     |
+5156 | fn inv_txfm_add_dct_dct_64x64_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_64x64_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:5202:4
+     |
+5202 | fn inv_txfm_add_dct_dct_64x64_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_8x32_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:5250:4
+     |
+5250 | fn inv_txfm_add_dct_dct_8x32_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_8x32_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:5296:4
+     |
+5296 | fn inv_txfm_add_dct_dct_8x32_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_32x8_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:5340:4
+     |
+5340 | fn inv_txfm_add_dct_dct_32x8_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_32x8_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:5386:4
+     |
+5386 | fn inv_txfm_add_dct_dct_32x8_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_32x64_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:5434:4
+     |
+5434 | fn inv_txfm_add_dct_dct_32x64_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_32x64_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:5478:4
+     |
+5478 | fn inv_txfm_add_dct_dct_32x64_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_64x32_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:5522:4
+     |
+5522 | fn inv_txfm_add_dct_dct_64x32_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_64x32_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:5566:4
+     |
+5566 | fn inv_txfm_add_dct_dct_64x32_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `identity8_1d_arm` is never used
+    --> src/safe_simd/itx_arm.rs:6000:4
+     |
+6000 | fn identity8_1d_arm(c: &mut [i32], stride: usize) {
+     |    ^^^^^^^^^^^^^^^^
+
+warning: function `identity16_1d_arm` is never used
+    --> src/safe_simd/itx_arm.rs:6007:4
+     |
+6007 | fn identity16_1d_arm(c: &mut [i32], stride: usize) {
+     |    ^^^^^^^^^^^^^^^^^
+
+warning: function `identity32_1d_arm` is never used
+    --> src/safe_simd/itx_arm.rs:6014:4
+     |
+6014 | fn identity32_1d_arm(c: &mut [i32], stride: usize) {
+     |    ^^^^^^^^^^^^^^^^^
+
+warning: function `identity_rect_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:6032:4
+     |
+6032 | fn identity_rect_8bpc_inner<const W: usize, const H: usize>(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `identity_rect_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:6078:4
+     |
+6078 | fn identity_rect_16bpc_inner<const W: usize, const H: usize>(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_16x64_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:7340:4
+     |
+7340 | fn inv_txfm_add_dct_dct_16x64_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_16x64_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:7383:4
+     |
+7383 | fn inv_txfm_add_dct_dct_16x64_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_64x16_8bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:7426:4
+     |
+7426 | fn inv_txfm_add_dct_dct_64x16_8bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_dct_dct_64x16_16bpc_inner` is never used
+    --> src/safe_simd/itx_arm.rs:7469:4
+     |
+7469 | fn inv_txfm_add_dct_dct_64x16_16bpc_inner(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type alias `Itx1dFn` is never used
+    --> src/safe_simd/itx_arm.rs:7673:6
+     |
+7673 | type Itx1dFn = fn(&mut [i32], NonZeroUsize, i32, i32);
+     |      ^^^^^^^
+
+warning: function `inv_txfm_add_generic_8bpc` is never used
+    --> src/safe_simd/itx_arm.rs:7677:4
+     |
+7677 | fn inv_txfm_add_generic_8bpc(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `inv_txfm_add_generic_16bpc` is never used
+    --> src/safe_simd/itx_arm.rs:7774:4
+     |
+7774 | fn inv_txfm_add_generic_16bpc(
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `resolve_1d` is never used
+    --> src/safe_simd/itx_arm.rs:7871:4
+     |
+7871 | fn resolve_1d(txfm: &str, n: usize) -> Itx1dFn {
+     |    ^^^^^^^^^^
+
+warning: function `shift_for` is never used
+    --> src/safe_simd/itx_arm.rs:7892:4
+     |
+7892 | fn shift_for(w: usize, h: usize) -> u8 {
+     |    ^^^^^^^^^
+
+warning: `rav1d-safe` (lib test) generated 76 warnings (run `cargo fix --lib -p rav1d-safe --tests` to apply 1 suggestion)
+    Finished `release` profile [optimized + debuginfo] target(s) in 4m 30s
+────────────
+ Nextest run ID 00acb0b4-e1d4-40b6-b157-e09ca7d32ad4 with nextest profile: default
+    Starting 226 tests across 33 binaries (26 tests skipped)
+        PASS [   0.012s] (  1/226) rav1d-safe include::dav1d::picture::row_guard_policy_tests::compact_read_fast_hull_starts_at_the_last_row_on_a_negative_stride
+        PASS [   0.012s] (  2/226) rav1d-safe include::dav1d::picture::row_guard_policy_tests::compact_read_returns_picture_rows_top_down_on_a_negative_stride
+        PASS [   0.010s] (  3/226) rav1d-safe include::dav1d::picture::row_guard_policy_tests::explicit_picture_policy_controls_gap_reservations_after_global_promotion
+        PASS [   0.010s] (  4/226) rav1d-safe include::dav1d::picture::row_guard_policy_tests::for_rows_mut_never_reserves_an_inter_row_gap_when_tile_threading_is_on
+        PASS [   0.010s] (  5/226) rav1d-safe include::dav1d::picture::row_guard_policy_tests::for_rows_mut_reserves_the_strided_hull_when_tile_threading_is_off
+        PASS [   0.010s] (  6/226) rav1d-safe include::dav1d::picture::row_guard_policy_tests::for_rows_visits_picture_rows_top_down_on_a_negative_stride
+        PASS [   0.011s] (  7/226) rav1d-safe include::dav1d::picture::row_guard_policy_tests::narrow_guard_mut_reserves_exactly_the_block_hull_on_a_negative_stride
+        PASS [   0.015s] (  8/226) rav1d-safe include::dav1d::picture::row_guard_policy_tests::live_block_keeps_its_storage_when_another_decoder_changes_threading
+        PASS [   0.007s] (  9/226) rav1d-safe include::dav1d::picture::tile_threading_latch_tests::set_tile_threading_is_monotone
+        PASS [   0.012s] ( 10/226) rav1d-safe include::dav1d::picture::row_guard_policy_tests::narrow_guards_cover_the_block_on_a_negative_stride
+        PASS [   0.009s] ( 11/226) rav1d-safe src::decode_test::tests::decode_test_ivf
+        PASS [   0.009s] ( 12/226) rav1d-safe src::env::left_split_parity::sm_flag_left_matches_sm_flag
+        PASS [   0.007s] ( 13/226) rav1d-safe src::env::left_split_parity::trial_floor_is_not_vacuous
+        PASS [   0.031s] ( 14/226) rav1d-safe src::env::left_split_parity::all_fifteen_helpers_match_the_pre_split_implementation
+        PASS [   0.010s] ( 15/226) rav1d-safe src::error::errno_tests::errno_round_trips_on_this_platform
+        PASS [   0.195s] ( 16/226) rav1d-safe src::filmgrain::row_tests::filmgrain_rows_match_scalar_12bit
+        PASS [   0.207s] ( 17/226) rav1d-safe src::filmgrain::row_tests::filmgrain_rows_match_scalar_10bit
+        PASS [   0.007s] ( 18/226) rav1d-safe src::internal::task_ctx_size::task_context_stays_stack_light
+        PASS [   0.009s] ( 19/226) rav1d-safe src::loopfilter::compact_window::h_window_fits_the_transform_that_selected_it
+        PASS [   0.012s] ( 20/226) rav1d-safe src::loopfilter::compact_window::issue_524_h_window_does_not_collide_with_the_next_rows_stitch
+        PASS [   0.009s] ( 21/226) rav1d-safe src::loopfilter::compact_window::issue_524_h_window_stays_inside_its_picture_row
+        PASS [   0.018s] ( 22/226) rav1d-safe src::loopfilter::compact_window::issue_524_harness_detects_a_window_that_does_lap
+        PASS [   0.108s] ( 23/226) rav1d-safe src::filmgrain::row_tests::filmgrain_rows_match_scalar_8bit
+        PASS [   0.091s] ( 24/226) rav1d-safe src::loopfilter::neon_parity::neon_diff_span_matches_scalar
+        PASS [   0.161s] ( 25/226) rav1d-safe src::loopfilter::neon_parity::neon_matches_scalar_10bpc
+        PASS [   0.145s] ( 26/226) rav1d-safe src::loopfilter::neon_parity::neon_matches_scalar_12bpc
+        PASS [   0.010s] ( 27/226) rav1d-safe src::loopfilter::run_reach::run_reach_equals_the_widest_group_it_can_meet
+        PASS [   0.007s] ( 28/226) rav1d-safe src::loopfilter::run_reach::run_reach_fits_the_transform_that_selected_it
+        PASS [   0.008s] ( 29/226) rav1d-safe src::managed::frame_delay_tests::auto_frame_delay_is_two_with_workers_and_one_without
+        PASS [   0.016s] ( 30/226) rav1d-safe src::managed::frame_delay_tests::decoder_context_count_follows_the_auto_rule
+        PASS [   0.034s] ( 31/226) rav1d-safe src::managed::frame_tile_tests::copied_picture_can_allocate_after_decoder_and_source_drop
+        PASS [   0.149s] ( 32/226) rav1d-safe src::loopfilter::neon_parity::neon_matches_scalar_8bpc
+        PASS [   0.283s] ( 33/226) rav1d-safe src::managed::frame_tile_tests::picture_policy_is_local_and_survives_decoder_lifetimes
+        PASS [   0.578s] ( 34/226) rav1d-safe src::managed::frame_tile_tests::parallel_frame_tile_contexts_preserve_frames
+        PASS [   0.332s] ( 35/226) rav1d-safe src::managed::frame_tile_tests::serial_and_threaded_decoders_run_concurrently_with_local_policies
+        PASS [   0.012s] ( 36/226) rav1d-safe src::msac::tests::adapt4_matches_reference_at_interval_boundaries_and_short_slices
+        PASS [   0.097s] ( 37/226) rav1d-safe src::managed::frame_tile_tests::single_tile_frames_keep_hull_guards_at_any_thread_count
+        PASS [   0.011s] ( 38/226) rav1d-safe src::msac::tests::adapt4_matches_reference_through_refills_and_preserves_unused_cdf
+        PASS [   0.010s] ( 39/226) rav1d-safe src::owned_recon::ordinary_build_keeps_owned_recon_enabled
+        PASS [   0.007s] ( 40/226) rav1d-safe src::owned_recon::tests::a_row_above_the_band_panics_it_does_not_alias
+        PASS [   0.009s] ( 41/226) rav1d-safe src::owned_recon::tests::a_row_below_the_band_panics
+        PASS [   0.010s] ( 42/226) rav1d-safe src::owned_recon::tests::for_rows_mut_walks_the_bands_own_stride_not_the_pictures
+        PASS [   0.008s] ( 43/226) rav1d-safe src::owned_recon::tests::translation_is_plane_coordinates_minus_origin
+        PASS [   0.011s] ( 44/226) rav1d-safe src::safe_simd::cdef_arm::tests::constrain_neutralises_sentinel_over_full_param_space
+        PASS [   0.016s] ( 45/226) rav1d-safe src::safe_simd::cdef_arm::tests::neon_dir_matches_scalar
+        PASS [   0.030s] ( 46/226) rav1d-safe src::safe_simd::cdef_arm::tests::neon_row_matches_oracle_10bpc
+        PASS [   0.118s] ( 47/226) rav1d-safe src::msac::tests::cdf_update_matches_directional_arithmetic_for_every_u16
+        PASS [   0.031s] ( 48/226) rav1d-safe src::safe_simd::cdef_arm::tests::neon_row_matches_oracle_12bpc
+        PASS [   0.024s] ( 49/226) rav1d-safe src::safe_simd::cdef_arm::tests::neon_row_matches_oracle_8bpc
+        PASS [   0.014s] ( 50/226) rav1d-safe src::safe_simd::ipred_arm::cfl_ac_parity::cfl_ac_10bpc_matches_scalar
+        PASS [   0.014s] ( 51/226) rav1d-safe src::safe_simd::ipred_arm::cfl_ac_parity::cfl_ac_12bpc_matches_scalar
+        PASS [   0.014s] ( 52/226) rav1d-safe src::safe_simd::ipred_arm::cfl_ac_parity::cfl_ac_8bpc_matches_scalar
+        PASS [   0.017s] ( 53/226) rav1d-safe src::safe_simd::ipred_arm::c
