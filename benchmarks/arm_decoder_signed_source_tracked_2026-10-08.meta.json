@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-08",
+  "cpu": "Neoverse-N1",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "command": "just test-all-modes; just test-integration-selection test-vectors (set -e: first tracked suite failed; later commands did not run)",
+  "source_sha256": {
+    "src/safe_simd/mc_arm.rs": "0c9f55ddcae81dee9bb1d934ddc792290e8cca7c1de3c4aa9ceb472ddbc641ad",
+    "src/safe_simd/mc_arm_reference_tests.rs": "4c0a2fcee1c0e6551506117145e043bd5e1608b64f2ca3173596e655850f2ce3",
+    "Cargo.lock": "315a1c4b47dd38cbd8d855514f4bf446e515834393b934c4fe836f31b51b6ce6"
+  },
+  "result": {
+    "selected": 226,
+    "passed": 224,
+    "failed": 2,
+    "existing_ignored": 26,
+    "test_seconds": 1653.618,
+    "failures": [
+      "mt_stress_4k: missing test-vectors/bench/photo_4k.avif",
+      "test_multi_threaded_cleanup: Expected at least 4 workers, got 2"
+    ]
+  },
+  "run_heavy": "rc=100;1855s;peak-RSS 1.11GiB;min-avail 23941MiB;peak-load 12.29",
+  "subsequent_repair_evidence": "thread_start_observation_2026-10-08/meta.json",
+  "log": {
+    "path": "arm_decoder_signed_source_tracked_2026-10-08.log",
+    "sha256": "bcc98584d67bc730ea1214d1e4f021ff6359068deeffacc046a3225032c00829"
+  },
+  "limits": "Not a green full suite. Untracked, doctests and legacy integration commands were not reached."
+}

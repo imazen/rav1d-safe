@@ -986,6 +986,31 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
   rejects before scheduling CI jobs. The options now live in step-level `env`;
   `just lint-ci-workflow` validates workflow contexts with actionlint.
 
+### Thread cleanup startup observation (2026-10-08) — FIXED
+
+A native ARM full-suite run observes only two `rav1d-worker` names immediately
+following creation of a four-worker decoder. The core creates four handles,
+and Rust assigns OS names during child initialization. The user approved
+waiting up to one second before the unchanged `workers >= 4` assertion;
+the zero-worker post-drop assertion also remains. All seven focused tests and
+100 startup repetitions pass; a three-worker configuration mutation still
+fails, and restoring the approved source passes again. See
+[thread cleanup observation](docs/THREAD_CLEANUP_OBSERVATION.md).
+The same run also lacked `test-vectors/bench/photo_4k.avif`; copying the existing
+fixture repairs that setup without skipping the stress gate.
+
+### ARM MC negative source strides (2026-10-08) — validation in progress
+
+The expanded source-window parity gate fails on a negative-stride 8bpc
+vertical-filter tail: `mc_arm.rs` casts the signed source pitch to `usize`,
+then indexes beyond the reserved slice. The 16bpc dispatch also divides the
+unsigned cast by two, losing the original sign. Positive-stride coverage
+alone did not exercise these paths. Keep the source pitch signed through
+put/prep and pass the slice's base separately; a vertical filter must retain
+the full bounded slice to walk backward. The same oracle now covers both
+stride signs at 8/10/12 bits, all filters and phases, endpoints, tails and
+128x128 blocks while an unrelated reconstruction row stays borrowed.
+
 ### ARM MC source reservations and 12-bit bilinear rounding (2026-10-08)
 
 The safe ARM put/prep dispatchers reserved entire reference planes. With frame
