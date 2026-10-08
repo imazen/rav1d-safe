@@ -1,0 +1,39 @@
+{
+  "purpose": "Tracked A/A control; both sides are the newly rebuilt exact pre-MC binary",
+  "source_revision": "5b51b144cf73216fffd1100bfc396bc7dc17b5bd",
+  "baseline_provenance": "mc_baseline_identity_2026-10-08.json",
+  "harness_sha256": "da5af159adb4d59d9e8c982546ec8f98214323133dc7971dcba14e20fa914ef3",
+  "cpu": "AMD Ryzen 9 7900X, Zen 4; not measured on Zen 5",
+  "completed_cases": 8,
+  "median_ratio_range": [
+    0.9594830824791364,
+    1.0140822686664441
+  ],
+  "minimum_ratio_range": [
+    0.9982118637715948,
+    1.0066729996377441
+  ],
+  "interpretation": "No optimization is compared in this control. Judge later MC/CDEF measurements against the complete per-case samples and minimums as well as medians.",
+  "run_heavy": "rc=0; 898s; peak-RSS 0.21GiB; min-avail 23689MiB; peak-load 2.78",
+  "protocol": {
+    "protocol": "fresh decoder, warm-up, internal ms/frame, alternating A/B",
+    "before": {
+      "revision": "5b51b144",
+      "sha256": "d35c11ae0d31d7fea178dbd3664cc4649d2a58da19f0b80df6e9e3dd159f1426"
+    },
+    "after": {
+      "revision": "5b51b144",
+      "sha256": "d35c11ae0d31d7fea178dbd3664cc4649d2a58da19f0b80df6e9e3dd159f1426"
+    },
+    "rounds": 4,
+    "passes": 3,
+    "delay": 1,
+    "first_cpu": 8,
+    "load_start": [
+      1.30615234375,
+      1.06103515625,
+      2.24951171875
+    ],
+    "cases": []
+  }
+}
