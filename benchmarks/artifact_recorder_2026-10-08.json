@@ -1,0 +1,10 @@
+{
+  "positive": "{\"output\": \"/home/lilith/tmp/handoff/rav1d-safe-lead/ci/artifact-recorder-validation/out\", \"artifacts\": 1, \"files\": 4, \"verified\": true}\n",
+  "collision": "usage: record_benchmark_artifacts.py [-h] --output OUTPUT --metadata METADATA\n                                     --input INPUT\nrecord_benchmark_artifacts.py: error: destination already exists: /home/lilith/tmp/handoff/rav1d-safe-lead/ci/artifact-recorder-validation/out/timing.part01.log\n",
+  "binary": "usage: record_benchmark_artifacts.py [-h] --output OUTPUT --metadata METADATA\n                                     --input INPUT\nrecord_benchmark_artifacts.py: error: input is not UTF-8 text: /home/lilith/tmp/handoff/rav1d-safe-lead/ci/artifact-recorder-validation/binary.log\n",
+  "parts_bytes": [
+    27999,
+    28000,
+    1002
+  ]
+}

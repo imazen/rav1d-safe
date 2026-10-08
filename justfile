@@ -73,6 +73,10 @@ bench-paired-modes *args:
 bench-paired-report directory:
     python3 scripts/perf/decoder_bench/report_paired.py "{{directory}}"
 
+# Archive reviewed provenance and exact raw bytes without replacing prior data.
+record-benchmark-artifacts *args:
+    python3 tools/record_benchmark_artifacts.py {{args}}
+
 # Preserve one exact SIMD symbol range; resolve bounds with nm -S -C first.
 dump-simd-codegen binary start stop:
     objdump -d -C --start-address={{start}} --stop-address={{stop}} "{{binary}}"
