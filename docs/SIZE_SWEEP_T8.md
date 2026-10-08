@@ -70,11 +70,14 @@ buys at these sizes is the overlap of those two stages — a two-stage pipeline 
 and no thread count can raise that ceiling. The measured `cores busy`
 (CPU/frame ÷ wall/frame) is the direct test of that reading.
 
-Also from source: the checked build pins `n_fc = 1` unconditionally
+At the time of this measurement, the checked build pinned `n_fc = 1` unconditionally
 (`src/lib.rs:127`, "Frame threading (n_fc>1) still requires unchecked"), so
-rav1d-safe has tile threading only. That is why `dav1d --framedelay 1` is the
-like-for-like arm and dav1d's default is a different capability class, not a
-different tuning of the same one.
+that build used tile threading only. That is why `dav1d --framedelay 1` was the
+like-for-like arm and dav1d's default represented a different capability class, not a
+different tuning of the same one. Current tracked builds support explicit frame
+delay greater than one, and the managed API selects delay two for multiple
+workers when its setting is zero. The recorded measurements above predate that
+change; see [current frame-threading behavior](DECODER_COMPARISON.md).
 
 ---
 

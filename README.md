@@ -171,7 +171,7 @@ This is the only resource bound applied *before* a frame is decoded, so it is th
 
 With `threads >= 2` or `threads == 0`, the decoder uses tile threading to parallelize decode within each frame. `decode()` may return `None` for complete frames because processing is asynchronous — call it repeatedly or use `flush()` to drain.
 
-**Tile threading works under `forbid(unsafe_code)` without the `unchecked` feature.** No special feature flags needed:
+**Tile threading works in the default `forbid(unsafe_code)` build.** No special feature flags needed:
 
 ```toml
 rav1d-safe = { version = "0.6.0", features = ["bitdepth_8", "bitdepth_16"] }
@@ -180,8 +180,11 @@ rav1d-safe = { version = "0.6.0", features = ["bitdepth_8", "bitdepth_16"] }
 Still-image scaling depends on the encoded tile layout. A single-tile image
 may gain little from additional workers; tiled images can benefit substantially.
 Measure the intended workload and set `max_frame_delay = 1` when comparing
-single-frame latency. Frame threading (`max_frame_delay > 1`) still requires
-the `unchecked` feature. See the [2K/4K/8K still investigation](benchmarks/stills-2026-09-07/README.md)
+single-frame latency. Frame threading (`max_frame_delay > 1`) also works in
+the tracked default build. The managed API selects a delay of two when
+multiple workers are requested and `max_frame_delay` is left at zero; poll
+`get_frame()` between input chunks and call `flush()` at end of input.
+See the [2K/4K/8K still investigation](benchmarks/stills-2026-09-07/README.md)
 and the [performance parity goal](docs/PERFORMANCE_PARITY_GOAL.md).
 
 #### `strictness` — what to do with a stream that breaks the spec

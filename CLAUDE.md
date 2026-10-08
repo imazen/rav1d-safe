@@ -711,10 +711,10 @@ Generated via avifdec at `/home/lilith/work/libavif/build/avifdec`.
 **Dataset:** 3261 AVIF files at `/mnt/v/datasets/scraping/avif/` (unsplash, google-native, wikimedia, unsplash-scale).
 
 **CPU Feature Level Override:**
-- `rav1d_set_cpu_flags_mask(mask)` — global, applies to all safe_simd dispatch
+- `rav1d_set_cpu_flags_mask(mask)` — global pixel-dispatch mask; token-dispatched SIMD may remain active
 - `Settings { cpu_flags_mask: mask, .. }` — per-decoder in managed API
 - `DecoderConfig::new().cpu_flags_mask(mask)` — per-decoder in zenavif
-- All safe_simd dispatch functions check `crate::src::cpu::summon_avx2()` which gates on the mask
+- X86 pixel dispatch through `crate::src::cpu::summon_avx2()` gates on the mask; baseline ARM NEON and x86 entropy/coefficient token paths can remain active (see Known Bugs)
 
 | Level | Mask | Description |
 |-------|------|-------------|
