@@ -188,3 +188,13 @@ three overlap and two worker-panic checks in the fast mode. The candidate's
 [both-mode selected gate](../benchmarks/mc_feature_gates_2026-10-08/meta.json)
 passes all six checks per mode with these commands; source optimizations
 are still unpublished. No test expectation or selection is relaxed.
+
+Reviewed documentation revision `01cf4826` passes all 33 jobs in
+[CI run 37766267699](https://github.com/imazen/rav1d-safe/actions/runs/37766267699).
+[Job outcomes, timestamps and API-capture hash](../benchmarks/ci_lead_docs_2026-10-08.json)
+record both completed corpus-permutation architectures, Windows ARM, macOS
+Intel, native/container i686 and both allocator Miri models. The earlier
+MC build-record run completed 31 jobs before two unfinished corpus jobs were
+cancelled by the subsequent push; it is not an all-green record. This complete
+run covers the published decoder and tools. Private MC, CDEF, retained-row
+and glue candidates still require their separate validation and timing.
