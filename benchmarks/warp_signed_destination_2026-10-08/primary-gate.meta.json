@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-08",
+  "cwd": "/home/lilith/work/zen/rav1d-safe",
+  "candidate_revision": "1e57f3b283f3d45fb98a968ce04e1c41797a7e16",
+  "sources": {
+    "src/mc.rs": "34685435ebf7464d184804fdc805d13f1f2933620bc72b55f9cac8cec64c69d3",
+    "src/mc_warp_scalar_tests.rs": "f48b8f6ca9aa1c78bb73bd0858626426bd5710e56b5070ad36bb5730ae64f89a",
+    "src/safe_simd/mc.rs": "c2b265303d58c114b40980fbbb81d3721a2b4e711bc1f124c7c01bd4db8cece8",
+    "src/safe_simd/mc_reference.rs": "392afbc92ccd71d02dcf34c9ed29d3894e6e24fc77d80beec546253281966e16"
+  },
+  "commands": [
+    "just test-mc-warp-destination && just check-mc-warp-destination-features",
+    "rustup target add --toolchain 1.99.0 aarch64-unknown-linux-gnu wasm32-unknown-unknown",
+    "just check-mc-warp-destination-features"
+  ],
+  "environment": {
+    "RUSTUP_TOOLCHAIN": "1.99.0",
+    "RUSTFLAGS": "",
+    "CARGO_ENCODED_RUSTFLAGS": "",
+    "CARGO_TARGET_DIR": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-primary-gate",
+    "TMPDIR": "/home/lilith/tmp"
+  },
+  "wrapper": "run-heavy --mem 16G --jobs 20",
+  "files": {
+    "primary-gate-first.log": {
+      "sha256": "43ede8aba57f32f184c43f4dd372e9f11e9f261352338063809ea2231a531dc8",
+      "bytes": 17383,
+      "parts": [
+        "primary-gate-first.part01.log"
+      ],
+      "resources": "run-heavy: done rc=101 35s | peak-RSS 1.58GiB | min-avail 23821MiB | peak-load 4.82"
+    },
+    "primary-feature-retry.log": {
+      "sha256": "22e4b198a22075056cfd8bca3fe4e463d0c831b43ab7e77729b333507d2d35bf",
+      "bytes": 8610,
+      "parts": [
+        "primary-feature-retry.part01.log"
+      ],
+      "resources": "run-heavy: done rc=0 35s | peak-RSS 1.49GiB | min-avail 24101MiB | peak-load 1.64"
+    }
+  },
+  "results": "Four focused tests pass each mode; tracked/untracked release all-target clippy, ARM/WASM/C-FFI check pass. First scope stopped at missing Rust1.99 ARM target after tracked tests and both lints; targets installed and complete feature recipe passed. No assertion changed."
+}
