@@ -27,6 +27,10 @@ test:
 test-cast-miri:
     cargo +nightly miri test -p rav1d-disjoint-mut --test cast_range_overflow
 
+# Pass --before/--after, revision labels, and one or more --stream arguments.
+bench-ab *args:
+    python3 scripts/perf/decoder_bench/ab_bench.py {{args}}
+
 # Download test vectors
 download-vectors:
     bash scripts/download-test-vectors.sh

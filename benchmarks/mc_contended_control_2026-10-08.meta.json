@@ -1,0 +1,9 @@
+{
+  "status": "incomplete; explicitly stopped because another job started using about 20 cores",
+  "machine": "r7900x",
+  "cpu": "Zen 4; not measured on Zen 5",
+  "purpose": "A-versus-A control for the preserved 5b51b144 untracked profile_ivf binary",
+  "command": "python3 scripts/perf/decoder_bench/ab_bench.py --before <5b51b144 untracked profile_ivf> --after <same binary> --before-rev 5b51b144 --after-rev 5b51b144 --stream <aom_real1080_96.ivf> --stream <aom_real4k_48.ivf> --stream <aom10_real1080.ivf> --threads 1,4",
+  "protocol": "run-heavy --mem 16G; default four rounds, three timed passes per invocation; frame delay 1; taskset CPU 8 for one thread and 8-15 for four threads",
+  "interpretation": "Two completed cases are retained. No optimization conclusion is supported: identical binaries gave a 2.224689394029788 median ratio in the four-thread case as host load rose. Missing completion marker is intentional. Remaining cases were not completed."
+}
