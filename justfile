@@ -23,6 +23,10 @@ test:
     cargo nextest run --no-default-features --features "bitdepth_8,bitdepth_16" --release
     cargo test --no-default-features --features "bitdepth_8,bitdepth_16" --release --doc
 
+# Cast-range overflow and valid-alignment controls under Stacked Borrows.
+test-cast-miri:
+    cargo +nightly miri test -p rav1d-disjoint-mut --test cast_range_overflow
+
 # Download test vectors
 download-vectors:
     bash scripts/download-test-vectors.sh

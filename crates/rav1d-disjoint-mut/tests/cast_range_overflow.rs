@@ -7,6 +7,7 @@
 use rav1d_disjoint_mut::DisjointMut;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
+use zerocopy::IntoBytes;
 
 fn panics(f: impl FnOnce()) -> bool {
     catch_unwind(AssertUnwindSafe(f)).is_err()
@@ -14,7 +15,10 @@ fn panics(f: impl FnOnce()) -> bool {
 
 #[test]
 fn huge_element_ranges_panic_instead_of_wrapping() {
-    let dm = DisjointMut::new(vec![0u8; 64]);
+    // Keep the same 64-byte extent, with valid alignment for the u32 casts.
+    // Otherwise a cast can panic on alignment before testing range overflow.
+    let mut storage = [0u32; 16];
+    let dm = DisjointMut::new(storage.as_mut_bytes());
     let big = usize::MAX / 4 + 1;
     assert!(panics(|| drop(dm.slice_as::<_, u32>(big..big + 1))));
     assert!(panics(|| drop(dm.mut_slice_as::<_, u32>(big..big + 1))));
@@ -29,7 +33,8 @@ fn huge_element_ranges_panic_instead_of_wrapping() {
 
 #[test]
 fn ordinary_element_ranges_still_work() {
-    let dm = DisjointMut::new(vec![0u8; 64]);
+    let mut storage = [0u32; 16];
+    let dm = DisjointMut::new(storage.as_mut_bytes());
     assert_eq!(dm.slice_as::<_, u32>(0..16).len(), 16);
     assert_eq!(dm.slice_as::<_, u32>(3..=5).len(), 3);
     assert_eq!(dm.slice_as::<_, u32>(..4).len(), 4);
