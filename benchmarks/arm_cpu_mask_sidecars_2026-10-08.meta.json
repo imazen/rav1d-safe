@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-08",
+  "cpu": "Neoverse-N1",
+  "rustc": "1.99.0",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "source_sha256": {
+    "src/safe_simd/mc_arm.rs": "0c9f55ddcae81dee9bb1d934ddc792290e8cca7c1de3c4aa9ceb472ddbc641ad",
+    "src/safe_simd/mc_arm_reference_tests.rs": "4c0a2fcee1c0e6551506117145e043bd5e1608b64f2ca3173596e655850f2ce3"
+  },
+  "commands": [
+    "just conformance-all-modes target/lead-signed-source-safe/release/examples/decode_md5 target/lead-signed-source-untracked/release/examples/decode_md5"
+  ],
+  "binaries_sha256": {
+    "tracked": "d23246330bd46410ce66a011a47cee065beb5d4c77d125a299cc334b1233b573",
+    "untracked": "d4cf563892707ee7a367adac9162c31a4cd511d53fc6fb726c383ca7e7cc3d0e"
+  },
+  "results": {
+    "legs_passed": 24,
+    "vectors_passed_per_leg": 803,
+    "excluded_per_leg": 149,
+    "modes": [
+      "tracked",
+      "untracked"
+    ],
+    "cpu_masks": [
+      "scalar",
+      "neon",
+      "native"
+    ],
+    "workers": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "delay": 0
+  },
+  "run_heavy": {
+    "exit_code": 0,
+    "seconds": 2763,
+    "peak_rss_gib": 0.24,
+    "min_available_mib": 26803,
+    "peak_load": 8.9,
+    "memory_limit": "16G",
+    "jobs": 12
+  },
+  "limits": "CPU-mask selection only: several ARM baseline dispatchers summon NEON independently of the CPU mask. These scalar-labelled legs do not establish fully scalar decoding. An explicit token-disabled scalar supplement is pending. No performance claim.",
+  "full_log_sha256": "f2d246576277439abe81954c184768d4def1e308580d024eba4b3b7d274c5f40",
+  "parts": [
+    {
+      "path": "benchmarks/arm_cpu_mask_sidecars_2026-10-08.part01.log",
+      "bytes": 23773,
+      "sha256": "f2d246576277439abe81954c184768d4def1e308580d024eba4b3b7d274c5f40"
+    }
+  ]
+}
