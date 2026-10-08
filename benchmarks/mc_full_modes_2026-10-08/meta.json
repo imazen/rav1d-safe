@@ -1,0 +1,67 @@
+{
+  "date": "2026-10-08",
+  "cpu": "AMD Ryzen 9 7900X (Zen 4)",
+  "rustc": "1.99.0 (b940084d7 2026-09-28)",
+  "experimental_test_revision": "ba3ad6ffd8dd8e823e5e4bdee549afbe9239bcfd",
+  "experimental_current_revision": "e8162a0d6bbae5543546f6f8532a651ac31e4a13",
+  "revision_delta": "Gate recipes only; all Rust source hashes unchanged",
+  "production_status": "Source candidate remains unpublished",
+  "command": "run-heavy --mem 16G --jobs 20 -- just test-all-modes",
+  "working_directory": "rav1d-safe--lead-mc",
+  "sources": {
+    "src/safe_simd/mc.rs": "5eef8c20ef03bb11d1c922cecb47727edf96ca7cf002bc162f33b3dddc8dc8db",
+    "src/safe_simd/mc_x86_8bpc_parity.rs": "40721492c782663f7898dc2c9507830a360828b3c9f9a00bcb2bcc3cb9fc0345",
+    "src/safe_simd/mod.rs": "52653e761e8074cfb32e4dd380da2d7e88c66a3105bdefc49682c7917b1b3dde",
+    "Cargo.toml": "4783d4fbde91e5a4278bb03bfaae8b16177a5bb26edcc11230bb368e52454042",
+    "Cargo.lock": "315a1c4b47dd38cbd8d855514f4bf446e515834393b934c4fe836f31b51b6ce6",
+    "examples/profile_ivf.rs": "fdae26bfe35781f98cedf4a757a2072f9c349e49a5fc5b9ebfabac6d6c7520b8"
+  },
+  "tracked": {
+    "executed": 237,
+    "passed": 237,
+    "preexisting_skipped": 18,
+    "nextest_seconds": 1115.177,
+    "doctests_passed": 10,
+    "preexisting_ignored_doctests": 13
+  },
+  "untracked": {
+    "executed": 220,
+    "passed": 220,
+    "preexisting_skipped": 18,
+    "nextest_seconds": 520.428,
+    "doctests_passed": 10,
+    "preexisting_ignored_doctests": 13
+  },
+  "resource_scope": {
+    "seconds": 1815,
+    "peak_rss_gib": 1.57,
+    "min_available_mib": 17529,
+    "peak_load": 13.53,
+    "rc": 0
+  },
+  "full_log_sha256": "37e8e23639029e6cb6839860968f7e0544d32f20dd3d9652fcd0491a2dcfcb15",
+  "parts": [
+    {
+      "path": "benchmarks/mc_full_modes_2026-10-08/full.part01.log",
+      "bytes": 27983,
+      "sha256": "a23518f6474f03ea3f626b4e58cea475ef820d9e8be9a86ad9b8878b2731c3bc"
+    },
+    {
+      "path": "benchmarks/mc_full_modes_2026-10-08/full.part02.log",
+      "bytes": 27847,
+      "sha256": "f0454a6933e61fb79aea0a1d6d5e9149fc0490c67c1bff82706903678de03cb4"
+    },
+    {
+      "path": "benchmarks/mc_full_modes_2026-10-08/full.part03.log",
+      "bytes": 27273,
+      "sha256": "1cfe8c4dfe345dcdfe64c4db3b6c50803dca229299d7938b5738b95355da79bd"
+    }
+  ],
+  "missing": [
+    "Explicit integration/threading gates still running",
+    "Both-mode actual-token 803-vector sidecar matrix",
+    "Cross/feature gate completion",
+    "Matched A/A and A/B throughput",
+    "Zen 5 unmeasured"
+  ]
+}

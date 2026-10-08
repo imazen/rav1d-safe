@@ -74,7 +74,7 @@ Full decoder/sidecar, cross-compile and matched timing gates remain pending.
 The pre-MC source also passes a suffix and unsigned row addresses to the
 V-only byte filter. An isolated source-address repair and the same reversed-row
 oracle are prepared on that baseline so its performance comparison can share
-the correctness repair. That independent baseline has not yet compiled or run.
+the correctness repair. [That independent baseline passes the unchanged signed-source oracle](MC_SOURCE_ROW_REVIEW.md) in 5.361 seconds; its focused before/after evidence is committed separately.
 No speed claim follows from either prepared source change.
 
 
@@ -91,3 +91,19 @@ peaks at 1.54 GiB RSS. [Before/after evidence and source hashes](../benchmarks/m
 record this AVX2 extent result. Dynamic AVX-512 inactive-row loads are
 unchanged. Full decoder/sidecar/feature gates and throughput remain missing. The previously validated
 signed-source snapshot remains preserved for comparison.
+
+## Full candidate suite, current dependency pin
+
+The candidate with signed-source and four-tap row repairs passes all 237
+executed tracked tests and all 220 executed untracked tests, including
+Argon coverage, generated threaded vectors, backpressure, CPU-tier sweeps
+and token permutations. Each mode retains eighteen pre-existing skipped
+tests; explicitly selected integration and threading gates remain pending.
+Each mode also passes ten active doctests, with thirteen pre-existing
+ignored doctests. [Full logs and source hashes](../benchmarks/mc_full_modes_2026-10-08/meta.json)
+record Rust 1.99 and archmage 0.9.30, including the exact MC source SHA.
+The 1,815-second scope peaks at 1.57 GiB RSS, minimum available 17,529 MiB,
+peak load 13.53, rc=0. These are correctness/resource observations.
+Production source remains unpublished. Completion of feature checks,
+the both-mode 803-vector sidecar matrix and matched A/A plus A/B timing
+are still required; no throughput benefit is established by the suite.
