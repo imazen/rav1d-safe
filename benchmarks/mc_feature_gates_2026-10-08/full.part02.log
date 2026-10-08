@@ -1,0 +1,291 @@
+[32;1m        PASS[0m [   0.003s] ( 87/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_simd_row_dct32_16rows_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 88/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_simd_row_dct8_16rows_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 89/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_transpose_8x8_i32_roundtrip[0m
+[32;1m        PASS[0m [   0.003s] ( 90/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_wht4_basic[0m
+[32;1m        PASS[0m [   0.003s] ( 91/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_wht4_token_permutations[0m
+[32;1m        PASS[0m [   0.003s] ( 92/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::mask_parity_tests[0m[36m::[0m[34;1mtest_loopfilter_packed16_exact_span[0m
+[32;1m        PASS[0m [   0.004s] ( 93/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::mask_parity_tests[0m[36m::[0m[34;1mtest_loopfilter_packed16_production_grouping[0m
+[32;1m        PASS[0m [   0.006s] ( 94/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::mask_parity_tests[0m[36m::[0m[34;1mtest_loopfilter_packed6_production_grouping[0m
+[32;1m        PASS[0m [   0.032s] ( 95/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::mask_parity_tests[0m[36m::[0m[34;1mtest_loopfilter_masks_match_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 96/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::tests[0m[36m::[0m[34;1mtest_iclip_diff[0m
+[32;1m        PASS[0m [   0.023s] ( 97/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::loopfilter::mask_parity_tests_16bpc[0m[36m::[0m[34;1mtest_loopfilter_16bpc_masks_match_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 98/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::looprestoration::tests[0m[36m::[0m[34;1mtest_max_restoration_width[0m
+[32;1m        PASS[0m [   0.003s] ( 99/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::looprestoration::tests[0m[36m::[0m[34;1mtest_rest_unit_stride[0m
+[32;1m        PASS[0m [   0.003s] (100/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::four_tap_vertical_rows[0m[36m::[0m[34;1mfour_tap_vertical_uses_only_active_rows[0m
+[32;1m        PASS[0m [   0.003s] (101/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::reference::tests[0m[36m::[0m[34;1mreference_window_reserves_its_full_hull_including_gaps[0m
+[32;1m        PASS[0m [   0.003s] (102/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::reference::tests[0m[36m::[0m[34;1mwarp_reference_windows_cover_both_strides_and_all_depths[0m
+[32;1m        PASS[0m [   0.003s] (103/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mmask_w_avg_8bpc_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] (104/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mtest_avg_8bpc_avx2_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] (105/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mtest_avg_token_permutations[0m
+[32;1m        PASS[0m [   0.003s] (106/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mtest_avg_varying_data[0m
+[32;1m        PASS[0m [   0.003s] (107/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mtest_mask_8bpc_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] (108/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mtest_w_avg_8bpc_avx2_matches_scalar[0m
+[32;1m        PASS[0m [   0.008s] (109/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mw_mask_16bpc_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.005s] (110/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mw_mask_8bpc_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.002s] (111/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::tests[0m[36m::[0m[34;1mwiden_row_16bpc_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] (112/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mpair_window_arithmetic_fits_i16_for_all_filter_rows[0m
+[32;1m        PASS[0m [   2.306s] (113/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::reference::tests[0m[36m::[0m[34;1mmc_reference_windows_cover_all_filters_phases_widths_and_depths[0m
+[32;1m        PASS[0m [  12.265s] (114/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mput_prep_8bpc_endpoint_and_tail_parity[0m
+[32;1m        PASS[0m [  14.961s] (115/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mput_prep_8bpc_full_domain_parity[0m
+[32;1m        PASS[0m [   0.079s] (116/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_prep_parity[0m[36m::[0m[34;1mprep_16bpc_matches_scalar[0m
+[32;1m        PASS[0m [   0.023s] (117/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_prep_parity[0m[36m::[0m[34;1mprep_8bpc_matches_scalar_control[0m
+[32;1m        PASS[0m [   0.081s] (118/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_prep_parity[0m[36m::[0m[34;1mput_16bpc_matches_scalar[0m
+[32;1m        PASS[0m [   0.004s] (119/120) [35;1mrav1d-safe[0m [36msrc::thread_task::grain_panic_tests[0m[36m::[0m[34;1mdelayed_grain_panic_preserves_live_worker_state[0m
+[32;1m        PASS[0m [   6.794s] (120/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mreversed_source_rows_match_scalar_for_all_8tap_filters[0m
+────────────
+[32;1m     Summary[0m [  19.809s] [1m120[0m tests run: [1m120[0m [32;1mpassed[0m, [1m0[0m [33;1mskipped[0m
+cargo test --profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib -- --test-threads 8
+[1m[92m    Finished[0m `release-thin` profile [optimized + debuginfo] target(s) in 0.04s
+[1m[92m     Running[0m unittests lib.rs (target/release-thin/deps/rav1d_safe-158b674bc1c0eb97)
+
+running 120 tests
+test include::dav1d::picture::row_guard_policy_tests::explicit_picture_policy_controls_gap_reservations_after_global_promotion ... ok
+test include::dav1d::picture::row_guard_policy_tests::for_rows_mut_never_reserves_an_inter_row_gap_when_tile_threading_is_on ... ok
+test include::dav1d::picture::tile_threading_latch_tests::set_tile_threading_is_monotone ... ok
+test src::decode_test::tests::decode_test_ivf ... ok
+test include::dav1d::picture::row_guard_policy_tests::compact_read_returns_picture_rows_top_down_on_a_negative_stride ... ok
+test include::dav1d::picture::row_guard_policy_tests::compact_read_fast_hull_starts_at_the_last_row_on_a_negative_stride ... ok
+test include::dav1d::picture::row_guard_policy_tests::narrow_guards_cover_the_block_on_a_negative_stride ... ok
+test src::error::errno_tests::errno_round_trips_on_this_platform ... ok
+test src::env::left_split_parity::trial_floor_is_not_vacuous ... ok
+test include::dav1d::picture::row_guard_policy_tests::narrow_guard_mut_reserves_exactly_the_block_hull_on_a_negative_stride ... ok
+test include::dav1d::picture::row_guard_policy_tests::for_rows_mut_reserves_the_strided_hull_when_tile_threading_is_off ... ok
+test include::dav1d::picture::row_guard_policy_tests::for_rows_visits_picture_rows_top_down_on_a_negative_stride ... ok
+test src::internal::task_ctx_size::task_context_stays_stack_light ... ok
+test src::loopfilter::compact_window::h_window_fits_the_transform_that_selected_it ... ok
+test src::loopfilter::compact_window::issue_524_h_window_stays_inside_its_picture_row ... ok
+test src::env::left_split_parity::sm_flag_left_matches_sm_flag ... ok
+test src::loopfilter::run_reach::run_reach_equals_the_widest_group_it_can_meet ... ok
+test src::loopfilter::run_reach::run_reach_fits_the_transform_that_selected_it ... ok
+test src::managed::frame_delay_tests::auto_frame_delay_is_two_with_workers_and_one_without ... ok
+test include::dav1d::picture::row_guard_policy_tests::live_block_keeps_its_storage_when_another_decoder_changes_threading ... ok
+test src::loopfilter::compact_window::issue_524_h_window_does_not_collide_with_the_next_rows_stitch ... ok
+test src::loopfilter::compact_window::issue_524_harness_detects_a_window_that_does_lap ... ok
+test src::managed::frame_delay_tests::decoder_context_count_follows_the_auto_rule ... ok
+test src::managed::frame_tile_tests::copied_picture_can_allocate_after_decoder_and_source_drop ... ok
+test src::env::left_split_parity::all_fifteen_helpers_match_the_pre_split_implementation ... ok
+test src::msac::tests::adapt4_matches_reference_at_interval_boundaries_and_short_slices ... ok
+test src::msac::tests::adapt4_matches_reference_through_refills_and_preserves_unused_cdf ... ok
+test src::managed::frame_tile_tests::single_tile_frames_keep_hull_guards_at_any_thread_count ... ok
+test src::filmgrain::row_tests::filmgrain_rows_match_scalar_10bit ... ok
+test src::owned_recon::ordinary_build_keeps_owned_recon_enabled ... ok
+test src::owned_recon::tests::a_row_above_the_band_panics_it_does_not_alias - should panic ... ok
+test src::owned_recon::tests::a_row_below_the_band_panics - should panic ... ok
+test src::owned_recon::tests::for_rows_mut_walks_the_bands_own_stride_not_the_pictures ... ok
+test src::owned_recon::tests::translation_is_plane_coordinates_minus_origin ... ok
+test src::safe_simd::cdef::tests_avx512::avx512_constrain_matches_avx2_and_scalar ... ok
+test src::safe_simd::ipred::v4x_dir_tests::cfl_ac_simd_matches_scalar ... ok
+test src::safe_simd::ipred::v4x_dir_tests::smooth_avx512_matches_avx2 ... ok
+test src::safe_simd::ipred::v4x_dir_tests::z1_v4x_matches_avx2 ... ok
+test src::safe_simd::ipred::v4x_dir_tests::z2_v4x_matches_avx2 ... ok
+test src::safe_simd::ipred::v4x_dir_tests::z3_v4x_matches_avx2 ... ok
+test src::safe_simd::itx::mixed_parity_tests::probe_rect4x16_row_pass ... ok
+test src::msac::tests::cdf_update_matches_directional_arithmetic_for_every_u16 ... ok
+test src::managed::frame_tile_tests::picture_policy_is_local_and_survives_decoder_lifetimes ... ok
+test src::filmgrain::row_tests::filmgrain_rows_match_scalar_12bit ... ok
+test src::managed::frame_tile_tests::serial_and_threaded_decoders_run_concurrently_with_local_policies ... ok
+test src::filmgrain::row_tests::filmgrain_rows_match_scalar_8bit ... ok
+test src::msac::tests::cdf_update_preserves_arithmetic_with_baseline_token_disabled ... ok
+test src::safe_simd::itx::mixed_parity_tests::test_mixed16_dispatch_cpu_permutations ... ok
+test src::safe_simd::itx::mixed_parity_tests::test_mixed16_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::mixed_parity_tests::test_mixed8_api_rejects_invalid_views_before_writing ... ok
+test src::safe_simd::itx::mixed_parity_tests::test_mixed8_dispatch_cpu_permutations ... ok
+test src::safe_simd::itx::mixed_parity_tests::test_mixed8_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::mixed_parity_tests::test_mixed_rect16x4_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::mixed_parity_tests::test_mixed_rect16x8_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::mixed_parity_tests::test_mixed_rect4x16_dispatch_matches_scalar ... ok
+test src::managed::frame_tile_tests::parallel_frame_tile_contexts_preserve_frames ... ok
+test src::safe_simd::itx::mixed_parity_tests::test_mixed_rect4x8_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::mixed_parity_tests::test_mixed_rect8x16_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::mixed_parity_tests::test_mixed_rect8x4_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::mixed_parity_tests::test_mixed_rect_dispatch_cpu_permutations ... ok
+test src::safe_simd::itx::mixed_parity_tests_16bpc::test_mixed_16bpc_rect16x8_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::mixed_parity_tests_16bpc::test_mixed_16bpc_rect4x16_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::mixed_parity_tests_16bpc::test_mixed_16bpc_16x16_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::mixed_parity_tests_16bpc::test_mixed_16bpc_4x4_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::mixed_parity_tests_16bpc::test_mixed_16bpc_8x8_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::mixed_parity_tests_16bpc::test_mixed_16bpc_dispatch_cpu_permutations ... ok
+test src::safe_simd::itx::mixed_parity_tests_16bpc::test_mixed_16bpc_rect16x4_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::mixed_parity_tests_16bpc::test_mixed_16bpc_rect4x8_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::mixed_parity_tests_16bpc::test_mixed_16bpc_rect8x16_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::mixed_parity_tests_16bpc::test_mixed_16bpc_rect8x4_dispatch_matches_scalar ... ok
+test src::safe_simd::itx::tests::test_dct16_col_pass_i16_matches_existing ... ok
+test src::safe_simd::itx::tests::test_dct16_col_pass_i16_vs_mullo_direct ... ok
+test src::safe_simd::itx::tests::test_dct16_row_pass_i16_simd_matches_scalar ... ok
+test src::safe_simd::itx::tests::test_dct16_tx64_cols8_matches_scalar ... ok
+test src::safe_simd::itx::tests::test_dct32_row_pass_i16_simd_matches_scalar ... ok
+test src::safe_simd::itx::tests::test_dct32_row_pass_i16_simd_sparse_batches ... ok
+test src::safe_simd::itx::tests::test_dct32_tx64_cols8_matches_scalar ... ok
+test src::safe_simd::itx::tests::test_dct4_cols_avx512_matches_scalar ... ok
+test src::safe_simd::itx::tests::test_dct_scalar_reference_helpers_are_deterministic ... ok
+test src::safe_simd::itx::tests::test_dct64_cols8_matches_scalar ... ok
+test src::safe_simd::itx::tests::test_dct8_col_pass_i16_matches_i32_col_pass ... ok
+test src::safe_simd::itx::tests::test_dct8_cols_avx512_matches_scalar ... ok
+test src::safe_simd::itx::tests::test_dct8_row_pass_i16_simd_matches_scalar ... ok
+test src::safe_simd::itx::tests::test_identity_cols_avx512_matches_scalar ... ok
+test src::safe_simd::itx::tests::test_simd_row_dct32_16rows_matches_scalar ... ok
+test src::safe_simd::itx::tests::test_itx_mul2x_pack_matches_scalar ... ok
+test src::safe_simd::itx::tests::test_simd_row_dct16_16rows_matches_scalar ... ok
+test src::safe_simd::itx::tests::test_transpose_8x8_i32_roundtrip ... ok
+test src::safe_simd::itx::tests::test_simd_row_dct8_16rows_matches_scalar ... ok
+test src::safe_simd::itx::tests::test_wht4_basic ... ok
+test src::safe_simd::itx::tests::test_wht4_token_permutations ... ok
+test src::safe_simd::loopfilter::tests::test_iclip_diff ... ok
+test src::safe_simd::looprestoration::tests::test_max_restoration_width ... ok
+test src::safe_simd::looprestoration::tests::test_rest_unit_stride ... ok
+test src::safe_simd::mc::reference::tests::reference_window_reserves_its_full_hull_including_gaps ... ok
+test src::safe_simd::loopfilter::mask_parity_tests::test_loopfilter_masks_match_scalar ... ok
+test src::safe_simd::loopfilter::mask_parity_tests::test_loopfilter_packed16_exact_span ... ok
+test src::safe_simd::loopfilter::mask_parity_tests::test_loopfilter_packed16_production_grouping ... ok
+test src::safe_simd::loopfilter::mask_parity_tests::test_loopfilter_packed6_production_grouping ... ok
+test src::safe_simd::mc::tests::test_avg_varying_data ... ok
+test src::safe_simd::mc::tests::test_mask_8bpc_matches_scalar ... ok
+test src::safe_simd::mc::tests::test_w_avg_8bpc_avx2_matches_scalar ... ok
+test src::safe_simd::loopfilter::mask_parity_tests_16bpc::test_loopfilter_16bpc_masks_match_scalar ... ok
+test src::safe_simd::mc::four_tap_vertical_rows::four_tap_vertical_uses_only_active_rows ... ok
+test src::safe_simd::mc::reference::tests::mc_reference_windows_cover_all_filters_phases_widths_and_depths ... ok
+test src::safe_simd::mc_x86_8bpc_parity::pair_window_arithmetic_fits_i16_for_all_filter_rows ... ok
+test src::safe_simd::mc::reference::tests::warp_reference_windows_cover_both_strides_and_all_depths ... ok
+test src::safe_simd::mc::tests::mask_w_avg_8bpc_simd_matches_scalar ... ok
+test src::safe_simd::mc::tests::test_avg_8bpc_avx2_matches_scalar ... ok
+test src::safe_simd::mc::tests::w_mask_16bpc_simd_matches_scalar ... ok
+test src::safe_simd::mc::tests::test_avg_token_permutations ... ok
+test src::safe_simd::mc::tests::widen_row_16bpc_simd_matches_scalar ... ok
+test src::thread_task::grain_panic_tests::delayed_grain_panic_preserves_live_worker_state ... ok
+test src::safe_simd::mc::tests::w_mask_8bpc_simd_matches_scalar ... ok
+test src::safe_simd::mc_x86_8bpc_parity::put_prep_8bpc_endpoint_and_tail_parity ... ok
+test src::safe_simd::mc_x86_8bpc_parity::put_prep_8bpc_full_domain_parity ... ok
+test src::safe_simd::mc_x86_8bpc_parity::reversed_source_rows_match_scalar_for_all_8tap_filters ... ok
+test src::safe_simd::mc_x86_prep_parity::prep_16bpc_matches_scalar ... ok
+test src::safe_simd::mc_x86_prep_parity::prep_8bpc_matches_scalar_control ... ok
+test src::safe_simd::mc_x86_prep_parity::put_16bpc_matches_scalar ... ok
+
+test result: ok. 120 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 36.61s
+
+just clippy-untracked
+cargo clippy --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --all-targets -- -D warnings
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-mc)
+[1m[92m    Checking[0m rav1d-disjoint-mut v0.4.0 (/home/lilith/work/zen/rav1d-safe--lead-mc/crates/rav1d-disjoint-mut)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 6.15s
+just test-mc-pair-windows bitdepth_8,bitdepth_16,c-ffi
+cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16,c-ffi" --lib -E 'test(mc_x86_8bpc_parity) | test(four_tap_vertical_uses_only_active_rows)' --test-threads 1
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-mc)
+[1m[92m    Finished[0m `release-thin` profile [optimized + debuginfo] target(s) in 13.22s
+────────────
+[32;1m Nextest run[0m ID [1m5dd8964d-6ae5-4c87-9caf-6003980833cf[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m4[0m tests across [1m1[0m binary ([1m71[0m tests [33;1mskipped[0m)
+[32;1m        PASS[0m [   0.003s] (1/4) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc::four_tap_vertical_rows[0m[36m::[0m[34;1mfour_tap_vertical_uses_only_active_rows[0m
+[32;1m        PASS[0m [   0.003s] (2/4) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mpair_window_arithmetic_fits_i16_for_all_filter_rows[0m
+[32;1m        PASS[0m [   1.351s] (3/4) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mput_prep_8bpc_endpoint_and_tail_parity[0m
+[32;1m        PASS[0m [   1.322s] (4/4) [35;1mrav1d-safe[0m [36msrc::safe_simd::mc_x86_8bpc_parity[0m[36m::[0m[34;1mput_prep_8bpc_full_domain_parity[0m
+────────────
+[32;1m     Summary[0m [   2.680s] [1m4[0m tests run: [1m4[0m [32;1mpassed[0m, [1m71[0m [33;1mskipped[0m
+just test-integration-selection test-vectors bitdepth_8,bitdepth_16
+RAV1D_TEST_VECTORS="test-vectors" cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --test integration_decode --run-ignored all --test-threads 2
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 0.05s
+────────────
+[32;1m Nextest run[0m ID [1mf6b84c0f-3a89-41d1-a270-8c87a6fda7d6[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m9[0m tests across [1m1[0m binary
+[32;1m        PASS[0m [   0.212s] (1/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_12bit_vectors[0m
+[32;1m        PASS[0m [   0.508s] (2/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_10bit_vectors[0m
+[32;1m        PASS[0m [   6.782s] (3/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_8bit_vectors[0m
+[32;1m        PASS[0m [   0.005s] (4/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_hdr_metadata[0m
+[32;1m        PASS[0m [   0.004s] (5/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_real_bitstream[0m
+[32;1m        PASS[0m [   0.003s] (6/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_ivf_parser[0m
+[32;1m        PASS[0m [   0.024s] (7/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_obmc_blend_h_regression_00000327[0m
+[32;1m        PASS[0m [   0.024s] (8/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_obmc_blend_v_regression_00000315[0m
+[32;1m        PASS[0m [   8.805s] (9/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_vectors_comprehensive[0m
+────────────
+[32;1m     Summary[0m [   9.314s] [1m9[0m tests run: [1m9[0m [32;1mpassed[0m, [1m0[0m [33;1mskipped[0m
+just test-integration-selection test-vectors bitdepth_8,bitdepth_16,untracked
+RAV1D_TEST_VECTORS="test-vectors" cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --test integration_decode --run-ignored all --test-threads 2
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 0.05s
+────────────
+[32;1m Nextest run[0m ID [1m849bc26e-81df-478d-8196-c00da383301d[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m9[0m tests across [1m1[0m binary
+[32;1m        PASS[0m [   0.188s] (1/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_12bit_vectors[0m
+[32;1m        PASS[0m [   0.282s] (2/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_10bit_vectors[0m
+[32;1m        PASS[0m [   4.123s] (3/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_8bit_vectors[0m
+[32;1m        PASS[0m [   0.005s] (4/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_hdr_metadata[0m
+[32;1m        PASS[0m [   0.005s] (5/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_real_bitstream[0m
+[32;1m        PASS[0m [   0.004s] (6/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_ivf_parser[0m
+[32;1m        PASS[0m [   0.021s] (7/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_obmc_blend_h_regression_00000327[0m
+[32;1m        PASS[0m [   0.022s] (8/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_obmc_blend_v_regression_00000315[0m
+[32;1m        PASS[0m [   5.652s] (9/9) [35;1mrav1d-safe::integration_decode[0m [34;1mtest_decode_all_vectors_comprehensive[0m
+────────────
+[32;1m     Summary[0m [   5.934s] [1m9[0m tests run: [1m9[0m [32;1mpassed[0m, [1m0[0m [33;1mskipped[0m
+just test-threading-races bitdepth_8,bitdepth_16
+cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --test decode_concurrent_md5
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 0.05s
+────────────
+[32;1m Nextest run[0m ID [1mbd4d3877-b236-43a5-ba78-034f3e7d727a[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m1[0m test across [1m1[0m binary
+[32;1m        PASS[0m [   0.029s] (1/1) [35;1mrav1d-safe::decode_concurrent_md5[0m [34;1msimultaneous_single_and_multi_thread_decoders_match_reference_md5[0m
+────────────
+[32;1m     Summary[0m [   0.029s] [1m1[0m test run: [1m1[0m [32;1mpassed[0m, [1m0[0m [33;1mskipped[0m
+cargo test --release --no-default-features --features "bitdepth_8,bitdepth_16" --test tile_threading_overlap -- --ignored --test-threads 1
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 0.05s
+[1m[92m     Running[0m tests/tile_threading_overlap.rs (target/release/deps/tile_threading_overlap-f39db1f5ed22dc91)
+
+running 3 tests
+test multi_threaded_cdef_lpf_race ... ok
+test multi_threaded_tile_overlap ... ok
+test single_threaded_no_panic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.45s
+
+cargo test --release --no-default-features --features "bitdepth_8,bitdepth_16,__test_induce_worker_panic" --test worker_panic_recovery -- --ignored --test-threads 1
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-mc)
+[1m[33mwarning[0m[1m: type `Rav1dTaskContextTaskThread` is more private than the item `rav1d_worker_task`[0m
+    [1m[94m--> [0msrc/thread_task.rs:899:1
+     [1m[94m|[0m
+[1m[94m 899[0m [1m[94m|[0m pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
+     [1m[94m|[0m [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m [1m[33mfunction `rav1d_worker_task` is reachable at visibility `pub`[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: but type `Rav1dTaskContextTaskThread` is only usable at visibility `pub(crate)`
+    [1m[94m--> [0msrc/internal.rs:1341:1
+     [1m[94m|[0m
+[1m[94m1341[0m [1m[94m|[0m pub(crate) struct Rav1dTaskContextTaskThread {
+     [1m[94m|[0m [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+     [1m[94m= [0m[1mnote[0m: `#[warn(private_interfaces)]` on by default
+
+[1m[33mwarning[0m: `rav1d-safe` (lib) generated 1 warning
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 25.32s
+[1m[92m     Running[0m tests/worker_panic_recovery.rs (target/release/deps/worker_panic_recovery-914b562dbc3c230f)
+
+running 2 tests
+test worker_panic_fails_decode_instead_of_hanging ... ok
+test worker_panic_poisons_decoder_but_not_process ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+just test-threading-races bitdepth_8,bitdepth_16,untracked
+cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --test decode_concurrent_md5
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 0.05s
+────────────
+[32;1m Nextest run[0m ID [1m6918496d-5508-4714-8938-acadb22b21b0[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m1[0m test across [1m1[0m binary
+[32;1m        PASS[0m [   0.026s] (1/1) [35;1mrav1d-safe::decode_concurrent_md5[0m [34;1msimultaneous_single_and_multi_thread_decoders_match_reference_md5[0m
+────────────
+[32;1m     Summary[0m [   0.026s] [1m1[0m test run: [1m1[0m [32;1mpassed[0m, [1m0[0m [33;1mskipped[0m
+cargo test --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --test tile_threading_overlap -- --ignored --test-threads 1
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 0.04s
+[1m[92m     Running[0m tests/tile_threading_overlap.rs (target/release/deps/tile_threading_overlap-b6788ffc9b3883f6)
+
+running 3 tests
+test multi_threaded_cdef_lpf_race ... ok
+test multi_threaded_tile_overlap ... ok
+test single_threaded_no_panic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.35s
+
+cargo test --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked,__test_induce_worker_panic" --test worker_panic_recovery -- --ignored --test-threads 1
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-mc)
+[1m[33mwarning[0m[1m: type `Rav1dTaskContextTaskThread` is more private than the item `rav1d_worker_task`[0m
+    [1m[94m--> [0msrc/thread_task.rs:899:1
+     [1m[94m|[0m
+[1m[94m 899[0m [1m[94m|[0m pub fn rav1d_worker_task(task_thread: Arc<Rav1dTaskContextTaskThread>) {
+     [1m[94m|[0m [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m [1m[33mfunction `rav1d_worker_task` is reachable at visibility `pub`[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: but type `Rav1dTaskContextTaskThread` is only usable at visibility `pub(crate)`
+    [1m[94m--> [0msrc/internal.rs:1341:1

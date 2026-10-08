@@ -1,0 +1,16 @@
+     [1m[94m|[0m
+[1m[94m1341[0m [1m[94m|[0m pub(crate) struct Rav1dTaskContextTaskThread {
+     [1m[94m|[0m [1m[92m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+     [1m[94m= [0m[1mnote[0m: `#[warn(private_interfaces)]` on by default
+
+[1m[33mwarning[0m: `rav1d-safe` (lib) generated 1 warning
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 23.86s
+[1m[92m     Running[0m tests/worker_panic_recovery.rs (target/release/deps/worker_panic_recovery-74a33f766b0a92c8)
+
+running 2 tests
+test worker_panic_fails_decode_instead_of_hanging ... ok
+test worker_panic_poisons_decoder_but_not_process ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+run-heavy: done rc=0 192s | peak-RSS 1.62GiB | min-avail 24421MiB | peak-load 3.84

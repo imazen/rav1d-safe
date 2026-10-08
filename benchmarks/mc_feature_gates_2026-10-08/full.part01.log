@@ -1,0 +1,337 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=26050MiB :: just check-mc-final
+just check-lead-ci
+cargo clippy --release --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings
+[1m[92m    Checking[0m cfg-if v1.0.4
+[1m[92m    Checking[0m bitflags v2.13.1
+[1m[92m    Checking[0m linux-raw-sys v0.12.1
+[1m[92m    Checking[0m memchr v2.8.3
+[1m[92m    Checking[0m itoa v1.0.18
+[1m[92m    Checking[0m utf8parse v0.2.2
+[1m[92m    Checking[0m stable_deref_trait v1.2.1
+[1m[92m    Checking[0m anstyle-query v1.1.5
+[1m[92m    Checking[0m is_terminal_polyfill v1.70.2
+[1m[92m    Checking[0m colorchoice v1.0.5
+[1m[92m    Checking[0m anstyle v1.0.14
+[1m[92m    Checking[0m libc v0.2.189
+[1m[92m    Checking[0m serde_core v1.0.229
+[1m[92m    Checking[0m clap_lex v1.1.0
+[1m[92m    Checking[0m bitflags v1.3.2
+[1m[92m    Checking[0m strsim v0.11.1
+[1m[92m    Checking[0m scopeguard v1.2.0
+[1m[92m    Checking[0m zerocopy v0.8.56
+[1m[92m    Checking[0m bytemuck v1.25.2
+[1m[92m    Checking[0m anstyle-parse v1.0.0
+[1m[92m    Checking[0m equator v0.4.2
+[1m[92m    Checking[0m zmij v1.0.23
+[1m[92m    Checking[0m arrayvec v0.7.8
+[1m[92m    Checking[0m smallvec v1.16.0
+[1m[92m    Checking[0m enough v0.4.4
+[1m[92m    Checking[0m whereat v0.1.5
+[1m[92m    Checking[0m uuid v1.26.1
+[1m[92m    Checking[0m lock_api v0.4.14
+[1m[92m    Checking[0m once_cell v1.21.4
+[1m[92m    Checking[0m log v0.4.34
+[1m[92m    Checking[0m memoffset v0.6.5
+[1m[92m    Checking[0m as-slice v0.2.1
+[1m[92m    Checking[0m hashbrown v0.17.1
+[1m[92m    Checking[0m anstream v1.0.0
+[1m[92m    Checking[0m adler2 v2.0.1
+[1m[92m    Checking[0m gimli v0.32.3
+[1m[92m    Checking[0m rustc-demangle v0.1.28
+[1m[92m    Checking[0m equivalent v1.0.2
+[1m[92m    Checking[0m aligned v0.4.3
+[1m[92m    Checking[0m miniz_oxide v0.8.9
+[1m[92m    Checking[0m num-format v0.4.4
+[1m[92m    Checking[0m cpp_demangle v0.4.5
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-mc)
+[1m[92m    Checking[0m aligned-vec v0.6.4
+[1m[92m    Checking[0m almost-enough v0.4.4
+[1m[92m    Checking[0m rgb v0.8.53
+[1m[92m    Checking[0m fastrand v2.5.0
+[1m[92m    Checking[0m lazy_static v1.5.0
+[1m[92m    Checking[0m debugid v0.8.0
+[1m[92m    Checking[0m str_stack v0.1.1
+[1m[92m    Checking[0m spin v0.12.3
+[1m[92m    Checking[0m rustix v1.1.4
+[1m[92m    Checking[0m safe_unaligned_simd v0.2.5
+[1m[92m    Checking[0m zenpixels v0.2.16
+[1m[92m    Checking[0m colored v2.2.0
+[1m[92m    Checking[0m thiserror v2.0.21
+[1m[92m    Checking[0m strum v0.28.0
+[1m[92m    Checking[0m atomig v0.4.3
+[1m[92m    Checking[0m thiserror v1.0.69
+[1m[92m    Checking[0m spin v0.10.1
+[1m[92m    Checking[0m likely_stable v0.1.3
+[1m[92m    Checking[0m num-traits v0.2.19
+[1m[92m    Checking[0m anyhow v1.0.104
+[1m[92m    Checking[0m raw-cpuid v11.6.0
+[1m[92m    Checking[0m quick-xml v0.26.0
+[1m[92m    Checking[0m object v0.37.3
+[1m[92m    Checking[0m archmage v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m    Checking[0m bitreader v0.3.11
+[1m[92m    Checking[0m glob-match v0.2.1
+[1m[92m    Checking[0m assert_matches v1.5.0
+[1m[92m    Checking[0m leb128 v0.2.7
+[1m[92m    Checking[0m regex-lite v0.1.9
+[1m[92m    Checking[0m condtype v1.3.0
+[1m[92m    Checking[0m fallible_collections v0.5.2
+[1m[92m    Checking[0m to_method v1.1.0
+[1m[92m    Checking[0m byteorder v1.5.0
+[1m[92m    Checking[0m md5 v0.8.1
+[1m[92m    Checking[0m indexmap v2.14.2
+[1m[92m    Checking[0m zencodec v0.1.26
+[1m[92m    Checking[0m getrandom v0.2.17
+[1m[92m    Checking[0m memmap2 v0.9.11
+[1m[92m    Checking[0m getrandom v0.3.4
+[1m[92m    Checking[0m parking_lot_core v0.9.12
+[1m[92m    Checking[0m is-terminal v0.4.17
+[1m[92m    Checking[0m nix v0.23.2
+[1m[92m    Checking[0m getrandom v0.4.3
+[1m[92m    Checking[0m findshlibs v0.10.2
+[1m[92m    Checking[0m sysinfo v0.36.1
+[1m[92m    Checking[0m nix v0.26.4
+[1m[92m    Checking[0m zenavif-parse v0.6.2
+[1m[92m    Checking[0m symbolic-common v12.18.3
+[1m[92m    Checking[0m rand_core v0.6.4
+[1m[92m    Checking[0m parking_lot v0.12.5
+[1m[92m    Checking[0m symbolic-demangle v12.18.3
+[1m[92m    Checking[0m serde v1.0.229
+[1m[92m    Checking[0m serde_json v1.0.151
+[1m[92m    Checking[0m addr2line v0.25.1
+[1m[92m    Checking[0m terminal_size v0.4.4
+[1m[92m    Checking[0m fs4 v1.1.0
+[1m[92m    Checking[0m tempfile v3.27.0
+[1m[92m    Checking[0m clap_builder v4.6.6
+[1m[92m    Checking[0m jsonrpc-types v0.3.3
+[1m[92m    Checking[0m backtrace v0.3.76
+[1m[92m    Checking[0m ppv-lite86 v0.2.21
+[1m[92m    Checking[0m ahash v0.8.12
+[1m[92m    Checking[0m rav1d-disjoint-mut v0.4.0 (/home/lilith/work/zen/rav1d-safe--lead-mc/crates/rav1d-disjoint-mut)
+[1m[92m    Checking[0m clap v4.6.6
+[1m[92m    Checking[0m zenbench v0.1.9
+[1m[92m    Checking[0m divan v0.1.21
+[1m[92m    Checking[0m inferno v0.11.21
+[1m[92m    Checking[0m rand_chacha v0.3.1
+[1m[92m    Checking[0m rand v0.8.8
+[1m[92m    Checking[0m pprof v0.15.0
+[1m[92m    Checking[0m shared_memory v0.12.4
+[1m[92m    Checking[0m tango-bench v0.8.0
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 8.55s
+cargo check --target aarch64-unknown-linux-gnu --no-default-features --features "bitdepth_8,bitdepth_16"
+[1m[92m   Compiling[0m proc-macro2 v1.0.107
+[1m[92m   Compiling[0m unicode-ident v1.0.24
+[1m[92m   Compiling[0m quote v1.0.47
+[1m[92m   Compiling[0m libc v0.2.189
+[1m[92m   Compiling[0m semver v1.0.28
+[1m[92m   Compiling[0m log v0.4.34
+[1m[92m   Compiling[0m zerocopy v0.8.56
+[1m[92m    Checking[0m stable_deref_trait v1.2.1
+[1m[92m   Compiling[0m shlex v2.0.1
+[1m[92m   Compiling[0m find-msvc-tools v0.1.12
+[1m[92m   Compiling[0m parking_lot_core v0.9.12
+[1m[92m    Checking[0m scopeguard v1.2.0
+[1m[92m   Compiling[0m paste v1.0.15
+[1m[92m   Compiling[0m heck v0.5.0
+[1m[92m    Checking[0m smallvec v1.16.0
+[1m[92m    Checking[0m cfg-if v1.0.4
+[1m[92m    Checking[0m safe_unaligned_simd v0.2.5
+[1m[92m    Checking[0m spin v0.12.3
+[1m[92m    Checking[0m bitflags v2.13.1
+[1m[92m    Checking[0m assert_matches v1.5.0
+[1m[92m    Checking[0m as-slice v0.2.1
+[1m[92m    Checking[0m lock_api v0.4.14
+[1m[92m    Checking[0m aligned v0.4.3
+[1m[92m    Checking[0m to_method v1.1.0
+[1m[92m    Checking[0m enough v0.4.4
+[1m[92m    Checking[0m whereat v0.1.5
+[1m[92m   Compiling[0m cc v1.4.5
+[1m[92m   Compiling[0m rustc_version v0.4.1
+[1m[92m    Checking[0m raw-cpuid v11.6.0
+[1m[92m   Compiling[0m likely_stable v0.1.3
+[1m[92m   Compiling[0m syn v2.0.119
+[1m[92m   Compiling[0m syn v3.0.6
+[1m[92m   Compiling[0m jobserver v0.1.35
+[1m[92m    Checking[0m parking_lot v0.12.5
+[1m[92m   Compiling[0m nasm-rs v0.3.2
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-mc)
+[1m[92m   Compiling[0m equator-macro v0.4.2
+[1m[92m   Compiling[0m zerocopy-derive v0.8.56
+[1m[92m   Compiling[0m strum_macros v0.28.0
+[1m[92m   Compiling[0m atomig-macro v0.4.0
+[1m[92m    Checking[0m atomig v0.4.3
+[1m[92m   Compiling[0m archmage-macros v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m    Checking[0m equator v0.4.2
+[1m[92m    Checking[0m aligned-vec v0.6.4
+[1m[92m    Checking[0m archmage v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m    Checking[0m strum v0.28.0
+[1m[92m    Checking[0m rav1d-disjoint-mut v0.4.0 (/home/lilith/work/zen/rav1d-safe--lead-mc/crates/rav1d-disjoint-mut)
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 7.86s
+cargo check --target wasm32-unknown-unknown --no-default-features --features "bitdepth_8,bitdepth_16"
+[1m[92m    Checking[0m stable_deref_trait v1.2.1
+[1m[92m    Checking[0m scopeguard v1.2.0
+[1m[92m    Checking[0m smallvec v1.16.0
+[1m[92m    Checking[0m cfg-if v1.0.4
+[1m[92m    Checking[0m safe_unaligned_simd v0.2.5
+[1m[92m    Checking[0m spin v0.12.3
+[1m[92m    Checking[0m bitflags v2.13.1
+[1m[92m    Checking[0m to_method v1.1.0
+[1m[92m    Checking[0m assert_matches v1.5.0
+[1m[92m    Checking[0m enough v0.4.4
+[1m[92m    Checking[0m whereat v0.1.5
+[1m[92m   Compiling[0m parking_lot_core v0.9.12
+[1m[92m   Compiling[0m zerocopy v0.8.56
+[1m[92m   Compiling[0m likely_stable v0.1.3
+[1m[92m    Checking[0m as-slice v0.2.1
+[1m[92m    Checking[0m equator v0.4.2
+[1m[92m    Checking[0m lock_api v0.4.14
+[1m[92m    Checking[0m atomig v0.4.3
+[1m[92m    Checking[0m strum v0.28.0
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-mc)
+[1m[92m    Checking[0m aligned v0.4.3
+[1m[92m    Checking[0m archmage v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m    Checking[0m raw-cpuid v11.6.0
+[1m[92m    Checking[0m aligned-vec v0.6.4
+[1m[92m    Checking[0m parking_lot v0.12.5
+[1m[92m    Checking[0m rav1d-disjoint-mut v0.4.0 (/home/lilith/work/zen/rav1d-safe--lead-mc/crates/rav1d-disjoint-mut)
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 4.81s
+cargo check --no-default-features --features "bitdepth_8,bitdepth_16,c-ffi"
+[1m[92m   Compiling[0m proc-macro2 v1.0.107
+[1m[92m   Compiling[0m quote v1.0.47
+[1m[92m   Compiling[0m unicode-ident v1.0.24
+[1m[92m   Compiling[0m libc v0.2.189
+[1m[92m   Compiling[0m semver v1.0.28
+[1m[92m   Compiling[0m parking_lot_core v0.9.12
+[1m[92m   Compiling[0m zerocopy v0.8.56
+[1m[92m   Compiling[0m find-msvc-tools v0.1.12
+[1m[92m    Checking[0m stable_deref_trait v1.2.1
+[1m[92m   Compiling[0m log v0.4.34
+[1m[92m   Compiling[0m shlex v2.0.1
+[1m[92m   Compiling[0m heck v0.5.0
+[1m[92m   Compiling[0m paste v1.0.15
+[1m[92m    Checking[0m cfg-if v1.0.4
+[1m[92m    Checking[0m smallvec v1.16.0
+[1m[92m    Checking[0m scopeguard v1.2.0
+[1m[92m    Checking[0m safe_unaligned_simd v0.2.5
+[1m[92m    Checking[0m bitflags v2.13.1
+[1m[92m    Checking[0m spin v0.12.3
+[1m[92m    Checking[0m assert_matches v1.5.0
+[1m[92m    Checking[0m as-slice v0.2.1
+[1m[92m    Checking[0m to_method v1.1.0
+[1m[92m    Checking[0m enough v0.4.4
+[1m[92m    Checking[0m aligned v0.4.3
+[1m[92m    Checking[0m whereat v0.1.5
+[1m[92m   Compiling[0m cc v1.4.5
+[1m[92m    Checking[0m lock_api v0.4.14
+[1m[92m   Compiling[0m rustc_version v0.4.1
+[1m[92m    Checking[0m raw-cpuid v11.6.0
+[1m[92m   Compiling[0m likely_stable v0.1.3
+[1m[92m   Compiling[0m syn v2.0.119
+[1m[92m   Compiling[0m syn v3.0.6
+[1m[92m   Compiling[0m jobserver v0.1.35
+[1m[92m    Checking[0m parking_lot v0.12.5
+[1m[92m   Compiling[0m nasm-rs v0.3.2
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-mc)
+[1m[92m   Compiling[0m equator-macro v0.4.2
+[1m[92m   Compiling[0m zerocopy-derive v0.8.56
+[1m[92m   Compiling[0m strum_macros v0.28.0
+[1m[92m   Compiling[0m atomig-macro v0.4.0
+[1m[92m   Compiling[0m archmage-macros v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m    Checking[0m atomig v0.4.3
+[1m[92m    Checking[0m equator v0.4.2
+[1m[92m    Checking[0m aligned-vec v0.6.4
+[1m[92m    Checking[0m archmage v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m    Checking[0m strum v0.28.0
+[1m[92m    Checking[0m rav1d-disjoint-mut v0.4.0 (/home/lilith/work/zen/rav1d-safe--lead-mc/crates/rav1d-disjoint-mut)
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 9.10s
+cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib --test-threads 2
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-mc)
+[1m[92m    Finished[0m `release-thin` profile [optimized + debuginfo] target(s) in 13.55s
+────────────
+[32;1m Nextest run[0m ID [1mca619f06-5edb-4d75-99ab-facc7ed98ccc[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m120[0m tests across [1m1[0m binary
+[32;1m        PASS[0m [   0.004s] (  1/120) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mcompact_read_fast_hull_starts_at_the_last_row_on_a_negative_stride[0m
+[32;1m        PASS[0m [   0.004s] (  2/120) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mcompact_read_returns_picture_rows_top_down_on_a_negative_stride[0m
+[32;1m        PASS[0m [   0.003s] (  3/120) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mexplicit_picture_policy_controls_gap_reservations_after_global_promotion[0m
+[32;1m        PASS[0m [   0.003s] (  4/120) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mfor_rows_mut_never_reserves_an_inter_row_gap_when_tile_threading_is_on[0m
+[32;1m        PASS[0m [   0.004s] (  5/120) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mfor_rows_mut_reserves_the_strided_hull_when_tile_threading_is_off[0m
+[32;1m        PASS[0m [   0.004s] (  6/120) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mfor_rows_visits_picture_rows_top_down_on_a_negative_stride[0m
+[32;1m        PASS[0m [   0.004s] (  7/120) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mnarrow_guard_mut_reserves_exactly_the_block_hull_on_a_negative_stride[0m
+[32;1m        PASS[0m [   0.005s] (  8/120) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mlive_block_keeps_its_storage_when_another_decoder_changes_threading[0m
+[32;1m        PASS[0m [   0.003s] (  9/120) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::tile_threading_latch_tests[0m[36m::[0m[34;1mset_tile_threading_is_monotone[0m
+[32;1m        PASS[0m [   0.004s] ( 10/120) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::row_guard_policy_tests[0m[36m::[0m[34;1mnarrow_guards_cover_the_block_on_a_negative_stride[0m
+[32;1m        PASS[0m [   0.003s] ( 11/120) [35;1mrav1d-safe[0m [36msrc::decode_test::tests[0m[36m::[0m[34;1mdecode_test_ivf[0m
+[32;1m        PASS[0m [   0.004s] ( 12/120) [35;1mrav1d-safe[0m [36msrc::env::left_split_parity[0m[36m::[0m[34;1msm_flag_left_matches_sm_flag[0m
+[32;1m        PASS[0m [   0.003s] ( 13/120) [35;1mrav1d-safe[0m [36msrc::env::left_split_parity[0m[36m::[0m[34;1mtrial_floor_is_not_vacuous[0m
+[32;1m        PASS[0m [   0.004s] ( 14/120) [35;1mrav1d-safe[0m [36msrc::error::errno_tests[0m[36m::[0m[34;1merrno_round_trips_on_this_platform[0m
+[32;1m        PASS[0m [   0.021s] ( 15/120) [35;1mrav1d-safe[0m [36msrc::env::left_split_parity[0m[36m::[0m[34;1mall_fifteen_helpers_match_the_pre_split_implementation[0m
+[32;1m        PASS[0m [   0.084s] ( 16/120) [35;1mrav1d-safe[0m [36msrc::filmgrain::row_tests[0m[36m::[0m[34;1mfilmgrain_rows_match_scalar_10bit[0m
+[32;1m        PASS[0m [   0.083s] ( 17/120) [35;1mrav1d-safe[0m [36msrc::filmgrain::row_tests[0m[36m::[0m[34;1mfilmgrain_rows_match_scalar_12bit[0m
+[32;1m        PASS[0m [   0.004s] ( 18/120) [35;1mrav1d-safe[0m [36msrc::internal::task_ctx_size[0m[36m::[0m[34;1mtask_context_stays_stack_light[0m
+[32;1m        PASS[0m [   0.003s] ( 19/120) [35;1mrav1d-safe[0m [36msrc::loopfilter::compact_window[0m[36m::[0m[34;1mh_window_fits_the_transform_that_selected_it[0m
+[32;1m        PASS[0m [   0.004s] ( 20/120) [35;1mrav1d-safe[0m [36msrc::loopfilter::compact_window[0m[36m::[0m[34;1missue_524_h_window_does_not_collide_with_the_next_rows_stitch[0m
+[32;1m        PASS[0m [   0.003s] ( 21/120) [35;1mrav1d-safe[0m [36msrc::loopfilter::compact_window[0m[36m::[0m[34;1missue_524_h_window_stays_inside_its_picture_row[0m
+[32;1m        PASS[0m [   0.004s] ( 22/120) [35;1mrav1d-safe[0m [36msrc::loopfilter::compact_window[0m[36m::[0m[34;1missue_524_harness_detects_a_window_that_does_lap[0m
+[32;1m        PASS[0m [   0.003s] ( 23/120) [35;1mrav1d-safe[0m [36msrc::loopfilter::run_reach[0m[36m::[0m[34;1mrun_reach_equals_the_widest_group_it_can_meet[0m
+[32;1m        PASS[0m [   0.003s] ( 24/120) [35;1mrav1d-safe[0m [36msrc::loopfilter::run_reach[0m[36m::[0m[34;1mrun_reach_fits_the_transform_that_selected_it[0m
+[32;1m        PASS[0m [   0.003s] ( 25/120) [35;1mrav1d-safe[0m [36msrc::managed::frame_delay_tests[0m[36m::[0m[34;1mauto_frame_delay_is_two_with_workers_and_one_without[0m
+[32;1m        PASS[0m [   0.004s] ( 26/120) [35;1mrav1d-safe[0m [36msrc::managed::frame_delay_tests[0m[36m::[0m[34;1mdecoder_context_count_follows_the_auto_rule[0m
+[32;1m        PASS[0m [   0.044s] ( 27/120) [35;1mrav1d-safe[0m [36msrc::filmgrain::row_tests[0m[36m::[0m[34;1mfilmgrain_rows_match_scalar_8bit[0m
+[32;1m        PASS[0m [   0.011s] ( 28/120) [35;1mrav1d-safe[0m [36msrc::managed::frame_tile_tests[0m[36m::[0m[34;1mcopied_picture_can_allocate_after_decoder_and_source_drop[0m
+[32;1m        PASS[0m [   0.093s] ( 29/120) [35;1mrav1d-safe[0m [36msrc::managed::frame_tile_tests[0m[36m::[0m[34;1mpicture_policy_is_local_and_survives_decoder_lifetimes[0m
+[32;1m        PASS[0m [   0.148s] ( 30/120) [35;1mrav1d-safe[0m [36msrc::managed::frame_tile_tests[0m[36m::[0m[34;1mserial_and_threaded_decoders_run_concurrently_with_local_policies[0m
+[32;1m        PASS[0m [   0.258s] ( 31/120) [35;1mrav1d-safe[0m [36msrc::managed::frame_tile_tests[0m[36m::[0m[34;1mparallel_frame_tile_contexts_preserve_frames[0m
+[32;1m        PASS[0m [   0.004s] ( 32/120) [35;1mrav1d-safe[0m [36msrc::msac::tests[0m[36m::[0m[34;1madapt4_matches_reference_at_interval_boundaries_and_short_slices[0m
+[32;1m        PASS[0m [   0.004s] ( 33/120) [35;1mrav1d-safe[0m [36msrc::msac::tests[0m[36m::[0m[34;1madapt4_matches_reference_through_refills_and_preserves_unused_cdf[0m
+[32;1m        PASS[0m [   0.025s] ( 34/120) [35;1mrav1d-safe[0m [36msrc::managed::frame_tile_tests[0m[36m::[0m[34;1msingle_tile_frames_keep_hull_guards_at_any_thread_count[0m
+[32;1m        PASS[0m [   0.003s] ( 35/120) [35;1mrav1d-safe[0m [36msrc::msac::tests[0m[36m::[0m[34;1mcdf_update_preserves_arithmetic_with_baseline_token_disabled[0m
+[32;1m        PASS[0m [   0.003s] ( 36/120) [35;1mrav1d-safe[0m [36msrc::owned_recon[0m[36m::[0m[34;1mordinary_build_keeps_owned_recon_enabled[0m
+[32;1m        PASS[0m [   0.003s] ( 37/120) [35;1mrav1d-safe[0m [36msrc::owned_recon::tests[0m[36m::[0m[34;1ma_row_above_the_band_panics_it_does_not_alias[0m
+[32;1m        PASS[0m [   0.003s] ( 38/120) [35;1mrav1d-safe[0m [36msrc::owned_recon::tests[0m[36m::[0m[34;1ma_row_below_the_band_panics[0m
+[32;1m        PASS[0m [   0.003s] ( 39/120) [35;1mrav1d-safe[0m [36msrc::owned_recon::tests[0m[36m::[0m[34;1mfor_rows_mut_walks_the_bands_own_stride_not_the_pictures[0m
+[32;1m        PASS[0m [   0.003s] ( 40/120) [35;1mrav1d-safe[0m [36msrc::owned_recon::tests[0m[36m::[0m[34;1mtranslation_is_plane_coordinates_minus_origin[0m
+[32;1m        PASS[0m [   0.003s] ( 41/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::cdef::tests_avx512[0m[36m::[0m[34;1mavx512_constrain_matches_avx2_and_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 42/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::ipred::v4x_dir_tests[0m[36m::[0m[34;1mcfl_ac_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 43/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::ipred::v4x_dir_tests[0m[36m::[0m[34;1msmooth_avx512_matches_avx2[0m
+[32;1m        PASS[0m [   0.003s] ( 44/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::ipred::v4x_dir_tests[0m[36m::[0m[34;1mz1_v4x_matches_avx2[0m
+[32;1m        PASS[0m [   0.005s] ( 45/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::ipred::v4x_dir_tests[0m[36m::[0m[34;1mz2_v4x_matches_avx2[0m
+[32;1m        PASS[0m [   0.004s] ( 46/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::ipred::v4x_dir_tests[0m[36m::[0m[34;1mz3_v4x_matches_avx2[0m
+[32;1m        PASS[0m [   0.003s] ( 47/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mprobe_rect4x16_row_pass[0m
+[32;1m        PASS[0m [   0.005s] ( 48/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed16_dispatch_cpu_permutations[0m
+[32;1m        PASS[0m [   0.070s] ( 49/120) [35;1mrav1d-safe[0m [36msrc::msac::tests[0m[36m::[0m[34;1mcdf_update_matches_directional_arithmetic_for_every_u16[0m
+[32;1m        PASS[0m [   0.003s] ( 50/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed8_api_rejects_invalid_views_before_writing[0m
+[32;1m        PASS[0m [   0.024s] ( 51/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.004s] ( 52/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed8_dispatch_cpu_permutations[0m
+[32;1m        PASS[0m [   0.010s] ( 53/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.008s] ( 54/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect16x4_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.009s] ( 55/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect4x16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.013s] ( 56/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect16x8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.007s] ( 57/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect4x8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.007s] ( 58/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect8x4_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.014s] ( 59/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect8x16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.010s] ( 60/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests[0m[36m::[0m[34;1mtest_mixed_rect_dispatch_cpu_permutations[0m
+[32;1m        PASS[0m [   0.008s] ( 61/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_4x4_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.017s] ( 62/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_8x8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.013s] ( 63/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_dispatch_cpu_permutations[0m
+[32;1m        PASS[0m [   0.051s] ( 64/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_16x16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.014s] ( 65/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect16x4_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.015s] ( 66/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect4x16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.025s] ( 67/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect16x8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.011s] ( 68/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect4x8_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.010s] ( 69/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect8x4_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 70/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct16_col_pass_i16_matches_existing[0m
+[32;1m        PASS[0m [   0.003s] ( 71/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct16_col_pass_i16_vs_mullo_direct[0m
+[32;1m        PASS[0m [   0.026s] ( 72/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::mixed_parity_tests_16bpc[0m[36m::[0m[34;1mtest_mixed_16bpc_rect8x16_dispatch_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 73/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct16_row_pass_i16_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 74/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct16_tx64_cols8_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 75/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct32_row_pass_i16_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 76/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct32_row_pass_i16_simd_sparse_batches[0m
+[32;1m        PASS[0m [   0.003s] ( 77/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct32_tx64_cols8_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 78/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct4_cols_avx512_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 79/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct64_cols8_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 80/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct8_col_pass_i16_matches_i32_col_pass[0m
+[32;1m        PASS[0m [   0.003s] ( 81/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct8_cols_avx512_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 82/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct8_row_pass_i16_simd_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 83/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_dct_scalar_reference_helpers_are_deterministic[0m
+[32;1m        PASS[0m [   0.003s] ( 84/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_identity_cols_avx512_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 85/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_itx_mul2x_pack_matches_scalar[0m
+[32;1m        PASS[0m [   0.003s] ( 86/120) [35;1mrav1d-safe[0m [36msrc::safe_simd::itx::tests[0m[36m::[0m[34;1mtest_simd_row_dct16_16rows_matches_scalar[0m

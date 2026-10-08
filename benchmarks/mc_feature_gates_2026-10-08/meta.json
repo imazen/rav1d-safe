@@ -1,0 +1,57 @@
+{
+  "date": "2026-10-08",
+  "experimental_revision": "e8162a0d6bbae5543546f6f8532a651ac31e4a13",
+  "production_status": "MC source remains unpublished",
+  "command": "run-heavy --mem 16G --jobs 20 -- just check-mc-final",
+  "source_sha256": "5eef8c20ef03bb11d1c922cecb47727edf96ca7cf002bc162f33b3dddc8dc8db",
+  "oracle_sha256": "40721492c782663f7898dc2c9507830a360828b3c9f9a00bcb2bcc3cb9fc0345",
+  "passed": [
+    "Tracked and untracked release all-target clippy with warnings denied",
+    "aarch64-unknown-linux-gnu compile",
+    "wasm32-unknown-unknown compile",
+    "C-FFI compile",
+    "120/120 isolated tracked library tests",
+    "120/120 eight-thread plain tracked library tests",
+    "4/4 selected C-FFI parity tests",
+    "9/9 explicitly selected integration tests in each mode",
+    "1/1 concurrent decoder MD5 test in each mode",
+    "3/3 selected tile overlap tests in each mode",
+    "2/2 selected induced-worker-panic recovery tests in each mode"
+  ],
+  "existing_warning": {
+    "scope": "__test_induce_worker_panic builds only",
+    "lint": "private_interfaces",
+    "item": "rav1d_worker_task",
+    "source_matches_published_main": true
+  },
+  "resource_scope": {
+    "seconds": 192,
+    "peak_rss_gib": 1.62,
+    "min_available_mib": 24421,
+    "peak_load": 3.84,
+    "rc": 0
+  },
+  "full_log_sha256": "7315a34411309e6aab8c100ec42d863fa3ce37aa1ff5ce72774b79583beed3a8",
+  "parts": [
+    {
+      "path": "benchmarks/mc_feature_gates_2026-10-08/full.part01.log",
+      "bytes": 27846,
+      "sha256": "87cfad9b1bee9e95c8e07258bedac8b6a926ce5cc4617236107dff77b03cdb74"
+    },
+    {
+      "path": "benchmarks/mc_feature_gates_2026-10-08/full.part02.log",
+      "bytes": 28000,
+      "sha256": "43bbd80c71cbca966241c5ea3a2f13d190561d5161e25a94bcacdba9b0e4cd34"
+    },
+    {
+      "path": "benchmarks/mc_feature_gates_2026-10-08/full.part03.log",
+      "bytes": 834,
+      "sha256": "178ca6778030c0db442aca9a840250ee50ca3c7a2b67031e71ad7e5f10aae79f"
+    }
+  ],
+  "missing": [
+    "40 actual-token 803-vector sidecar legs",
+    "Matched A/A and A/B throughput",
+    "Zen 5 unmeasured"
+  ]
+}

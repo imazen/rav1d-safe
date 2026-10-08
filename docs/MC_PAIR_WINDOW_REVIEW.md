@@ -107,3 +107,15 @@ peak load 13.53, rc=0. These are correctness/resource observations.
 Production source remains unpublished. Completion of feature checks,
 the both-mode 803-vector sidecar matrix and matched A/A plus A/B timing
 are still required; no throughput benefit is established by the suite.
+
+The follow-up [feature and selected integration gates](../benchmarks/mc_feature_gates_2026-10-08/meta.json)
+also pass: both-mode release all-target lint with warnings denied,
+ARM/WASM/C-FFI compile checks, 120/120 isolated and eight-thread library
+tests, four selected C-FFI parity tests, and nine explicitly selected
+integration tests in each mode. Both modes also pass concurrent-decoder
+MD5, three selected tile-overlap tests and two induced-worker-panic tests.
+The latter feature retains an existing private-interface warning in
+`rav1d_worker_task`; that source matches published main. The 192-second
+scope peaks at 1.62 GiB RSS, minimum available 24,421 MiB, peak load 3.84,
+rc=0. The both-mode 803-vector sidecar matrix and matched throughput remain
+pending; production source is still unpublished.
