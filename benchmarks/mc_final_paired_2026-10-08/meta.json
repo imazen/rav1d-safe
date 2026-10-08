@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-08",
+  "cpu": "AMD Ryzen 9 7900X (Zen 4); Zen 5 unmeasured",
+  "before_revision": "bb4cded48baf878d7ae404db78006b6b572b0633",
+  "after_revision": "e8162a0d6bbae5543546f6f8532a651ac31e4a13",
+  "build_provenance": "../mc_final_matched_builds_2026-10-08.meta.json",
+  "command": "run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=26029MiB :: just bench-paired-modes --before-prefix /home/lilith/work/zen/rav1d-safe/target/lead-mc-final-before --after-prefix /home/lilith/work/zen/rav1d-safe/target/lead-mc-final-after --before-rev bb4cded48baf878d7ae404db78006b6b572b0633 --after-rev e8162a0d6bbae5543546f6f8532a651ac31e4a13 --stream /home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real1080_96.ivf --stream /home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom_real4k_48.ivf --stream /home/lilith/tmp/rav1d-handoff-2026-10-07/streams/svt_real1080_96.ivf --stream /home/lilith/tmp/rav1d-handoff-2026-10-07/streams/aom10_real1080.ivf --threads 1,4 --rounds 4 --passes 3 --first-cpu 8 --delay 1 --output /home/lilith/tmp/handoff/rav1d-safe-lead/ci/mc-final-paired-20261008",
+  "resource_line": "run-heavy: done rc=0 2986s | peak-RSS 0.21GiB | min-avail 22266MiB | peak-load 1.93",
+  "recompute": "just bench-paired-report benchmarks/mc_final_paired_2026-10-08",
+  "protocol": "Both modes; four real 8/10-bit clips; one/four workers; delay one; native dispatch; all inloop filters and grain; four alternating process pairs, three timed passes per process and one warm-up. Twelve observations per arm share four process pairs.",
+  "files": {
+    "safe-aa.jsonl": {
+      "bytes": 5638,
+      "sha256": "daee60a9207c30d42202b90256d0f163512683d1aa2848cb6572023c038aba06"
+    },
+    "safe-ab.jsonl": {
+      "bytes": 5699,
+      "sha256": "f4b05a0f8a1c769ba8eca49fcf3b499f763c444b3c7014fd6221efa82b25b2c5"
+    },
+    "untracked-aa.jsonl": {
+      "bytes": 5627,
+      "sha256": "21343fe972770ba3c90f0d117f818a696535c6288925af2b6f0b8f04b9d60d64"
+    },
+    "untracked-ab.jsonl": {
+      "bytes": 5623,
+      "sha256": "37cc2f89de2b29b6b6e4846206f41074925e2b977dcfc24901c1f3b5079f91a8"
+    },
+    "analysis.json": {
+      "bytes": 11777,
+      "sha256": "438120c34933665825377aa8fb3cc7725a3ead1d82eb2eae68f165192cde5c73"
+    },
+    "campaign.log": {
+      "bytes": 28566,
+      "sha256": "9acef5a6e7aad7801169167afd8c7cc9287b117c61c415c2d32f6708140edaa6"
+    }
+  },
+  "missing": [
+    "Longer tracked four-worker 4K control and comparison to resolve mixed median/minimum direction",
+    "Production source landing",
+    "Zen 5 measurements"
+  ]
+}

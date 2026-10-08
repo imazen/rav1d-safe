@@ -1,8 +1,15 @@
 # MC pair-window review
 
-Performance and full decoder validation remain pending for the candidate
-`25ef8af1124cecccab38c54efc521a69cae6b3d5`. The focused tests described here
-passed on a Ryzen 9 7900X (Zen 4) on 2026-10-08. Zen 5 was not measured.
+The reviewed final candidate passes the full decoder, feature and forty-leg
+sidecar gates. Matched one-worker timing improves on all three 8-bit clips
+in both modes. Tracked four-worker 4K has mixed median/minimum direction;
+a longer controlled repeat remains pending before source landing. The
+candidate source is `e8162a0d6bbae5543546f6f8532a651ac31e4a13`, MC SHA
+`5eef8c20ef03bb11d1c922cecb47727edf96ca7cf002bc162f33b3dddc8dc8db`.
+Results below were measured on Ryzen 9 7900X (Zen 4), 2026-10-08. Zen 5
+has not been measured.
+
+## Review and earlier validation snapshots
 
 `mc_x86_8bpc_parity.rs` compares put/prep against scalar for the existing
 inter-block matrix, ten filter combinations, and all 256 phase pairs. The
@@ -148,3 +155,53 @@ preceding build record. The 4,876-second wrapped scope reports peak RSS
 0.24 GiB, minimum available 24,802 MiB, peak load 3.73 and rc=0.
 Matched A/A and A/B throughput remains pending; production source remains
 unpublished. Zen 5 has not been measured.
+
+## Completed matched MC timing
+
+[All observations, controls and recomputed statistics](../benchmarks/mc_final_paired_2026-10-08/meta.json)
+compare the independently repaired pre-MC source with the final candidate.
+Both use Rust 1.99, archmage 0.9.30 and matching lockfiles, with generic fat
+LTO and the same guarded profile example. The two modes each run all four
+clips at one/four workers, delay one, native dispatch, all filters and grain.
+There are four alternating process pairs per case and three timed passes
+per process. Those twelve observations are not twelve independent trials.
+All phases have completion markers and pass the strict report checks.
+
+Percentage changes below are milliseconds per frame; negative is faster.
+The complete raw data retain each process pair.
+
+| Mode | Clip | Workers | A/B median | A/B minimum | A/A median | A/A minimum |
+|---|---|---:|---:|---:|---:|---:|
+| Tracked | AOM 1080p 8-bit | 1 | -1.377% | -0.989% | +0.199% | -0.125% |
+| Tracked | AOM 1080p 8-bit | 4 | +0.843% | +0.491% | -1.224% | +1.123% |
+| Tracked | AOM 4K 8-bit | 1 | -1.956% | -1.561% | -0.037% | -0.031% |
+| Tracked | AOM 4K 8-bit | 4 | +1.348% | -0.566% | -0.509% | -0.919% |
+| Tracked | SVT 1080p 8-bit | 1 | -1.038% | -0.929% | +0.048% | -0.326% |
+| Tracked | SVT 1080p 8-bit | 4 | +0.169% | +0.601% | +1.434% | +2.087% |
+| Tracked | AOM 1080p 10-bit | 1 | -0.303% | +0.197% | -0.105% | +0.050% |
+| Tracked | AOM 1080p 10-bit | 4 | -0.878% | +0.054% | -1.592% | -1.269% |
+| Untracked | AOM 1080p 8-bit | 1 | -1.823% | -1.501% | +0.452% | +0.378% |
+| Untracked | AOM 1080p 8-bit | 4 | -2.674% | -2.742% | +0.848% | -0.986% |
+| Untracked | AOM 4K 8-bit | 1 | -2.181% | -2.386% | +0.353% | +0.267% |
+| Untracked | AOM 4K 8-bit | 4 | -3.049% | -3.179% | -0.103% | +1.672% |
+| Untracked | SVT 1080p 8-bit | 1 | -1.486% | -1.534% | -0.687% | -0.175% |
+| Untracked | SVT 1080p 8-bit | 4 | -2.761% | -4.071% | +0.824% | -3.079% |
+| Untracked | AOM 1080p 10-bit | 1 | +0.120% | +0.211% | +0.324% | -0.168% |
+| Untracked | AOM 1080p 10-bit | 4 | +0.145% | +0.024% | -0.353% | -0.940% |
+
+For all three 8-bit clips at one worker, both modes improve in median and
+minimum, and all four process pairs improve. Tracked medians improve
+1.038–1.956%; untracked medians improve 1.486–2.181%. The two AOM clips
+also improve at four workers untracked in all four process pairs; SVT
+retains more scheduling variation. These results do not establish a
+universal gain at every thread count or on other CPUs.
+
+Tracked four-worker medians are mixed against the controls. The 4K A/B
+median is +1.348%, with three positive process pairs, while its minimum
+is -0.566%. Its A/A median/minimum are -0.509%/-0.919%. A longer controlled
+repeat of that case is required before the landing decision. The 10-bit
+control also retains small differences despite unchanged 10-bit MC
+arithmetic; no 10-bit improvement is claimed.
+
+The complete scope reports `run-heavy: done rc=0 2986s | peak-RSS 0.21GiB |
+min-avail 22266MiB | peak-load 1.93`. Production source remains unpublished.
