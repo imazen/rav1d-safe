@@ -4,7 +4,7 @@
 //! lists a greedy minimal set of official Argon streams whose union covers
 //! **every testPoint** in the AOM coverage reports (`prof_av1_profile*.xml`) —
 //! 61 streams covering 18,588 spec items. Streams are fetched lazily into
-//! `test-vectors/argon_subset/` (see `test_vectors::ensure_argon_cover_stream`);
+//! `test-vectors/argon_subset/` (see `argon_vectors::ensure_argon_cover_stream`);
 //! nothing is committed.
 //!
 //! Each stream is decoded twice — `apply_grain=false` pinned against the
@@ -27,13 +27,13 @@ use std::sync::Mutex;
 
 #[path = "../examples/helpers/annexb_parser.rs"]
 mod annexb_parser;
+#[path = "common/argon_vectors.rs"]
+mod argon_vectors;
 #[path = "common/committed_vectors.rs"]
 #[allow(dead_code)]
 mod committed_vectors;
 #[allow(dead_code)]
 mod ivf_parser;
-#[allow(dead_code)]
-mod test_vectors;
 
 use committed_vectors::hash_frame;
 
@@ -138,7 +138,7 @@ fn decode_md5_at(data: &[u8], level: CpuLevel, grain: bool) -> (String, Vec<Stri
 
 #[test]
 fn argon_cover_streams_bit_exact_across_levels() {
-    let manifest = test_vectors::argon_cover_manifest();
+    let manifest = argon_vectors::argon_cover_manifest();
     let levels = CpuLevel::platform_levels();
     eprintln!(
         "argon cover: {} streams × {} levels × 2 grain passes",
@@ -148,7 +148,7 @@ fn argon_cover_streams_bit_exact_across_levels() {
 
     let mut failures = Vec::new();
     for e in &manifest {
-        let path: PathBuf = test_vectors::ensure_argon_cover_stream(e);
+        let path: PathBuf = argon_vectors::ensure_argon_cover_stream(e);
         let data = std::fs::read(&path).unwrap_or_else(|err| panic!("read {path:?}: {err}"));
         for &level in levels {
             for (grain, expected) in [(false, &e.md5_nofg), (true, &e.md5_ref)] {
