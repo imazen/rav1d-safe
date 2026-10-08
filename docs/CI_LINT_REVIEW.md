@@ -47,3 +47,10 @@ passes 9/9; an absent selected corpus fails 9/9. All-target clippy passes.
 [Raw positive/negative results](../benchmarks/integration_selection_2026-10-08.meta.json)
 record a 15s scope, peak-RSS 0.97GiB, min-avail 25346MiB and peak-load 0.73.
 The conformance workflow calls the explicit selection on both architectures.
+
+The updated main revision `83c928d3` passed every one of 32 jobs in the
+[2026-10-08 CI run](https://github.com/imazen/rav1d-safe/actions/runs/37721109550).
+This includes Windows ARM, macOS Intel, native and container i686 tests,
+both conformance architectures, token permutations, and both allocator
+Miri models. Native ARM all-target lint is a separate local recipe gate;
+its retained scalar-reference warnings are still being repaired.

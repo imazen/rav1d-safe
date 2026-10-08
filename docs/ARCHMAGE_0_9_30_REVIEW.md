@@ -1,6 +1,7 @@
 # Archmage 0.9.30 update review
 
-Native ARM execution and the updated remote CI matrix remain pending.
+The expanded native ARM suite remains pending. The updated remote CI matrix
+passes all 32 jobs on `83c928d3`: [CI run](https://github.com/imazen/rav1d-safe/actions/runs/37721109550).
 The manifest selects full revision
 `e2dbab66ef5aa08f8e23ed05248e7d1217f58475` for both normal and dev
 archmage dependencies. The previous pin was
