@@ -1,0 +1,98 @@
+{
+  "observed_utc": "2026-10-08T17:19:56.068105+00:00",
+  "state": "Complete focused/feature/build scope; clips and perf pending",
+  "revision": "fe10bf79f774098460a81f187761e388135a1645",
+  "sources": {
+    "src/safe_simd/mc.rs": "39dd3e60374b223d760d296d358a34d4d036e1b1b1349234210b5b7437b0e1d7",
+    "src/mc.rs": "34685435ebf7464d184804fdc805d13f1f2933620bc72b55f9cac8cec64c69d3",
+    "src/mc_warp_scalar_tests.rs": "f48b8f6ca9aa1c78bb73bd0858626426bd5710e56b5070ad36bb5730ae64f89a",
+    "src/safe_simd/mc_reference.rs": "392afbc92ccd71d02dcf34c9ed29d3894e6e24fc77d80beec546253281966e16",
+    "Cargo.toml": "4783d4fbde91e5a4278bb03bfaae8b16177a5bb26edcc11230bb368e52454042",
+    "Cargo.lock": "315a1c4b47dd38cbd8d855514f4bf446e515834393b934c4fe836f31b51b6ce6",
+    "examples/profile_ivf.rs": "fdae26bfe35781f98cedf4a757a2072f9c349e49a5fc5b9ebfabac6d6c7520b8",
+    "src/decode.rs": "3b476c73f3857d542536d61a737bef277c6807342ad0a43f4fab4442567e920f"
+  },
+  "justfile_sha256": "80d11f31245f54cf7b2b36a6ca4d95acbbec8b7fb51082e8864baec2a41c173d",
+  "cwd": "/home/lilith/work/zen/rav1d-safe--lead-mc-fused",
+  "focused_features_gate": "just test-mc-fused-small && just check-mc-fused-small-features",
+  "build_recipe": "just build-bench-modes /home/lilith/work/zen/rav1d-safe/target/lead-fused-current-safe /home/lilith/work/zen/rav1d-safe/target/lead-fused-current-untracked",
+  "baseline_prefix": "/home/lilith/work/zen/rav1d-safe/target/lead-warp-destination-final",
+  "baseline_revision": "1e57f3b283f3d45fb98a968ce04e1c41797a7e16",
+  "required_next": "Scalar and feature gate; then32wholeclipMD5+bothtimingerrorcontrols; sixteen-caseAAAB; full decoder/sidecarsbefore sourcepush",
+  "before_failure_gate": null,
+  "execution_environment": {
+    "PATH": "/home/lilith/.cargo/bin:$PATH",
+    "TMPDIR": "/home/lilith/tmp",
+    "RUSTUP_TOOLCHAIN": "1.99.0",
+    "RUSTFLAGS": "",
+    "CARGO_ENCODED_RUSTFLAGS": "",
+    "CARGO_TARGET_DIR": "/home/lilith/work/zen/rav1d-safe/target/lead-fused-current-gate"
+  },
+  "wrapper_argv": [
+    "/home/lilith/work/claudehints/scripts/run-heavy",
+    "--mem",
+    "16G",
+    "--jobs",
+    "20",
+    "--"
+  ],
+  "execution_shell": "just test-mc-fused-small && just check-mc-fused-small-features && just build-bench-modes /home/lilith/work/zen/rav1d-safe/target/lead-fused-current-safe /home/lilith/work/zen/rav1d-safe/target/lead-fused-current-untracked",
+  "log": "/home/lilith/tmp/handoff/rav1d-safe-lead/ci/fused-current-gate-build.log",
+  "runtime_observed_utc": "2026-10-08T17:19:25.920066+00:00",
+  "candidate_patch": {
+    "path": "/home/lilith/tmp/handoff/rav1d-safe-lead/ci/fused-current-candidate.patch",
+    "sha256": "b0c0731859ebd2f30e0609ea432c8f610dd48a0b319b39e3d86926f7b6c7b1e4",
+    "bytes": 13880
+  },
+  "binaries": {
+    "safe/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-fused-current-safe/release/examples/profile_ivf",
+      "bytes": 17236648,
+      "sha256": "ae3fedd212e673f341aee1d0f826bb3ae88a2d51f2767d404df17bfb42c6cae3"
+    },
+    "safe/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-fused-current-safe/release/examples/decode_md5",
+      "bytes": 13598896,
+      "sha256": "f224c1298826630801a3281b03715d4cfc21c62eabd212d9cf9c2a9c251de6ca"
+    },
+    "untracked/profile_ivf": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-fused-current-untracked/release/examples/profile_ivf",
+      "bytes": 16070992,
+      "sha256": "30e82ca85445bc62fa0df08fba502df9c734d04057b573261ad951ec987cd512"
+    },
+    "untracked/decode_md5": {
+      "path": "/home/lilith/work/zen/rav1d-safe/target/lead-fused-current-untracked/release/examples/decode_md5",
+      "bytes": 12415384,
+      "sha256": "cc0f42516636bdc06e7df0dc013f7f746f04687ff121ecb599a6b73c7f306525"
+    }
+  },
+  "resources": "run-heavy: done rc=0 171s | peak-RSS 1.62GiB | min-avail 23861MiB | peak-load 3.65",
+  "results": "10focused tests pass eachmode, both all-target lint modes and ARM/WASM/CFFI checks pass; generic fat-LTO benchmark binaries built; examples unify testable_dispatch",
+  "full_log": {
+    "bytes": 46181,
+    "sha256": "106504d0f78df9d3d815216c671a8baea0c81feeeb2db03bea5376bf66499cf8"
+  },
+  "files": {
+    "gate-build.log": {
+      "bytes": 46181,
+      "sha256": "106504d0f78df9d3d815216c671a8baea0c81feeeb2db03bea5376bf66499cf8",
+      "parts": [
+        "gate-build.part01.log",
+        "gate-build.part02.log"
+      ]
+    },
+    "candidate.patch": {
+      "bytes": 13880,
+      "sha256": "b0c0731859ebd2f30e0609ea432c8f610dd48a0b319b39e3d86926f7b6c7b1e4",
+      "parts": [
+        "candidate.patch"
+      ]
+    }
+  },
+  "missing": [
+    "Completed grain-enabled whole-clip MD5/error gate",
+    "Complete16case AA/AB controls",
+    "Full decoder/race/803sidecar gates before source landing",
+    "Zen5 and ordinary consumer measurements"
+  ]
+}

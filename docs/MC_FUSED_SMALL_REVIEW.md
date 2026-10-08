@@ -1,0 +1,61 @@
+# Fused small-block MC experiment
+
+Missing: completed whole-clip identity/error checks, full decoder/sidecar
+gates, codegen inspection and matched tracked/untracked A/A plus A/B timing.
+No throughput improvement is claimed.
+
+This isolated child shares the published signed warp destination repair
+`80069eb0` with its benchmark baseline.
+Only 8-bit 4x4 blocks with both horizontal and vertical four-tap filters
+select the prepared branch. Both AVX2 and AVX-512 entry points use the
+existing AVX2 token context for this narrow block. Other block sizes,
+integer phases, filter widths, bit depths and dispatch gates are unchanged.
+
+Seven active horizontal rows feed a four-vector ring. Each vertical result
+uses the ring's last four rows. The implementation reads exactly seven
+active bytes per source row, including a tight final row, and handles both
+source-stride signs. Horizontal rounding remains `(sum + 2) >> 2`; vertical
+rounding remains `(sum + 512) >> 10` for put and `(sum + 32) >> 6` for prep.
+The prepared put branch clips to bytes; prep preserves signed i16 values.
+No pooled mid-buffer allocation or take/return is needed in this branch.
+
+The new oracle compares independent nested scalar arithmetic against raw
+fused output, for every pair of current four-tap table rows, eight pixel
+patterns, both stride signs, and a source slice containing only 49 active
+bytes. Existing whole-buffer MC parity also covers 4x4 dispatch, direct
+AVX2 and available AVX-512 tiers, every phase, destination padding, and the
+bounded negative-source-stride fixture. These are prepared test scopes,
+not executed results for this child.
+
+Run `just test-mc-fused-small` and the full MC gates before building matched
+benchmark examples. Real-clip timing must include 8-bit and 10-bit clips,
+one/four workers, tracked/untracked builds, and A/A controls. Zen 5 has
+not been measured.
+
+Independent source review against the shared warp-fixed baseline finds only
+the new helper, four narrow fast paths and the test module registration.
+The ring schedule supplies horizontal rows y through y+3 to vertical
+coefficients 2 through 5. Existing table-wide adjacent-pair and subset-sum
+bounds cover the saturating horizontal multiply-add and i16 addition; the
+new oracle separately bounds the rounded intermediate and final prep range.
+Put packs i32 through signed i16 and then unsigned bytes, preserving byte
+clipping even when the signed intermediate lies beyond the byte range.
+These source checks are not executed parity or throughput measurements.
+
+## Focused and feature gate
+
+The [exact-source gate and reproducible patch](../benchmarks/mc_fused_small_2026-10-08/gate-build.meta.json)
+pass all ten selected tests in each mode: the tight fused scalar oracle,
+whole-buffer MC parity, active four-tap rows and the signed warp/reference
+fixtures. The native AVX2 token is required by the fused fixture; it passed
+without a token-disable permutation active. Both release all-target lint
+modes and ARM/WASM/C-FFI checks pass. Matched generic release fat-LTO
+examples were built with Rust 1.99.0, archmage 0.9.30, the same dependency
+lock and guarded timer. Both examples unify `testable_dispatch`.
+
+The wrapped scope returned rc=0 after 171 seconds, peak RSS 1.62 GiB,
+minimum available 23,861 MiB and peak load 3.65. Complete raw output and
+source/executable fingerprints are retained. Whole-clip identity and error
+controls are running. This focused result does not establish full decoder
+coverage or a performance benefit; Zen 5 and ordinary consumers remain
+unmeasured.
