@@ -1,0 +1,27 @@
+    [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique[0m
+   [1m[94m--> [0msrc/wrap_fn_ptr.rs:57:27
+    [1m[94m|[0m
+[1m[94m 57[0m [1m[94m|[0m               pub struct Fn(FnPtr);
+    [1m[94m|[0m                             [1m[33m^^^^^[0m
+    [1m[94m|[0m
+   [1m[94m::: [0msrc/refmvs.rs:479:1
+    [1m[94m|[0m
+[1m[94m479[0m [1m[94m|[0m [1m[94m/[0m wrap_fn_ptr!(pub unsafe extern "C" fn splat_mv(
+[1m[94m480[0m [1m[94m|[0m [1m[94m|[0m     rr: *mut *mut RefMvsBlock,
+[1m[94m481[0m [1m[94m|[0m [1m[94m|[0m     rmv: &Align16<RefMvsBlock>,
+[1m[94m482[0m [1m[94m|[0m [1m[94m|[0m     bx4: i32,
+[1m[94m483[0m [1m[94m|[0m [1m[94m|[0m     bw4: i32,
+[1m[94m484[0m [1m[94m|[0m [1m[94m|[0m     bh4: i32,
+[1m[94m485[0m [1m[94m|[0m [1m[94m|[0m ) -> ());
+    [1m[94m|[0m [1m[94m|________-[0m [1m[94min this macro invocation[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: the address of the same function can vary between different codegen units
+    [1m[94m= [0m[1mnote[0m: furthermore, different functions could have the same address after being merged together
+    [1m[94m= [0m[1mnote[0m: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+    [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m: `rav1d-safe` (lib) generated 71 warnings (11 duplicates)
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 12.46s
+run-heavy: done rc=0 64s | peak-RSS 1.62GiB | min-avail 24249MiB | peak-load 3.30

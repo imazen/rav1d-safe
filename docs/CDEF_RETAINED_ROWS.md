@@ -75,3 +75,17 @@ pixel and compares the complete plane after write-back at signed strides and
 8/10/12 bits. This added fallback test has not run. The production experiment
 remains unpublished; the historical fixture logs describe their executed
 snapshots, not a complete gate on the current source.
+
+## Current feature gate
+
+[Complete gate logs and hashes](../benchmarks/cdef_retained_feature_gates_2026-10-08/meta.json)
+record the initial fixture type error, its correction, an overly narrow
+wrapper cfg caught by ARM compilation, and the final passing source.
+The generic non-ASM wrapper keeps the ordinary helper on non-x86 targets;
+only the retained storage and method are x86-specific. All five retained/
+fallback/padding tests pass in 0.018 seconds, both-mode all-target lint
+passes, and ARM/WASM/C-FFI/ASM compile checks pass. The three newly added
+ASM unused-item warnings are gone; 68 other ASM warnings remain.
+The final scope returned rc=0 after 32 seconds, peak RSS 1.64 GiB, minimum
+available 24,239 MiB and peak load 1.64. Full decoder, sidecar and controlled
+throughput gates remain pending, and production retained storage is unpublished.

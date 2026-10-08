@@ -1,0 +1,487 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=25957MiB :: bash -c just test-cdef-retained && just check-cdef-retained-features
+cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib -E 'test(retained_cdef_tests) | test(padding_parity_tests)' --test-threads 1
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker)
+[1m[92m    Finished[0m `release-thin` profile [optimized + debuginfo] target(s) in 13.42s
+────────────
+[32;1m Nextest run[0m ID [1mc37cbdc8-8729-4253-88a0-6151aba5cce5[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m5[0m tests across [1m1[0m binary ([1m120[0m tests [33;1mskipped[0m)
+[32;1m        PASS[0m [   0.003s] (1/5) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::retained_cdef_tests[0m[36m::[0m[34;1mdeclined_cdef_rectangle_keeps_compact_write_back[0m
+[32;1m        PASS[0m [   0.003s] (2/5) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::retained_cdef_tests[0m[36m::[0m[34;1mretained_cdef_rows_preserve_gaps_and_write_back_at_every_depth[0m
+[32;1m        PASS[0m [   0.004s] (3/5) [35;1mrav1d-safe[0m [36msrc::safe_simd::cdef::padding_parity_tests[0m[36m::[0m[34;1mpadding_16bpc_full_domain_parity[0m
+[32;1m        PASS[0m [   0.003s] (4/5) [35;1mrav1d-safe[0m [36msrc::safe_simd::cdef::padding_parity_tests[0m[36m::[0m[34;1mpadding_8bpc_full_domain_parity[0m
+[32;1m        PASS[0m [   0.003s] (5/5) [35;1mrav1d-safe[0m [36msrc::safe_simd::cdef::padding_parity_tests[0m[36m::[0m[34;1mrect_guard_arms_with_declared_stride[0m
+────────────
+[32;1m     Summary[0m [   0.017s] [1m5[0m tests run: [1m5[0m [32;1mpassed[0m, [1m120[0m [33;1mskipped[0m
+cargo clippy --release --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings
+[1m[92m   Compiling[0m proc-macro2 v1.0.107
+[1m[92m   Compiling[0m quote v1.0.47
+[1m[92m   Compiling[0m unicode-ident v1.0.24
+[1m[92m   Compiling[0m libc v0.2.189
+[1m[92m    Checking[0m cfg-if v1.0.4
+[1m[92m   Compiling[0m zerocopy v0.8.56
+[1m[92m    Checking[0m bitflags v2.13.1
+[1m[92m   Compiling[0m rustix v1.1.4
+[1m[92m    Checking[0m linux-raw-sys v0.12.1
+[1m[92m    Checking[0m memchr v2.8.3
+[1m[92m   Compiling[0m autocfg v1.5.1
+[1m[92m   Compiling[0m find-msvc-tools v0.1.12
+[1m[92m   Compiling[0m shlex v2.0.1
+[1m[92m   Compiling[0m heck v0.5.0
+[1m[92m   Compiling[0m serde_core v1.0.229
+[1m[92m    Checking[0m stable_deref_trait v1.2.1
+[1m[92m    Checking[0m itoa v1.0.18
+[1m[92m    Checking[0m utf8parse v0.2.2
+[1m[92m    Checking[0m is_terminal_polyfill v1.70.2
+[1m[92m    Checking[0m colorchoice v1.0.5
+[1m[92m    Checking[0m anstyle v1.0.14
+[1m[92m   Compiling[0m zmij v1.0.23
+[1m[92m    Checking[0m anstyle-parse v1.0.0
+[1m[92m    Checking[0m anstyle-query v1.1.5
+[1m[92m    Checking[0m clap_lex v1.1.0
+[1m[92m    Checking[0m bitflags v1.3.2
+[1m[92m   Compiling[0m cc v1.4.5
+[1m[92m   Compiling[0m getrandom v0.3.4
+[1m[92m   Compiling[0m serde_json v1.0.151
+[1m[92m    Checking[0m strsim v0.11.1
+[1m[92m   Compiling[0m version_check v0.9.5
+[1m[92m    Checking[0m scopeguard v1.2.0
+[1m[92m   Compiling[0m semver v1.0.28
+[1m[92m   Compiling[0m serde v1.0.229
+[1m[92m   Compiling[0m getrandom v0.4.3
+[1m[92m    Checking[0m anstream v1.0.0
+[1m[92m    Checking[0m lock_api v0.4.14
+[1m[92m    Checking[0m arrayvec v0.7.8
+[1m[92m    Checking[0m smallvec v1.16.0
+[1m[92m    Checking[0m enough v0.4.4
+[1m[92m   Compiling[0m object v0.37.3
+[1m[92m   Compiling[0m memoffset v0.6.5
+[1m[92m   Compiling[0m cpp_demangle v0.4.5
+[1m[92m    Checking[0m whereat v0.1.5
+[1m[92m    Checking[0m uuid v1.26.1
+[1m[92m   Compiling[0m ahash v0.8.12
+[1m[92m   Compiling[0m rustc_version v0.4.1
+[1m[92m   Compiling[0m log v0.4.34
+[1m[92m   Compiling[0m parking_lot_core v0.9.12
+[1m[92m    Checking[0m once_cell v1.21.4
+[1m[92m   Compiling[0m num-traits v0.2.19
+[1m[92m    Checking[0m as-slice v0.2.1
+[1m[92m   Compiling[0m symbolic-demangle v12.18.3
+[1m[92m   Compiling[0m paste v1.0.15
+[1m[92m   Compiling[0m anyhow v1.0.104
+[1m[92m    Checking[0m hashbrown v0.17.1
+[1m[92m   Compiling[0m thiserror v2.0.21
+[1m[92m    Checking[0m adler2 v2.0.1
+[1m[92m   Compiling[0m thiserror v1.0.69
+[1m[92m    Checking[0m gimli v0.32.3
+[1m[92m    Checking[0m rustc-demangle v0.1.28
+[1m[92m    Checking[0m equivalent v1.0.2
+[1m[92m   Compiling[0m likely_stable v0.1.3
+[1m[92m    Checking[0m miniz_oxide v0.8.9
+[1m[92m    Checking[0m debugid v0.8.0
+[1m[92m    Checking[0m aligned v0.4.3
+[1m[92m    Checking[0m quick-xml v0.26.0
+[1m[92m    Checking[0m num-format v0.4.4
+[1m[92m    Checking[0m almost-enough v0.4.4
+[1m[92m    Checking[0m fastrand v2.5.0
+[1m[92m    Checking[0m lazy_static v1.5.0
+[1m[92m    Checking[0m str_stack v0.1.1
+[1m[92m   Compiling[0m pprof v0.15.0
+[1m[92m    Checking[0m spin v0.12.3
+[1m[92m    Checking[0m safe_unaligned_simd v0.2.5
+[1m[92m    Checking[0m colored v2.2.0
+[1m[92m   Compiling[0m syn v2.0.119
+[1m[92m   Compiling[0m syn v3.0.6
+[1m[92m    Checking[0m spin v0.10.1
+[1m[92m    Checking[0m raw-cpuid v11.6.0
+[1m[92m    Checking[0m bitreader v0.3.11
+[1m[92m    Checking[0m glob-match v0.2.1
+[1m[92m    Checking[0m leb128 v0.2.7
+[1m[92m    Checking[0m assert_matches v1.5.0
+[1m[92m    Checking[0m regex-lite v0.1.9
+[1m[92m    Checking[0m indexmap v2.14.2
+[1m[92m    Checking[0m condtype v1.3.0
+[1m[92m    Checking[0m fallible_collections v0.5.2
+[1m[92m    Checking[0m to_method v1.1.0
+[1m[92m    Checking[0m byteorder v1.5.0
+[1m[92m    Checking[0m md5 v0.8.1
+[1m[92m   Compiling[0m findshlibs v0.10.2
+[1m[92m   Compiling[0m jobserver v0.1.35
+[1m[92m   Compiling[0m nasm-rs v0.3.2
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker)
+[1m[92m    Checking[0m getrandom v0.2.17
+[1m[92m    Checking[0m memmap2 v0.9.11
+[1m[92m    Checking[0m is-terminal v0.4.17
+[1m[92m    Checking[0m nix v0.23.2
+[1m[92m    Checking[0m sysinfo v0.36.1
+[1m[92m    Checking[0m nix v0.26.4
+[1m[92m    Checking[0m rand_core v0.6.4
+[1m[92m    Checking[0m symbolic-common v12.18.3
+[1m[92m    Checking[0m parking_lot v0.12.5
+[1m[92m    Checking[0m terminal_size v0.4.4
+[1m[92m    Checking[0m fs4 v1.1.0
+[1m[92m    Checking[0m tempfile v3.27.0
+[1m[92m    Checking[0m clap_builder v4.6.6
+[1m[92m    Checking[0m addr2line v0.25.1
+[1m[92m   Compiling[0m zerocopy-derive v0.8.56
+[1m[92m   Compiling[0m equator-macro v0.4.2
+[1m[92m   Compiling[0m atomig-macro v0.4.0
+[1m[92m   Compiling[0m thiserror-impl v1.0.69
+[1m[92m   Compiling[0m strum_macros v0.28.0
+[1m[92m   Compiling[0m divan-macros v0.1.21
+[1m[92m    Checking[0m backtrace v0.3.76
+[1m[92m    Checking[0m atomig v0.4.3
+[1m[92m    Checking[0m equator v0.4.2
+[1m[92m   Compiling[0m bytemuck_derive v1.12.0
+[1m[92m   Compiling[0m clap_derive v4.6.4
+[1m[92m   Compiling[0m serde_derive v1.0.229
+[1m[92m   Compiling[0m archmage-macros v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m   Compiling[0m thiserror-impl v2.0.21
+[1m[92m    Checking[0m aligned-vec v0.6.4
+[1m[92m    Checking[0m bytemuck v1.25.2
+[1m[92m    Checking[0m strum v0.28.0
+[1m[92m    Checking[0m zenpixels v0.2.16
+[1m[92m    Checking[0m rgb v0.8.53
+[1m[92m    Checking[0m archmage v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m    Checking[0m clap v4.6.6
+[1m[92m    Checking[0m divan v0.1.21
+[1m[92m    Checking[0m zencodec v0.1.26
+[1m[92m    Checking[0m zenavif-parse v0.6.2
+[1m[92m    Checking[0m jsonrpc-types v0.3.3
+[1m[92m    Checking[0m zenbench v0.1.9
+[1m[92m    Checking[0m ppv-lite86 v0.2.21
+[1m[92m    Checking[0m rav1d-disjoint-mut v0.4.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker/crates/rav1d-disjoint-mut)
+[1m[92m    Checking[0m inferno v0.11.21
+[1m[92m    Checking[0m rand_chacha v0.3.1
+[1m[92m    Checking[0m rand v0.8.8
+[1m[92m    Checking[0m shared_memory v0.12.4
+[1m[92m    Checking[0m tango-bench v0.8.0
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 10.23s
+cargo clippy --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --all-targets -- -D warnings
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker)
+[1m[92m    Checking[0m rav1d-disjoint-mut v0.4.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker/crates/rav1d-disjoint-mut)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 6.15s
+cargo check --target aarch64-unknown-linux-gnu --no-default-features --features "bitdepth_8,bitdepth_16"
+[1m[92m   Compiling[0m proc-macro2 v1.0.107
+[1m[92m   Compiling[0m unicode-ident v1.0.24
+[1m[92m   Compiling[0m quote v1.0.47
+[1m[92m   Compiling[0m libc v0.2.189
+[1m[92m   Compiling[0m semver v1.0.28
+[1m[92m   Compiling[0m parking_lot_core v0.9.12
+[1m[92m   Compiling[0m log v0.4.34
+[1m[92m   Compiling[0m zerocopy v0.8.56
+[1m[92m    Checking[0m stable_deref_trait v1.2.1
+[1m[92m   Compiling[0m shlex v2.0.1
+[1m[92m   Compiling[0m find-msvc-tools v0.1.12
+[1m[92m    Checking[0m cfg-if v1.0.4
+[1m[92m    Checking[0m scopeguard v1.2.0
+[1m[92m   Compiling[0m paste v1.0.15
+[1m[92m   Compiling[0m heck v0.5.0
+[1m[92m    Checking[0m smallvec v1.16.0
+[1m[92m    Checking[0m bitflags v2.13.1
+[1m[92m    Checking[0m safe_unaligned_simd v0.2.5
+[1m[92m    Checking[0m spin v0.12.3
+[1m[92m    Checking[0m assert_matches v1.5.0
+[1m[92m    Checking[0m to_method v1.1.0
+[1m[92m    Checking[0m as-slice v0.2.1
+[1m[92m    Checking[0m lock_api v0.4.14
+[1m[92m    Checking[0m enough v0.4.4
+[1m[92m    Checking[0m whereat v0.1.5
+[1m[92m    Checking[0m aligned v0.4.3
+[1m[92m   Compiling[0m cc v1.4.5
+[1m[92m    Checking[0m raw-cpuid v11.6.0
+[1m[92m   Compiling[0m rustc_version v0.4.1
+[1m[92m   Compiling[0m likely_stable v0.1.3
+[1m[92m   Compiling[0m syn v2.0.119
+[1m[92m   Compiling[0m syn v3.0.6
+[1m[92m   Compiling[0m jobserver v0.1.35
+[1m[92m    Checking[0m parking_lot v0.12.5
+[1m[92m   Compiling[0m nasm-rs v0.3.2
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker)
+[1m[92m   Compiling[0m equator-macro v0.4.2
+[1m[92m   Compiling[0m zerocopy-derive v0.8.56
+[1m[92m   Compiling[0m atomig-macro v0.4.0
+[1m[92m   Compiling[0m strum_macros v0.28.0
+[1m[92m    Checking[0m atomig v0.4.3
+[1m[92m   Compiling[0m archmage-macros v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m    Checking[0m equator v0.4.2
+[1m[92m    Checking[0m aligned-vec v0.6.4
+[1m[92m    Checking[0m archmage v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m    Checking[0m strum v0.28.0
+[1m[92m    Checking[0m rav1d-disjoint-mut v0.4.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker/crates/rav1d-disjoint-mut)
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 7.77s
+cargo check --target wasm32-unknown-unknown --no-default-features --features "bitdepth_8,bitdepth_16"
+[1m[92m    Checking[0m stable_deref_trait v1.2.1
+[1m[92m   Compiling[0m zerocopy v0.8.56
+[1m[92m   Compiling[0m parking_lot_core v0.9.12
+[1m[92m    Checking[0m cfg-if v1.0.4
+[1m[92m    Checking[0m smallvec v1.16.0
+[1m[92m    Checking[0m scopeguard v1.2.0
+[1m[92m    Checking[0m safe_unaligned_simd v0.2.5
+[1m[92m    Checking[0m spin v0.12.3
+[1m[92m    Checking[0m bitflags v2.13.1
+[1m[92m    Checking[0m enough v0.4.4
+[1m[92m    Checking[0m whereat v0.1.5
+[1m[92m    Checking[0m assert_matches v1.5.0
+[1m[92m    Checking[0m to_method v1.1.0
+[1m[92m    Checking[0m as-slice v0.2.1
+[1m[92m   Compiling[0m likely_stable v0.1.3
+[1m[92m    Checking[0m equator v0.4.2
+[1m[92m    Checking[0m strum v0.28.0
+[1m[92m    Checking[0m atomig v0.4.3
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker)
+[1m[92m    Checking[0m lock_api v0.4.14
+[1m[92m    Checking[0m aligned v0.4.3
+[1m[92m    Checking[0m archmage v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m    Checking[0m raw-cpuid v11.6.0
+[1m[92m    Checking[0m aligned-vec v0.6.4
+[1m[92m    Checking[0m parking_lot v0.12.5
+[1m[92m    Checking[0m rav1d-disjoint-mut v0.4.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker/crates/rav1d-disjoint-mut)
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 4.80s
+cargo check --no-default-features --features "bitdepth_8,bitdepth_16,c-ffi"
+[1m[92m   Compiling[0m proc-macro2 v1.0.107
+[1m[92m   Compiling[0m unicode-ident v1.0.24
+[1m[92m   Compiling[0m quote v1.0.47
+[1m[92m   Compiling[0m libc v0.2.189
+[1m[92m   Compiling[0m semver v1.0.28
+[1m[92m   Compiling[0m log v0.4.34
+[1m[92m   Compiling[0m shlex v2.0.1
+[1m[92m    Checking[0m stable_deref_trait v1.2.1
+[1m[92m   Compiling[0m parking_lot_core v0.9.12
+[1m[92m   Compiling[0m find-msvc-tools v0.1.12
+[1m[92m   Compiling[0m zerocopy v0.8.56
+[1m[92m   Compiling[0m paste v1.0.15
+[1m[92m    Checking[0m cfg-if v1.0.4
+[1m[92m    Checking[0m scopeguard v1.2.0
+[1m[92m    Checking[0m smallvec v1.16.0
+[1m[92m   Compiling[0m heck v0.5.0
+[1m[92m    Checking[0m bitflags v2.13.1
+[1m[92m    Checking[0m spin v0.12.3
+[1m[92m    Checking[0m safe_unaligned_simd v0.2.5
+[1m[92m    Checking[0m whereat v0.1.5
+[1m[92m    Checking[0m to_method v1.1.0
+[1m[92m    Checking[0m as-slice v0.2.1
+[1m[92m    Checking[0m lock_api v0.4.14
+[1m[92m    Checking[0m assert_matches v1.5.0
+[1m[92m    Checking[0m enough v0.4.4
+[1m[92m    Checking[0m aligned v0.4.3
+[1m[92m   Compiling[0m cc v1.4.5
+[1m[92m    Checking[0m raw-cpuid v11.6.0
+[1m[92m   Compiling[0m rustc_version v0.4.1
+[1m[92m   Compiling[0m likely_stable v0.1.3
+[1m[92m   Compiling[0m syn v2.0.119
+[1m[92m   Compiling[0m syn v3.0.6
+[1m[92m   Compiling[0m jobserver v0.1.35
+[1m[92m    Checking[0m parking_lot v0.12.5
+[1m[92m   Compiling[0m nasm-rs v0.3.2
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker)
+[1m[92m   Compiling[0m equator-macro v0.4.2
+[1m[92m   Compiling[0m zerocopy-derive v0.8.56
+[1m[92m   Compiling[0m strum_macros v0.28.0
+[1m[92m   Compiling[0m atomig-macro v0.4.0
+[1m[92m    Checking[0m atomig v0.4.3
+[1m[92m   Compiling[0m archmage-macros v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m    Checking[0m equator v0.4.2
+[1m[92m    Checking[0m aligned-vec v0.6.4
+[1m[92m    Checking[0m archmage v0.9.30 (https://github.com/imazen/archmage?rev=e2dbab66ef5aa08f8e23ed05248e7d1217f58475#e2dbab66)
+[1m[92m    Checking[0m strum v0.28.0
+[1m[92m    Checking[0m rav1d-disjoint-mut v0.4.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker/crates/rav1d-disjoint-mut)
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 9.09s
+cargo check --no-default-features --features "bitdepth_8,bitdepth_16,asm"
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker)
+[1m[33mwarning[0m[1m: unused import: `crate::src::pixels::Pixels`[0m
+   [1m[94m--> [0msrc/recon.rs:101:5
+    [1m[94m|[0m
+[1m[94m101[0m [1m[94m|[0m use crate::src::pixels::Pixels as _;
+    [1m[94m|[0m     [1m[33m^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: function `with_cdef_guard_mut` is never used[0m
+   [1m[94m--> [0minclude/dav1d/picture.rs:505:15
+    [1m[94m|[0m
+[1m[94m505[0m [1m[94m|[0m pub(crate) fn with_cdef_guard_mut<BD: BitDepth, R>(
+    [1m[94m|[0m               [1m[33m^^^^^^^^^^^^^^^^^^^[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+[1m[33mwarning[0m[1m: method `cdef_block_mut` is never used[0m
+    [1m[94m--> [0minclude/dav1d/picture.rs:1518:8
+     [1m[94m|[0m
+[1m[94m1377[0m [1m[94m|[0m impl<'a> Rav1dPictureDataComponentOffset<'a> {
+     [1m[94m|[0m [1m[94m--------------------------------------------[0m [1m[94mmethod in this implementation[0m
+[1m[94m...[0m
+[1m[94m1518[0m [1m[94m|[0m     fn cdef_block_mut<BD: BitDepth>(&self, w: usize, h: usize) -> BlockMut<'a, BD> {
+     [1m[94m|[0m        [1m[33m^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: variant `Retained` is never constructed[0m
+    [1m[94m--> [0minclude/dav1d/picture.rs:2741:5
+     [1m[94m|[0m
+[1m[94m2731[0m [1m[94m|[0m enum BlockMutStorage<'a, BD: BitDepth> {
+     [1m[94m|[0m      [1m[94m---------------[0m [1m[94mvariant in this enum[0m
+[1m[94m...[0m
+[1m[94m2741[0m [1m[94m|[0m     Retained {
+     [1m[94m|[0m     [1m[33m^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `simd_enabled` is never used[0m
+   [1m[94m--> [0msrc/cpu.rs:255:15
+    [1m[94m|[0m
+[1m[94m255[0m [1m[94m|[0m pub(crate) fn simd_enabled(flag: CpuFlags) -> bool {
+    [1m[94m|[0m               [1m[33m^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `census` is never used[0m
+   [1m[94m--> [0msrc/cpu.rs:322:4
+    [1m[94m|[0m
+[1m[94m322[0m [1m[94m|[0m fn census(_idx: usize) {}
+    [1m[94m|[0m    [1m[33m^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `summon_avx2` is never used[0m
+   [1m[94m--> [0msrc/cpu.rs:329:15
+    [1m[94m|[0m
+[1m[94m329[0m [1m[94m|[0m pub(crate) fn summon_avx2() -> Option<archmage::prelude::Desktop64> {
+    [1m[94m|[0m               [1m[33m^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `summon_avx512` is never used[0m
+   [1m[94m--> [0msrc/cpu.rs:345:15
+    [1m[94m|[0m
+[1m[94m345[0m [1m[94m|[0m pub(crate) fn summon_avx512() -> Option<archmage::prelude::Server64> {
+    [1m[94m|[0m               [1m[33m^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `summon_avx512x` is never used[0m
+   [1m[94m--> [0msrc/cpu.rs:368:15
+    [1m[94m|[0m
+[1m[94m368[0m [1m[94m|[0m pub(crate) fn summon_avx512x() -> Option<archmage::X64V4xToken> {
+    [1m[94m|[0m               [1m[33m^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `ipred_scalar_forced` is never used[0m
+   [1m[94m--> [0msrc/ipred.rs:111:4
+    [1m[94m|[0m
+[1m[94m111[0m [1m[94m|[0m fn ipred_scalar_forced() -> bool {
+    [1m[94m|[0m    [1m[33m^^^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `lf_run_reach` is never used[0m
+   [1m[94m--> [0msrc/loopfilter.rs:646:15
+    [1m[94m|[0m
+[1m[94m646[0m [1m[94m|[0m pub(crate) fn lf_run_reach(is_y: bool, vmask: &[u32; 3]) -> usize {
+    [1m[94m|[0m               [1m[33m^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `lf_compact_window` is never used[0m
+   [1m[94m--> [0msrc/loopfilter.rs:698:15
+    [1m[94m|[0m
+[1m[94m698[0m [1m[94m|[0m pub(crate) fn lf_compact_window(
+    [1m[94m|[0m               [1m[33m^^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function `mc_scalar_forced` is never used[0m
+   [1m[94m--> [0msrc/mc.rs:624:4
+    [1m[94m|[0m
+[1m[94m624[0m [1m[94m|[0m fn mc_scalar_forced(_site: &str) -> bool {
+    [1m[94m|[0m    [1m[33m^^^^^^^^^^^^^^^^[0m
+
+[1m[33mwarning[0m[1m: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique[0m
+  [1m[94m--> [0msrc/wrap_fn_ptr.rs:57:27
+   [1m[94m|[0m
+[1m[94m57[0m [1m[94m|[0m               pub struct Fn(FnPtr);
+   [1m[94m|[0m                             [1m[33m^^^^^[0m
+   [1m[94m|[0m
+  [1m[94m::: [0msrc/cdef.rs:57:1
+   [1m[94m|[0m
+[1m[94m57[0m [1m[94m|[0m [1m[94m/[0m wrap_fn_ptr!(pub unsafe extern "C" fn cdef(
+[1m[94m58[0m [1m[94m|[0m [1m[94m|[0m     dst_ptr: *mut DynPixel,
+[1m[94m59[0m [1m[94m|[0m [1m[94m|[0m     stride: ptrdiff_t,
+[1m[94m60[0m [1m[94m|[0m [1m[94m|[0m     left: *const [LeftPixelRow2px<DynPixel>; 8],
+[1m[94m...[0m  [1m[94m|[0m
+[1m[94m71[0m [1m[94m|[0m [1m[94m|[0m     _bottom: *const FFISafe<CdefBottom>,
+[1m[94m72[0m [1m[94m|[0m [1m[94m|[0m ) -> ());
+   [1m[94m|[0m [1m[94m|________-[0m [1m[94min this macro invocation[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: the address of the same function can vary between different codegen units
+   [1m[94m= [0m[1mnote[0m: furthermore, different functions could have the same address after being merged together
+   [1m[94m= [0m[1mnote[0m: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+   [1m[94m= [0m[1mnote[0m: `#[warn(unpredictable_function_pointer_comparisons)]` on by default
+   [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique[0m
+   [1m[94m--> [0msrc/wrap_fn_ptr.rs:57:27
+    [1m[94m|[0m
+[1m[94m 57[0m [1m[94m|[0m               pub struct Fn(FnPtr);
+    [1m[94m|[0m                             [1m[33m^^^^^[0m
+    [1m[94m|[0m
+   [1m[94m::: [0msrc/cdef.rs:341:1
+    [1m[94m|[0m
+[1m[94m341[0m [1m[94m|[0m [1m[94m/[0m wrap_fn_ptr!(pub unsafe extern "C" fn cdef_dir(
+[1m[94m342[0m [1m[94m|[0m [1m[94m|[0m     dst_ptr: *const DynPixel,
+[1m[94m343[0m [1m[94m|[0m [1m[94m|[0m     dst_stride: ptrdiff_t,
+[1m[94m344[0m [1m[94m|[0m [1m[94m|[0m     variance: &mut c_uint,
+[1m[94m345[0m [1m[94m|[0m [1m[94m|[0m     bitdepth_max: c_int,
+[1m[94m346[0m [1m[94m|[0m [1m[94m|[0m     _dst: *const FFISafe<PicOffset>,
+[1m[94m347[0m [1m[94m|[0m [1m[94m|[0m ) -> c_int);
+    [1m[94m|[0m [1m[94m|___________-[0m [1m[94min this macro invocation[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: the address of the same function can vary between different codegen units
+    [1m[94m= [0m[1mnote[0m: furthermore, different functions could have the same address after being merged together
+    [1m[94m= [0m[1mnote[0m: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+    [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique[0m
+  [1m[94m--> [0msrc/wrap_fn_ptr.rs:57:27
+   [1m[94m|[0m
+[1m[94m57[0m [1m[94m|[0m               pub struct Fn(FnPtr);
+   [1m[94m|[0m                             [1m[33m^^^^^[0m
+   [1m[94m|[0m
+  [1m[94m::: [0msrc/filmgrain.rs:51:1
+   [1m[94m|[0m
+[1m[94m51[0m [1m[94m|[0m [1m[94m/[0m wrap_fn_ptr!(pub unsafe extern "C" fn generate_grain_y(
+[1m[94m52[0m [1m[94m|[0m [1m[94m|[0m     buf: *mut GrainLut<DynEntry>,
+[1m[94m53[0m [1m[94m|[0m [1m[94m|[0m     data: &Dav1dFilmGrainData,
+[1m[94m54[0m [1m[94m|[0m [1m[94m|[0m     bitdepth_max: c_int,
+[1m[94m55[0m [1m[94m|[0m [1m[94m|[0m ) -> ());
+   [1m[94m|[0m [1m[94m|________-[0m [1m[94min this macro invocation[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: the address of the same function can vary between different codegen units
+   [1m[94m= [0m[1mnote[0m: furthermore, different functions could have the same address after being merged together
+   [1m[94m= [0m[1mnote[0m: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+   [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique[0m
+  [1m[94m--> [0msrc/wrap_fn_ptr.rs:57:27
+   [1m[94m|[0m
+[1m[94m57[0m [1m[94m|[0m               pub struct Fn(FnPtr);
+   [1m[94m|[0m                             [1m[33m^^^^^[0m
+   [1m[94m|[0m
+  [1m[94m::: [0msrc/filmgrain.rs:79:1
+   [1m[94m|[0m
+[1m[94m79[0m [1m[94m|[0m [1m[94m/[0m wrap_fn_ptr!(pub unsafe extern "C" fn generate_grain_uv(
+[1m[94m80[0m [1m[94m|[0m [1m[94m|[0m     buf: *mut GrainLut<DynEntry>,
+[1m[94m81[0m [1m[94m|[0m [1m[94m|[0m     buf_y: *const GrainLut<DynEntry>,
+[1m[94m82[0m [1m[94m|[0m [1m[94m|[0m     data: &Dav1dFilmGrainData,
+[1m[94m83[0m [1m[94m|[0m [1m[94m|[0m     uv: intptr_t,
+[1m[94m84[0m [1m[94m|[0m [1m[94m|[0m     bitdepth_max: c_int,
+[1m[94m85[0m [1m[94m|[0m [1m[94m|[0m ) -> ());
+   [1m[94m|[0m [1m[94m|________-[0m [1m[94min this macro invocation[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: the address of the same function can vary between different codegen units
+   [1m[94m= [0m[1mnote[0m: furthermore, different functions could have the same address after being merged together
+   [1m[94m= [0m[1mnote[0m: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+   [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique[0m
+   [1m[94m--> [0msrc/wrap_fn_ptr.rs:57:27
+    [1m[94m|[0m
+[1m[94m 57[0m [1m[94m|[0m               pub struct Fn(FnPtr);
+    [1m[94m|[0m                             [1m[33m^^^^^[0m
+    [1m[94m|[0m
+   [1m[94m::: [0msrc/filmgrain.rs:115:1
+    [1m[94m|[0m
+[1m[94m115[0m [1m[94m|[0m [1m[94m/[0m wrap_fn_ptr!(pub unsafe extern "C" fn fgy_32x32xn(
+[1m[94m116[0m [1m[94m|[0m [1m[94m|[0m     dst_row_ptr: *mut DynPixel,
+[1m[94m117[0m [1m[94m|[0m [1m[94m|[0m     src_row_ptr: *const DynPixel,
+[1m[94m118[0m [1m[94m|[0m [1m[94m|[0m     stride: ptrdiff_t,
+[1m[94m...[0m   [1m[94m|[0m
+[1m[94m127[0m [1m[94m|[0m [1m[94m|[0m     _src_src: *const FFISafe<PicOffset>,
+[1m[94m128[0m [1m[94m|[0m [1m[94m|[0m ) -> ());
+    [1m[94m|[0m [1m[94m|________-[0m [1m[94min this macro invocation[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: the address of the same function can vary between different codegen units
+    [1m[94m= [0m[1mnote[0m: furthermore, different functions could have the same address after being merged together
+    [1m[94m= [0m[1mnote[0m: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+    [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+

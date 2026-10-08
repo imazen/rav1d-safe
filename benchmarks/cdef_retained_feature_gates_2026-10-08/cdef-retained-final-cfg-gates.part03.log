@@ -1,0 +1,221 @@
+     [1m[94m= [0m[1mnote[0m: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique[0m
+    [1m[94m--> [0msrc/wrap_fn_ptr.rs:57:27
+     [1m[94m|[0m
+[1m[94m  57[0m [1m[94m|[0m               pub struct Fn(FnPtr);
+     [1m[94m|[0m                             [1m[33m^^^^^[0m
+     [1m[94m|[0m
+    [1m[94m::: [0msrc/mc.rs:2028:1
+     [1m[94m|[0m
+[1m[94m2028[0m [1m[94m|[0m [1m[94m/[0m wrap_fn_ptr!(pub unsafe extern "C" fn blend(
+[1m[94m2029[0m [1m[94m|[0m [1m[94m|[0m     dst_ptr: *mut DynPixel,
+[1m[94m2030[0m [1m[94m|[0m [1m[94m|[0m     dst_stride: isize,
+[1m[94m2031[0m [1m[94m|[0m [1m[94m|[0m     tmp: *const [DynPixel; SCRATCH_INTER_INTRA_BUF_LEN],
+[1m[94m...[0m    [1m[94m|[0m
+[1m[94m2035[0m [1m[94m|[0m [1m[94m|[0m     _dst: *const FFISafe<PicOffset>,
+[1m[94m2036[0m [1m[94m|[0m [1m[94m|[0m ) -> ());
+     [1m[94m|[0m [1m[94m|________-[0m [1m[94min this macro invocation[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mnote[0m: the address of the same function can vary between different codegen units
+     [1m[94m= [0m[1mnote[0m: furthermore, different functions could have the same address after being merged together
+     [1m[94m= [0m[1mnote[0m: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique[0m
+    [1m[94m--> [0msrc/wrap_fn_ptr.rs:57:27
+     [1m[94m|[0m
+[1m[94m  57[0m [1m[94m|[0m               pub struct Fn(FnPtr);
+     [1m[94m|[0m                             [1m[33m^^^^^[0m
+     [1m[94m|[0m
+    [1m[94m::: [0msrc/mc.rs:2064:1
+     [1m[94m|[0m
+[1m[94m2064[0m [1m[94m|[0m [1m[94m/[0m wrap_fn_ptr!(pub unsafe extern "C" fn blend_dir(
+[1m[94m2065[0m [1m[94m|[0m [1m[94m|[0m     dst_ptr: *mut DynPixel,
+[1m[94m2066[0m [1m[94m|[0m [1m[94m|[0m     dst_stride: isize,
+[1m[94m2067[0m [1m[94m|[0m [1m[94m|[0m     tmp: *const [DynPixel; SCRATCH_LAP_LEN],
+[1m[94m...[0m    [1m[94m|[0m
+[1m[94m2070[0m [1m[94m|[0m [1m[94m|[0m     _dst: *const FFISafe<PicOffset>,
+[1m[94m2071[0m [1m[94m|[0m [1m[94m|[0m ) -> ());
+     [1m[94m|[0m [1m[94m|________-[0m [1m[94min this macro invocation[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mnote[0m: the address of the same function can vary between different codegen units
+     [1m[94m= [0m[1mnote[0m: furthermore, different functions could have the same address after being merged together
+     [1m[94m= [0m[1mnote[0m: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique[0m
+    [1m[94m--> [0msrc/wrap_fn_ptr.rs:57:27
+     [1m[94m|[0m
+[1m[94m  57[0m [1m[94m|[0m               pub struct Fn(FnPtr);
+     [1m[94m|[0m                             [1m[33m^^^^^[0m
+     [1m[94m|[0m
+    [1m[94m::: [0msrc/mc.rs:2099:1
+     [1m[94m|[0m
+[1m[94m2099[0m [1m[94m|[0m [1m[94m/[0m wrap_fn_ptr!(pub unsafe extern "C" fn emu_edge(
+[1m[94m2100[0m [1m[94m|[0m [1m[94m|[0m     bw: isize,
+[1m[94m2101[0m [1m[94m|[0m [1m[94m|[0m     bh: isize,
+[1m[94m2102[0m [1m[94m|[0m [1m[94m|[0m     iw: isize,
+[1m[94m...[0m    [1m[94m|[0m
+[1m[94m2110[0m [1m[94m|[0m [1m[94m|[0m     _src: *const FFISafe<Rav1dPictureDataComponent>,
+[1m[94m2111[0m [1m[94m|[0m [1m[94m|[0m ) -> ());
+     [1m[94m|[0m [1m[94m|________-[0m [1m[94min this macro invocation[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mnote[0m: the address of the same function can vary between different codegen units
+     [1m[94m= [0m[1mnote[0m: furthermore, different functions could have the same address after being merged together
+     [1m[94m= [0m[1mnote[0m: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique[0m
+    [1m[94m--> [0msrc/wrap_fn_ptr.rs:57:27
+     [1m[94m|[0m
+[1m[94m  57[0m [1m[94m|[0m               pub struct Fn(FnPtr);
+     [1m[94m|[0m                             [1m[33m^^^^^[0m
+     [1m[94m|[0m
+    [1m[94m::: [0msrc/mc.rs:2150:1
+     [1m[94m|[0m
+[1m[94m2150[0m [1m[94m|[0m [1m[94m/[0m wrap_fn_ptr!(pub unsafe extern "C" fn resize(
+[1m[94m2151[0m [1m[94m|[0m [1m[94m|[0m     dst: *mut DynPixel,
+[1m[94m2152[0m [1m[94m|[0m [1m[94m|[0m     dst_stride: isize,
+[1m[94m2153[0m [1m[94m|[0m [1m[94m|[0m     src_ptr: *const DynPixel,
+[1m[94m...[0m    [1m[94m|[0m
+[1m[94m2162[0m [1m[94m|[0m [1m[94m|[0m     _dst: *const FFISafe<WithOffset<PicOrBuf<AlignedVec64<u8>>>>,
+[1m[94m2163[0m [1m[94m|[0m [1m[94m|[0m ) -> ());
+     [1m[94m|[0m [1m[94m|________-[0m [1m[94min this macro invocation[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mnote[0m: the address of the same function can vary between different codegen units
+     [1m[94m= [0m[1mnote[0m: furthermore, different functions could have the same address after being merged together
+     [1m[94m= [0m[1mnote[0m: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+     [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique[0m
+  [1m[94m--> [0msrc/wrap_fn_ptr.rs:57:27
+   [1m[94m|[0m
+[1m[94m57[0m [1m[94m|[0m               pub struct Fn(FnPtr);
+   [1m[94m|[0m                             [1m[33m^^^^^[0m
+   [1m[94m|[0m
+  [1m[94m::: [0msrc/pal.rs:10:1
+   [1m[94m|[0m
+[1m[94m10[0m [1m[94m|[0m [1m[94m/[0m wrap_fn_ptr!(pub unsafe extern "C" fn pal_idx_finish(
+[1m[94m11[0m [1m[94m|[0m [1m[94m|[0m     dst: *mut u8,
+[1m[94m12[0m [1m[94m|[0m [1m[94m|[0m     src: *const u8,
+[1m[94m13[0m [1m[94m|[0m [1m[94m|[0m     bw: c_int,
+[1m[94m...[0m  [1m[94m|[0m
+[1m[94m16[0m [1m[94m|[0m [1m[94m|[0m     h: c_int,
+[1m[94m17[0m [1m[94m|[0m [1m[94m|[0m ) -> ());
+   [1m[94m|[0m [1m[94m|________-[0m [1m[94min this macro invocation[0m
+   [1m[94m|[0m
+   [1m[94m= [0m[1mnote[0m: the address of the same function can vary between different codegen units
+   [1m[94m= [0m[1mnote[0m: furthermore, different functions could have the same address after being merged together
+   [1m[94m= [0m[1mnote[0m: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+   [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: `extern` block uses type `A16`, which is not FFI-safe[0m
+    [1m[94m--> [0msrc/refmvs.rs:481:10
+     [1m[94m|[0m
+[1m[94m 481[0m [1m[94m|[0m     rmv: &Align16<RefMvsBlock>,
+     [1m[94m|[0m          [1m[33m^^^^^^^^^^^^^^^^^^^^^[0m [1m[33mnot FFI-safe[0m
+[1m[94m...[0m
+[1m[94m1865[0m [1m[94m|[0m         self.splat_mv = splat_mv::decl_fn!(fn dav1d_splat_mv_sse2);
+     [1m[94m|[0m                         [1m[94m------------------------------------------[0m [1m[94min this macro invocation[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: consider adding a `#[repr(C)]` or `#[repr(transparent)]` attribute to this struct
+     [1m[94m= [0m[1mnote[0m: this struct has unspecified layout
+     [1m[94m= [0m[1mnote[0m: this warning originates in the macro `splat_mv::decl_fn` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: `extern` block uses type `A16`, which is not FFI-safe[0m
+    [1m[94m--> [0msrc/refmvs.rs:481:10
+     [1m[94m|[0m
+[1m[94m 481[0m [1m[94m|[0m     rmv: &Align16<RefMvsBlock>,
+     [1m[94m|[0m          [1m[33m^^^^^^^^^^^^^^^^^^^^^[0m [1m[33mnot FFI-safe[0m
+[1m[94m...[0m
+[1m[94m1886[0m [1m[94m|[0m             self.splat_mv = splat_mv::decl_fn!(fn dav1d_splat_mv_avx2);
+     [1m[94m|[0m                             [1m[94m------------------------------------------[0m [1m[94min this macro invocation[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: consider adding a `#[repr(C)]` or `#[repr(transparent)]` attribute to this struct
+     [1m[94m= [0m[1mnote[0m: this struct has unspecified layout
+     [1m[94m= [0m[1mnote[0m: this warning originates in the macro `splat_mv::decl_fn` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: `extern` block uses type `A16`, which is not FFI-safe[0m
+    [1m[94m--> [0msrc/refmvs.rs:481:10
+     [1m[94m|[0m
+[1m[94m 481[0m [1m[94m|[0m     rmv: &Align16<RefMvsBlock>,
+     [1m[94m|[0m          [1m[33m^^^^^^^^^^^^^^^^^^^^^[0m [1m[33mnot FFI-safe[0m
+[1m[94m...[0m
+[1m[94m1893[0m [1m[94m|[0m             self.splat_mv = splat_mv::decl_fn!(fn dav1d_splat_mv_avx512icl);
+     [1m[94m|[0m                             [1m[94m-----------------------------------------------[0m [1m[94min this macro invocation[0m
+     [1m[94m|[0m
+     [1m[94m= [0m[1mhelp[0m: consider adding a `#[repr(C)]` or `#[repr(transparent)]` attribute to this struct
+     [1m[94m= [0m[1mnote[0m: this struct has unspecified layout
+     [1m[94m= [0m[1mnote[0m: this warning originates in the macro `splat_mv::decl_fn` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique[0m
+   [1m[94m--> [0msrc/wrap_fn_ptr.rs:57:27
+    [1m[94m|[0m
+[1m[94m 57[0m [1m[94m|[0m               pub struct Fn(FnPtr);
+    [1m[94m|[0m                             [1m[33m^^^^^[0m
+    [1m[94m|[0m
+   [1m[94m::: [0msrc/refmvs.rs:183:1
+    [1m[94m|[0m
+[1m[94m183[0m [1m[94m|[0m [1m[94m/[0m wrap_fn_ptr!(pub(crate) unsafe extern "C" fn load_tmvs(
+[1m[94m184[0m [1m[94m|[0m [1m[94m|[0m     rf: &AsmRefMvsFrame,
+[1m[94m185[0m [1m[94m|[0m [1m[94m|[0m     tile_row_idx: i32,
+[1m[94m186[0m [1m[94m|[0m [1m[94m|[0m     col_start8: i32,
+[1m[94m...[0m   [1m[94m|[0m
+[1m[94m191[0m [1m[94m|[0m [1m[94m|[0m     _rp_ref: *const FFISafe<[Option<DisjointMutArcSlice<RefMvsTemporalBlock>>; 7]>,
+[1m[94m192[0m [1m[94m|[0m [1m[94m|[0m ) -> ());
+    [1m[94m|[0m [1m[94m|________-[0m [1m[94min this macro invocation[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: the address of the same function can vary between different codegen units
+    [1m[94m= [0m[1mnote[0m: furthermore, different functions could have the same address after being merged together
+    [1m[94m= [0m[1mnote[0m: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+    [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique[0m
+   [1m[94m--> [0msrc/wrap_fn_ptr.rs:57:27
+    [1m[94m|[0m
+[1m[94m 57[0m [1m[94m|[0m               pub struct Fn(FnPtr);
+    [1m[94m|[0m                             [1m[33m^^^^^[0m
+    [1m[94m|[0m
+   [1m[94m::: [0msrc/refmvs.rs:360:1
+    [1m[94m|[0m
+[1m[94m360[0m [1m[94m|[0m [1m[94m/[0m wrap_fn_ptr!(pub unsafe extern "C" fn save_tmvs(
+[1m[94m361[0m [1m[94m|[0m [1m[94m|[0m     rp_ptr: *mut RefMvsTemporalBlock,
+[1m[94m362[0m [1m[94m|[0m [1m[94m|[0m     stride: isize,
+[1m[94m363[0m [1m[94m|[0m [1m[94m|[0m     rr: &[*const RefMvsBlock; 31],
+[1m[94m...[0m   [1m[94m|[0m
+[1m[94m371[0m [1m[94m|[0m [1m[94m|[0m     _rp: *const FFISafe<DisjointMutArcSlice<RefMvsTemporalBlock>>,
+[1m[94m372[0m [1m[94m|[0m [1m[94m|[0m ) -> ());
+    [1m[94m|[0m [1m[94m|________-[0m [1m[94min this macro invocation[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: the address of the same function can vary between different codegen units
+    [1m[94m= [0m[1mnote[0m: furthermore, different functions could have the same address after being merged together
+    [1m[94m= [0m[1mnote[0m: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+    [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m[1m: function pointer comparisons do not produce meaningful results since their addresses are not guaranteed to be unique[0m
+   [1m[94m--> [0msrc/wrap_fn_ptr.rs:57:27
+    [1m[94m|[0m
+[1m[94m 57[0m [1m[94m|[0m               pub struct Fn(FnPtr);
+    [1m[94m|[0m                             [1m[33m^^^^^[0m
+    [1m[94m|[0m
+   [1m[94m::: [0msrc/refmvs.rs:479:1
+    [1m[94m|[0m
+[1m[94m479[0m [1m[94m|[0m [1m[94m/[0m wrap_fn_ptr!(pub unsafe extern "C" fn splat_mv(
+[1m[94m480[0m [1m[94m|[0m [1m[94m|[0m     rr: *mut *mut RefMvsBlock,
+[1m[94m481[0m [1m[94m|[0m [1m[94m|[0m     rmv: &Align16<RefMvsBlock>,
+[1m[94m482[0m [1m[94m|[0m [1m[94m|[0m     bx4: i32,
+[1m[94m483[0m [1m[94m|[0m [1m[94m|[0m     bw4: i32,
+[1m[94m484[0m [1m[94m|[0m [1m[94m|[0m     bh4: i32,
+[1m[94m485[0m [1m[94m|[0m [1m[94m|[0m ) -> ());
+    [1m[94m|[0m [1m[94m|________-[0m [1m[94min this macro invocation[0m
+    [1m[94m|[0m
+    [1m[94m= [0m[1mnote[0m: the address of the same function can vary between different codegen units
+    [1m[94m= [0m[1mnote[0m: furthermore, different functions could have the same address after being merged together
+    [1m[94m= [0m[1mnote[0m: for more information visit <https://doc.rust-lang.org/nightly/core/ptr/fn.fn_addr_eq.html>
+    [1m[94m= [0m[1mnote[0m: this warning originates in the derive macro `PartialEq` which comes from the expansion of the macro `wrap_fn_ptr` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+[1m[33mwarning[0m: `rav1d-safe` (lib) generated 68 warnings (11 duplicates)
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 1.46s
+run-heavy: done rc=0 32s | peak-RSS 1.64GiB | min-avail 24239MiB | peak-load 1.64

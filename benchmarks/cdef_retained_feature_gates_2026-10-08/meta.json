@@ -1,0 +1,91 @@
+{
+  "date": "2026-10-08",
+  "compiler": "Rust 1.99.0, archmage 0.9.30/e2dbab66, generic target flags",
+  "command": "env PATH=/home/lilith/.cargo/bin:$PATH TMPDIR=/home/lilith/tmp RUSTFLAGS= CARGO_ENCODED_RUSTFLAGS= /home/lilith/work/claudehints/scripts/run-heavy --mem 16G --jobs 20 -- bash -c \"just test-cdef-retained && just check-cdef-retained-features\"",
+  "final_source_sha256": {
+    "include/dav1d/picture.rs": "6075676892e11e652c8ed1c085f062415e5090ecb0d780bcff291dc8ddaa2e2a",
+    "src/safe_simd/cdef.rs": "d45e671fed78784e962a332f1c019d14eec265a841875df7a75c359ab4b9e0ad",
+    "src/decode.rs": "011c249335de15b75a0b6fac3b9d25a3c2bfd5c4a1851779aa61093877785331",
+    "src/safe_simd/mc.rs": "5eef8c20ef03bb11d1c922cecb47727edf96ca7cf002bc162f33b3dddc8dc8db"
+  },
+  "logs": [
+    {
+      "original_name": "cdef-retained-current-gates.log",
+      "sha256": "264f6b1e67967b06f7be0148871328b5d712a013662a33fdb1f1bda9e2ecc0ad",
+      "bytes": 9234,
+      "parts": [
+        {
+          "name": "cdef-retained-current-gates.part01.log",
+          "sha256": "264f6b1e67967b06f7be0148871328b5d712a013662a33fdb1f1bda9e2ecc0ad",
+          "bytes": 9234
+        }
+      ],
+      "resource": "run-heavy: done rc=101 11s | peak-RSS 0.95GiB | min-avail 24138MiB | peak-load 1.97"
+    },
+    {
+      "original_name": "cdef-retained-dereferenced-gates.log",
+      "sha256": "333da43c1856a1fd05cfdb6988816a67f163071879be38211e8da44bba79e330",
+      "bytes": 85681,
+      "parts": [
+        {
+          "name": "cdef-retained-dereferenced-gates.part01.log",
+          "sha256": "14df2123795fb9f3d769cb661200dd387385c9b0406093e8d6b143f5fb632a1f",
+          "bytes": 27869
+        },
+        {
+          "name": "cdef-retained-dereferenced-gates.part02.log",
+          "sha256": "2d7db488e9de6a872bbc75ec726e7b028b674e76b73fa8a66d1dd26f584d849d",
+          "bytes": 27979
+        },
+        {
+          "name": "cdef-retained-dereferenced-gates.part03.log",
+          "sha256": "89929f6345d5721bb84f440e3d14fea0662c895d46fbdd0fe5ba8ed7fb7b2722",
+          "bytes": 27796
+        },
+        {
+          "name": "cdef-retained-dereferenced-gates.part04.log",
+          "sha256": "41b232ded865a559d5f24ab6deadc9ffaa89a344666ab75f9bd635db6eb40125",
+          "bytes": 2037
+        }
+      ],
+      "resource": "run-heavy: done rc=0 64s | peak-RSS 1.62GiB | min-avail 24249MiB | peak-load 3.30"
+    },
+    {
+      "original_name": "cdef-retained-cfg-gates.log",
+      "sha256": "73d7af1e57665208ee9c1fad4a791177b7b41b218d3cb39669b1012ea464e494",
+      "bytes": 6820,
+      "parts": [
+        {
+          "name": "cdef-retained-cfg-gates.part01.log",
+          "sha256": "73d7af1e57665208ee9c1fad4a791177b7b41b218d3cb39669b1012ea464e494",
+          "bytes": 6820
+        }
+      ],
+      "resource": "run-heavy: done rc=101 28s | peak-RSS 1.60GiB | min-avail 24272MiB | peak-load 2.16"
+    },
+    {
+      "original_name": "cdef-retained-final-cfg-gates.log",
+      "sha256": "030c318c44bd270ab86452d19eea907a2f25786bb434a0bdeb109af8ef55cac5",
+      "bytes": 72092,
+      "parts": [
+        {
+          "name": "cdef-retained-final-cfg-gates.part01.log",
+          "sha256": "51124518718a50f17fc89e57cb6b8ca37b5ec9cb4082e2cbcc54815e67177e02",
+          "bytes": 27995
+        },
+        {
+          "name": "cdef-retained-final-cfg-gates.part02.log",
+          "sha256": "1cc38504c126f26ff2beaf7e5637db2b4d8a3285b4c12a4daf275d0c7c42ad92",
+          "bytes": 27978
+        },
+        {
+          "name": "cdef-retained-final-cfg-gates.part03.log",
+          "sha256": "1e11ccb6d10a2788dbf5f122f81b48233d4b49c564862adab1bcade70e490308",
+          "bytes": 16119
+        }
+      ],
+      "resource": "run-heavy: done rc=0 32s | peak-RSS 1.64GiB | min-avail 24239MiB | peak-load 1.64"
+    }
+  ],
+  "scope": "Final five focused tests, tracked/untracked release all-target lint and ARM/WASM/C-FFI/ASM compile pass. Retained helper new unused ASM warnings are eliminated; 68 other ASM warnings remain. Full decoder/sidecar/performance gates remain pending."
+}

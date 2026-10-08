@@ -1,0 +1,86 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=25969MiB :: bash -c just test-cdef-retained && just check-cdef-retained-features
+cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib -E 'test(retained_cdef_tests) | test(padding_parity_tests)' --test-threads 1
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker)
+[1m[92m    Finished[0m `release-thin` profile [optimized + debuginfo] target(s) in 13.68s
+────────────
+[32;1m Nextest run[0m ID [1meb583dfb-9722-4859-9f3a-2ec2f45a0ca0[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m5[0m tests across [1m1[0m binary ([1m120[0m tests [33;1mskipped[0m)
+[32;1m        PASS[0m [   0.003s] (1/5) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::retained_cdef_tests[0m[36m::[0m[34;1mdeclined_cdef_rectangle_keeps_compact_write_back[0m
+[32;1m        PASS[0m [   0.003s] (2/5) [35;1mrav1d-safe[0m [36minclude::dav1d::picture::retained_cdef_tests[0m[36m::[0m[34;1mretained_cdef_rows_preserve_gaps_and_write_back_at_every_depth[0m
+[32;1m        PASS[0m [   0.004s] (3/5) [35;1mrav1d-safe[0m [36msrc::safe_simd::cdef::padding_parity_tests[0m[36m::[0m[34;1mpadding_16bpc_full_domain_parity[0m
+[32;1m        PASS[0m [   0.004s] (4/5) [35;1mrav1d-safe[0m [36msrc::safe_simd::cdef::padding_parity_tests[0m[36m::[0m[34;1mpadding_8bpc_full_domain_parity[0m
+[32;1m        PASS[0m [   0.003s] (5/5) [35;1mrav1d-safe[0m [36msrc::safe_simd::cdef::padding_parity_tests[0m[36m::[0m[34;1mrect_guard_arms_with_declared_stride[0m
+────────────
+[32;1m     Summary[0m [   0.018s] [1m5[0m tests run: [1m5[0m [32;1mpassed[0m, [1m120[0m [33;1mskipped[0m
+cargo clippy --release --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 6.09s
+cargo clippy --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --all-targets -- -D warnings
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 6.05s
+cargo check --target aarch64-unknown-linux-gnu --no-default-features --features "bitdepth_8,bitdepth_16"
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe--lead-tracker)
+[1m[91merror[E0425][0m[1m: cannot find function `with_cdef_guard_mut` in module `crate::include::dav1d::picture`[0m
+    [1m[94m--> [0msrc/safe_simd/cdef.rs:1150:37
+     [1m[94m|[0m
+[1m[94m1150[0m [1m[94m|[0m       crate::include::dav1d::picture::with_cdef_guard_mut::<BitDepth8, _>(
+     [1m[94m|[0m                                       [1m[91m^^^^^^^^^^^^^^^^^^^[0m
+     [1m[94m|[0m
+    [1m[94m::: [0minclude/dav1d/picture.rs:474:1
+     [1m[94m|[0m
+[1m[94m 474[0m [1m[94m|[0m [1m[94m/[0m pub fn with_pixel_guard_mut<BD: BitDepth, R>(
+[1m[94m 475[0m [1m[94m|[0m [1m[94m|[0m     pic: &crate::src::with_offset::WithOffset<&Rav1dPictureDataComponent>,
+[1m[94m 476[0m [1m[94m|[0m [1m[94m|[0m     w: usize,
+[1m[94m 477[0m [1m[94m|[0m [1m[94m|[0m     h: usize,
+[1m[94m...[0m    [1m[94m|[0m
+[1m[94m 491[0m [1m[94m|[0m [1m[94m|[0m     f(block.as_mut_bytes(), offset, stride)
+[1m[94m 492[0m [1m[94m|[0m [1m[94m|[0m }
+     [1m[94m|[0m [1m[94m|_-[0m [1m[94msimilarly named function `with_pixel_guard_mut` defined here[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0minclude/dav1d/picture.rs:506:15
+     [1m[94m|[0m
+[1m[94m 505[0m [1m[94m|[0m #[cfg(all(target_arch = "x86_64", not(feature = "asm")))]
+     [1m[94m|[0m           [1m[94m----------------------[0m [1m[94mthe item is gated behind the `x86_64` feature[0m
+[1m[94m 506[0m [1m[94m|[0m pub(crate) fn with_cdef_guard_mut<BD: BitDepth, R>(
+     [1m[94m|[0m               [1m[92m^^^^^^^^^^^^^^^^^^^[0m
+[1m[96mhelp[0m: a function with a similar name exists
+     [1m[94m|[0m
+[1m[94m1150[0m [91m- [0m    crate::include::dav1d::picture::[91mwith_cdef_guard_mut[0m::<BitDepth8, _>(
+[1m[94m1150[0m [92m+ [0m    crate::include::dav1d::picture::[92mwith_pixel_guard_mut[0m::<BitDepth8, _>(
+     [1m[94m|[0m
+
+[1m[91merror[E0425][0m[1m: cannot find function `with_cdef_guard_mut` in module `crate::include::dav1d::picture`[0m
+    [1m[94m--> [0msrc/safe_simd/cdef.rs:2170:37
+     [1m[94m|[0m
+[1m[94m2170[0m [1m[94m|[0m       crate::include::dav1d::picture::with_cdef_guard_mut::<BitDepth16, _>(
+     [1m[94m|[0m                                       [1m[91m^^^^^^^^^^^^^^^^^^^[0m
+     [1m[94m|[0m
+    [1m[94m::: [0minclude/dav1d/picture.rs:474:1
+     [1m[94m|[0m
+[1m[94m 474[0m [1m[94m|[0m [1m[94m/[0m pub fn with_pixel_guard_mut<BD: BitDepth, R>(
+[1m[94m 475[0m [1m[94m|[0m [1m[94m|[0m     pic: &crate::src::with_offset::WithOffset<&Rav1dPictureDataComponent>,
+[1m[94m 476[0m [1m[94m|[0m [1m[94m|[0m     w: usize,
+[1m[94m 477[0m [1m[94m|[0m [1m[94m|[0m     h: usize,
+[1m[94m...[0m    [1m[94m|[0m
+[1m[94m 491[0m [1m[94m|[0m [1m[94m|[0m     f(block.as_mut_bytes(), offset, stride)
+[1m[94m 492[0m [1m[94m|[0m [1m[94m|[0m }
+     [1m[94m|[0m [1m[94m|_-[0m [1m[94msimilarly named function `with_pixel_guard_mut` defined here[0m
+     [1m[94m|[0m
+[1m[92mnote[0m: found an item that was configured out
+    [1m[94m--> [0minclude/dav1d/picture.rs:506:15
+     [1m[94m|[0m
+[1m[94m 505[0m [1m[94m|[0m #[cfg(all(target_arch = "x86_64", not(feature = "asm")))]
+     [1m[94m|[0m           [1m[94m----------------------[0m [1m[94mthe item is gated behind the `x86_64` feature[0m
+[1m[94m 506[0m [1m[94m|[0m pub(crate) fn with_cdef_guard_mut<BD: BitDepth, R>(
+     [1m[94m|[0m               [1m[92m^^^^^^^^^^^^^^^^^^^[0m
+[1m[96mhelp[0m: a function with a similar name exists
+     [1m[94m|[0m
+[1m[94m2170[0m [91m- [0m    crate::include::dav1d::picture::[91mwith_cdef_guard_mut[0m::<BitDepth16, _>(
+[1m[94m2170[0m [92m+ [0m    crate::include::dav1d::picture::[92mwith_pixel_guard_mut[0m::<BitDepth16, _>(
+     [1m[94m|[0m
+
+[1mFor more information about this error, try `rustc --explain E0425`.[0m
+[1m[91merror[0m: could not compile `rav1d-safe` (lib) due to 2 previous errors
+error: recipe `cross-aarch64` failed on line 223 with exit code 101
+run-heavy: done rc=101 28s | peak-RSS 1.60GiB | min-avail 24272MiB | peak-load 2.16
