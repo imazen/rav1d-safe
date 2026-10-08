@@ -75,10 +75,10 @@ test-integration-selection vectors features="bitdepth_8,bitdepth_16":
 # the ignored tile_threading_overlap tests (incl. multi_threaded_cdef_lpf_race,
 # needs in-process parallel decode pressure) + the induced-worker-panic
 # error-not-hang tests (private __test_induce_worker_panic feature).
-test-threading-races:
-    cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --test decode_concurrent_md5
-    cargo test --release --no-default-features --features "bitdepth_8,bitdepth_16" --test tile_threading_overlap -- --ignored --test-threads 1
-    cargo test --release --no-default-features --features "bitdepth_8,bitdepth_16,__test_induce_worker_panic" --test worker_panic_recovery -- --ignored --test-threads 1
+test-threading-races features="bitdepth_8,bitdepth_16":
+    cargo nextest run --release --no-default-features --features "{{features}}" --test decode_concurrent_md5
+    cargo test --release --no-default-features --features "{{features}}" --test tile_threading_overlap -- --ignored --test-threads 1
+    cargo test --release --no-default-features --features "{{features}},__test_induce_worker_panic" --test worker_panic_recovery -- --ignored --test-threads 1
 
 # Run clippy lints
 clippy:

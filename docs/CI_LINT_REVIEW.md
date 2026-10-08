@@ -180,3 +180,11 @@ on ebceb0ca, run 37756911363. Both architecture permutation jobs complete,
 as do Windows ARM, macOS Intel and i686 native/cross tests. This covers the
 published benchmark tools and existing decoder source; the private MC,
 CDEF, retained-row and initialization candidates remain separate gates.
+
+`just test-threading-races` now accepts an explicit feature list, retaining
+its existing default. `just test-threading-races
+bitdepth_8,bitdepth_16,untracked` exercises the same concurrent-MD5,
+three overlap and two worker-panic checks in the fast mode. The candidate's
+[both-mode selected gate](../benchmarks/mc_feature_gates_2026-10-08/meta.json)
+passes all six checks per mode with these commands; source optimizations
+are still unpublished. No test expectation or selection is relaxed.
