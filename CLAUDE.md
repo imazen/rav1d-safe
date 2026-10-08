@@ -749,8 +749,10 @@ cd /home/lilith/work/zenavif
 
 ### Tile threading: WORKING under forbid(unsafe_code) (v0.5.4)
 
-**Status:** Tile threading (n_fc=1, n_tc>1) works in checked mode. Frame threading (n_fc>1)
-requires `untracked` (which `c-ffi`/`asm`/`partial_asm` imply).
+**Status:** Tile threading (n_fc=1, n_tc>1) and explicit frame threading
+(n_fc>1, `max_frame_delay > 1`) work in checked mode. The managed API maps
+auto delay to two frames when workers are requested; see the Frame threading
+note below and `docs/DECODER_COMPARISON.md`.
 
 **Loop-filter H window ran past the end of a picture row (FIXED, #524, commit 3426ebf):**
 The x86_64 vertical-edge (`is_v == false`) compact read window was sized from the
@@ -1139,7 +1141,8 @@ Follow-up concurrency validation on 2026-09-06 (`6115e06b`) passes with
 decoders, and a 32-tile stream at eight workers and 1/2/4 frame contexts.
 See [FILMGRAIN_CONCURRENCY.md](docs/FILMGRAIN_CONCURRENCY.md) for the matrix,
 input-backpressure contract, liveness checks, and limits. Checked frame
-threading remains disabled; the earlier paragraph describes the initial run.
+threading was disabled during that September run. It is enabled for explicit
+delays as of 2026-10-01; see the Frame threading note above.
 The original downstream zenpipe AVIF was not identified or rerun here.
 Additional checks on Apple ARM: 116 dev-profile unit/committed-vector/crash
 tests passed (8 pre-existing ignored tests); six focused release tests passed,

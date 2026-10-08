@@ -85,8 +85,12 @@ thread, then falls behind as threads are added.
   (dav1d too: 1.45 -> 1.46); the stream's tile count was not checked.
 - **Frame threading is the real lever** on small frames: untracked with
   `RAV1D_FRAME_DELAY=4` goes 3.58 -> 1.43 ms at 4 threads (2.5x), and dav1d's auto
-  mode 1.46 -> 0.73. The tracked default cannot frame-thread (`n_fc` is clamped
-  to 1), which is why it is 4.9x behind untracked on this stream.
+  mode 1.46 -> 0.73. During this recorded comparison the tracked core clamped
+  `n_fc` to 1, contributing to its 4.9x gap on this stream. That clamp is now
+  conditional: tracked core callers get frame threading with explicit
+  `max_frame_delay > 1`, and the managed API maps auto delay to two frames
+  when workers are requested. The historical measurements above remain as
+  recorded; later real-footage measurements are separate.
 
 ## A safe single-thread backend?
 

@@ -15,8 +15,11 @@ The former `unchecked` feature is gone. It only removed tracking at the four
 `dm_new` call sites (everything built through `DisjointMut::default()` stayed
 tracked) and swapped safe SIMD loads/stores for raw-pointer ones; the latter
 measured 0% (see below). `c-ffi`, `asm` and `partial_asm` now imply `untracked`,
-which is what `unchecked` gave them (frame threading, `max_frame_delay > 1`, is
-only available with it). There is deliberately **no** bounds-unchecked variant. Measured
+which is what `unchecked` gave them. Explicit frame threading
+(`max_frame_delay > 1`) also works with the tracker; the managed API maps
+auto delay to two frames when workers are requested. See
+[decoder threading behavior](DECODER_COMPARISON.md).
+There is deliberately **no** bounds-unchecked variant. Measured
 with and without it on top of `untracked` (interleaved A/B, x86_64): 4K intra,
 480p inter (1800 frames), 8-bit intra and 10-bit high-bitrate streams at 1 and 4
 threads all land within -1.7%..+1.3%, both signs, i.e. noise. aarch64/wasm were

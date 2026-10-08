@@ -94,7 +94,7 @@ nasm-rs = { version = "0.3.2", features = ["parallel"] }
 # Default: forbid(unsafe_code), multithreaded, bounds-checked
 default = ["bitdepth_8", "bitdepth_16"]
 
-# Race-tolerant fast mode (also what `c-ffi`, `asm` and `partial_asm` use; frame threading, n_fc>1, needs it): NO overlap tracking and, under tile threading, zero-copy
+# Race-tolerant fast mode (also used by `c-ffi`, `asm` and `partial_asm`): NO overlap tracking and, under tile threading, zero-copy. Explicit frame threading works in both modes.
 # in-place guards instead of the compact copy-in / diff-write-back path.
 # Slice BOUNDS CHECKS STAY ON. Overlapping access is formally UB, but every
 # `DisjointMut` element is `PlainData` (all bit patterns valid, no pointers), so

@@ -156,3 +156,11 @@ comment, the profiling example label and the overlap-test header also identify
 pixel-dispatch selection. Token dispatch and compiler vectorization remain
 independent of that mask. No settings or decoder behavior changes accompany
 these documentation corrections.
+
+Frame-threading descriptions now match `src/lib.rs::get_num_threads` and
+`Settings::effective_frame_delay`: explicit delays greater than one enable
+tracked frame contexts, and managed auto delay selects two when workers are
+requested. Existing historical comparison values and release entries remain
+as recorded; the old unconditional-clamp statement is labeled by its run.
+The [full native ARM gate](../benchmarks/arm_decoder_full_2026-10-08.meta.json)
+includes generated threaded-vector and backpressure tests in both modes.

@@ -109,8 +109,6 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 - Removed per-call libc `memset`/`memcpy` in three hot spots: the `splat_mv`
   scratch arrays, `order_palette`'s variable-length copy and `px_copy`'s small
   fall-through (bit-exact on all 803 vectors).
-- Frame threading (`max_frame_delay > 1`) is gated on `untracked` (previously
-  `unchecked`).
 
 ### Removed
 - **Breaking:** the `unchecked` feature. Its bounds-unchecked SIMD loads/stores
