@@ -173,3 +173,10 @@ benchmark example, passed all 33 jobs in the
 record the 2026-10-08 observation, including both conformance architectures,
 both allocator Miri models, Windows ARM, macOS Intel and native/container i686.
 Private MC, CDEF and glue experiments remain outside this CI result.
+
+The completed archmage comparison and its reporting/output-check changes
+also have [all 33 CI jobs green](../benchmarks/archmage_comparison_ci_2026-10-08.json)
+on ebceb0ca, run 37756911363. Both architecture permutation jobs complete,
+as do Windows ARM, macOS Intel and i686 native/cross tests. This covers the
+published benchmark tools and existing decoder source; the private MC,
+CDEF, retained-row and initialization candidates remain separate gates.
