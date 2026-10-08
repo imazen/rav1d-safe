@@ -35,3 +35,21 @@ records the 19-second passing scope: peak RSS 1.28 GiB, minimum available
 24,977 MiB and peak load 1.63. The malformed control induces decode failure;
 drain/flush handling was source-reviewed, not separately induced.
 `just test-benchmark-errors <decode_md5> <profile_ivf>` reproduces the gate.
+
+Whole-clip output checks must use the same grain setting as timing. The
+profile example uses `Settings::default()` with grain enabled. `just
+bench-md5 --filmgrain` now enables grain in both dav1d and each selected
+MD5 binary; the default remains explicit grain-disabled comparison.
+[Grain-enabled validation](../benchmarks/archmage_grain_output_2026-10-08.log)
+passes all 32 comparisons: four clips, two archmage revisions, both modes,
+and one/four workers. Their MD5s also match the prior grain-disabled output
+for these clips. The 121-second scope peaked at 0.20 GiB RSS, with minimum
+available 25,787 MiB and peak load 1.19.
+
+`just bench-paired-report <directory>` requires all four A/A and A/B phases
+to have completion markers, matching configurations and streams. It
+recomputes medians and minimums from raw samples and retains process-round
+ratios: timed passes within one process share scheduling and caches. The
+report rejected the live unfinished campaign, then accepted all sixteen
+cases after completion. No winner threshold or significance claim is
+inferred by this report.

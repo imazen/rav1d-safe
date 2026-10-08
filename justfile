@@ -51,6 +51,10 @@ bench-md5 *args:
 bench-paired-modes *args:
     python3 scripts/perf/decoder_bench/paired_modes.py {{args}}
 
+# Reject incomplete phases and recompute statistics from every raw observation.
+bench-paired-report directory:
+    python3 scripts/perf/decoder_bench/report_paired.py "{{directory}}"
+
 # Verify warm-up and every timed pass on an explicit benchmark clip.
 bench-frame-count binary stream threads="1" repetitions="3":
     RAV1D_THREADS={{threads}} RAV1D_REPS={{repetitions}} RAV1D_FRAME_DELAY=1 RAV1D_LEVEL=native RAV1D_INLOOP=all "{{binary}}" "{{stream}}" 1

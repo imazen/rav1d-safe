@@ -30,6 +30,8 @@ def main():
     parser.add_argument("--threads", default="1,4")
     parser.add_argument("--delay", type=int, default=1)
     parser.add_argument("--dav1d", default="dav1d")
+    parser.add_argument("--filmgrain", action="store_true",
+                        help="apply grain in both decoders (matches profile_ivf's default)")
     args = parser.parse_args()
     threads = [int(value) for value in args.threads.split(",")]
     if not threads or min(threads) < 1 or args.delay < 1:
@@ -43,14 +45,16 @@ def main():
                              capture_output=True, check=True)
     print(json.dumps({"event": "start", "binaries": binaries,
                       "dav1d": (version.stdout + version.stderr).strip(),
-                      "threads": threads, "delay": args.delay}), flush=True)
+                      "threads": threads, "delay": args.delay,
+                      "filmgrain": args.filmgrain}), flush=True)
     for stream in args.stream:
         expected, _ = checked([args.dav1d, "-i", stream, "--muxer", "md5",
-                               "-o", "-", "-q", "--filmgrain", "0",
+                               "-o", "-", "-q", "--filmgrain", str(int(args.filmgrain)),
                                "--threads", "1", "--framedelay", str(args.delay)], env)
         for binary in binaries:
             for count in threads:
-                actual, diagnostic = checked([binary, "--threads", str(count),
+                grain = ["--filmgrain"] if args.filmgrain else []
+                actual, diagnostic = checked([binary, *grain, "--threads", str(count),
                                               "--delay", str(args.delay), stream], env)
                 frames = re.findall(r"^Frames: (\d+)$", diagnostic, re.M)
                 if len(frames) != 1 or int(frames[0]) <= 0:
