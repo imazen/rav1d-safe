@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-08",
+  "baseline_revision": "bb4cded48baf878d7ae404db78006b6b572b0633",
+  "base_mc_sha256": "c3a73a1fcac333caa1d1ca59c432d3ba8d77c4f16214bed228acd7f99352ae1f",
+  "repaired_mc_sha256": "a453814033eff112c32e7f62da12a48a00dcfd7f4140589b0d87d7c50f77a041",
+  "purpose": "Reproduce the matched before source, including its independent signed-source repair and regression oracle. This is benchmark provenance, not an additional compiled crate target.",
+  "apply": "Apply source-repair.patch at the base MC SHA; copy mc_source_stride_tests.rs to src/safe_simd/mc_source_stride_tests.rs. The patch includes the cfg(test) module declaration.",
+  "verification": "Patch application checked against the recorded base; resulting source must match repaired_mc_sha256. The executed baseline oracle and resource evidence are in docs/MC_SOURCE_ROW_REVIEW.md; matched release examples are in mc_final_matched_builds_2026-10-08.meta.json.",
+  "files": {
+    "source-repair.patch": {
+      "sha256": "e3a255ad0f52539002606d5fdb11cf8fa434cd77188ce98d85b7521540b09a1b",
+      "bytes": 8666
+    },
+    "mc_source_stride_tests.rs": {
+      "sha256": "c658add2829e9bf2c3517f4d422f4bc7a7140ff8272db13abb66d5bb0a2d2fb4",
+      "bytes": 9116
+    }
+  }
+}

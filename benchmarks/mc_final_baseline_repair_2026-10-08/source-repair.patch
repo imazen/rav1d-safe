@@ -1,0 +1,219 @@
+--- a/src/safe_simd/mc.rs
++++ b/src/safe_simd/mc.rs
+@@ -2995,9 +2995,10 @@
+ #[rite]
+ fn v_filter_8tap_8bpc_direct_avx2_inner(
+     _token: Desktop64,
+     dst: &mut [u8],
+-    src: &[u8], // already positioned at (y-3, 0)
++    src: &[u8],
++    src_base: usize,
+     src_stride: isize,
+     w: usize,
+     filter: &[i8; 8],
+ ) {
+@@ -3012,22 +3013,22 @@
+     let rnd = _mm_set1_epi32(32);
+     let zero = _mm_setzero_si128();
+     let max16 = _mm_set1_epi16(255);
+     let shift_count = _mm_cvtsi32_si128(6);
+-    let stride = src_stride as usize;
++    let row = |tap: usize| src_base.wrapping_add_signed(tap as isize * src_stride);
+ 
+     let mut col = 0usize;
+ 
+     // 8 columns at a time: u8 rows -> i16, unpack into pairs, pmaddwd.
+     while col + 8 <= w {
+-        let p0 = _mm_cvtepu8_epi16(loadi64!(&src[col..col + 8]));
+-        let p1 = _mm_cvtepu8_epi16(loadi64!(&src[stride + col..stride + col + 8]));
+-        let p2 = _mm_cvtepu8_epi16(loadi64!(&src[2 * stride + col..2 * stride + col + 8]));
+-        let p3 = _mm_cvtepu8_epi16(loadi64!(&src[3 * stride + col..3 * stride + col + 8]));
+-        let p4 = _mm_cvtepu8_epi16(loadi64!(&src[4 * stride + col..4 * stride + col + 8]));
+-        let p5 = _mm_cvtepu8_epi16(loadi64!(&src[5 * stride + col..5 * stride + col + 8]));
+-        let p6 = _mm_cvtepu8_epi16(loadi64!(&src[6 * stride + col..6 * stride + col + 8]));
+-        let p7 = _mm_cvtepu8_epi16(loadi64!(&src[7 * stride + col..7 * stride + col + 8]));
++        let p0 = _mm_cvtepu8_epi16(loadi64!(&src[row(0) + col..row(0) + col + 8]));
++        let p1 = _mm_cvtepu8_epi16(loadi64!(&src[row(1) + col..row(1) + col + 8]));
++        let p2 = _mm_cvtepu8_epi16(loadi64!(&src[row(2) + col..row(2) + col + 8]));
++        let p3 = _mm_cvtepu8_epi16(loadi64!(&src[row(3) + col..row(3) + col + 8]));
++        let p4 = _mm_cvtepu8_epi16(loadi64!(&src[row(4) + col..row(4) + col + 8]));
++        let p5 = _mm_cvtepu8_epi16(loadi64!(&src[row(5) + col..row(5) + col + 8]));
++        let p6 = _mm_cvtepu8_epi16(loadi64!(&src[row(6) + col..row(6) + col + 8]));
++        let p7 = _mm_cvtepu8_epi16(loadi64!(&src[row(7) + col..row(7) + col + 8]));
+ 
+         let p01l = _mm_unpacklo_epi16(p0, p1);
+         let p01h = _mm_unpackhi_epi16(p0, p1);
+         let p23l = _mm_unpacklo_epi16(p2, p3);
+@@ -3062,9 +3063,9 @@
+ 
+     // w=4 tail: 32-bit row loads -> i16 pairs -> madd.
+     if w - col == 4 {
+         let ld = |r: usize| -> __m128i {
+-            let off = r * stride + col;
++            let off = row(r) + col;
+             let b = u32::from_ne_bytes(*<&[u8; 4]>::try_from(&src[off..off + 4]).unwrap());
+             _mm_cvtsi32_si128(b as i32)
+         };
+         let p0 = _mm_cvtepu8_epi16(ld(0));
+@@ -3096,9 +3097,9 @@
+     // Scalar fallback
+     while col < w {
+         let mut sum = 0i32;
+         for i in 0..8 {
+-            let px = src[(i as isize * src_stride) as usize + col] as i32;
++            let px = src[row(i) + col] as i32;
+             sum += filter[i] as i32 * px;
+         }
+         let val = ((sum + 32) >> 6).clamp(0, 255);
+         dst[col] = val as u8;
+@@ -3113,14 +3114,23 @@
+ fn v_filter_8tap_8bpc_direct_avx512_inner(
+     _token: Server64,
+     dst: &mut [u8],
+     src: &[u8],
++    src_base: usize,
+     src_stride: isize,
+     w: usize,
+     filter: &[i8; 8],
+ ) {
+     if w < 16 {
+-        v_filter_8tap_8bpc_direct_avx2_inner(_token.v3(), dst, src, src_stride, w, filter);
++        v_filter_8tap_8bpc_direct_avx2_inner(
++            _token.v3(),
++            dst,
++            src,
++            src_base,
++            src_stride,
++            w,
++            filter,
++        );
+         return;
+     }
+     let mut dst = dst.flex_mut();
+     let src = src.flex();
+@@ -3137,38 +3147,38 @@
+     let rnd = _mm512_set1_epi32(32);
+     let zero = _mm512_setzero_si512();
+     let max = _mm512_set1_epi32(255);
+ 
+-    let stride = src_stride as usize;
++    let row = |tap: usize| src_base.wrapping_add_signed(tap as isize * src_stride);
+ 
+     let mut col = 0usize;
+ 
+     // Process 16 pixels at a time (u8→i32 expansion gives 16 i32 in 512 bits)
+     while col + 16 <= w {
+         // Load 16 u8 from each of 8 rows, expand to i32
+         let p0 = _mm512_cvtepu8_epi32(loadu_128!(
+-            <&[u8; 16]>::try_from(&src[col..col + 16]).unwrap()
++            <&[u8; 16]>::try_from(&src[row(0) + col..row(0) + col + 16]).unwrap()
+         ));
+         let p1 = _mm512_cvtepu8_epi32(loadu_128!(
+-            <&[u8; 16]>::try_from(&src[stride + col..stride + col + 16]).unwrap()
++            <&[u8; 16]>::try_from(&src[row(1) + col..row(1) + col + 16]).unwrap()
+         ));
+         let p2 = _mm512_cvtepu8_epi32(loadu_128!(
+-            <&[u8; 16]>::try_from(&src[2 * stride + col..2 * stride + col + 16]).unwrap()
++            <&[u8; 16]>::try_from(&src[row(2) + col..row(2) + col + 16]).unwrap()
+         ));
+         let p3 = _mm512_cvtepu8_epi32(loadu_128!(
+-            <&[u8; 16]>::try_from(&src[3 * stride + col..3 * stride + col + 16]).unwrap()
++            <&[u8; 16]>::try_from(&src[row(3) + col..row(3) + col + 16]).unwrap()
+         ));
+         let p4 = _mm512_cvtepu8_epi32(loadu_128!(
+-            <&[u8; 16]>::try_from(&src[4 * stride + col..4 * stride + col + 16]).unwrap()
++            <&[u8; 16]>::try_from(&src[row(4) + col..row(4) + col + 16]).unwrap()
+         ));
+         let p5 = _mm512_cvtepu8_epi32(loadu_128!(
+-            <&[u8; 16]>::try_from(&src[5 * stride + col..5 * stride + col + 16]).unwrap()
++            <&[u8; 16]>::try_from(&src[row(5) + col..row(5) + col + 16]).unwrap()
+         ));
+         let p6 = _mm512_cvtepu8_epi32(loadu_128!(
+-            <&[u8; 16]>::try_from(&src[6 * stride + col..6 * stride + col + 16]).unwrap()
++            <&[u8; 16]>::try_from(&src[row(6) + col..row(6) + col + 16]).unwrap()
+         ));
+         let p7 = _mm512_cvtepu8_epi32(loadu_128!(
+-            <&[u8; 16]>::try_from(&src[7 * stride + col..7 * stride + col + 16]).unwrap()
++            <&[u8; 16]>::try_from(&src[row(7) + col..row(7) + col + 16]).unwrap()
+         ));
+ 
+         // Multiply and accumulate
+         let mut sum = _mm512_mullo_epi32(p0, c0);
+@@ -3199,9 +3209,9 @@
+     // Scalar fallback
+     while col < w {
+         let mut sum = 0i32;
+         for i in 0..8 {
+-            let px = src[(i as isize * src_stride) as usize + col] as i32;
++            let px = src[row(i) + col] as i32;
+             sum += filter[i] as i32 * px;
+         }
+         let val = ((sum + 32) >> 6).clamp(0, 255);
+         dst[col] = val as u8;
+@@ -3223,9 +3233,9 @@
+     let token = archmage::X64V3Token::from_context();
+     unsafe {
+         v_filter_8tap_8bpc_direct_avx2_inner(
+             token, dst, src, // already positioned at (y-3, 0)
+-            src_stride, w, filter,
++            0, src_stride, w, filter,
+         )
+     }
+ }
+ 
+@@ -3317,11 +3327,18 @@
+         (None, Some(fv)) => {
+             // Case 3: V-only filtering (full SIMD)
+             for y in 0..h {
+                 let src_row_base = (sb + (y as isize - 3) * src_stride) as usize;
+-                let src_row = &src[src_row_base..];
+                 let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
+-                v_filter_8tap_8bpc_direct_avx2_inner(_token, dst_row, src_row, src_stride, w, fv);
++                v_filter_8tap_8bpc_direct_avx2_inner(
++                    _token,
++                    dst_row,
++                    &src,
++                    src_row_base,
++                    src_stride,
++                    w,
++                    fv,
++                );
+             }
+         }
+         (None, None) => {
+             // Case 4: Simple copy
+@@ -3413,11 +3430,18 @@
+         (None, Some(fv)) => {
+             // V-only
+             for y in 0..h {
+                 let src_row_base = (sb + (y as isize - 3) * src_stride) as usize;
+-                let src_row = &src[src_row_base..];
+                 let dst_row = &mut dst[(y as isize * dst_stride) as usize..];
+-                v_filter_8tap_8bpc_direct_avx512_inner(_token, dst_row, src_row, src_stride, w, fv);
++                v_filter_8tap_8bpc_direct_avx512_inner(
++                    _token,
++                    dst_row,
++                    &src,
++                    src_row_base,
++                    src_stride,
++                    w,
++                    fv,
++                );
+             }
+         }
+         (None, None) => {
+             // Simple copy
+@@ -14771,4 +14795,13 @@
+             }
+         }
+     }
+ }
++
++#[cfg(all(
++    test,
++    target_arch = "x86_64",
++    not(feature = "asm"),
++    not(feature = "c-ffi")
++))]
++#[path = "mc_source_stride_tests.rs"]
++mod mc_source_stride_tests;

@@ -25,3 +25,10 @@ passes the unchanged oracle in 5.361 seconds. Both wrapped scopes took
 19 seconds; the failing run peaked at 1.51 GiB RSS and the passing run
 at 1.52 GiB. [Raw before/after logs and source hashes](../benchmarks/mc_baseline_source_2026-10-08.meta.json)
 keep this correctness result separate from the pending MC optimization.
+
+The final matched before source can be reconstructed from the
+[recorded repair patch and independent oracle](../benchmarks/mc_final_baseline_repair_2026-10-08/meta.json).
+The patch starts at MC SHA `c3a73a1f` and produces `a4538140`; the complete
+hashes and fixture placement are in that record. This preserves the exact
+source used for the fresh Rust 1.99 / archmage 0.9.30 benchmark baseline,
+without adopting the optimization candidate or claiming a speed benefit.
