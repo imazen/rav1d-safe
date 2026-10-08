@@ -159,6 +159,9 @@ fn decode_frames(
     per_frame: bool,
     limit: Option<u32>,
 ) {
+    if limit.is_some_and(|l| *frame_count >= l) {
+        return;
+    }
     match decoder.decode(data) {
         Ok(Some(frame)) => {
             process_frame(&frame, hasher, frame_count, verbose, per_frame, limit);
@@ -171,6 +174,9 @@ fn decode_frames(
     }
     // Drain additional frames from buffered data
     loop {
+        if limit.is_some_and(|l| *frame_count >= l) {
+            break;
+        }
         match decoder.get_frame() {
             Ok(Some(frame)) => {
                 process_frame(&frame, hasher, frame_count, verbose, per_frame, limit);
@@ -492,6 +498,9 @@ fn main() {
             let mut cursor = Cursor::new(&data);
             let frames = ivf_parser::parse_all_frames(&mut cursor).expect("IVF parse failed");
             for ivf_frame in &frames {
+                if limit.is_some_and(|l| frame_count >= l) {
+                    break;
+                }
                 decode_frames(
                     &mut decoder,
                     &ivf_frame.data,
@@ -509,6 +518,9 @@ fn main() {
                     eprintln!("Annex B: {} temporal units", units.len());
                 }
                 for (tu_idx, unit) in units.iter().enumerate() {
+                    if limit.is_some_and(|l| frame_count >= l) {
+                        break;
+                    }
                     if verbose {
                         eprintln!("  TU {tu_idx}: {} bytes", unit.data.len());
                     }
@@ -540,22 +552,25 @@ fn main() {
         }
     }
 
-    // Flush remaining frames
-    match decoder.flush() {
-        Ok(remaining) => {
-            for frame in &remaining {
-                process_frame(
-                    frame,
-                    &mut hasher,
-                    &mut frame_count,
-                    verbose,
-                    per_frame,
-                    limit,
-                );
+    // Once the selected frame limit is reached, leave queued frames to
+    // decoder shutdown rather than decoding the rest of the input.
+    if !limit.is_some_and(|l| frame_count >= l) {
+        match decoder.flush() {
+            Ok(remaining) => {
+                for frame in &remaining {
+                    process_frame(
+                        frame,
+                        &mut hasher,
+                        &mut frame_count,
+                        verbose,
+                        per_frame,
+                        limit,
+                    );
+                }
             }
-        }
-        Err(e) => {
-            eprintln!("Flush error: {}", e);
+            Err(e) => {
+                eprintln!("Flush error: {}", e);
+            }
         }
     }
 

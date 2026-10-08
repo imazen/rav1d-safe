@@ -138,3 +138,15 @@ Published revision `770fc6d6` passed all 33 jobs in the
 [complete CI run](https://github.com/imazen/rav1d-safe/actions/runs/37738399273),
 verified on 2026-10-08. The unpublished ARM signed-source changes remain
 subject to their separate decoder and sidecar gates.
+
+The `decode_md5` frame limit now stops packet submission and frame draining,
+rather than only limiting hashes. A committed valid frame followed by a
+malformed second IVF packet proves the old behavior fails and limits zero/one
+stop correctly. Both ARM modes pass that gate; the original scalar two-worker
+300-frame sidecar matches its MD5 under the unchanged 120-second deadline.
+`just test-conformance-token-tiers` now also builds the example and runs
+`just test-decode-md5-limit`, so both existing CI architecture steps exercise
+the real command. The x86 worker/CLI gates, both-mode all-target lint and ARM
+compile pass in a 42-second scope, peak-RSS 1.29 GiB, min-avail 24645 MiB,
+peak-load 0.93. [Before/after full logs and binary hashes](../benchmarks/decode_md5_limit_2026-10-08.meta.json)
+record the failure and repair; the full enforced ARM scalar rerun is separate.

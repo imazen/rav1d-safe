@@ -1,0 +1,144 @@
+{
+  "date": "2026-10-08",
+  "base_revision": "e3fe80d7777c3514297744c799562808148da1c0",
+  "example_sha256": "9d25da85938745fe96aeff8958bbdbeef285316bbe491c147f1273121979b5b8",
+  "rustc": "1.99.0",
+  "archmage_revision": "e2dbab66ef5aa08f8e23ed05248e7d1217f58475",
+  "cpu": "Neoverse-N1",
+  "commands": [
+    "just conformance-scalar-modes <old-tracked> <old-untracked>",
+    "timeout 120 just decode-vector <tracked> --level scalar --threads 2 --delay 0 --limit 300 <autostitch> e2550fe403e83cae20d1abe044a87cae",
+    "just test-decode-md5-limit <tracked>; just test-decode-md5-limit <untracked>",
+    "just build-conformance-modes target/lead-frame-limit-safe target/lead-frame-limit-untracked"
+  ],
+  "results": {
+    "initial_matrix": "One803/803leg; nextleg657passing thenexitfailure. Remaininglegs not run.",
+    "original_case": "300frames observed thenunchanged120-seconddeadlineexit124.",
+    "negative_control": "Malformed-packet control reachesdecodeerror; oldlimit0 stilldecodesinvalidsecondpacket andfails.",
+    "repaired": "BothmodeCLI controlsPASS; sameautostitchscalar2worker300frame referenceMD5PASS. Full8leg rerun remains missing."
+  },
+  "run_heavy": [
+    {
+      "stage": "initial matrix",
+      "rc": 1,
+      "seconds": 942,
+      "peak_rss_gib": 0.23,
+      "min_available_mib": 26164,
+      "peak_load": 13.67
+    },
+    {
+      "stage": "originalcase",
+      "rc": 124,
+      "seconds": 120,
+      "peak_rss_gib": 0.0,
+      "min_available_mib": 27374,
+      "peak_load": 6.95
+    },
+    {
+      "stage": "repairedbuild",
+      "rc": 0,
+      "seconds": 131,
+      "peak_rss_gib": 0.93,
+      "min_available_mib": 26262,
+      "peak_load": 11.18
+    },
+    {
+      "stage": "repairedcontrols+originalcase",
+      "rc": 0,
+      "seconds": 38,
+      "peak_rss_gib": 0.03,
+      "min_available_mib": 27819,
+      "peak_load": 6.77
+    },
+    {
+      "stage": "x86 token/CLI bothmode lint and ARMcompile",
+      "rc": 0,
+      "seconds": 42,
+      "peak_rss_gib": 1.29,
+      "min_available_mib": 24645,
+      "peak_load": 0.93
+    }
+  ],
+  "arm_binaries_sha256": {
+    "tracked": "a348ae75735844ca46d6e75bc5b2d8fb2086a55bfe86f2feb6541ce4d0811c32",
+    "untracked": "b08099d0b2b6f2f3fd3ddf5f8806f73c77e57eb36e1cad0f4df2d4ea0b48db76"
+  },
+  "logs": [
+    {
+      "stage": "arm-enforced-scalar-sidecars",
+      "full_sha256": "8afe7f40f736741077011548f31ee4683da2e08452027f32966b189a3fd3af01",
+      "full_bytes": 2226,
+      "parts": [
+        {
+          "path": "benchmarks/arm-enforced-scalar-sidecars_2026-10-08.log",
+          "bytes": 2226,
+          "sha256": "8afe7f40f736741077011548f31ee4683da2e08452027f32966b189a3fd3af01"
+        }
+      ]
+    },
+    {
+      "stage": "arm-scalar-autostitch-repro",
+      "full_sha256": "01ea0bebe75b9958121439e853e38c1a8a1309bc1b58718228077d4ab4de5416",
+      "full_bytes": 38175,
+      "parts": [
+        {
+          "path": "benchmarks/arm-scalar-autostitch-repro_2026-10-08_01.log",
+          "bytes": 28000,
+          "sha256": "5f14f3fc98ae70981b867ca58426d5a816e99f3f14eeeffbad96d90f3cff78b2"
+        },
+        {
+          "path": "benchmarks/arm-scalar-autostitch-repro_2026-10-08_02.log",
+          "bytes": 10175,
+          "sha256": "1a2e64ef4aad9e1ec6cd7b76ec2d703f7daacf8c4f68a033aeaddf3c10cfa819"
+        }
+      ]
+    },
+    {
+      "stage": "arm-frame-limit-before",
+      "full_sha256": "112433959cce5f0e8593115f63d3070cdada7972a98d4a4805cef2da08351107",
+      "full_bytes": 1315,
+      "parts": [
+        {
+          "path": "benchmarks/arm-frame-limit-before_2026-10-08.log",
+          "bytes": 1315,
+          "sha256": "112433959cce5f0e8593115f63d3070cdada7972a98d4a4805cef2da08351107"
+        }
+      ]
+    },
+    {
+      "stage": "arm-frame-limit-after",
+      "full_sha256": "dc121651984bef4034d8a5b459ca0762dae9c21475b183386442de07a02a72a9",
+      "full_bytes": 2397,
+      "parts": [
+        {
+          "path": "benchmarks/arm-frame-limit-after_2026-10-08.log",
+          "bytes": 2397,
+          "sha256": "dc121651984bef4034d8a5b459ca0762dae9c21475b183386442de07a02a72a9"
+        }
+      ]
+    },
+    {
+      "stage": "arm-frame-limit-build",
+      "full_sha256": "2c08932b755177392d8cbc98d542e8ebe714d2232224d3c3cb804c1b1551dc3c",
+      "full_bytes": 10253,
+      "parts": [
+        {
+          "path": "benchmarks/arm-frame-limit-build_2026-10-08.log",
+          "bytes": 10253,
+          "sha256": "2c08932b755177392d8cbc98d542e8ebe714d2232224d3c3cb804c1b1551dc3c"
+        }
+      ]
+    },
+    {
+      "stage": "x86 token/CLI/lint/ARMcompile",
+      "parts": [
+        {
+          "path": "benchmarks/frame_limit_x86_gates_2026-10-08.log",
+          "bytes": 2998,
+          "sha256": "8cdc80ada32292aa9b276e60263320f1749c841177e4bfa7940746d36d6c950f"
+        }
+      ]
+    }
+  ],
+  "limits": "Tool-only frame-limit behavior; no decoder library API change, pixel kernel change, test deadline relaxation or performance optimization claim."
+}

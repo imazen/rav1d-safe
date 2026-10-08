@@ -1,0 +1,29 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=25443MiB :: just test-conformance-token-tiers clippy clippy-untracked cross-aarch64
+cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --example decode_md5 --test-threads 1
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 12.16s
+────────────
+[32;1m Nextest run[0m ID [1m6c693ca6-1091-46a7-9076-bf43de27e800[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m1[0m test across [1m1[0m binary
+[32;1m        PASS[0m [   0.003s] (1/1) [35;1mrav1d-safe::example/decode_md5[0m [36mx86_tier_tests[0m[36m::[0m[34;1mtier_caps_apply_to_workers_and_restore_baseline_tokens[0m
+────────────
+[32;1m     Summary[0m [   0.003s] [1m1[0m test run: [1m1[0m [32;1mpassed[0m, [1m0[0m [33;1mskipped[0m
+cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16" --example decode_md5
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 15.43s
+just test-decode-md5-limit "${CARGO_TARGET_DIR:-target}/release/examples/decode_md5"
+python3 tools/test_decode_md5_limit.py "target/release/examples/decode_md5"
+{"limit": null, "returncode": 0, "stdout": "9604569c8e5fcd812a940b82ef39b552\n", "stderr": "  Frame: 64x64 bpc=8 layout=I420\n  Y plane: 64x64 stride=128\n  U plane: 32x32 stride=64\n  V plane: 32x32 stride=64\nDecode error: Error: InvalidData\n\n    at src/managed.rs:799\n (invalid data)\nFrames: 1\n"}
+{"limit": 0, "returncode": 0, "stdout": "d41d8cd98f00b204e9800998ecf8427e\n", "stderr": "Frames: 0\n"}
+{"limit": 1, "returncode": 0, "stdout": "9604569c8e5fcd812a940b82ef39b552\n", "stderr": "  Frame: 64x64 bpc=8 layout=I420\n  Y plane: 64x64 stride=128\n  U plane: 32x32 stride=64\n  V plane: 32x32 stride=64\nFrames: 1\n"}
+PASS: malformed control and both frame-limit gates
+cargo clippy --release --no-default-features --features "bitdepth_8,bitdepth_16" --all-targets -- -D warnings
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 6.07s
+cargo clippy --release --no-default-features --features "bitdepth_8,bitdepth_16,untracked" --all-targets -- -D warnings
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+[1m[92m    Finished[0m `release` profile [optimized + debuginfo] target(s) in 6.01s
+cargo check --target aarch64-unknown-linux-gnu --no-default-features --features "bitdepth_8,bitdepth_16"
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+[1m[92m    Finished[0m `dev` profile [unoptimized + debuginfo] target(s) in 1.27s
+run-heavy: done rc=0 42s | peak-RSS 1.29GiB | min-avail 24645MiB | peak-load 0.93

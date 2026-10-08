@@ -1,0 +1,40 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=12/16 avail=27644MiB :: just conformance-scalar-modes target/lead-token-tier-safe/release/examples/decode_md5 target/lead-token-tier-untracked/release/examples/decode_md5
+# Total: 952 test vectors
+Conformance: level=scalar threads=1 delay=0 binary=target/lead-token-tier-safe/release/examples/decode_md5 manifest=/home/ubuntu/tmp/rav1d-vectors.QazncA.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+Progress: total=700 pass=700 fail=0 errors=0
+Progress: total=750 pass=750 fail=0 errors=0
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=scalar threads=1 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+# Total: 952 test vectors
+Conformance: level=scalar threads=2 delay=0 binary=target/lead-token-tier-safe/release/examples/decode_md5 manifest=/home/ubuntu/tmp/rav1d-vectors.6S6wMa.tsv
+Progress: total=50 pass=50 fail=0 errors=0
+Progress: total=100 pass=100 fail=0 errors=0
+Progress: total=150 pass=150 fail=0 errors=0
+Progress: total=200 pass=200 fail=0 errors=0
+Progress: total=250 pass=250 fail=0 errors=0
+Progress: total=300 pass=300 fail=0 errors=0
+Progress: total=350 pass=350 fail=0 errors=0
+Progress: total=400 pass=400 fail=0 errors=0
+Progress: total=450 pass=450 fail=0 errors=0
+Progress: total=500 pass=500 fail=0 errors=0
+Progress: total=550 pass=550 fail=0 errors=0
+Progress: total=600 pass=600 fail=0 errors=0
+Progress: total=650 pass=650 fail=0 errors=0
+FAIL: 8-bit/sframe/autostitch-480p-240p-160p
+
+Stopped on first failure: pass=657 fail=1 errors=0 total=658
+error: recipe `conformance-scalar-modes` failed with exit code 1
+run-heavy: done rc=1 942s | peak-RSS 0.23GiB | min-avail 26164MiB | peak-load 13.67

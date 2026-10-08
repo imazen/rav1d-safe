@@ -5,6 +5,9 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- The `decode_md5` example stops decoding further packets at its requested
+  frame limit. A malformed next-packet regression and the formerly timed-out
+  ARM 300-frame sidecar pass; the conformance deadline remains 120 seconds.
 - The `decode_md5` conformance example caps archmage tokens alongside CPU
   masks so scalar/tier selections reach their actual fallbacks. Native ARM
   and x86 worker guard tests pass and fail disabling mutations; CI runs

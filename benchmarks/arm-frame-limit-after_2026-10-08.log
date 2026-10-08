@@ -1,0 +1,14 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=12/16 avail=27863MiB :: bash -c set -e; just test-decode-md5-limit target/lead-frame-limit-safe/release/examples/decode_md5; just test-decode-md5-limit target/lead-frame-limit-untracked/release/examples/decode_md5; timeout 120 just decode-vector target/lead-frame-limit-safe/release/examples/decode_md5 --level scalar --threads 2 --delay 0 --limit 300 -q test-vectors/dav1d-test-data/8-bit/sframe/autostitch-480p-240p-160p.ivf e2550fe403e83cae20d1abe044a87cae
+python3 tools/test_decode_md5_limit.py "target/lead-frame-limit-safe/release/examples/decode_md5"
+{"limit": null, "returncode": 0, "stdout": "9604569c8e5fcd812a940b82ef39b552\n", "stderr": "  Frame: 64x64 bpc=8 layout=I420\n  Y plane: 64x64 stride=128\n  U plane: 32x32 stride=64\n  V plane: 32x32 stride=64\nDecode error: Error: InvalidData\n\n    at src/managed.rs:799\n (invalid data)\nFrames: 1\n"}
+{"limit": 0, "returncode": 0, "stdout": "d41d8cd98f00b204e9800998ecf8427e\n", "stderr": "Frames: 0\n"}
+{"limit": 1, "returncode": 0, "stdout": "9604569c8e5fcd812a940b82ef39b552\n", "stderr": "  Frame: 64x64 bpc=8 layout=I420\n  Y plane: 64x64 stride=128\n  U plane: 32x32 stride=64\n  V plane: 32x32 stride=64\nFrames: 1\n"}
+PASS: malformed control and both frame-limit gates
+python3 tools/test_decode_md5_limit.py "target/lead-frame-limit-untracked/release/examples/decode_md5"
+{"limit": null, "returncode": 0, "stdout": "9604569c8e5fcd812a940b82ef39b552\n", "stderr": "  Frame: 64x64 bpc=8 layout=I420\n  Y plane: 64x64 stride=128\n  U plane: 32x32 stride=64\n  V plane: 32x32 stride=64\nDecode error: Error: InvalidData\n\n    at src/managed.rs:799\n (invalid data)\nFrames: 1\n"}
+{"limit": 0, "returncode": 0, "stdout": "d41d8cd98f00b204e9800998ecf8427e\n", "stderr": "Frames: 0\n"}
+{"limit": 1, "returncode": 0, "stdout": "9604569c8e5fcd812a940b82ef39b552\n", "stderr": "  Frame: 64x64 bpc=8 layout=I420\n  Y plane: 64x64 stride=128\n  U plane: 32x32 stride=64\n  V plane: 32x32 stride=64\nFrames: 1\n"}
+PASS: malformed control and both frame-limit gates
+"target/lead-frame-limit-safe/release/examples/decode_md5" --level scalar --threads 2 --delay 0 --limit 300 -q test-vectors/dav1d-test-data/8-bit/sframe/autostitch-480p-240p-160p.ivf e2550fe403e83cae20d1abe044a87cae
+e2550fe403e83cae20d1abe044a87cae
+run-heavy: done rc=0 38s | peak-RSS 0.03GiB | min-avail 27819MiB | peak-load 6.77

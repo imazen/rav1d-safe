@@ -976,6 +976,15 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+- 2026-10-08: `decode_md5 --limit` stopped hashing but continued submitting
+  later IVF/Annex-B packets and flushing. An enforced ARM scalar sidecar
+  reached 300 frames, then exceeded the unchanged 120-second vector deadline.
+  The example now stops submission/draining at the limit and leaves queued
+  work to decoder shutdown. A valid committed frame followed by a malformed
+  packet fails the old limit behavior and passes at limits zero/one in both
+  modes; the original 300-frame reference MD5 also passes. The full scalar
+  matrix is a separate gate. See [frame-limit evidence](benchmarks/decode_md5_limit_2026-10-08.meta.json).
+
 - 2026-10-08: the managed ARM `CpuLevel::Scalar` mask does not disable several
   baseline NEON dispatchers, which summon `Arm64` directly. This is the existing
   applicability-review A6 gap. CPU-mask sidecar labels alone do not establish

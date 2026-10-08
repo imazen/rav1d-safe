@@ -86,6 +86,8 @@ test-conformance-runner:
 # Native example guards check real fallback tier selection in workers.
 test-conformance-token-tiers:
     cargo nextest run --release --no-default-features --features "bitdepth_8,bitdepth_16" --example decode_md5 --test-threads 1
+    cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16" --example decode_md5
+    just test-decode-md5-limit "${CARGO_TARGET_DIR:-target}/release/examples/decode_md5"
 
 # Supplement a previously recorded native-tier matrix with enforced scalar legs.
 conformance-scalar-modes tracked untracked:
@@ -99,6 +101,14 @@ conformance-scalar-modes tracked untracked:
 
 conformance binary threads="1" delay="0":
     bash scripts/conformance_test.sh --binary "{{binary}}" --threads {{threads}} --delay {{delay}} --expected 803
+
+# Reproduce one sidecar invocation with its original flags and visible output.
+decode-vector binary *args:
+    "{{binary}}" {{args}}
+
+# A valid committed frame followed by malformed input tests actual stop semantics.
+test-decode-md5-limit binary:
+    python3 tools/test_decode_md5_limit.py "{{binary}}"
 
 # Matched performance binaries; use fresh target directories to preserve references.
 build-bench-modes tracked untracked:
