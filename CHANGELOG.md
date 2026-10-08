@@ -5,6 +5,11 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- x86 warp put preserves the bounded destination prefix and a separate byte
+  base for negative row strides at 8/10/12 bits. Scalar whole-plane oracles,
+  both complete decoder suites and all forty runtime-tier/worker sidecar
+  configurations pass (`804a4e01`, `811a9728`). Public signatures and warp
+  interpolation are unchanged.
 - x86 byte MC preserves signed source row addressing in bounded reference
   windows and avoids inactive four-tap vertical reads. Negative-stride
   scalar parity and held-write extent regressions pass (`5fa78cd9`).

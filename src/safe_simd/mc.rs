@@ -14135,6 +14135,7 @@ fn warp_h_pass_8bpc(
 fn warp_v_pass_8bpc_put(
     _t: Desktop64,
     dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     mid: &[[i16; 15]; 8],
     gamma: i32,
@@ -14148,7 +14149,7 @@ fn warp_v_pass_8bpc_put(
     let shift_v = 7 + 4;
 
     for y in 0..8usize {
-        let dst_off = (y as isize * dst_stride) as usize;
+        let dst_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
         let mut tmy = my + (y as i32) * delta;
 
         for x in 0..8usize {
@@ -14209,6 +14210,7 @@ fn warp_v_pass_8bpc_prep(
 fn warp_affine_8x8_8bpc_avx2(
     _t: Desktop64,
     dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     src: &[u8],
     src_base: usize,
@@ -14231,6 +14233,7 @@ fn warp_affine_8x8_8bpc_avx2(
     warp_v_pass_8bpc_put(
         _t,
         dst,
+        dst_base,
         dst_stride,
         &mid,
         abcd[2] as i32,
@@ -14339,6 +14342,7 @@ fn warp_h_pass_16bpc(
 fn warp_v_pass_16bpc_put(
     _t: Desktop64,
     dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     mid: &[[i16; 15]; 8],
     gamma: i32,
@@ -14353,7 +14357,7 @@ fn warp_v_pass_16bpc_put(
     let shift_v = 7 + intermediate_bits;
 
     for y in 0..8usize {
-        let dst_off = (y as isize * dst_stride) as usize;
+        let dst_off = dst_base.wrapping_add_signed(y as isize * dst_stride);
         let mut tmy = my + (y as i32) * delta;
 
         for x in 0..8usize {
@@ -14414,6 +14418,7 @@ fn warp_v_pass_16bpc_prep(
 fn warp_affine_8x8_16bpc_avx2(
     _t: Desktop64,
     dst: &mut [u8],
+    dst_base: usize,
     dst_stride: isize,
     src: &[u8],
     src_base: usize,
@@ -14439,6 +14444,7 @@ fn warp_affine_8x8_16bpc_avx2(
     warp_v_pass_16bpc_put(
         _t,
         dst,
+        dst_base,
         dst_stride,
         &mid,
         abcd[2] as i32,
@@ -14523,7 +14529,8 @@ pub fn warp8x8_dispatch<BD: BitDepth>(
             BPC::BPC8 => {
                 warp_affine_8x8_8bpc_avx2(
                     token,
-                    &mut dst_bytes[dst_offset..],
+                    dst_bytes,
+                    dst_offset,
                     dst_stride,
                     src_bytes,
                     src_base * pixel_size,
@@ -14536,7 +14543,8 @@ pub fn warp8x8_dispatch<BD: BitDepth>(
             BPC::BPC16 => {
                 warp_affine_8x8_16bpc_avx2(
                     token,
-                    &mut dst_bytes[dst_offset..],
+                    dst_bytes,
+                    dst_offset,
                     dst_stride,
                     src_bytes,
                     src_base * pixel_size,

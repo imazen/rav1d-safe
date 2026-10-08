@@ -978,18 +978,28 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
-### x86 warp negative destination stride (2026-10-08) — OPEN
+### x86 warp negative destination stride (2026-10-08) — FIXED
 
-An independent scalar whole-plane oracle reproduces an index-out-of-bounds
-panic on the current MC source when warp put receives a negative destination
-stride under the direct one-worker picture policy. The SIMD dispatcher slices
-away the destination prefix, then the vertical pass casts a negative row
-offset to usize. The same oracle fails with and without the proposed paired
-horizontal warp arithmetic; that arithmetic is not the cause. Signed-source
-put/prep parity passes. A full-window/base-index repair and 10/12-bit
-destination coverage pass the focused scalar gate; full decoder, feature,
-sidecar and timing validation remain pending. No expectation has been relaxed.
-[Evidence and repair scope](docs/MC_WARP_DESTINATION_ROWS.md).
+An independent scalar whole-plane oracle reproduced an index-out-of-bounds
+panic when warp put received a negative destination stride under the direct
+one-worker picture policy. The dispatcher discarded the needed prefix and
+the vertical pass cast a negative row offset to usize. The same failure
+occurred with and without paired horizontal arithmetic. The repair passes
+the bounded full destination slice and a byte base through the private
+8-bit and 10/12-bit helpers, then adds each signed row offset to that base.
+Interpolation, rounding, prep and public API signatures are unchanged.
+
+Negative-destination whole-plane assertions pass at 8/10/12 bits and
+one/four-worker policies; the 8-bit put/prep oracle also passes 7,768 cases.
+The isolated exact-source gate passes 240 tracked and 223 untracked tests,
+ten active doctests per mode, feature checks and forty actual-token sidecar
+configurations (803/803 each, zero failures/errors). Existing ignored tests
+remain outside that scope. C-FFI negative-destination allocator coverage is
+not established. The matched timing matrix identifies a possible untracked
+4K one-worker cost (+1.2898% median, +0.8796% minimum); a focused repeat is
+running. No performance-neutrality claim follows from the correctness gates.
+No expectation has been relaxed.
+[Evidence, source fingerprints and repair scope](docs/MC_WARP_DESTINATION_ROWS.md).
 
 ### x86 MC bounded signed rows and four-tap extent (2026-10-08) — FIXED
 

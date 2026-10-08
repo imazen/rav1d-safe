@@ -39,6 +39,16 @@ test-thread-start features="bitdepth_8,bitdepth_16" repetitions="100":
 test-mc-pair-windows features="bitdepth_8,bitdepth_16":
     cargo nextest run --cargo-profile release-thin --no-default-features --features "{{features}}" --lib -E 'test(mc_x86_8bpc_parity) | test(four_tap_vertical_uses_only_active_rows)' --test-threads 1
 
+# Original scalar warp and bounded reference windows, including signed rows.
+test-mc-warp-destination features="bitdepth_8,bitdepth_16":
+    cargo nextest run --cargo-profile release-thin --no-default-features --features "{{features}}" --lib -E 'test(warp_scalar_tests) | test(warp_reference_windows_cover_both_strides_and_all_depths)' --test-threads 1
+
+# Validate the private destination-base helpers at supported feature boundaries.
+check-mc-warp-destination-features: clippy clippy-untracked cross-aarch64
+    cargo check --target wasm32-unknown-unknown --no-default-features --features "bitdepth_8,bitdepth_16"
+    cargo check --no-default-features --features "bitdepth_8,bitdepth_16,c-ffi"
+    just test-mc-warp-destination bitdepth_8,bitdepth_16,untracked
+
 # Actual bounded reference guard with reversed source rows at every phase.
 test-mc-source-strides:
     cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib -E 'test(reversed_source_rows_match_scalar_for_all_8tap_filters)' --test-threads 1

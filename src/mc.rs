@@ -3247,3 +3247,13 @@ impl Rav1dMCDSPContext {
         Self::default::<BD>().init::<BD>(flags)
     }
 }
+
+#[cfg(all(
+    test,
+    target_arch = "x86_64",
+    feature = "bitdepth_8",
+    not(feature = "asm"),
+    not(feature = "c-ffi")
+))]
+#[path = "mc_warp_scalar_tests.rs"]
+mod warp_scalar_tests;

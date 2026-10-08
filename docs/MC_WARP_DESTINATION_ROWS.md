@@ -1,8 +1,8 @@
 # Warp destination row addressing
 
-Missing: timing gate and production landing of the repair.
-Production remains unchanged while the isolated repair passes both full
-decoder suites and three scalar tests. [Raw before/after and compile logs](../benchmarks/warp_signed_destination_2026-10-08/meta.json)
+Missing: focused repeat of a possible timing cost.
+The production repair passes both full decoder suites, three scalar tests
+and the runtime-tier sidecar matrix. [Raw before/after and compile logs](../benchmarks/warp_signed_destination_2026-10-08/meta.json)
 record executable source fingerprints and wrapped resource lines.
 
 A whole-plane comparison with the original scalar warp reproduces a panic
@@ -59,7 +59,7 @@ The preserved before binaries match published MC production source;
 only the signed destination repair changes compiled production code.
 The 71-second build scope returned rc=0, peak RSS 1.30 GiB, minimum
 available 24,107 MiB and peak load 3.28. Whole-clip MD5 and sidecar results appear below;
-throughput validation remains pending.
+The completed timing matrix appears below.
 
 [All 32 whole-clip comparisons](../benchmarks/warp_signed_destination_2026-10-08/clips.meta.json)
 match dav1d 1.5.3 with grain enabled, across four 8/10-bit clips, both
@@ -69,7 +69,7 @@ and peak load 1.15. Both new timing binaries also reject a malformed
 second packet without printing timing results; valid input and MD5
 frame-limit controls pass. That scope reports peak RSS 0.02 GiB,
 minimum available 25,820 MiB, peak load 0.42 and rc=0.
-The completed sidecar gate appears below; A/A plus A/B remains pending.
+The completed sidecar and A/A plus A/B gates appear below.
 
 ## Complete runtime-tier sidecars
 
@@ -86,4 +86,39 @@ executable fingerprints were verified unchanged after execution.
 The wrapped scope returned rc=0 after 4,875 seconds, peak RSS 0.24 GiB,
 minimum available 25,480 MiB and peak load 1.90. Ordered bounded parts
 reconstruct the complete log and manifest. This is correctness evidence;
-timing and production landing remain pending.
+a focused timing repeat remains pending.
+
+## Matched timing matrix
+
+The [complete sixteen-case A/A and A/B matrix](../benchmarks/warp_signed_destination_2026-10-08/timing.meta.json)
+uses four fresh process pairs per case and three timed passes per invocation,
+four 8/10-bit clips, one/four workers, both modes and frame delay one.
+Source, stream and executable hashes were verified after execution.
+Both arms use the same guarded timing example and Rust 1.99.0 with generic
+release fat LTO; their example builds unify `testable_dispatch`. Ordinary
+consumer builds without that feature and Zen 5 were not measured.
+
+Untracked AOM 4K at one worker has median A/B +1.2898% and minimum
++0.8796%; all four paired medians increase. Its A/A median is -0.1752%
+and minimum -0.0399%. This is a possible regression, with a focused
+eight-pair repeat pending. Tracked 10-bit at one worker also has four
+positive paired medians: A/B +0.5375% and minimum +0.3900%, while its
+A/A median is +0.6028% and minimum +0.0657%. These results do not
+establish performance neutrality or a general speedup. The full analysis
+retains every paired ratio, including mixed four-worker results.
+
+The wrapped timing scope returned rc=0 after 2,971 seconds, peak RSS
+0.21 GiB, minimum available 25,507 MiB and peak load 1.80. Full raw
+phase files, complete command output and analysis are committed.
+
+## Primary landing gate
+
+The [primary checkout gate](../benchmarks/warp_signed_destination_2026-10-08/primary-gate.meta.json)
+verifies that all four source fingerprints match the fully tested isolated
+repair. Four focused tests pass in each mode, both release all-target lint
+recipes pass, and ARM, WASM and C-FFI checks pass. The initial invocation
+stopped at a missing ARM target for Rust 1.99.0 after the tracked tests and
+both lints had passed; installing that toolchain's ARM/WASM targets and
+rerunning the feature recipe resolved it. Both complete logs are retained.
+The successful retry returned rc=0 after 35 seconds, peak RSS 1.49 GiB,
+minimum available 24,101 MiB and peak load 1.64.

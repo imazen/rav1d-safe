@@ -189,6 +189,7 @@ mod tests {
                                     super::super::warp_affine_8x8_8bpc_avx2(
                                         token,
                                         &mut put[i],
+                                        0,
                                         8,
                                         data,
                                         base,
@@ -222,6 +223,7 @@ mod tests {
                                     super::super::warp_affine_8x8_16bpc_avx2(
                                         token,
                                         &mut put[i],
+                                        0,
                                         16,
                                         data,
                                         base * ps,
