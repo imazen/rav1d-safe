@@ -1,0 +1,17 @@
+{
+  "command": "env PATH=/home/lilith/.cargo/bin:$PATH TMPDIR=/home/lilith/tmp RUSTFLAGS= CARGO_ENCODED_RUSTFLAGS= CARGO_TARGET_DIR=/home/lilith/work/zen/rav1d-safe/target/lead-mc-primary-landing /home/lilith/work/claudehints/scripts/run-heavy --mem 16G --jobs 20 -- just test-mc-pair-windows",
+  "candidate_revision": "e8162a0d6bbae5543546f6f8532a651ac31e4a13",
+  "primary_production_and_oracle_sources_byte_identical": true,
+  "compiler": "rustc 1.99.0 (b940084d7 2026-09-28)",
+  "resource": "run-heavy: done rc=0 52s | peak-RSS 1.57GiB | min-avail 24133MiB | peak-load 1.87",
+  "tests": {
+    "passed": 5,
+    "test_seconds": 33.036
+  },
+  "source_sha256": {
+    "src/safe_simd/mc.rs": "5eef8c20ef03bb11d1c922cecb47727edf96ca7cf002bc162f33b3dddc8dc8db",
+    "src/safe_simd/mc_x86_8bpc_parity.rs": "40721492c782663f7898dc2c9507830a360828b3c9f9a00bcb2bcc3cb9fc0345",
+    "src/safe_simd/mod.rs": "52653e761e8074cfb32e4dd380da2d7e88c66a3105bdefc49682c7917b1b3dde"
+  },
+  "log_sha256": "bff6812232d2658ed522076e7fabd0fc5e300728277a9ec2f26ef7e3e90713a3"
+}

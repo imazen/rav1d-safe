@@ -99,6 +99,11 @@ mod mc_arm_prep_parity;
 #[cfg(target_arch = "x86_64")]
 mod mc_x86_prep_parity;
 
+/// Differential parity for the x86_64 8bpc `put`/`prep` kernels vs the scalar
+/// reference. Test-only; the module itself is `#![cfg(all(test, ...))]`.
+#[cfg(target_arch = "x86_64")]
+mod mc_x86_8bpc_parity;
+
 // The aarch64 NEON itx kernels (issue #400) are bit-exact and dispatched for
 // 8bpc; the 16bpc variants exist but aren't NEON-dispatched yet, so allow dead
 // code in these modules.

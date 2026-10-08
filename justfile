@@ -35,6 +35,14 @@ test-thread-start features="bitdepth_8,bitdepth_16" repetitions="100":
     cargo nextest run --release --no-default-features --features "{{features}}" --test thread_cleanup_test --test mt_stress --test-threads 1
     cargo nextest run --release --no-default-features --features "{{features}}" --test thread_cleanup_test -E 'test(=test_multi_threaded_cleanup)' --stress-count {{repetitions}} --test-threads 1
 
+# Scalar parity and arithmetic bounds for the reviewed x86 byte MC pair windows.
+test-mc-pair-windows features="bitdepth_8,bitdepth_16":
+    cargo nextest run --cargo-profile release-thin --no-default-features --features "{{features}}" --lib -E 'test(mc_x86_8bpc_parity) | test(four_tap_vertical_uses_only_active_rows)' --test-threads 1
+
+# Actual bounded reference guard with reversed source rows at every phase.
+test-mc-source-strides:
+    cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib -E 'test(reversed_source_rows_match_scalar_for_all_8tap_filters)' --test-threads 1
+
 # Cast-range overflow and valid-alignment controls under Stacked Borrows.
 test-cast-miri:
     cargo +nightly miri test -p rav1d-disjoint-mut --test cast_range_overflow
@@ -83,6 +91,16 @@ test-threading-races features="bitdepth_8,bitdepth_16":
     cargo nextest run --release --no-default-features --features "{{features}}" --test decode_concurrent_md5
     cargo test --release --no-default-features --features "{{features}}" --test tile_threading_overlap -- --ignored --test-threads 1
     cargo test --release --no-default-features --features "{{features}},__test_induce_worker_panic" --test worker_panic_recovery -- --ignored --test-threads 1
+
+# Feature boundaries and explicitly selected integration/race gates for MC.
+check-mc-final:
+    just check-lead-ci
+    just clippy-untracked
+    just test-mc-pair-windows bitdepth_8,bitdepth_16,c-ffi
+    just test-integration-selection test-vectors bitdepth_8,bitdepth_16
+    just test-integration-selection test-vectors bitdepth_8,bitdepth_16,untracked
+    just test-threading-races bitdepth_8,bitdepth_16
+    just test-threading-races bitdepth_8,bitdepth_16,untracked
 
 # Run clippy lints
 clippy:

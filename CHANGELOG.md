@@ -5,6 +5,9 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 ## [Unreleased]
 
 ### Fixed
+- x86 byte MC preserves signed source row addressing in bounded reference
+  windows and avoids inactive four-tap vertical reads. Negative-stride
+  scalar parity and held-write extent regressions pass (`5fa78cd9`).
 - Check every timed decoder pass against the nonzero warm-up frame count before reporting benchmark timings (`7e48ed12`). Benchmark decode, drain and flush errors now fail before results; malformed and valid-frame controls cover decode-error rejection.
 - ARM MC preserves signed source pitches through put/prep and retains the
   full bounded source slice for backward row walks. Expanded 8/10/12-bit
@@ -54,6 +57,12 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   retries the same packet. Applies to every thread count.
 
 ### Changed
+- x86 8-bit MC uses paired horizontal filter windows, per-block setup,
+  four/six-tap work reduction and reused intermediate scratch. Matched
+  one-worker 8-bit medians improve 1.038–1.956% tracked and 1.486–2.181%
+  untracked on Zen 4; no four-worker or 10-bit gain is established.
+  [Full gates and controlled measurements](docs/MC_PAIR_WINDOW_REVIEW.md)
+  (`db99aac2`, `286f8a42`).
 - Record the matched archmage 0.9.29/0.9.30 A/B comparison (`c23e8cfd`):
   a small tracked 1080p slowdown, variable four-worker results, and exact
   grain-enabled output parity. See [measurements and limits](docs/ARCHMAGE_PERF_AB.md).

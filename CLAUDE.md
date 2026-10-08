@@ -978,6 +978,19 @@ All unsafe in the default build is confined to the `rav1d-disjoint-mut` sub-crat
 
 ## Known Bugs
 
+### x86 MC bounded signed rows and four-tap extent (2026-10-08) — FIXED
+
+Batched horizontal and vertical-only byte kernels converted signed source
+strides to unsigned indices or sliced away the prefix needed by backward
+row walks. The reviewed implementation retains the bounded full slice and
+a separate base index. AVX2 four-tap vertical helpers also stop loading
+inactive zero-coefficient rows. Full-range scalar/whole-buffer parity,
+held-write extent regressions, both-mode decoder suites and forty
+actual-token sidecar configurations pass (803/803 each).
+[Review, source provenance and matched timing](docs/MC_PAIR_WINDOW_REVIEW.md).
+The supported throughput finding is a one-worker 8-bit improvement on Zen 4;
+four-worker and 10-bit gains are not established, and Zen 5 is unmeasured.
+
 ### Archmage 0.9.30 performance observation (2026-10-08)
 
 The matched 0.9.29/0.9.30 comparison completes both-mode A/A and A/B runs
