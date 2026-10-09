@@ -3699,6 +3699,67 @@ unsafe fn v_filter_8tap_8bpc_direct_v3(
     }
 }
 
+/// Four horizontal rows feed each vertical output without a pooled mid buffer.
+/// Only the seven active source bytes in each of seven rows are borrowed.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn fused_hv_4x4_8bpc<const SHIFT: i32>(
+    _token: Desktop64,
+    src: &[u8],
+    src_base: usize,
+    src_stride: isize,
+    fh: &[i8; 8],
+    fv: &[i8; 8],
+) -> [__m128i; 4] {
+    debug_assert_eq!(tap_base_8tap(fh), 2);
+    debug_assert_eq!(tap_base_8tap(fv), 2);
+    let mask0 = loadu_128!(&[
+        0u8, 1, 1, 2, 2, 3, 3, 4, 128, 128, 128, 128, 128, 128, 128, 128
+    ]);
+    let mask2 = loadu_128!(&[
+        2u8, 3, 3, 4, 4, 5, 5, 6, 128, 128, 128, 128, 128, 128, 128, 128
+    ]);
+    let hc0 = _mm_set1_epi16(i16::from_le_bytes([fh[2] as u8, fh[3] as u8]));
+    let hc1 = _mm_set1_epi16(i16::from_le_bytes([fh[4] as u8, fh[5] as u8]));
+    let vc0 = _mm_set1_epi32(i32::from_le_bytes([
+        fv[2] as u8,
+        (fv[2] >> 7) as u8,
+        fv[3] as u8,
+        (fv[3] >> 7) as u8,
+    ]));
+    let vc1 = _mm_set1_epi32(i32::from_le_bytes([
+        fv[4] as u8,
+        (fv[4] >> 7) as u8,
+        fv[5] as u8,
+        (fv[5] >> 7) as u8,
+    ]));
+    let zero = _mm_setzero_si128();
+    let mut ring = [zero; 4];
+    let mut output = [zero; 4];
+    for r in 0..7 {
+        let base = (src_base as isize + (r as isize - 1) * src_stride - 1) as usize;
+        // The seventh byte is the last active tap of output column three.
+        // Never load an eighth byte from the caller's reference window.
+        let mut bytes = [0u8; 8];
+        bytes[..7].copy_from_slice(&src[base..base + 7]);
+        let row = loadu_64!(&bytes);
+        let sum = _mm_add_epi16(
+            _mm_maddubs_epi16(_mm_shuffle_epi8(row, mask0), hc0),
+            _mm_maddubs_epi16(_mm_shuffle_epi8(row, mask2), hc1),
+        );
+        ring[r % 4] = _mm_srai_epi16::<2>(_mm_add_epi16(sum, _mm_set1_epi16(2)));
+        if r >= 3 {
+            let y = r - 3;
+            let a = _mm_unpacklo_epi16(ring[y % 4], ring[(y + 1) % 4]);
+            let b = _mm_unpacklo_epi16(ring[(y + 2) % 4], ring[(y + 3) % 4]);
+            let sum = _mm_add_epi32(_mm_madd_epi16(a, vc0), _mm_madd_epi16(b, vc1));
+            output[y] =
+                _mm_srai_epi32::<SHIFT>(_mm_add_epi32(sum, _mm_set1_epi32(1 << (SHIFT - 1))));
+        }
+    }
+    output
+}
+
 /// Generic 8-tap put function for 8bpc
 ///
 /// This handles all 4 cases:
@@ -3745,6 +3806,19 @@ pub(crate) fn put_8tap_8bpc_avx2_impl_inner(
 
     match (fh, fv) {
         (Some(fh), Some(fv)) => {
+            if w == 4 && h == 4 && tap_base_8tap(fh) == 2 && tap_base_8tap(fv) == 2 {
+                let rows = fused_hv_4x4_8bpc::<10>(_token, &src, src_base, src_stride, fh, fv);
+                for (y, row) in rows.into_iter().enumerate() {
+                    let packed = _mm_packus_epi16(
+                        _mm_packs_epi32(row, _mm_setzero_si128()),
+                        _mm_setzero_si128(),
+                    );
+                    let at = (y as isize * dst_stride) as usize;
+                    dst[at..at + 4]
+                        .copy_from_slice(&(_mm_cvtsi128_si32(packed) as u32).to_ne_bytes());
+                }
+                return;
+            }
             // Case 1: Both H and V filtering
             // First pass: horizontal filter to intermediate buffer.
             // Output row y consumes mid rows y+v_t0 .. y+v_t0+v_nt; rows
@@ -3859,6 +3933,19 @@ pub(crate) fn put_8tap_8bpc_avx512_impl_inner(
 
     match (fh, fv) {
         (Some(fh), Some(fv)) => {
+            if w == 4 && h == 4 && tap_base_8tap(fh) == 2 && tap_base_8tap(fv) == 2 {
+                let rows = fused_hv_4x4_8bpc::<10>(_token.v3(), &src, src_base, src_stride, fh, fv);
+                for (y, row) in rows.into_iter().enumerate() {
+                    let packed = _mm_packus_epi16(
+                        _mm_packs_epi32(row, _mm_setzero_si128()),
+                        _mm_setzero_si128(),
+                    );
+                    let at = (y as isize * dst_stride) as usize;
+                    dst[at..at + 4]
+                        .copy_from_slice(&(_mm_cvtsi128_si32(packed) as u32).to_ne_bytes());
+                }
+                return;
+            }
             // H+V: horizontal filter → intermediate → vertical filter.
             // Output row y consumes mid rows y+v_t0 .. y+v_t0+v_nt; rows
             // outside that window correspond to zero taps and are skipped.
@@ -4772,6 +4859,17 @@ pub(crate) fn prep_8tap_8bpc_avx2_impl_inner(
 
     match (fh, fv) {
         (Some(fh), Some(fv)) => {
+            if w == 4 && h == 4 && tap_base_8tap(fh) == 2 && tap_base_8tap(fv) == 2 {
+                let rows = fused_hv_4x4_8bpc::<6>(_token, &src, src_base, src_stride, fh, fv);
+                for (y, row) in rows.into_iter().enumerate() {
+                    let mut lanes = [0i32; 4];
+                    storeu_128!(&mut lanes, row);
+                    for (x, value) in lanes.into_iter().enumerate() {
+                        tmp[y * 4 + x] = value as i16;
+                    }
+                }
+                return;
+            }
             // Case 1: Both H and V filtering
             // Output row y consumes mid rows y+v_t0 .. y+v_t0+v_nt; rows
             // outside that window correspond to zero taps and are skipped.
@@ -4894,6 +4992,17 @@ pub(crate) fn prep_8tap_8bpc_avx512_impl_inner(
 
     match (fh, fv) {
         (Some(fh), Some(fv)) => {
+            if w == 4 && h == 4 && tap_base_8tap(fh) == 2 && tap_base_8tap(fv) == 2 {
+                let rows = fused_hv_4x4_8bpc::<6>(_token.v3(), &src, src_base, src_stride, fh, fv);
+                for (y, row) in rows.into_iter().enumerate() {
+                    let mut lanes = [0i32; 4];
+                    storeu_128!(&mut lanes, row);
+                    for (x, value) in lanes.into_iter().enumerate() {
+                        tmp[y * 4 + x] = value as i16;
+                    }
+                }
+                return;
+            }
             // Output row y consumes mid rows y+v_t0 .. y+v_t0+v_nt; rows
             // outside that window correspond to zero taps and are skipped.
             let v_t0 = tap_base_8tap(fv);
@@ -15606,3 +15715,7 @@ mod four_tap_vertical_rows {
         assert!(cases > 0, "table must exercise four-tap vertical kernels");
     }
 }
+
+#[cfg(all(test, target_arch = "x86_64", not(feature = "asm")))]
+#[path = "mc_fused_small_tests.rs"]
+mod fused_small_tests;
