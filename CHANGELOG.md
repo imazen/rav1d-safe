@@ -74,6 +74,12 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   retries the same packet. Applies to every thread count.
 
 ### Changed
+- `archmage` and `archmage-macros` now come from the crates.io 0.9.30 release
+  instead of a git pin, which crates.io would reject at publish time. The
+  registry source is byte-identical to the previously pinned commit `e2dbab66`
+  (`diff -r` over both crates' `src/`: 0 differences), so no code changes.
+  Lockfile refreshed (zerocopy 0.8.62, libc, cc, bitflags, cfg-if, enough, clap,
+  smallvec, rustix and others); `zenbench` dev-dependency 0.1.10.
 - x86 8-bit MC uses paired horizontal filter windows, per-block setup,
   four/six-tap work reduction and reused intermediate scratch. Matched
   one-worker 8-bit medians improve 1.038–1.956% tracked and 1.486–2.181%

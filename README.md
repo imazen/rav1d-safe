@@ -230,11 +230,22 @@ remain part of the trust boundary, including `rav1d-disjoint-mut`, alignment
 helpers, archmage, and SIMD memory-access helpers. This is not a proof of the
 whole decoder or its dependencies.
 
-Enabling `unchecked`, `c-ffi`, or `asm` removes the crate-wide prohibition.
-`c-ffi` implies `unchecked`; `asm` implies `c-ffi`; `partial_asm` also implies
-`unchecked`. In unchecked SIMD paths, local exceptions allow raw loads/stores,
-and untracked buffer constructors bypass runtime overlap tracking. Some modules
-retain their own prohibitions. Normal Rust callers need none of these features.
+Enabling `c-ffi`, `asm` or `partial_asm` removes the crate-wide prohibition (those
+features contain `unsafe` FFI wrappers). `c-ffi` implies `untracked`; `asm` implies
+`c-ffi`; `partial_asm` also implies `untracked`. The SIMD kernels themselves stay
+safe Rust in every mode.
+
+`untracked` is an opt-in race-tolerant fast mode: it turns off the `DisjointMut`
+overlap tracker and, under tile threading, uses zero-copy pixel access. **Slice
+bounds checks stay on.** Two threads that really do touch the same bytes become
+undefined behaviour under the Rust memory model, which the tracked default build
+refuses at runtime; the decoder is designed so this does not happen, every
+`DisjointMut` element is a plain-data type (all bit patterns valid, no pointers),
+and the intended consequence of a decoder bug is a wrong pixel value rather than
+memory corruption. That is a design argument, not a proof, and a weaker guarantee
+than the default build gives. See
+[UNTRACKED_MODE.md](docs/UNTRACKED_MODE.md). Normal Rust callers need none of
+these features.
 
 The default SIMD path uses archmage for feature-token dispatch and
 `safe_unaligned_simd` for reference-based loads/stores, with slice-based kernel
@@ -286,68 +297,59 @@ Upstream rav1d has no memory-safe feature mode; turning off its assembly selects
 its Rust implementation, which still contains unsafe code. Checked rav1d-safe
 retains safe SIMD and overlap checks.
 
-### Historical feature-mode measurements
+### Current measurements against dav1d and libgav1 (2026-10, Zen 4)
 
-The following older measurements compare rav1d-safe's own feature modes. They
-are not the new upstream no-assembly comparison.
+Real footage: an 8 s 4K H.264 clip, downscaled to 1080p and 720p, encoded with
+aomenc and SVT-AV1 (8-bit) plus a 10-bit 1080p encode. All streams decode
+bit-identically in dav1d 1.5.3, libgav1 and rav1d-safe. Steady-state decode time
+per frame, one thread, lightly loaded machine (load 2 to 5), ratio to dav1d (dav1d runs hand-written
+AVX-512 assembly; lower is better):
 
-Historical benchmark setup: x86_64 (Zen 4, AVX2), single-threaded, Rust 1.93+, fat LTO. Run with `just profile` (500 iterations for IVF, 20 iterations for AVIF).
+| stream | libgav1 | rav1d-safe `untracked` | rav1d-safe default (checked) |
+|---|--:|--:|--:|
+| 720p aomenc / SVT-AV1 | 1.59x / 1.45x | 2.00x / 1.70x | 2.51x / 1.97x |
+| 1080p aomenc / SVT-AV1 | 1.64x / 1.53x | 2.14x / 1.90x | 2.64x / 2.27x |
+| 4K aomenc / SVT-AV1 | 1.64x / 1.58x | 2.21x / 2.07x | 2.76x / 2.51x |
+| 4K still photo (AVIF) | 1.6x | 1.55x | 1.58x |
 
-### Real photographs (AVIF decode, single image)
+With four threads the 4K photo is 1.45x (`untracked`) and 2.1x (default) of dav1d.
+Frame threading is on by default for the managed `Decoder` (two frames in flight
+when `threads > 1`); on 4K video it takes `untracked` decode time to about half and
+checked decode time down by 15 to 35% at 4 to 8 threads. Method,
+raw logs and every caveat (one machine, one clip, Zen 4 only, Zen 5 not measured):
+[docs/DECODER_COMPARISON.md](docs/DECODER_COMPARISON.md).
 
-Single still images at web-typical quality (YUV420, q60). Source: Google-native 8K photo, downscaled with ImageMagick. These numbers reflect real-world AVIF decode performance where SIMD kernels dominate.
+**Where the remaining gap is** ([docs/SAFE_VS_DAV1D.md](docs/SAFE_VS_DAV1D.md)):
+about 75% is SIMD kernel quality, mostly motion compensation (our 8-tap two-pass
+pipeline against dav1d's fused AVX-512 6-tap kernels) and CDEF; about 25% is
+control-flow and bounds-check glue. Entropy decoding is at parity. Checked mode
+costs 2% (4K still) to 25% (video) more than `untracked` at one thread (the overlap
+tracker), and more at 4K with several threads.
+
+### Historical measurements (v0.5.6, kept for reference)
+
+These compare rav1d-safe against its own assembly build at v0.5.6 and are not the
+current state. The `Safe (unchecked)` column is the removed bounds-unchecked
+feature, which measured as noise.
 
 | Resolution | ASM | Safe (checked) | Safe (unchecked) | Safe vs ASM |
 |------------|-----|----------------|------------------|-------------|
 | 4K (3840x2561) | 120.7 ms | 187.8 ms | 179.5 ms | 1.56x |
 | 8K (8192x5464) | 714.1 ms | 1103.2 ms | 1066.9 ms | 1.54x |
 
-(Measured at v0.5.6. The 0.5.6 SIMD work — i16-packed `pmaddwd` transform row+col passes
-and YMM-widened loopfilter — brought the 4K checked ratio from 2.0× down to 1.56×.)
-
-### Small test vectors (IVF, multi-frame decode)
-
-dav1d-test-data allintra 352x288 (39 frames). Entropy-heavy bitstream where the serial msac decoder dominates, which compresses the ratio compared to pixel-heavy workloads.
-
-| Build | ms/iter | ms/frame | vs ASM |
-|-------|---------|----------|--------|
-| ASM | 104.3 | 2.67 | 1.0x |
-| Safe (checked) | 158.6 | 4.07 | 1.52x |
-| Safe (unchecked) | 153.3 | 3.93 | 1.47x |
-| Partial ASM | 141.2 | 3.62 | 1.35x |
-
-### Where the gap comes from
-
-The safe build is ~1.56x slower on 4K real images and ~1.52x on entropy-heavy vectors. The gap breaks down:
-
-- **Entropy decoder (msac)**: ~45% of decode time. Serial dependency chain — the core symbol decode loop can't be parallelized; ~95% of `decode_coefs` is irreducible algorithmic cost (only ~3-5% is Rust-specific bounds-check/index overhead). The `partial_asm` feature uses hand-tuned ASM for msac and loopfilter, bringing 4K photo decodes to 1.25x vs full ASM.
-- **Calling conventions**: The ASM kernels use custom register allocation across function boundaries. Rust's ABI reloads registers at each call site.
-- **Scaled MC**: Falls back to scalar Rust (~2% of inter-frame content). The ASM version uses per-pixel variable-step register scheduling that doesn't map cleanly to safe intrinsics.
-- **Bounds checking**: The `unchecked` feature skips DisjointMut borrow tracking. This saves ~5% on photos, confirming the tracking overhead is modest.
-
 ### Reproduce locally
 
 ```sh
 just generate-bench-avif  # create 4K/8K AVIF test images (requires avifdec + avifenc)
-just profile              # all four modes side-by-side (ASM, partial ASM, checked, unchecked)
+just profile              # side-by-side runs of the ASM, partial ASM, checked and untracked builds
 just profile-quick        # same with fewer iterations
 ```
 
 ## Conformance
 
-Tested against the [dav1d-test-data](https://code.videolan.org/videolan/dav1d-test-data) suite. MD5 hashes verified at all CPU dispatch levels (scalar, SSE4.2, AVX2, native).
+Tested against the [dav1d-test-data](https://code.videolan.org/videolan/dav1d-test-data) suite: **all 803 vectors match their reference MD5** at every CPU dispatch level (scalar, SSE4, AVX2, AVX-512, native) with 1, 2, 4 and 8 worker threads, in both the default and `untracked` builds (40 configurations). The runner skips the `oss-fuzz` fuzz inputs by default and fails on any missing file or incomplete selection. SVC operating points, S-frames and the `vq_suite` modes are covered by passing the matching `decode_md5` flags.
 
-**784 of 803 test vectors pass** across all levels.
-
-19 vectors are not exercised by the test harness:
-
-| Category | Count | Reason |
-|----------|-------|--------|
-| sframe | 1 | Requires S-frame support |
-| svc (operating points) | 6 | Always decodes at default operating point |
-| argon (vq_suite) | 12 | Various decode modes and operating point selection tests |
-
-Run conformance tests with `cargo test --release --test decode_cpu_levels`.
+Run it with `just conformance-all-modes <tracked-decode_md5> <untracked-decode_md5>` (see the justfile), or one configuration with `bash scripts/conformance_test.sh --binary <decode_md5> --threads 4 --level all`.
 
 ## Building
 
@@ -370,12 +372,12 @@ cargo test --release
 |---------|---------|-------------|
 | `bitdepth_8` | on | 8-bit pixel support |
 | `bitdepth_16` | on | 10/12-bit pixel support |
-| `unchecked` | off | Skip DisjointMut borrow tracking; enables frame threading and SSE2 msac on x86_64 |
-| `partial_asm` | off | ASM for entropy decoding (msac) and loopfilter only; safe SIMD everything else. Implies `unchecked` |
-| `c-ffi` | off | C API entry points (`dav1d_*` symbols). Implies `unchecked` |
+| `untracked` | off | Race-tolerant fast mode: no `DisjointMut` overlap tracking, zero-copy pixel access under tile threading; bounds checks stay on. See [UNTRACKED_MODE.md](docs/UNTRACKED_MODE.md) |
+| `partial_asm` | off | ASM for entropy decoding (msac) and loopfilter only; safe SIMD everything else. Implies `untracked` |
+| `c-ffi` | off | C API entry points (`dav1d_*` symbols). Implies `untracked` |
 | `asm` | off | Full hand-written assembly. Implies `c-ffi` |
 
-Safety chain: `default` (`forbid(unsafe_code)`, tile threading) -> `unchecked` (frame threading) -> `c-ffi` -> `asm`. Each level relaxes the safety constraint.
+Safety chain: `default` (`forbid(unsafe_code)`, overlap-checked, tile and frame threading) -> `untracked` (no overlap tracking) -> `c-ffi` -> `asm`. Each level relaxes the safety constraint. The former `unchecked` feature was removed: skipping bounds checks measured 0% (within +-1.7%, both signs) and its tracking removal is `untracked`.
 
 ### Cross-Compilation
 
