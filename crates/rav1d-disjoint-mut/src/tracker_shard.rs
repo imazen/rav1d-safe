@@ -257,8 +257,15 @@ const MAX_RECT_ROWS: usize = 64;
 /// the instance has a declared stride.
 #[inline(always)]
 fn rect_decode(h0: usize, h1: usize, s: usize) -> (usize, usize) {
-    debug_assert!(s > 0 && h1 > h0);
+    debug_assert!(h1 > h0);
     let span = h1 - h0;
+    // A resize drops the stride hint (`BorrowTracker::reprovision`) but not the records of
+    // borrows whose guards were leaked (`mem::forget`). Such a record has no stride to be
+    // decoded with, so it is exactly its hull: one row of `span` bytes. Dividing by the
+    // zeroed stride used to panic here while every shard lock was held (audit finding A-03).
+    if s == 0 {
+        return (1, span);
+    }
     let rows = (span - 1) / s + 1;
     (rows, span - (rows - 1) * s)
 }
@@ -274,6 +281,14 @@ fn rect_decode(h0: usize, h1: usize, s: usize) -> (usize, usize) {
 #[cold]
 #[inline(never)]
 fn rect_hit_range(h0: usize, h1: usize, s: usize, a: usize, b: usize) -> Option<(usize, usize)> {
+    if s == 0 {
+        // Stale record with no stride (see `rect_decode`): its hull is its footprint.
+        return if a < h1 && h0 < b {
+            Some((h0, h1))
+        } else {
+            None
+        };
+    }
     let (rows, seg) = rect_decode(h0, h1, s);
     // Clip the probe to the hull first: outside it there is nothing to find, and
     // inside it the first candidate row is a division away.
@@ -619,6 +634,21 @@ impl TinyLock {
         // before dropping it, so the next holder cannot race this cell access.
         let guard = unsafe { (*self.held.get()).take().expect("unlock without lock") };
         drop(guard);
+    }
+}
+
+/// RAII guard for every shard of an instance's active prefix, taken by the cold wide path.
+/// Dropping it releases all of them (in reverse of acquisition), including during unwinding:
+/// a panic inside the locked region used to leave every shard locked for the life of the
+/// instance (audit finding A-03). Other multi-shard sections still unlock by hand because
+/// their set is dynamic.
+struct AllShardsLocked<'a>(&'a [Shard]);
+
+impl Drop for AllShardsLocked<'_> {
+    fn drop(&mut self) {
+        for shard in self.0.iter().rev() {
+            shard.lock.unlock();
+        }
     }
 }
 
@@ -1733,10 +1763,13 @@ impl BorrowTracker {
         self.shift = block_shift_rule(len, shards, tiles);
         self.mask = mask_for_policy(len, shards);
         // A resize drops the stride hint, exactly as it drops the derived shift
-        // (see `DisjointMut::declare_row_stride`). Rectangle records simply stop
-        // being offered until a stride is declared again; every caller has a
-        // per-row path to fall back to, so this is a performance question and
-        // never a correctness one.
+        // (see `DisjointMut::declare_row_stride`). Rectangles stop being offered until
+        // a stride is declared again; every caller has a per-row path to fall back to.
+        // Records of guards that were leaked (`mem::forget`) before the resize stay
+        // registered and, with no stride to decode them under, are treated as their
+        // plain hull interval (`rect_decode`, `rect_hit_range`): a conservative
+        // superset, so a stale record can refuse a borrow but never admit one. This
+        // used to divide by the zeroed stride and panic with every shard lock held.
         self.row_stride = 0;
         #[cfg(feature = "__probe_usage")]
         crate::usage_probe::policy("resize", len, self.mask, self.shift, 0, 0);
@@ -2486,6 +2519,8 @@ impl BorrowTracker {
         for shard in active {
             shard.lock.lock();
         }
+        // From here every exit, including a panic, releases the locks.
+        let locks = AllShardsLocked(active);
         let mut hit = None;
         for shard in active {
             // SAFETY: every shard lock is held.
@@ -2507,32 +2542,35 @@ impl BorrowTracker {
             hit = Self::find_wide::<IS_MUT>(&unsafe { self.wide.read() }, start, end);
         }
         if let Some(existing) = hit {
-            Self::unlock_every(active);
+            // Release before the panic machinery (message formatting, panic hooks) runs.
+            drop(locks);
             Self::overlap_panic(
                 start, end, IS_MUT, existing.0, existing.1, existing.2, existing.3,
             );
         }
+        // Pick the slot first and refuse BEFORE mutating anything: the id is a `u16`, and a
+        // record pushed past it could never be retired, nor could its id be encoded.
         let idx = {
+            // SAFETY: every shard lock is held.
+            let wide = unsafe { self.wide.read() };
+            wide.iter().position(|r| r.0 >= r.1).unwrap_or(wide.len())
+        };
+        if idx > u16::MAX as usize {
+            drop(locks);
+            panic!("DisjointMut: too many concurrent wide borrows");
+        }
+        {
             // SAFETY: every shard lock is held.
             let mut wide = unsafe { self.wide.write() };
             let rec = (start, end, IS_MUT, wide_loc());
-            match wide.iter().position(|r| r.0 >= r.1) {
-                Some(i) => {
-                    wide[i] = rec;
-                    i
-                }
-                None => {
-                    wide.push(rec);
-                    wide.len() - 1
-                }
+            if idx < wide.len() {
+                wide[idx] = rec;
+            } else {
+                wide.push(rec);
             }
-        };
-        assert!(
-            idx <= u16::MAX as usize,
-            "DisjointMut: too many concurrent wide borrows"
-        );
+        }
         self.state.fetch_add(1, Ordering::Relaxed);
-        Self::unlock_every(active);
+        drop(locks);
         BorrowId::wide(idx as u16)
     }
 
@@ -3588,6 +3626,29 @@ mod tests {
                         "s={s} rows={rows} seg={seg}"
                     );
                 }
+            }
+        }
+    }
+
+    /// A record whose stride hint was dropped by a resize decodes as its plain hull and
+    /// answers hit queries as an interval: total, no division by zero (audit finding A-03).
+    #[test]
+    fn rect_records_without_a_stride_are_plain_hulls() {
+        for (h0, h1) in [(0usize, 1usize), (0, 10), (7, 4096), (100, 101)] {
+            assert_eq!(rect_decode(h0, h1, 0), (1, h1 - h0), "hull {h0}..{h1}");
+            for (a, b) in [
+                (0usize, 1usize),
+                (h0, h1),
+                (h0 + 1, h0 + 2),
+                (h1, h1 + 1),
+                (0, 5000),
+            ] {
+                let want = a < h1 && h0 < b;
+                assert_eq!(
+                    rect_hit_range(h0, h1, 0, a, b),
+                    want.then_some((h0, h1)),
+                    "hull {h0}..{h1} vs probe {a}..{b}"
+                );
             }
         }
     }
