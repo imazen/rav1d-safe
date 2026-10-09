@@ -106,7 +106,7 @@ pshufb MC filters (1.5-3% on 8-bit untracked), exact-row/banded tracker records 
 batched CDEF reads (4K inter, 4 threads: 0.44-0.65x the time), automatic two-frame
 threading (about half the untracked decode time on 4K video at 4-8 threads), and the
 LR scratch moved off thread-local storage. Parked, unlanded experiments: fused 4x4 MC,
-AVX-512 active-row vertical MC, CDEF variants, retained-row tracker CDEF, `decode_b`
+AVX-512 active-row vertical MC, retained-row tracker CDEF, `decode_b`
 initialisation. Each is a `revisit/*` branch on `origin`, with its timing and next step in
 `docs/REVISIT.md` (background in `docs/MC_*.md` and `docs/CDEF_*.md`).
 

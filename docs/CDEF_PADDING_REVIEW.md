@@ -1,19 +1,26 @@
 # CDEF padding review
 
-Performance and full decoder validation remain pending. The preserved
-historical comparison used MC candidate `25ef8af1` and archmage `b8d6c077` on
-both sides. The current source includes the reviewed MC pair-window follow-ups and
-signed-source repair, with archmage 0.9.30 and Rust 1.99.0. New matched
-binaries and timing are required; earlier padding-only binaries are preserved.
+The landed revision keeps the equal-length widening copies but drops the
+rectangle borrows after paired timing. An earlier draft reserved two exact
+row segments through `index_rect_as` and had `decode.rs` declare the luma
+pitch on both line buffers so the tracker could decode rectangle geometry;
+on a quiet box the tracked 4-worker cells of the staged build came back
++2.2 to +3.3% over their A/A controls (untracked and 1-worker unchanged).
+Bisection showed the records were neutral and the stride declaration was
+the cost: `declare_row_stride` re-derives the tracker block shift via
+`block_shift_rule_rows`, coarsening blocks toward `ROWS_PER_BLOCK_MIN` rows
+whenever the buffer sees `tiles >= 2` at `threads > 1` — the shared line
+buffers then collide on fewer shard locks under tile parallelism. With the
+declares and rectangle sites both reverted, tracked 4-worker timing is
+inside A/A noise and 1-worker cells kept their small gains.
 
 The padding copies use equal-length slices: zip widens byte pixels to u16,
 and `copy_from_slice` copies u16 pixels. Top and line-buffer bottom reads
-reserve two exact row segments through `index_rect_as`. Geometry or stride
-hint mismatches retain the existing per-row path. `decode.rs` re-declares
-the luma byte pitch after resizing both line buffers, which resets the hint.
-With tracking enabled, a chroma pitch different from the declared luma
-pitch declines that rectangle path. Untracked builds validate rectangle
-geometry without requiring a tracker pitch hint.
+stay on the per-row `slice_as` path. `decode.rs` declares no row pitch on
+the line buffers — declaring one is what made the measured regression, and
+without it `index_rect_as` declines, so the rectangle path is not used at
+all. `index_rect_as` itself remains available where a declared buffer's
+geometry benefits from it (e.g. the pre-existing loop-filter caller).
 
 The three focused tests pass on native Zen 4: all edge flags, four fixture
 block shapes, positive/negative strides, picture/line-buffer bottom rows,
@@ -21,7 +28,6 @@ and declared/undeclared hints. Both parity sweeps keep neighbouring gap bytes
 mutably borrowed while padding copies run; widening a read into those bytes
 must be rejected. A deliberate contiguous top-hull reservation fails the 8-bit gap-write
 test with an overlap; exact source restoration passes all three tests.
-Complete decoder, sidecar and feature gates remain pending.
 
 Inspection of the fat-LTO untracked binaries built with Rust 1.98.1 shows
 SSE2 `punpcklbw` widening in both implementations. The padding_8bpc symbols

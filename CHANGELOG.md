@@ -105,6 +105,19 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   retries the same packet. Applies to every thread count.
 
 ### Changed
+- CDEF `find_dir` cost accumulation runs through a single contiguous-loop
+  helper for 8 and 16 bit, and CDEF padding widens/copies over equal-length
+  slices instead of index loops. Full-domain padding parity (every edge-flag
+  combination, both block shapes, both stride signs) and scalar direction-cost
+  oracles cover the change; both complete suites and the 803-vector corpus pass
+  at every dispatch level, 1 and 4 workers, in both modes. Paired
+  timing with A/A controls on Zen 4: 1-worker cells 0.5-1.4% faster, 4-worker
+  inside noise. The branch's `index_rect_as` rectangle borrows and
+  `declare_row_stride` line-buffer hints were dropped before landing —
+  declaring a stride re-derives the tracker block shift
+  (`block_shift_rule_rows`), coarsening tracked blocks and costing +2.2-3.3%
+  at 4 workers tracked under tile parallelism
+  ([details](docs/CDEF_PADDING_REVIEW.md), [variant A/B](docs/CDEF_DIRECTION_COST_REVIEW.md)).
 - `archmage` and `archmage-macros` now come from the crates.io 0.9.30 release
   instead of a git pin, which crates.io would reject at publish time. The
   registry source is byte-identical to the previously pinned commit `e2dbab66`
