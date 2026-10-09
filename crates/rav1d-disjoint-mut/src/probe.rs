@@ -34,8 +34,11 @@ pub struct Slot {
     pub overflow: AtomicU64,
     /// Largest `end` offset ever registered — a size fingerprint for the buffer.
     pub max_end: AtomicUsize,
-    /// First registration site seen (`&'static Location` as usize).
-    pub loc: AtomicUsize,
+    /// First registration site seen. A `OnceLock` of the reference itself: the previous
+    /// `AtomicUsize` held an address that `report` turned back into a reference with
+    /// `unsafe`, so safe code that stored any integer into this public field made
+    /// `report` form an invalid `&Location` (audit finding A-02).
+    pub loc: std::sync::OnceLock<&'static Location<'static>>,
     /// Bitmask of thread indices that borrowed this instance.
     pub thread_mask: AtomicU64,
 }
@@ -55,7 +58,7 @@ impl Slot {
             occ_max: AtomicU64::new(0),
             overflow: AtomicU64::new(0),
             max_end: AtomicUsize::new(0),
-            loc: AtomicUsize::new(0),
+            loc: std::sync::OnceLock::new(),
             thread_mask: AtomicU64::new(0),
         }
     }
@@ -159,10 +162,7 @@ pub fn record_add(
     if s.max_end.load(Relaxed) < end {
         s.max_end.store(end, Relaxed);
     }
-    if s.loc.load(Relaxed) == 0 {
-        s.loc
-            .store(loc as *const Location<'static> as usize, Relaxed);
-    }
+    let _ = s.loc.set(loc);
     let tid = thread_index();
     s.thread_mask.fetch_or(1u64 << tid, Relaxed);
     if contended {
@@ -264,13 +264,9 @@ pub fn report(iters: u64) -> String {
         let ca = s.cont_add.load(Relaxed);
         let cr = s.cont_remove.load(Relaxed);
         let wait = s.wait_ns_add.load(Relaxed) + s.wait_ns_remove.load(Relaxed);
-        let loc_ptr = s.loc.load(Relaxed);
-        let loc = if loc_ptr == 0 {
-            std::borrow::Cow::Borrowed("?")
-        } else {
-            // SAFETY-equivalent: the pointer came from a `&'static Location`.
-            let l: &'static Location<'static> = unsafe { &*(loc_ptr as *const Location<'static>) };
-            std::borrow::Cow::Owned(std::format!("{}:{}", l.file(), l.line()))
+        let loc = match s.loc.get() {
+            None => std::borrow::Cow::Borrowed("?"),
+            Some(l) => std::borrow::Cow::Owned(std::format!("{}:{}", l.file(), l.line())),
         };
         let _ = writeln!(
             out,
