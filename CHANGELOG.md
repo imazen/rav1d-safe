@@ -139,6 +139,15 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   untracked −1.5%/−1.6% (4K), −1.1%/−0.65% (aom1080), −0.7%/−1.4% (svt);
   tracked and 10-bit cells neutral. Cross-tier md5 identity confirmed on all
   dispatch levels (scalar/v2/v3/v4/native × 4 clips × both modes).
+- Fused 4x4 four-tap motion compensation for 8bpc: `fused_hv_4x4_8bpc` runs
+  the horizontal pass into a four-row `__m128i` ring consumed directly by the
+  vertical pass, so eligible blocks (w=4, h=4, 4-tap in both directions) skip
+  the pooled intermediate buffer entirely — including its tracker
+  registration in tracked builds. Wired into `put`/`prep` at the AVX2 and
+  AVX-512 tiers; `mc_fused_small_tests` pins full-domain scalar parity. Paired
+  timing on Zen 4 vs the prior stage (A/A controls, flagged cells remeasured
+  at 8 rounds): tracked −1.6%/−3.8% on 1080p at 1/4 workers, −3.5% on svt
+  4-worker; untracked and 10-bit neutral (the kernel is 8bpc-only).
 - `archmage` and `archmage-macros` now come from the crates.io 0.9.30 release
   instead of a git pin, which crates.io would reject at publish time. The
   registry source is byte-identical to the previously pinned commit `e2dbab66`

@@ -618,3 +618,13 @@ check-mc-v512-features: clippy clippy-untracked cross-aarch64
     cargo check --no-default-features --features "bitdepth_8,bitdepth_16,c-ffi"
     just test-mc-v512-rows bitdepth_8,bitdepth_16,untracked
     just test-mc-v512-rows bitdepth_8,bitdepth_16,c-ffi
+
+# Tight active-byte scalar oracle plus existing whole-buffer MC parity.
+test-mc-fused-small features="bitdepth_8,bitdepth_16":
+    cargo nextest run --cargo-profile release-thin --no-default-features --features "{{features}}" --lib -E 'test(fused_small_tests) | test(mc_x86_8bpc_parity) | test(four_tap_vertical_uses_only_active_rows) | test(warp_scalar_tests) | test(warp_reference_windows_cover_both_strides_and_all_depths)' --test-threads 1 --success-output immediate
+
+# Feature boundaries for the isolated fused path; both modes keep scalar gates.
+check-mc-fused-small-features: clippy clippy-untracked cross-aarch64
+    cargo check --target wasm32-unknown-unknown --no-default-features --features "bitdepth_8,bitdepth_16"
+    cargo check --no-default-features --features "bitdepth_8,bitdepth_16,c-ffi"
+    just test-mc-fused-small bitdepth_8,bitdepth_16,untracked

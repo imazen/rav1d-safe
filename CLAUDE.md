@@ -108,8 +108,9 @@ threading (about half the untracked decode time on 4K video at 4-8 threads), and
 LR scratch moved off thread-local storage. CDEF `find_dir` cost and padding
 copies plus retained-row tracked CDEF destination borrows landed 2026-10-11/12
 (tracked 4-worker 4K −4.0%), and AVX-512 vertical MC specialised by active tap
-count landed 2026-10-12 (untracked 4K −1.5/−1.6%). Parked, unlanded experiments:
-fused 4x4 MC, `decode_b`
+count landed 2026-10-12 (untracked 4K −1.5/−1.6%), and the fused 4x4 four-tap
+H+V MC prototype landed the same day (tracked 4-worker 1080p −2.0/−3.8%).
+Parked, unlanded experiments: `decode_b`
 initialisation. Each is a `revisit/*` branch on `origin`, with its timing and next step in
 `docs/REVISIT.md` (background in `docs/MC_*.md` and `docs/CDEF_*.md`).
 
