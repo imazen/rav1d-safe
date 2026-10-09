@@ -2613,10 +2613,21 @@ mod pic_buf {
         ///
         /// # Panics
         ///
-        /// `align_offset + usable_len` must not exceed [`Self::storage_len`].
+        /// `align_offset + usable_len` must not overflow or exceed [`Self::storage_len`].
         pub fn set_usable_len(&mut self, usable_len: usize) {
+            // Checked: a wrapped sum would pass the bound and leave a usable region far
+            // larger than the allocation, which every later view trusts.
+            let region_end = self
+                .align_offset
+                .checked_add(usable_len)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "PicBuf: usable_len {usable_len} + align {} overflows usize",
+                        self.align_offset
+                    )
+                });
             assert!(
-                self.align_offset + usable_len <= self.buf.len(),
+                region_end <= self.buf.len(),
                 "PicBuf: usable_len {usable_len} + align {} exceeds storage {}",
                 self.align_offset,
                 self.buf.len()
