@@ -57,6 +57,17 @@ check-mc-warp-destination-features: clippy clippy-untracked cross-aarch64
 test-mc-source-strides:
     cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib -E 'test(reversed_source_rows_match_scalar_for_all_8tap_filters)' --test-threads 1
 
+# Retained destination rows plus the independent CDEF pixel/padding oracles.
+test-cdef-retained features="bitdepth_8,bitdepth_16":
+    cargo nextest run --cargo-profile release-thin --no-default-features --features "{{features}}" --lib -E 'test(retained_cdef_tests) | test(padding_parity_tests) | test(warp_scalar_tests) | test(warp_reference_windows_cover_both_strides_and_all_depths)' --test-threads 1 --success-output immediate
+
+# Check retained storage in each helper/module feature boundary.
+check-cdef-retained-features: clippy clippy-untracked cross-aarch64
+    cargo check --target wasm32-unknown-unknown --no-default-features --features "bitdepth_8,bitdepth_16"
+    cargo check --no-default-features --features "bitdepth_8,bitdepth_16,c-ffi"
+    cargo check --no-default-features --features "bitdepth_8,bitdepth_16,asm"
+    just test-cdef-retained bitdepth_8,bitdepth_16,untracked
+
 # Cast-range overflow and valid-alignment controls under Stacked Borrows.
 test-cast-miri:
     cargo +nightly miri test -p rav1d-disjoint-mut --test cast_range_overflow
@@ -514,7 +525,6 @@ test-filmgrain-rows:
 arm-tiers-macos:
     mkdir -p "$HOME/tmp"
     CARGO_BUILD_JOBS=4 RAYON_NUM_THREADS=4 OMP_NUM_THREADS=4 TMPDIR="$HOME/tmp" nice -n 19 cargo bench --locked -p rav1d-safe --bench tier_isolation -- --format=llm > "$HOME/tmp/rav1d-arm-tiers.log" 2>&1
-
 
 # #526: actual frame contexts plus a 32-tile stream, and concurrent decoders.
 test-filmgrain-concurrency:

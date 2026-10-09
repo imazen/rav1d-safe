@@ -4573,6 +4573,11 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
     f.lf.cdef_line_buf
         .try_resize(alloc_sz, 0)
         .map_err(|_| ENOMEM)?;
+    // Declare the luma pitch for tracked rectangle borrows over CDEF's two
+    // edge rows. A different chroma pitch falls back to per-row guards when
+    // tracking is enabled. Resize drops the hint, so declare it here.
+    f.lf.cdef_line_buf
+        .declare_row_stride(y_stride.unsigned_abs());
 
     let bpc = BPC::from_bitdepth_max(f.bitdepth_max);
     let y_stride_px = bpc.pxstride(f.cur.stride[0]);
@@ -4641,6 +4646,8 @@ pub(crate) fn rav1d_decode_frame_init(c: &Rav1dContext, fc: &Rav1dFrameContext) 
     f.lf.lr_line_buf
         .try_resize(alloc_sz, 0)
         .map_err(|_| ENOMEM)?;
+    // Declare the same luma pitch for tracked two-row rectangle guards.
+    f.lf.lr_line_buf.declare_row_stride(y_stride.unsigned_abs());
 
     let y_stride_px = bpc.pxstride(y_stride);
     let uv_stride_px = bpc.pxstride(uv_stride);

@@ -491,6 +491,33 @@ pub fn with_pixel_guard_mut<BD: BitDepth, R>(
     f(block.as_mut_bytes(), offset, stride)
 }
 
+/// CDEF has already copied its source pixels into independent scratch. Keep
+/// a small destination rectangle reserved through copy-in, filtering and
+/// copy-out so that those two copies share one tracker registration.
+///
+/// Callers must not read picture pixels overlapping the destination inside
+/// the closure. MC and intra prediction retain the ordinary block policy.
+#[inline]
+#[cfg_attr(
+    any(debug_assertions, feature = "__probe_sites", feature = "__probe_usage"),
+    track_caller
+)]
+#[cfg(not(feature = "asm"))]
+pub(crate) fn with_cdef_guard_mut<BD: BitDepth, R>(
+    pic: &crate::src::with_offset::WithOffset<&Rav1dPictureDataComponent>,
+    w: usize,
+    h: usize,
+    f: impl FnOnce(&mut [u8], usize, isize) -> R,
+) -> R {
+    #[cfg(target_arch = "x86_64")]
+    let mut block = pic.cdef_block_mut::<BD>(w, h);
+    #[cfg(not(target_arch = "x86_64"))]
+    let mut block = pic.block_mut::<BD>(w, h);
+    let offset = block.base() * core::mem::size_of::<BD::Pixel>();
+    let stride = block.byte_stride();
+    f(block.as_mut_bytes(), offset, stride)
+}
+
 /// Execute a closure with read-only byte access to a w×h pixel block.
 ///
 /// In single-threaded mode: zero-copy via `narrow_guard`.
@@ -1479,6 +1506,57 @@ impl<'a> Rav1dPictureDataComponentOffset<'a> {
                 byte_stride,
             }
         }
+    }
+
+    /// CDEF-only retained reservation; no source picture alias is used while
+    /// filtering the already padded scratch. Larger or declined rectangles
+    /// retain the ordinary copy policy.
+    #[cfg_attr(
+        any(debug_assertions, feature = "__probe_sites", feature = "__probe_usage"),
+        track_caller
+    )]
+    #[cfg(all(target_arch = "x86_64", not(feature = "asm")))]
+    fn cdef_block_mut<BD: BitDepth>(&self, w: usize, h: usize) -> BlockMut<'a, BD> {
+        use zerocopy::IntoBytes;
+        if w != 0
+            && w <= 8
+            && h != 0
+            && h <= 8
+            && (self.data.uses_row_guards() || self.data.uses_exact_rows())
+        {
+            let pxstride = self.data.pixel_stride::<BD>();
+            let ps = core::mem::size_of::<BD::Pixel>();
+            self.data.dm().probe_eval_rect(
+                core::panic::Location::caller(),
+                true,
+                self.offset * ps,
+                w * ps,
+                h,
+                pxstride * ps as isize,
+            );
+            if let Some(mut guard) =
+                self.data
+                    .dm()
+                    .index_rect_mut_as::<BD::Pixel>(self.offset, w, h, pxstride)
+            {
+                let byte_stride = w * core::mem::size_of::<BD::Pixel>();
+                let mut buf = take_compact_scratch();
+                buf.resize(h * byte_stride, 0);
+                for r in 0..h {
+                    buf[r * byte_stride..][..byte_stride]
+                        .copy_from_slice(guard.row_mut(r).as_bytes());
+                }
+                return BlockMut {
+                    storage: BlockMutStorage::Retained { buf, guard },
+                    dst: *self,
+                    w,
+                    h,
+                    base: 0,
+                    byte_stride: byte_stride as isize,
+                };
+            }
+        }
+        self.block_mut::<BD>(w, h)
     }
 
     /// Create a tracked immutable guard covering a strided w×h pixel region.
@@ -2659,6 +2737,13 @@ enum BlockMutStorage<'a, BD: BitDepth> {
     /// Tile threading on: a detached compact copy, written back on drop
     /// through fresh per-row guards.
     Compact { buf: Vec<u8> },
+    /// CDEF scratch with its exact destination rows reserved until write-back.
+    #[cfg(all(target_arch = "x86_64", not(feature = "asm")))]
+    Retained {
+        buf: Vec<u8>,
+        guard:
+            rav1d_disjoint_mut::DisjointMutRectGuard<'a, Rav1dPictureDataComponentInner, BD::Pixel>,
+    },
 }
 
 /// A writable w×h pixel block. Obtain one with [`WithOffset::block_mut`], which
@@ -2702,6 +2787,8 @@ impl<'a, BD: BitDepth> BlockMut<'a, BD> {
         match &mut self.storage {
             BlockMutStorage::Direct { guard } => guard.as_mut_bytes(),
             BlockMutStorage::Compact { buf } => buf.as_mut_slice(),
+            #[cfg(all(target_arch = "x86_64", not(feature = "asm")))]
+            BlockMutStorage::Retained { buf, .. } => buf.as_mut_slice(),
         }
     }
 }
@@ -2710,6 +2797,18 @@ impl<BD: BitDepth> Drop for BlockMut<'_, BD> {
     fn drop(&mut self) {
         match &mut self.storage {
             BlockMutStorage::Direct { .. } => {}
+            #[cfg(all(target_arch = "x86_64", not(feature = "asm")))]
+            BlockMutStorage::Retained { buf, guard } => {
+                use zerocopy::IntoBytes;
+                let stride = self.w * core::mem::size_of::<BD::Pixel>();
+                for r in 0..self.h {
+                    guard
+                        .row_mut(r)
+                        .as_mut_bytes()
+                        .copy_from_slice(&buf[r * stride..][..stride]);
+                }
+                recycle_compact_scratch(core::mem::take(buf));
+            }
             BlockMutStorage::Compact { buf } => {
                 // Unconditional per-row write-back rather than the loopfilter's
                 // diff variant: an inverse transform adds residual across the
@@ -2719,6 +2818,151 @@ impl<BD: BitDepth> Drop for BlockMut<'_, BD> {
                 self.dst
                     .compact_write_back_per_row::<BD>(self.w, self.h, buf);
                 recycle_compact_scratch(core::mem::take(buf));
+            }
+        }
+    }
+}
+
+#[cfg(all(test, target_arch = "x86_64", not(feature = "untracked")))]
+mod retained_cdef_tests {
+    use super::*;
+    use crate::include::common::bitdepth::{AsPrimitive, BitDepth8, BitDepth16};
+    use crate::src::with_offset::WithOffset;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    use zerocopy::IntoBytes;
+
+    #[test]
+    fn retained_cdef_rows_preserve_gaps_and_write_back_at_every_depth() {
+        check(BitDepth8::new(()));
+        check(BitDepth16::new(1023));
+        check(BitDepth16::new(4095));
+    }
+
+    #[test]
+    fn declined_cdef_rectangle_keeps_compact_write_back() {
+        check_declined(BitDepth8::new(()));
+        check_declined(BitDepth16::new(1023));
+        check_declined(BitDepth16::new(4095));
+    }
+
+    fn check_declined<BD: BitDepth>(bd: BD) {
+        const STRIDE: usize = 64;
+        const ROWS: usize = 16;
+        let max = bd.bitdepth_max().as_::<i32>();
+        let pixels: Vec<BD::Pixel> = (0..STRIDE * ROWS)
+            .map(|i| (((i * 73) as i32) & max).as_())
+            .collect();
+        let ps = core::mem::size_of::<BD::Pixel>();
+        for negative in [false, true] {
+            let stride = if negative {
+                -(STRIDE as isize)
+            } else {
+                STRIDE as isize
+            };
+            let origin = (if negative { 12 } else { 2 }) * STRIDE + 5;
+            let mut pic = Rav1dPictureDataComponent::from_parts(
+                Rav1dPictureDataComponentInner::from_slice_copy(pixels.as_bytes()),
+                stride * ps as isize,
+            );
+            pic.set_threading_policy(PictureThreading::new(2, 4));
+            let at = WithOffset {
+                data: &pic,
+                offset: origin,
+            };
+            let gap_row = origin.wrapping_add_signed(if negative { stride } else { 0 });
+            let gap = pic.index_mut::<BD>(gap_row + 9);
+            let mut block = at.cdef_block_mut::<BD>(8, 8);
+            assert!(matches!(&block.storage, BlockMutStorage::Compact { .. }));
+            let output: &mut [BD::Pixel] =
+                zerocopy::FromBytes::mut_from_bytes(block.as_mut_bytes()).unwrap();
+            for pixel in output {
+                *pixel = ((*pixel).as_::<i32>() ^ max).as_();
+            }
+            drop(block);
+            drop(gap);
+            let actual = pic.dm().slice_as::<_, BD::Pixel>(..STRIDE * ROWS);
+            let mut expected = pixels.clone();
+            for r in 0..8 {
+                let off = origin.wrapping_add_signed(r as isize * stride);
+                for x in 0..8 {
+                    expected[off + x] = (pixels[off + x].as_::<i32>() ^ max).as_();
+                }
+            }
+            assert_eq!(
+                actual.as_bytes(),
+                expected.as_bytes(),
+                "declined negative={negative} max={max}"
+            );
+        }
+    }
+
+    fn check<BD: BitDepth>(bd: BD)
+    where
+        BD::Pixel: core::fmt::Debug,
+    {
+        const STRIDE: usize = 64;
+        // Enough rows for the existing adaptive tracker to retain its four-rows
+        // block layout. A tiny plane can correctly decline an eight-row rect.
+        const ROWS: usize = 256;
+        let max = bd.bitdepth_max().as_::<i32>();
+        let pixels: Vec<BD::Pixel> = (0..STRIDE * ROWS)
+            .map(|i| (((i * 73) as i32) & max).as_())
+            .collect();
+        let ps = core::mem::size_of::<BD::Pixel>();
+        for negative in [false, true] {
+            for (w, h) in [(3, 4), (4, 4), (4, 8), (8, 4), (8, 8)] {
+                let stride = if negative {
+                    -(STRIDE as isize)
+                } else {
+                    STRIDE as isize
+                };
+                let mut pic = Rav1dPictureDataComponent::from_parts(
+                    Rav1dPictureDataComponentInner::from_slice_copy(pixels.as_bytes()),
+                    stride * ps as isize,
+                );
+                pic.set_threading_policy(PictureThreading::new(2, 4));
+                let row0 = if negative { 12 } else { 2 };
+                let origin = row0 * STRIDE + 5;
+                let at = WithOffset {
+                    data: &pic,
+                    offset: origin,
+                };
+                // A mutable byte inside the rectangle's hull but outside its
+                // row segments must remain available throughout the callback.
+                // For backwards rows, use the next lower row so this byte
+                // lies between reserved rows rather than above the hull.
+                let gap_row = origin.wrapping_add_signed(if negative { stride } else { 0 });
+                let gap = pic.index_mut::<BD>(gap_row + w + 1);
+                let mut block = at.cdef_block_mut::<BD>(w, h);
+                assert!(matches!(&block.storage, BlockMutStorage::Retained { .. }));
+                assert_eq!(block.base(), 0);
+                assert_eq!(block.byte_stride(), (w * ps) as isize);
+                // The destination rows, however, stay exclusively reserved.
+                assert!(catch_unwind(AssertUnwindSafe(|| pic.index_mut::<BD>(origin))).is_err());
+                let output: &mut [BD::Pixel] =
+                    zerocopy::FromBytes::mut_from_bytes(block.as_mut_bytes()).unwrap();
+                for r in 0..h {
+                    let off = origin.wrapping_add_signed(r as isize * stride);
+                    for x in 0..w {
+                        assert_eq!(output[r * w + x], pixels[off + x]);
+                        output[r * w + x] = (output[r * w + x].as_::<i32>() ^ max).as_();
+                    }
+                }
+                drop(block);
+                drop(gap);
+                let actual = pic.dm().slice_as::<_, BD::Pixel>(..STRIDE * ROWS);
+                let mut expected = pixels.clone();
+                for r in 0..h {
+                    let off = origin.wrapping_add_signed(r as isize * stride);
+                    for x in 0..w {
+                        expected[off + x] = (pixels[off + x].as_::<i32>() ^ max).as_();
+                    }
+                }
+                assert_eq!(
+                    actual.as_bytes(),
+                    expected.as_bytes(),
+                    "{w}x{h} negative={negative} max={max}"
+                );
             }
         }
     }
