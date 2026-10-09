@@ -15,6 +15,24 @@ on the `release/disjoint-mut-0.3` branch.
   (`cast_slice`, `mut_slice_as`, ...) is now always available. Manifests that
   name `features = ["zerocopy"]` must drop it.
 
+### Fixed (from the independent pre-publication audit of 0.4.0)
+- `PicBuf::set_usable_len` checked `align_offset + usable_len <= storage_len` with an
+  unchecked addition, which wraps in release builds: a safe caller could authorise a
+  usable region far larger than the allocation, and every later guard trusted it
+  (unsound). The sum is now checked, like the constructor's (`pic-buf` feature).
+- `probe::Slot::loc` (feature `__probe_count`, internal) was a public `AtomicUsize`
+  that `report` turned back into a `&Location` with `unsafe`; storing any integer
+  there made `report` form an invalid reference. It is now a `OnceLock<&'static
+  Location>` and the `unsafe` is gone.
+- A panic inside the tracker's all-shard section left every shard locked for the life
+  of the instance, so later borrows (even of disjoint bytes) spun forever. Two safe
+  sequences reached it: a leaked rectangle guard followed by `resize` (the stale
+  record was decoded with the zeroed stride: division by zero) and exhausting the
+  `u16` wide-record ids (the capacity assert ran after the record was pushed). Stale
+  rectangle records without a stride are now their plain hull (conservative), the wide
+  path checks capacity before mutating and releases its locks before panicking, and an
+  RAII guard releases them on any unwind.
+
 ### Removed
 - Internal measurement features (outside the supported API): `__tracker_legacy`,
   `__probe_noscan`, `__probe_lockonly`, `__probe_tinynop`, `__probe_addnop`,
