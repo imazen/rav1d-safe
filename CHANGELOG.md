@@ -129,6 +129,16 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   tracked 4-worker cells −4.0% (4K), −1.3% (1080p) and −4.1% (10-bit
   1-worker); untracked and remaining cells inside noise after an 8-round
   remeasure of the two borderline cells.
+- AVX-512 vertical MC is specialised by active tap count: the dispatcher reads
+  `tap_base_8tap` once per call and routes to a const-generic
+  `v_filter_ntap_*_avx512_inner<NT>` for 4/6/8 taps, so short filters skip the
+  dead multiply-adds the fixed 8-tap kernel paid. `mc_v512_active_rows_tests`
+  covers every tap count/width/height combination plus mid-buffer edge values.
+  Paired timing on Zen 4 vs the prior stage (4 clips, 1/4 workers, both modes,
+  A/A controls; untracked remeasured at 8 rounds after a contended first pass):
+  untracked −1.5%/−1.6% (4K), −1.1%/−0.65% (aom1080), −0.7%/−1.4% (svt);
+  tracked and 10-bit cells neutral. Cross-tier md5 identity confirmed on all
+  dispatch levels (scalar/v2/v3/v4/native × 4 clips × both modes).
 - `archmage` and `archmage-macros` now come from the crates.io 0.9.30 release
   instead of a git pin, which crates.io would reject at publish time. The
   registry source is byte-identical to the previously pinned commit `e2dbab66`

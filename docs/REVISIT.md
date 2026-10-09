@@ -12,7 +12,7 @@ None has run nextest or the 803-vector corpus.
 
 | Branch | What it tries | Result | Next step |
 |--------|---------------|--------|-----------|
-| `revisit/mc-v512` | AVX-512 active-row vertical MC + warp pair | Best of the five. Most cells 0.98-0.99 of main, 4K 0.974-0.981; the two 10-bit untracked cells are contaminated (A/A 1.10 / 1.25) | Retime on a quiet box and on Zen 5; run nextest + corpus; land if the 1-2% holds |
+| ~~`revisit/mc-v512`~~ | AVX-512 active-row vertical MC + warp pair | **Landed 2026-10-12** on top of the tracker stage, vertical specialization only: const-generic `v_filter_ntap_*_avx512_inner<NT>` dispatch by active tap count (4/6/8). The paired warp kernel was dropped mid-lane (failing negative-destination oracle — see `docs/MC_WARP_PAIR_REVIEW.md`). Clean-cell untracked wins vs the tracker stage: 4K −1.5/−1.6%, aom1080 −1.1%/−0.65%, svt −0.7%/−1.4% (8-round remeasure after the first run's A/A controls dirtied at load 5-8); tracked and 10-bit neutral. Cross-tier md5 40/40 | Done. Zen 5 not measured (double-pumped on Zen 4) |
 | ~~`revisit/cdef`~~ | CDEF direction-cost / padding variants | **Landed 2026-10-11.** Kept: contiguous-loop cost helper for `find_dir`, vectorized widening padding copies, scalar-oracle + full-domain parity tests. Dropped after bisect: `index_rect_as` rect borrows and `declare_row_stride` line-buffer hints — declaring a stride re-derives the tracker block shift (`block_shift_rule_rows`), coarsening blocks and costing +2.2-3.3% at 4 workers tracked. Landed build is inside A/A noise there, −0.5-1.4% at 1 worker | Done. `declare_row_stride` on shared buffers needs revisiting before rect borrows can help |
 | ~~`revisit/tracker`~~ | Retained-row CDEF borrows in the tracked build | **Landed 2026-10-12** on top of the CDEF stage, minus the shared line-buffer rect/declare parts (dropped in the stage-1 bisect). `cdef_block_mut` reserves the 8x8 destination rect on the already-declared picture buffer across copy-in→filter→copy-out, five call sites swap `with_pixel_guard_mut` → `with_cdef_guard_mut`. Tracked 4-worker wins: 4K −4.0%, aom1080 −1.3%, aom10 t1 −4.1%; all other cells inside A/A noise after an 8-round remeasure of the two borderline cells (svt t4, untracked aom1080 t4) | Done |
 | `revisit/mc-fused` | Fused small-block MC (4x4 blocks, four-tap filters only) | Retimed 2026-10-10 (load 2-10): 1-worker cells with a clean A/A are 0.992/0.995/1.003/1.008 tracked and 0.984/0.999 untracked, i.e. 0-1.6%; four outlier untracked cells (0.82, 0.895, 1.135) have a contaminated `before`. The lead's own number was 0-2% | The idea (a ring of four horizontal rows instead of a pooled mid buffer) is the prototype for a general fused H+V kernel; not worth landing alone |
@@ -31,9 +31,10 @@ assessment of design is from reading the diffs.
    `declare_row_stride` line-buffer hints were measured to cost +2.2-3.3% at 4 workers tracked — the
    stride declaration coarsens tracker block geometry under tile parallelism — and were dropped
    before landing.
-2. **`revisit/mc-v512`: closest to landable.** 129 changed lines of `mc.rs`: AVX-512 vertical MC specialised by active
-   tap count (4/6/8) with const generics, plus two parity test files (active rows, paired warp). Bit-exact on the four
-   clips; most cells 1-2% faster. It helps the AVX-512 tier only (double-pumped on Zen 4; Zen 5 not measured).
+2. **~~`revisit/mc-v512`: closest to landable.~~ Landed 2026-10-12** — the vertical specialization
+   (const-generic AVX-512 ntap inner for 4/6/8 taps) landed on top of the tracker stage; the paired
+   warp kernel did not (negative-destination oracle failure, `docs/MC_WARP_PAIR_REVIEW.md`). Measured:
+   untracked 4K −1.5/−1.6%, aom1080/svt −0.65 to −1.4%; tracked and 10-bit neutral. Zen 5 not measured.
 3. **`revisit/mc-fused`: prototype for the biggest item.** MC is 32-42% of the gap and dav1d's advantage is fused
    AVX-512 6-tap kernels. This branch proves the shape (horizontal rows consumed by the vertical pass through a
    four-row ring, no mid buffer) but only for 4x4 four-tap blocks, so the gain is 0-1.6%. Extend it to wider blocks and

@@ -1,8 +1,13 @@
 # AVX-512 vertical active-row experiment
 
-Missing: matched builds/codegen, full decoder and sidecar gates,
-and matched A/A plus A/B timing. No speedup
-is claimed. The experiment shares the isolated signed warp destination
+Landed 2026-10-12 on top of the CDEF stage (vertical specialization only —
+the paired warp arithmetic from the same branch stays unlanded: its
+lead-lane history shows a failing negative-destination whole-warp oracle,
+dropped mid-lane rather than fixed). Full gates and paired timing with
+A/A controls are recorded below; the branch's own retime had most cells
+0.98-0.99 of main with 4K at 0.974-0.981.
+
+The experiment shares the isolated signed warp destination
 repair; fused small blocks and paired warp arithmetic are absent.
 
 The existing eight-bit vertical put and prep paths choose tap count at
