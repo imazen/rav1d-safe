@@ -1,0 +1,33 @@
+run-heavy: mem-cap=16G (cgroup, hard) jobs=20/24 avail=25748MiB :: cargo nextest run --cargo-profile release-thin --no-default-features --features bitdepth_8,bitdepth_16 --lib -E test(put_scalar_tests) --test-threads 1 --success-output immediate
+[1m[92m   Compiling[0m rav1d-safe v0.6.0 (/home/lilith/work/zen/rav1d-safe)
+[1m[92m    Finished[0m `release-thin` profile [optimized + debuginfo] target(s) in 13.74s
+────────────
+[32;1m Nextest run[0m ID [1mb7ebe915-1972-4739-88f4-332a3ac3bf95[0m with nextest profile: [1mdefault[0m
+[32;1m    Starting[0m [1m2[0m tests across [1m1[0m binary ([1m123[0m tests [33;1mskipped[0m)
+[32;1m        PASS[0m [   1.348s] (1/2) [35;1mrav1d-safe[0m [36msrc::mc::put_scalar_tests[0m[36m::[0m[34;1mmc_avx2_put_prep_match_scalar_with_signed_rows[0m
+[32;1m [0m [32;1mstdout[0m [32;1m───[0m
+
+    running 1 test
+    8-bit signed-row SIMD put/prep pairs: 1600
+    10-bit signed-row SIMD put/prep pairs: 1600
+    12-bit signed-row SIMD put/prep pairs: 1600
+    test src::mc::put_scalar_tests::mc_avx2_put_prep_match_scalar_with_signed_rows ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 124 filtered out; finished in 1.35s
+    [0m
+
+[32;1m        PASS[0m [   1.415s] (2/2) [35;1mrav1d-safe[0m [36msrc::mc::put_scalar_tests[0m[36m::[0m[34;1mmc_put_matches_original_scalar_with_signed_destination_rows[0m
+[32;1m [0m [32;1mstdout[0m [32;1m───[0m
+
+    running 1 test
+    8-bit signed-row SIMD put/prep pairs: 1600
+    10-bit signed-row SIMD put/prep pairs: 1600
+    12-bit signed-row SIMD put/prep pairs: 1600
+    test src::mc::put_scalar_tests::mc_put_matches_original_scalar_with_signed_destination_rows ... ok
+
+    test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 124 filtered out; finished in 1.41s
+    [0m
+
+────────────
+[32;1m     Summary[0m [   2.763s] [1m2[0m tests run: [1m2[0m [32;1mpassed[0m, [1m123[0m [33;1mskipped[0m
+run-heavy: done rc=0 16s | peak-RSS 1.61GiB | min-avail 24085MiB | peak-load 0.91

@@ -1,0 +1,20 @@
+{
+ "date": "2026-10-09",
+ "host": "r7900x (AMD Ryzen 9 7900X, Zen 4); Zen 5 not measured",
+ "before_revision": "ee3a594c21151590f8835168608ba8cdfb3dccd1",
+ "after_revision": "54f78fb278f355bc49539e9f04d2ea1c9da3a0d0",
+ "change": "signed row bases for x86 MC put/prep (negative-stride source and destination)",
+ "binaries_sha256": {
+  "t-base-safe": "4446210dc6cfcc9c416bf92fe7e2ae8c42b569644a58aa4755d78adf6f903a5d",
+  "t-base-untracked": "005020f651d37fa8365cfe795662ce183c67574f88d6665132a64163aa7c6322",
+  "t-new-safe": "644cbd1f6e90b7c4aadde2d3b116be8c688f0b4e2c8c8b7282ef796843ec00df",
+  "t-new-untracked": "21222fcac13bfe9800234f79f9dc708582347811f785410ce5afa2b77734df54"
+ },
+ "build": "cargo build --release --no-default-features --features bitdepth_8,bitdepth_16[,untracked] --example profile_ivf --example decode_md5 (fat LTO, rust 1.99); before built in a jj workspace at ee3a594c",
+ "paired_command": "run-heavy --mem 16G -- python3 scripts/perf/decoder_bench/paired_modes.py --before-prefix t-base --after-prefix t-new --before-rev ee3a594c... --after-rev 54f78fb2... --stream aom_real1080_96.ivf --stream aom_real4k_48.ivf --stream svt_real1080_96.ivf --stream aom10_real1080.ivf --threads 1,4 --rounds 4 --passes 3 --first-cpu 8 --delay 1",
+ "protocol": "same as mc_final_paired_2026-10-08: both modes, four real 8/10-bit clips (streams from ~/tmp/rav1d-handoff-2026-10-07/streams), 1 and 4 workers, delay 1, four alternating process pairs x three timed passes, one warm-up; A/A controls run first in each mode",
+ "wrapped_resource_lines": "paired 49m37s rc=0 (see campaign.log); nextest tracked 622s, untracked 264s, sidecars 5210s (rc=0)",
+ "conformance": "scripts/conformance_test.sh via 'just conformance-all-modes': levels scalar/v2/v3/v4/native x 1/2/4/8 workers x tracked/untracked = 40 configurations, each total=803 pass=803 fail=0 errors=0; excluded=149 are oss-fuzz inputs skipped by design (a missing file fails the run)",
+ "recompute": "just bench-paired-mode-report benchmarks/mc_put_prep_signed_rows_2026-10-09 safe (or untracked)",
+ "limits": "Zen 5 and consumer builds without testable_dispatch unmeasured; c-ffi negative-stride allocator rows not covered; ARM not run for this change"
+}

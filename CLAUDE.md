@@ -1004,6 +1004,29 @@ correctness gates.
 No expectation has been relaxed.
 [Evidence, source fingerprints and repair scope](docs/MC_WARP_DESTINATION_ROWS.md).
 
+### x86 MC put/prep negative row stride (2026-10-09) — FIXED
+
+The warp repair (above) covered only warp. Standard x86 MC put and prep had the
+same defect: after the dispatcher sliced the source or destination at the block
+origin, the private 8-bit and 16-bit helpers cast a negative row offset to
+usize, so a picture with a negative row stride panicked with
+`range start index 18446744073709551424 out of range` (a bounds-check panic in
+safe code; not a memory-safety issue). Found by extending the warp oracle to
+standard put/prep. The helpers now take the bounded slice plus a base index and
+add each signed row offset to it. Interpolation, rounding and public API are
+unchanged.
+
+`src/mc_put_scalar_tests.rs` compares put and prep with the original scalar
+kernels over every filter, four phases, sizes 4x4 to 128x128 including odd
+widths, signed source and destination strides, one and four workers, 8/10/12
+bit, with AVX-512 enabled and masked (1,600 comparisons per depth). Both tests
+fail on the parent and pass with the change. Tracked 242/242 and untracked
+225/225 tests, ten doctests per mode, lint/ARM/WASM/C-FFI checks and all forty
+sidecar configurations (803/803, zero failures) pass. Timing is neutral within
+the A/A controls (below). C-FFI negative-stride allocator rows and ARM are not
+covered by this change.
+[Evidence](benchmarks/mc_put_prep_signed_rows_2026-10-09/meta.json).
+
 ### x86 MC bounded signed rows and four-tap extent (2026-10-08) — FIXED
 
 Batched horizontal and vertical-only byte kernels converted signed source

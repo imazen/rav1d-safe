@@ -10,6 +10,18 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   both complete decoder suites and all forty runtime-tier/worker sidecar
   configurations pass (`804a4e01`, `811a9728`). Public signatures and warp
   interpolation are unchanged.
+- x86 MC put/prep preserve signed row bases for negative-stride pictures. The
+  8/10/12-bit helpers took a positive row offset after the dispatcher sliced
+  the source or destination at the block origin, so a negative row stride
+  panicked with a wrapped-usize slice start (a bounds-check panic in safe code,
+  not memory unsafety). They now take the bounded slice plus a base and add each
+  signed row offset to it; interpolation, rounding and public signatures are
+  unchanged. A whole-picture scalar oracle (every filter, four phases, 4x4 to
+  128x128 incl. odd widths, signed source and destination, 1/4 workers, AVX-512
+  on and masked) fails on the parent and passes with the change; both complete
+  suites, all 40 runtime-tier/worker sidecar configurations (803/803 each) and a
+  paired timing matrix with A/A controls show no measurable cost: 1-worker
+  A/B medians -0.66%..+0.20% against A/A -0.28%..+0.55% (`54f78fb2`).
 - x86 byte MC preserves signed source row addressing in bounded reference
   windows and avoids inactive four-tap vertical reads. Negative-stride
   scalar parity and held-write extent regressions pass (`5fa78cd9`).

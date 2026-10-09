@@ -1,0 +1,7 @@
+# tracked nextest (extract; full log 39028 B kept locally)
+     Summary [ 622.202s] 242 tests run: 242 passed (4 slow), 18 skipped
+# untracked nextest (extract; full log 34907 B)
+     Summary [ 263.536s] 225 tests run: 225 passed, 18 skipped
+# doctests
+/home/lilith/tmp/finish/doctestuntracked.log:test result: ok. 10 passed; 0 failed; 13 ignored; 0 measured; 0 filtered out; finished in 0.00s
+/home/lilith/tmp/finish/doctest.log:test result: ok. 10 passed; 0 failed; 13 ignored; 0 measured; 0 filtered out; finished in 0.00s

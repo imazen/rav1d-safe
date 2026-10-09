@@ -1,0 +1,16 @@
+== new-safe t=1
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=native threads=1 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+run-heavy: done rc=0 98s | peak-RSS 0.11GiB | min-avail 25587MiB | peak-load 2.56
+== new-safe t=4
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=native threads=4 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+run-heavy: done rc=0 95s | peak-RSS 0.24GiB | min-avail 25528MiB | peak-load 0.76
+== new-untracked t=1
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=native threads=1 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+run-heavy: done rc=0 93s | peak-RSS 0.11GiB | min-avail 25573MiB | peak-load 0.43
+== new-untracked t=4
+Progress: total=800 pass=800 fail=0 errors=0
+SUMMARY level=native threads=4 delay=0 total=803 pass=803 fail=0 errors=0 excluded=149
+run-heavy: done rc=0 90s | peak-RSS 0.24GiB | min-avail 25464MiB | peak-load 0.77

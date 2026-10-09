@@ -138,3 +138,23 @@ The wrapped scope returned rc=0 after 460 seconds, peak RSS 0.20 GiB,
 minimum available 25,534 MiB and peak load 1.24. The completed phase
 files, full command output, recomputed analysis and metadata are committed.
 Executable hashes remain unchanged.
+
+## Standard put/prep (2026-10-09)
+
+The same oracle, extended to standard (non-warp) put and prep, reproduced the
+same wrapped-usize slice start on the unrepaired parent `ee3a594c`: both new
+tests fail, at `src/safe_simd/mc.rs` in the 8-bit and 16-bit put helpers
+(`mutation-baseline-parent-ee3a594c.log`). `54f78fb2` applies the warp
+repair's shape: the helpers take the bounded slice plus a base and add each
+signed row offset to it.
+
+Paired timing against the parent (both modes, four real 8/10-bit clips, one
+and four workers, delay one, four process pairs of three passes, A/A first):
+one-worker A/B medians -0.66% to +0.20% (minimums -0.39% to +0.38%) against
+A/A medians -0.28% to +0.55%. Four-worker A/B medians range -5.54% to +0.97%
+against A/A -2.30% to +4.76%; the two extreme four-worker cells sit next to
+A/A controls that moved as far. Untracked 4K, which showed the warp repair's
+cost: one worker -0.04% median / +0.38% minimum, four workers +0.43% / -0.46%.
+No cost is distinguishable from noise; Zen 5 is not measured.
+
+Recompute: `just bench-paired-mode-report benchmarks/mc_put_prep_signed_rows_2026-10-09 <safe|untracked>`.
