@@ -1208,7 +1208,7 @@ fn decode_b(
         }
     }
 
-    let mut b_mem = Av1Block::default();
+    let mut b_mem;
     let mut b_slot;
     let b = if t.frame_thread.pass != 0 {
         b_slot = f.frame_thread.b[(t.b.y as isize * f.b4_stride + t.b.x as isize) as usize]
@@ -1216,6 +1216,7 @@ fn decode_b(
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         &mut *b_slot
     } else {
+        b_mem = Av1Block::default();
         &mut b_mem
     };
 
