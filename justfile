@@ -53,6 +53,10 @@ check-mc-warp-destination-features: clippy clippy-untracked cross-aarch64
     cargo check --no-default-features --features "bitdepth_8,bitdepth_16,c-ffi"
     just test-mc-warp-destination bitdepth_8,bitdepth_16,untracked
 
+# Paired warp arithmetic and full put/prep scalar parity, before throughput.
+test-mc-warp-pairs features="bitdepth_8,bitdepth_16":
+    cargo nextest run --cargo-profile release-thin --no-default-features --features "{{features}}" --lib -E 'test(warp_pair_tests) | test(warp_scalar_tests) | test(warp_reference_windows_cover_both_strides_and_all_depths)' --test-threads 1
+
 # Actual bounded reference guard with reversed source rows at every phase.
 test-mc-source-strides:
     cargo nextest run --cargo-profile release-thin --no-default-features --features "bitdepth_8,bitdepth_16" --lib -E 'test(reversed_source_rows_match_scalar_for_all_8tap_filters)' --test-threads 1
@@ -515,7 +519,6 @@ arm-tiers-macos:
     mkdir -p "$HOME/tmp"
     CARGO_BUILD_JOBS=4 RAYON_NUM_THREADS=4 OMP_NUM_THREADS=4 TMPDIR="$HOME/tmp" nice -n 19 cargo bench --locked -p rav1d-safe --bench tier_isolation -- --format=llm > "$HOME/tmp/rav1d-arm-tiers.log" 2>&1
 
-
 # #526: actual frame contexts plus a 32-tile stream, and concurrent decoders.
 test-filmgrain-concurrency:
     CARGO_BUILD_JOBS=2 nice -n 19 cargo nextest run --lib --test filmgrain_threads -E 'binary(filmgrain_threads) | test(parallel_frame_tile_contexts)' --test-threads 1 --success-output immediate
@@ -529,3 +532,17 @@ test-strictness:
 # Replay one differential artifact without a sweep; requires system libdav1d.
 repro-differential artifact:
     cargo +nightly fuzz run differential_dav1d --features differential {{artifact}} -- -runs=1
+
+# Retain the older alias while selecting the actual signed destination gate.
+check-mc-warp-features: check-mc-warp-destination-features
+
+# AVX-512 vertical row extent and scalar clipping; no throughput claim.
+test-mc-v512-rows features="bitdepth_8,bitdepth_16":
+    cargo nextest run --cargo-profile release-thin --no-default-features --features "{{features}}" --lib -E 'test(v512_active_rows_tests) | test(mc_x86_8bpc_parity) | test(four_tap_vertical_uses_only_active_rows) | test(warp_scalar_tests) | test(warp_reference_windows_cover_both_strides_and_all_depths)' --test-threads 1 --success-output immediate
+
+# Compile both feature modes and run the complete focused vertical/MC selection.
+check-mc-v512-features: clippy clippy-untracked cross-aarch64
+    cargo check --target wasm32-unknown-unknown --no-default-features --features "bitdepth_8,bitdepth_16"
+    cargo check --no-default-features --features "bitdepth_8,bitdepth_16,c-ffi"
+    just test-mc-v512-rows bitdepth_8,bitdepth_16,untracked
+    just test-mc-v512-rows bitdepth_8,bitdepth_16,c-ffi

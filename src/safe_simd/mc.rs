@@ -2958,7 +2958,7 @@ unsafe fn v_filter_8tap_8bpc_v3(
 /// Uses _mm512_cvtepi16_epi32 for i16→i32 expansion, _mm512_cvtusepi32_epi8 for output.
 #[cfg(target_arch = "x86_64")]
 #[rite]
-fn v_filter_8tap_8bpc_avx512_inner(
+fn v_filter_ntap_8bpc_avx512_inner<const NT: usize>(
     _token: Server64,
     dst: &mut [u8],
     mid: &[[i16; MID_STRIDE]],
@@ -2968,11 +2968,11 @@ fn v_filter_8tap_8bpc_avx512_inner(
     max: i32,
 ) {
     if w < 16 {
-        v_filter_8tap_8bpc_avx2_inner(_token.v3(), dst, mid, w, filter, sh, max);
+        v_filter_ntap_8bpc_avx2_inner::<NT>(_token.v3(), dst, mid, w, filter, sh, max);
         return;
     }
-    let t0 = tap_base_8tap(filter);
-    let nt = 8 - 2 * t0;
+    let t0 = (8 - NT) / 2;
+    debug_assert_eq!(tap_base_8tap(filter), t0);
     let mut dst = dst.flex_mut();
 
     let rnd = _mm512_set1_epi32((1i32 << sh) >> 1);
@@ -2981,7 +2981,7 @@ fn v_filter_8tap_8bpc_avx512_inner(
 
     // Broadcast filter coefficients to 32-bit; only taps t0..t0+nt are
     // nonzero — their mid rows sit at t0..t0+nt of the passed window.
-    let c: [i32; 8] = core::array::from_fn(|i| if i < nt { filter[t0 + i] as i32 } else { 0 });
+    let c: [i32; 8] = core::array::from_fn(|i| if i < NT { filter[t0 + i] as i32 } else { 0 });
     let c0 = _mm512_set1_epi32(c[0]);
     let c1 = _mm512_set1_epi32(c[1]);
     let c2 = _mm512_set1_epi32(c[2]);
@@ -3009,20 +3009,28 @@ fn v_filter_8tap_8bpc_avx512_inner(
         let m3 = _mm512_cvtepi16_epi32(loadu_256!(
             <&[i16; 16]>::try_from(&mid[t0 + 3][col..col + 16]).unwrap()
         ));
-        let m4 = _mm512_cvtepi16_epi32(loadu_256!(
-            <&[i16; 16]>::try_from(&mid[t0 + 4][col..col + 16]).unwrap()
-        ));
-        let m5 = _mm512_cvtepi16_epi32(loadu_256!(
-            <&[i16; 16]>::try_from(&mid[t0 + 5][col..col + 16]).unwrap()
-        ));
-        let m6 = if nt > 6 {
+        let m4 = if NT > 4 {
+            _mm512_cvtepi16_epi32(loadu_256!(
+                <&[i16; 16]>::try_from(&mid[t0 + 4][col..col + 16]).unwrap()
+            ))
+        } else {
+            zero
+        };
+        let m5 = if NT > 4 {
+            _mm512_cvtepi16_epi32(loadu_256!(
+                <&[i16; 16]>::try_from(&mid[t0 + 5][col..col + 16]).unwrap()
+            ))
+        } else {
+            zero
+        };
+        let m6 = if NT > 6 {
             _mm512_cvtepi16_epi32(loadu_256!(
                 <&[i16; 16]>::try_from(&mid[t0 + 6][col..col + 16]).unwrap()
             ))
         } else {
             zero
         };
-        let m7 = if nt > 6 {
+        let m7 = if NT > 6 {
             _mm512_cvtepi16_epi32(loadu_256!(
                 <&[i16; 16]>::try_from(&mid[t0 + 7][col..col + 16]).unwrap()
             ))
@@ -3035,9 +3043,11 @@ fn v_filter_8tap_8bpc_avx512_inner(
         sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m1, c1));
         sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m2, c2));
         sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m3, c3));
-        sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m4, c4));
-        sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m5, c5));
-        if nt > 6 {
+        if NT > 4 {
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m4, c4));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m5, c5));
+        }
+        if NT > 6 {
             sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m6, c6));
             sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m7, c7));
         }
@@ -3062,12 +3072,31 @@ fn v_filter_8tap_8bpc_avx512_inner(
     // Scalar fallback
     while col < w {
         let mut sum = 0i32;
-        for i in 0..nt {
+        for i in 0..NT {
             sum += filter[t0 + i] as i32 * mid[t0 + i][col] as i32;
         }
         let val = ((sum + ((1 << sh) >> 1)) >> sh).clamp(0, max);
         dst[col] = val as u8;
         col += 1;
+    }
+}
+
+/// AVX-512 vertical put chooses a constant four, six or eight active taps.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn v_filter_8tap_8bpc_avx512_inner(
+    token: Server64,
+    dst: &mut [u8],
+    mid: &[[i16; MID_STRIDE]],
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+    max: i32,
+) {
+    match tap_base_8tap(filter) {
+        2 => v_filter_ntap_8bpc_avx512_inner::<4>(token, dst, mid, w, filter, sh, max),
+        1 => v_filter_ntap_8bpc_avx512_inner::<6>(token, dst, mid, w, filter, sh, max),
+        _ => v_filter_ntap_8bpc_avx512_inner::<8>(token, dst, mid, w, filter, sh, max),
     }
 }
 
@@ -5174,7 +5203,7 @@ fn v_filter_8tap_to_i16_avx2_inner(
 /// Used by prep (compound prediction) path.
 #[cfg(target_arch = "x86_64")]
 #[rite]
-fn v_filter_8tap_to_i16_avx512_inner(
+fn v_filter_ntap_to_i16_avx512_inner<const NT: usize>(
     _token: Server64,
     mid: &[[i16; MID_STRIDE]],
     dst: &mut [i16],
@@ -5183,16 +5212,16 @@ fn v_filter_8tap_to_i16_avx512_inner(
     sh: u8,
 ) {
     if w < 16 {
-        v_filter_8tap_to_i16_avx2_inner(_token.v3(), mid, dst, w, filter, sh);
+        v_filter_ntap_to_i16_avx2_inner::<NT>(_token.v3(), mid, dst, w, filter, sh);
         return;
     }
-    let t0 = tap_base_8tap(filter);
-    let nt = 8 - 2 * t0;
+    let t0 = (8 - NT) / 2;
+    debug_assert_eq!(tap_base_8tap(filter), t0);
     let mut dst = dst.flex_mut();
     let rnd = _mm512_set1_epi32((1i32 << sh) >> 1);
 
     // Only taps t0..t0+nt are nonzero — their mid rows sit at t0..t0+nt.
-    let c: [i32; 8] = core::array::from_fn(|i| if i < nt { filter[t0 + i] as i32 } else { 0 });
+    let c: [i32; 8] = core::array::from_fn(|i| if i < NT { filter[t0 + i] as i32 } else { 0 });
     let c0 = _mm512_set1_epi32(c[0]);
     let c1 = _mm512_set1_epi32(c[1]);
     let c2 = _mm512_set1_epi32(c[2]);
@@ -5218,21 +5247,29 @@ fn v_filter_8tap_to_i16_avx512_inner(
         let m3 = _mm512_cvtepi16_epi32(loadu_256!(
             <&[i16; 16]>::try_from(&mid[t0 + 3][col..col + 16]).unwrap()
         ));
-        let m4 = _mm512_cvtepi16_epi32(loadu_256!(
-            <&[i16; 16]>::try_from(&mid[t0 + 4][col..col + 16]).unwrap()
-        ));
-        let m5 = _mm512_cvtepi16_epi32(loadu_256!(
-            <&[i16; 16]>::try_from(&mid[t0 + 5][col..col + 16]).unwrap()
-        ));
         let zero512 = _mm512_setzero_si512();
-        let m6 = if nt > 6 {
+        let m4 = if NT > 4 {
+            _mm512_cvtepi16_epi32(loadu_256!(
+                <&[i16; 16]>::try_from(&mid[t0 + 4][col..col + 16]).unwrap()
+            ))
+        } else {
+            zero512
+        };
+        let m5 = if NT > 4 {
+            _mm512_cvtepi16_epi32(loadu_256!(
+                <&[i16; 16]>::try_from(&mid[t0 + 5][col..col + 16]).unwrap()
+            ))
+        } else {
+            zero512
+        };
+        let m6 = if NT > 6 {
             _mm512_cvtepi16_epi32(loadu_256!(
                 <&[i16; 16]>::try_from(&mid[t0 + 6][col..col + 16]).unwrap()
             ))
         } else {
             zero512
         };
-        let m7 = if nt > 6 {
+        let m7 = if NT > 6 {
             _mm512_cvtepi16_epi32(loadu_256!(
                 <&[i16; 16]>::try_from(&mid[t0 + 7][col..col + 16]).unwrap()
             ))
@@ -5244,9 +5281,11 @@ fn v_filter_8tap_to_i16_avx512_inner(
         sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m1, c1));
         sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m2, c2));
         sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m3, c3));
-        sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m4, c4));
-        sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m5, c5));
-        if nt > 6 {
+        if NT > 4 {
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m4, c4));
+            sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m5, c5));
+        }
+        if NT > 6 {
             sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m6, c6));
             sum = _mm512_add_epi32(sum, _mm512_mullo_epi32(m7, c7));
         }
@@ -5268,11 +5307,29 @@ fn v_filter_8tap_to_i16_avx512_inner(
 
     while col < w {
         let mut sum = 0i32;
-        for i in 0..nt {
+        for i in 0..NT {
             sum += filter[t0 + i] as i32 * mid[t0 + i][col] as i32;
         }
         dst[col] = ((sum + ((1 << sh) >> 1)) >> sh) as i16;
         col += 1;
+    }
+}
+
+/// AVX-512 vertical prep chooses a constant four, six or eight active taps.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn v_filter_8tap_to_i16_avx512_inner(
+    token: Server64,
+    mid: &[[i16; MID_STRIDE]],
+    dst: &mut [i16],
+    w: usize,
+    filter: &[i8; 8],
+    sh: u8,
+) {
+    match tap_base_8tap(filter) {
+        2 => v_filter_ntap_to_i16_avx512_inner::<4>(token, mid, dst, w, filter, sh),
+        1 => v_filter_ntap_to_i16_avx512_inner::<6>(token, mid, dst, w, filter, sh),
+        _ => v_filter_ntap_to_i16_avx512_inner::<8>(token, mid, dst, w, filter, sh),
     }
 }
 
@@ -15606,3 +15663,7 @@ mod four_tap_vertical_rows {
         assert!(cases > 0, "table must exercise four-tap vertical kernels");
     }
 }
+
+#[cfg(all(test, target_arch = "x86_64", not(feature = "asm")))]
+#[path = "mc_v512_active_rows_tests.rs"]
+mod v512_active_rows_tests;
