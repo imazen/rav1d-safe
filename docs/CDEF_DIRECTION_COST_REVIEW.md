@@ -10,9 +10,10 @@ The preserved Rust 1.98.1 untracked padding candidate has 88 scalar multiply
 instructions in its 8bpc direction-finder symbol. That static count does not
 measure execution time. The preserved parent experiment widens sixteen signed line sums into two
 explicit eight-lane i32 vectors, squares and weights them with AVX2
-multiplication, then reduces their exact integer sum. The current child
+multiplication, then reduces their exact integer sum. A preserved alternate child
 instead squares and weights those sums in one contiguous iterator loop
-inside the AVX2 feature context.
+inside the AVX2 feature context. The active prepared child uses explicit
+AVX2 arithmetic; both variants remain available for a matched comparison.
 Both variants pass scalar parity; their throughput remains unmeasured. Pixel accumulation and
 first-direction tie ordering stay as before. The same helper serves
 normalized 8/10/12-bit inputs.
@@ -48,3 +49,11 @@ The contiguous-loop and explicit-AVX2 variants each pass the direction
 oracle in 0.015 seconds and all three padding tests. Their 19/14-second
 wrapped scopes peak at 1.59/1.72 GiB RSS. [Raw logs and hashes](../benchmarks/cdef_cost_padding_oracles_2026-10-08.meta.json)
 identify both source variants; neither is a throughput measurement.
+
+The next comparison holds the signed warp destination repair and line-buffer
+row-pitch hints identical in both cost variants. Independent source
+comparison confirms that the explicit and contiguous-loop files differ
+only in `cdef_weighted_cost`. Padding-only is a third variant sharing the
+same MC and decode glue. Comparing padding with published main additionally
+measures the row-pitch hints; it cannot isolate the widening loop alone.
+Compilation and timing on this shared repaired baseline are still pending.

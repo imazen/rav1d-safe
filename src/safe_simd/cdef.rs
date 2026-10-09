@@ -540,12 +540,49 @@ fn cdef_filter_block_simd_8bpc(
 // CDEF DIRECTION FINDING
 // ============================================================================
 
+// Diagonal lengths are 1..8..1; alternate directions have lengths
+// 2,4,6,8,8,8,8,8,6,4,2. Unused padded lanes have zero weight.
+#[cfg(target_arch = "x86_64")]
+const CDEF_DIAG_WEIGHTS: [i32; 16] = [
+    840, 420, 280, 210, 168, 140, 120, 105, 120, 140, 168, 210, 280, 420, 840, 0,
+];
+#[cfg(target_arch = "x86_64")]
+const CDEF_ALT_WEIGHTS: [i32; 16] = [
+    420, 210, 140, 105, 105, 105, 105, 105, 140, 210, 420, 0, 0, 0, 0, 0,
+];
+
+/// Sum squared line sums times 840 / line length. Normalized pixels are
+/// -128..127. Cauchy-Schwarz bounds a direction cost by
+/// 840 * sum(pixel^2) <= 840 * 64 * 128^2 = 880803840, so every nonnegative
+/// partial cost and the full sum fit i32. Preserve first-direction tie order
+/// in the caller when comparing the resulting exact integer costs.
+#[cfg(target_arch = "x86_64")]
+#[rite]
+fn cdef_weighted_cost(_token: Desktop64, sums: &[i16; 16], weights: &[i32; 16]) -> u32 {
+    use super::pixel_access::loadu_256;
+    let values = loadu_256!(sums);
+    let lo = _mm256_cvtepi16_epi32(_mm256_castsi256_si128(values));
+    let hi = _mm256_cvtepi16_epi32(_mm256_extracti128_si256::<1>(values));
+    let lo_weights = loadu_256!(&weights[..8], [i32; 8]);
+    let hi_weights = loadu_256!(&weights[8..], [i32; 8]);
+    let lo_cost = _mm256_mullo_epi32(_mm256_mullo_epi32(lo, lo), lo_weights);
+    let hi_cost = _mm256_mullo_epi32(_mm256_mullo_epi32(hi, hi), hi_weights);
+    let cost = _mm256_add_epi32(lo_cost, hi_cost);
+    let halves = _mm_add_epi32(
+        _mm256_castsi256_si128(cost),
+        _mm256_extracti128_si256::<1>(cost),
+    );
+    let pairs = _mm_hadd_epi32(halves, halves);
+    let total = _mm_hadd_epi32(pairs, pairs);
+    _mm_cvtsi128_si32(total) as u32
+}
+
 /// SSE SIMD implementation of cdef_find_dir for 8bpc.
 /// Vectorizes diagonal/alt partial sum accumulation: SIMD load/add/store of 8 i16
 /// values at variable offsets, reducing 8 scalar adds to 1 SIMD add per direction.
 #[cfg(target_arch = "x86_64")]
 #[arcane]
-fn cdef_find_dir_simd_8bpc(_t: Desktop64, img: PicOffset, variance: &mut c_uint) -> c_int {
+fn cdef_find_dir_simd_8bpc(token: Desktop64, img: PicOffset, variance: &mut c_uint) -> c_int {
     use super::pixel_access::{loadu_128, storeu_128};
     use crate::include::common::bitdepth::BitDepth8;
 
@@ -646,38 +683,18 @@ fn cdef_find_dir_simd_8bpc(_t: Desktop64, img: PicOffset, variance: &mut c_uint)
     cost[2] *= 105;
     cost[6] *= 105;
 
-    static DIV_TABLE: [u16; 7] = [840, 420, 280, 210, 168, 140, 120];
-    for n in 0..7 {
-        let d = DIV_TABLE[n] as i32;
-        cost[0] += ((partial_sum_diag0[n] as i32 * partial_sum_diag0[n] as i32
-            + partial_sum_diag0[14 - n] as i32 * partial_sum_diag0[14 - n] as i32)
-            * d) as u32;
-        cost[4] += ((partial_sum_diag1[n] as i32 * partial_sum_diag1[n] as i32
-            + partial_sum_diag1[14 - n] as i32 * partial_sum_diag1[14 - n] as i32)
-            * d) as u32;
-    }
-    cost[0] += (partial_sum_diag0[7] as i32 * partial_sum_diag0[7] as i32 * 105) as u32;
-    cost[4] += (partial_sum_diag1[7] as i32 * partial_sum_diag1[7] as i32 * 105) as u32;
-
-    let alt_arrays: [&[i16; 16]; 4] = [
+    cost[0] = cdef_weighted_cost(token, &partial_sum_diag0, &CDEF_DIAG_WEIGHTS);
+    cost[4] = cdef_weighted_cost(token, &partial_sum_diag1, &CDEF_DIAG_WEIGHTS);
+    for (n, sums) in [
         &partial_sum_alt0,
         &partial_sum_alt1,
         &partial_sum_alt2,
         &partial_sum_alt3,
-    ];
-    for n in 0..4 {
-        let cost_ptr = &mut cost[n * 2 + 1];
-        for m in 0..5 {
-            let v = alt_arrays[n][3 + m] as i32;
-            *cost_ptr += (v * v) as u32;
-        }
-        *cost_ptr *= 105;
-        for m in 0..3 {
-            let d = DIV_TABLE[2 * m + 1] as i32;
-            let a = alt_arrays[n][m] as i32;
-            let b = alt_arrays[n][10 - m] as i32;
-            *cost_ptr += ((a * a + b * b) * d) as u32;
-        }
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        cost[n * 2 + 1] = cdef_weighted_cost(token, sums, &CDEF_ALT_WEIGHTS);
     }
 
     let mut best_dir = 0;
@@ -775,7 +792,7 @@ fn cdef_find_dir_scalar<BD: BitDepth>(img: PicOffset, variance: &mut c_uint, bd:
 #[cfg(target_arch = "x86_64")]
 #[arcane]
 fn cdef_find_dir_simd_16bpc(
-    _t: Desktop64,
+    token: Desktop64,
     img: PicOffset,
     variance: &mut c_uint,
     bitdepth: u8,
@@ -882,38 +899,18 @@ fn cdef_find_dir_simd_16bpc(
     cost[2] *= 105;
     cost[6] *= 105;
 
-    static DIV_TABLE: [u16; 7] = [840, 420, 280, 210, 168, 140, 120];
-    for n in 0..7 {
-        let d = DIV_TABLE[n] as i32;
-        cost[0] += ((partial_sum_diag0[n] as i32 * partial_sum_diag0[n] as i32
-            + partial_sum_diag0[14 - n] as i32 * partial_sum_diag0[14 - n] as i32)
-            * d) as u32;
-        cost[4] += ((partial_sum_diag1[n] as i32 * partial_sum_diag1[n] as i32
-            + partial_sum_diag1[14 - n] as i32 * partial_sum_diag1[14 - n] as i32)
-            * d) as u32;
-    }
-    cost[0] += (partial_sum_diag0[7] as i32 * partial_sum_diag0[7] as i32 * 105) as u32;
-    cost[4] += (partial_sum_diag1[7] as i32 * partial_sum_diag1[7] as i32 * 105) as u32;
-
-    let alt_arrays: [&[i16; 16]; 4] = [
+    cost[0] = cdef_weighted_cost(token, &partial_sum_diag0, &CDEF_DIAG_WEIGHTS);
+    cost[4] = cdef_weighted_cost(token, &partial_sum_diag1, &CDEF_DIAG_WEIGHTS);
+    for (n, sums) in [
         &partial_sum_alt0,
         &partial_sum_alt1,
         &partial_sum_alt2,
         &partial_sum_alt3,
-    ];
-    for n in 0..4 {
-        let cost_ptr = &mut cost[n * 2 + 1];
-        for m in 0..5 {
-            let v = alt_arrays[n][3 + m] as i32;
-            *cost_ptr += (v * v) as u32;
-        }
-        *cost_ptr *= 105;
-        for m in 0..3 {
-            let d = DIV_TABLE[2 * m + 1] as i32;
-            let a = alt_arrays[n][m] as i32;
-            let b = alt_arrays[n][10 - m] as i32;
-            *cost_ptr += ((a * a + b * b) * d) as u32;
-        }
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        cost[n * 2 + 1] = cdef_weighted_cost(token, sums, &CDEF_ALT_WEIGHTS);
     }
 
     let mut best_dir = 0;
@@ -1328,10 +1325,13 @@ pub(super) fn padding_8bpc(
             tmp[row_offset - 1] = left[y][1] as u16;
         }
 
-        // Source pixels + right edge
-        for x in 0..slice_w {
-            tmp[row_offset + x] = src[x] as u16;
-        }
+        // Source pixels + right edge — exact-length subslices so the
+        // widening loop carries no per-element bounds checks. The measured
+        // baseline-target release build emits SSE2 unpack widening here.
+        tmp[row_offset..row_offset + slice_w]
+            .iter_mut()
+            .zip(&src[..slice_w])
+            .for_each(|(d, &s)| *d = s as u16);
     });
 
     // Handle top edge (safe slice access via DisjointMut)
@@ -1348,18 +1348,39 @@ pub(super) fn padding_8bpc(
             w + 2
         };
         let guard_len = x_end - 2 + left_ext; // pixels to lock: left_ext + (x_end - 2)
-        for dy in 0..2usize {
-            let row_offset = tmp_offset - (2 - dy) * TMP_STRIDE;
-            let guard_start = top
-                .offset
-                .wrapping_sub(left_ext)
-                .wrapping_add_signed(dy as isize * stride);
-            let slice = top.data.slice_as::<_, u8>((guard_start.., ..guard_len));
-            // Copy pixels: slice[0..left_ext] are left border (if present),
-            // slice[left_ext..] are the block + right border.
-            // In tmp, positions 0..left_ext map to left border, left_ext.. to block.
-            for i in 0..guard_len {
-                tmp[row_offset + i - left_ext] = slice[i] as u16;
+        let guard_start = top.offset.wrapping_sub(left_ext);
+        // One rect guard covers both top rows (they are `stride` apart): the
+        // tracker records the two `guard_len` segments exactly, so the
+        // registration count halves without reserving the inter-row gap —
+        // neighbouring tile columns' bytes share these line-buffer rows and a
+        // contiguous span covering the gap can false-overlap a concurrent
+        // `backup2lines` write (the i686 incident this file's callers cite).
+        // `index_rect_as` declines when the buffer's declared row stride
+        // differs (chroma pitch) or the geometry is degenerate; fall back to
+        // per-row slices there.
+        if let Some(rect) = top
+            .data
+            .index_rect_as::<u8>(guard_start, guard_len, 2, stride)
+        {
+            for dy in 0..2usize {
+                let row_offset = tmp_offset - (2 - dy) * TMP_STRIDE;
+                // Copy pixels: row[0..left_ext] are left border (if present),
+                // row[left_ext..] are the block + right border.
+                // In tmp, positions 0..left_ext map to left border, left_ext.. to block.
+                tmp[row_offset - left_ext..row_offset - left_ext + guard_len]
+                    .iter_mut()
+                    .zip(rect.row(dy))
+                    .for_each(|(d, &s)| *d = s as u16);
+            }
+        } else {
+            for dy in 0..2usize {
+                let row_offset = tmp_offset - (2 - dy) * TMP_STRIDE;
+                let guard_start = guard_start.wrapping_add_signed(dy as isize * stride);
+                let slice = top.data.slice_as::<_, u8>((guard_start.., ..guard_len));
+                tmp[row_offset - left_ext..row_offset - left_ext + guard_len]
+                    .iter_mut()
+                    .zip(&slice[..guard_len])
+                    .for_each(|(d, &s)| *d = s as u16);
             }
         }
     }
@@ -1387,27 +1408,39 @@ pub(super) fn padding_8bpc(
             };
             first.for_rows::<BitDepth8, _>(x_end - x_start, 2, |dy, row| {
                 let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
-                for x in x_start..x_end {
-                    tmp[row_offset + x - 2] = row[x - x_start] as u16;
-                }
+                let n = x_end - x_start;
+                tmp[row_offset + x_start - 2..row_offset + x_start - 2 + n]
+                    .iter_mut()
+                    .zip(&row[..n])
+                    .for_each(|(d, &s)| *d = s as u16);
             });
         } else {
-            for dy in 0..2usize {
-                let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
-                let bottom_row = WithOffset {
-                    data: bottom.data,
-                    offset: bottom
-                        .offset
-                        .wrapping_sub(2)
-                        .wrapping_add_signed(dy as isize * stride),
-                };
-                let PicOrBuf::Buf(buf) = bottom_row.data else {
-                    unreachable!("picture rows handled above")
-                };
-                let slice =
-                    buf.slice_as::<_, u8>((bottom_row.offset + x_start.., ..x_end - x_start));
-                for x in x_start..x_end {
-                    tmp[row_offset + x - 2] = slice[x - x_start] as u16;
+            // Line-buffer bottom rows: one rect guard covers both rows with
+            // exact per-row footprints — the shared line buffer's inter-row
+            // gap bytes can belong to a neighbouring tile's concurrent
+            // `backup2lines`, so a contiguous span is not sound here.
+            let PicOrBuf::Buf(buf) = bottom.data else {
+                unreachable!("picture rows handled above")
+            };
+            let n = x_end - x_start;
+            let row_base = bottom.offset.wrapping_sub(2) + x_start;
+            if let Some(rect) = buf.index_rect_as::<u8>(row_base, n, 2, stride) {
+                for dy in 0..2usize {
+                    let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
+                    tmp[row_offset + x_start - 2..row_offset + x_start - 2 + n]
+                        .iter_mut()
+                        .zip(rect.row(dy))
+                        .for_each(|(d, &s)| *d = s as u16);
+                }
+            } else {
+                for dy in 0..2usize {
+                    let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
+                    let row_start = row_base.wrapping_add_signed(dy as isize * stride);
+                    let slice = buf.slice_as::<_, u8>((row_start.., ..n));
+                    tmp[row_offset + x_start - 2..row_offset + x_start - 2 + n]
+                        .iter_mut()
+                        .zip(&slice[..n])
+                        .for_each(|(d, &s)| *d = s as u16);
                 }
             }
         }
@@ -1797,10 +1830,9 @@ pub(super) fn padding_16bpc(
             tmp[row_offset - 1] = left[y][1];
         }
 
-        // Source pixels + right edge
-        for x in 0..slice_w {
-            tmp[row_offset + x] = src[x];
-        }
+        // Source pixels + right edge — exact-length subslices keep this a
+        // straight vectorizable u16 copy.
+        tmp[row_offset..row_offset + slice_w].copy_from_slice(&src[..slice_w]);
     });
 
     // Handle top edge (safe slice access via DisjointMut)
@@ -1814,15 +1846,29 @@ pub(super) fn padding_16bpc(
             w + 2
         };
         let guard_len = x_end - 2 + left_ext;
-        for dy in 0..2usize {
-            let row_offset = tmp_offset - (2 - dy) * TMP_STRIDE;
-            let guard_start = top
-                .offset
-                .wrapping_sub(left_ext)
-                .wrapping_add_signed(dy as isize * pixel_stride);
-            let slice = top.data.slice_as::<_, u16>((guard_start.., ..guard_len));
-            for i in 0..guard_len {
-                tmp[row_offset + i - left_ext] = slice[i];
+        // One rect guard covers both top rows with exact per-row footprints
+        // (see `padding_8bpc`: a contiguous span reserves the inter-row gap,
+        // which can false-overlap a neighbouring tile's `backup2lines` write
+        // in the shared line buffer). `index_rect_as` declines mismatched
+        // row strides (chroma pitch) and degenerate geometry — fall back to
+        // per-row slices there.
+        let guard_start = top.offset.wrapping_sub(left_ext);
+        if let Some(rect) = top
+            .data
+            .index_rect_as::<u16>(guard_start, guard_len, 2, pixel_stride)
+        {
+            for dy in 0..2usize {
+                let row_offset = tmp_offset - (2 - dy) * TMP_STRIDE;
+                tmp[row_offset - left_ext..row_offset - left_ext + guard_len]
+                    .copy_from_slice(rect.row(dy));
+            }
+        } else {
+            for dy in 0..2usize {
+                let row_offset = tmp_offset - (2 - dy) * TMP_STRIDE;
+                let guard_start = guard_start.wrapping_add_signed(dy as isize * pixel_stride);
+                let slice = top.data.slice_as::<_, u16>((guard_start.., ..guard_len));
+                tmp[row_offset - left_ext..row_offset - left_ext + guard_len]
+                    .copy_from_slice(&slice[..guard_len]);
             }
         }
     }
@@ -1849,27 +1895,31 @@ pub(super) fn padding_16bpc(
             };
             first.for_rows::<BitDepth16, _>(x_end - x_start, 2, |dy, row| {
                 let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
-                for x in x_start..x_end {
-                    tmp[row_offset + x - 2] = row[x - x_start];
-                }
+                let n = x_end - x_start;
+                tmp[row_offset + x_start - 2..row_offset + x_start - 2 + n]
+                    .copy_from_slice(&row[..n]);
             });
         } else {
-            for dy in 0..2usize {
-                let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
-                let bottom_row = WithOffset {
-                    data: bottom.data,
-                    offset: bottom
-                        .offset
-                        .wrapping_sub(2)
-                        .wrapping_add_signed(dy as isize * pixel_stride),
-                };
-                let PicOrBuf::Buf(buf) = bottom_row.data else {
-                    unreachable!("picture rows handled above")
-                };
-                let slice =
-                    buf.slice_as::<_, u16>((bottom_row.offset + x_start.., ..x_end - x_start));
-                for x in x_start..x_end {
-                    tmp[row_offset + x - 2] = slice[x - x_start];
+            // Line-buffer bottom rows: one rect guard, exact per-row
+            // footprints (same shared-buffer gap hazard as `padding_8bpc`).
+            let PicOrBuf::Buf(buf) = bottom.data else {
+                unreachable!("picture rows handled above")
+            };
+            let n = x_end - x_start;
+            let row_base = bottom.offset.wrapping_sub(2) + x_start;
+            if let Some(rect) = buf.index_rect_as::<u16>(row_base, n, 2, pixel_stride) {
+                for dy in 0..2usize {
+                    let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
+                    tmp[row_offset + x_start - 2..row_offset + x_start - 2 + n]
+                        .copy_from_slice(rect.row(dy));
+                }
+            } else {
+                for dy in 0..2usize {
+                    let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
+                    let row_start = row_base.wrapping_add_signed(dy as isize * pixel_stride);
+                    let slice = buf.slice_as::<_, u16>((row_start.., ..n));
+                    tmp[row_offset + x_start - 2..row_offset + x_start - 2 + n]
+                        .copy_from_slice(&slice[..n]);
                 }
             }
         }
@@ -2709,3 +2759,492 @@ pub fn cdef_dir_dispatch<BD: BitDepth>(
         )),
     }
 }
+
+// ============================================================================
+// PADDING PARITY TESTS
+// ============================================================================
+
+/// Byte-exact parity between the current padding implementations and the
+/// pre-change versions (kept verbatim below as `padding_8bpc_ref` /
+/// `padding_16bpc_ref`), over the whole input domain: every edge-flag
+/// combination, both CDEF block shapes, picture- and line-buffer bottom rows,
+/// positive and negative picture strides, and — for the line buffers — both
+/// a declared row stride (the one-record rectangle path in `index_rect_as`)
+/// and none (the per-row fallback).
+///
+/// `dst`/`bottom`-Pic fixtures are built with `from_parts` so the stride can
+/// be negative — `wrap_buf` only produces non-negative strides.
+#[cfg(all(test, not(feature = "c-ffi")))]
+mod padding_parity_tests {
+    use super::*;
+    use crate::include::common::bitdepth::BitDepth8;
+    use crate::include::common::bitdepth::BitDepth16;
+    use crate::include::dav1d::picture::Rav1dPictureDataComponent;
+    use crate::include::dav1d::picture::Rav1dPictureDataComponentInner;
+    use crate::src::disjoint_mut::dm_new;
+    use crate::src::safe_simd::aligned_plane;
+    use crate::src::strided::WithStride;
+
+    const TMP_LEN: usize = TMP_STRIDE * TMP_STRIDE;
+
+    /// Deterministic byte pattern; the seed keeps failures reproducible.
+    fn bytes(n: usize, seed: u64) -> Vec<u8> {
+        let mut state = seed;
+        (0..n)
+            .map(|_| {
+                state ^= state >> 12;
+                state ^= state << 25;
+                state ^= state >> 27;
+                (state.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 32) as u8
+            })
+            .collect()
+    }
+
+    /// A `DisjointMut` line buffer of `rows` rows pitched at `stride_b` bytes,
+    /// optionally with the row-stride hint that arms the rectangle records.
+    fn line_buf(
+        rows: usize,
+        stride_b: usize,
+        declared: bool,
+        seed: u64,
+    ) -> DisjointMut<AlignedVec64<u8>> {
+        let mut buf = dm_new(aligned_plane(&bytes(rows * stride_b, seed)));
+        if declared {
+            buf.declare_row_stride(stride_b);
+        }
+        buf
+    }
+
+    /// A picture component over `plane` (u8 bytes; for 16bpc these are the LE
+    /// bytes of the u16 pixels) with `stride_bytes` bytes per row — negative
+    /// strides lay rows out bottom-up in memory.
+    fn pic_component(plane: &[u8], stride_bytes: isize) -> Rav1dPictureDataComponent {
+        Rav1dPictureDataComponent::from_parts(
+            Rav1dPictureDataComponentInner::from_slice_copy(plane),
+            stride_bytes,
+        )
+    }
+
+    // ---------------------------------------------------------------------
+    // Reference implementations: the pre-change code, verbatim.
+    // ---------------------------------------------------------------------
+
+    fn padding_8bpc_ref(
+        tmp: &mut [u16],
+        dst: PicOffset,
+        left: &[LeftPixelRow2px<u8>; 8],
+        top: &CdefTop,
+        bottom: &CdefBottom,
+        w: usize,
+        h: usize,
+        edges: CdefEdgeFlags,
+    ) {
+        use crate::include::common::bitdepth::BitDepth8;
+
+        let stride = dst.pixel_stride::<BitDepth8>();
+
+        let very_large = 0xC000u16;
+        tmp.fill(very_large);
+        let mut tmp = tmp.flex_mut();
+
+        let tmp_offset = 2 * TMP_STRIDE + 2;
+        let need_left = edges.contains(CdefEdgeFlags::HAVE_LEFT);
+        let need_right = edges.contains(CdefEdgeFlags::HAVE_RIGHT);
+
+        let slice_w = w + if need_right { 2 } else { 0 };
+        dst.for_rows::<BitDepth8, _>(slice_w, h, |y, src| {
+            let row_offset = tmp_offset + y * TMP_STRIDE;
+
+            if need_left {
+                tmp[row_offset - 2] = left[y][0] as u16;
+                tmp[row_offset - 1] = left[y][1] as u16;
+            }
+
+            for x in 0..slice_w {
+                tmp[row_offset + x] = src[x] as u16;
+            }
+        });
+
+        if edges.contains(CdefEdgeFlags::HAVE_TOP) {
+            let have_left = edges.contains(CdefEdgeFlags::HAVE_LEFT);
+            let left_ext = if have_left { 2usize } else { 0 };
+            let x_end = if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
+                w + 4
+            } else {
+                w + 2
+            };
+            let guard_len = x_end - 2 + left_ext;
+            for dy in 0..2usize {
+                let row_offset = tmp_offset - (2 - dy) * TMP_STRIDE;
+                let guard_start = top
+                    .offset
+                    .wrapping_sub(left_ext)
+                    .wrapping_add_signed(dy as isize * stride);
+                let slice = top.data.slice_as::<_, u8>((guard_start.., ..guard_len));
+                for i in 0..guard_len {
+                    tmp[row_offset + i - left_ext] = slice[i] as u16;
+                }
+            }
+        }
+
+        if edges.contains(CdefEdgeFlags::HAVE_BOTTOM) {
+            let x_start = if edges.contains(CdefEdgeFlags::HAVE_LEFT) {
+                0usize
+            } else {
+                2
+            };
+            let x_end = if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
+                w + 4
+            } else {
+                w + 2
+            };
+            if let PicOrBuf::Pic(pic) = bottom.data {
+                let first = WithOffset {
+                    data: pic,
+                    offset: bottom.offset.wrapping_sub(2).wrapping_add(x_start),
+                };
+                first.for_rows::<BitDepth8, _>(x_end - x_start, 2, |dy, row| {
+                    let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
+                    for x in x_start..x_end {
+                        tmp[row_offset + x - 2] = row[x - x_start] as u16;
+                    }
+                });
+            } else {
+                for dy in 0..2usize {
+                    let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
+                    let bottom_row = WithOffset {
+                        data: bottom.data,
+                        offset: bottom
+                            .offset
+                            .wrapping_sub(2)
+                            .wrapping_add_signed(dy as isize * stride),
+                    };
+                    let PicOrBuf::Buf(buf) = bottom_row.data else {
+                        unreachable!("picture rows handled above")
+                    };
+                    let slice =
+                        buf.slice_as::<_, u8>((bottom_row.offset + x_start.., ..x_end - x_start));
+                    for x in x_start..x_end {
+                        tmp[row_offset + x - 2] = slice[x - x_start] as u16;
+                    }
+                }
+            }
+        }
+    }
+
+    fn padding_16bpc_ref(
+        tmp: &mut [u16],
+        dst: PicOffset,
+        left: &[LeftPixelRow2px<u16>; 8],
+        top: &CdefTop,
+        bottom: &CdefBottom,
+        w: usize,
+        h: usize,
+        edges: CdefEdgeFlags,
+        bitdepth_max: c_int,
+    ) {
+        use crate::include::common::bitdepth::BitDepth16;
+
+        let _bd = BitDepth16::new(bitdepth_max as u16);
+        let very_large = 0xC000u16;
+        tmp.fill(very_large);
+        let mut tmp = tmp.flex_mut();
+
+        let tmp_offset = 2 * TMP_STRIDE + 2;
+        let need_left = edges.contains(CdefEdgeFlags::HAVE_LEFT);
+        let need_right = edges.contains(CdefEdgeFlags::HAVE_RIGHT);
+
+        let slice_w = w + if need_right { 2 } else { 0 };
+        dst.for_rows::<BitDepth16, _>(slice_w, h, |y, src| {
+            let row_offset = tmp_offset + y * TMP_STRIDE;
+
+            if need_left {
+                tmp[row_offset - 2] = left[y][0];
+                tmp[row_offset - 1] = left[y][1];
+            }
+
+            for x in 0..slice_w {
+                tmp[row_offset + x] = src[x];
+            }
+        });
+
+        if edges.contains(CdefEdgeFlags::HAVE_TOP) {
+            let pixel_stride = dst.pixel_stride::<BitDepth16>();
+            let have_left = edges.contains(CdefEdgeFlags::HAVE_LEFT);
+            let left_ext = if have_left { 2usize } else { 0 };
+            let x_end = if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
+                w + 4
+            } else {
+                w + 2
+            };
+            let guard_len = x_end - 2 + left_ext;
+            for dy in 0..2usize {
+                let row_offset = tmp_offset - (2 - dy) * TMP_STRIDE;
+                let guard_start = top
+                    .offset
+                    .wrapping_sub(left_ext)
+                    .wrapping_add_signed(dy as isize * pixel_stride);
+                let slice = top.data.slice_as::<_, u16>((guard_start.., ..guard_len));
+                for i in 0..guard_len {
+                    tmp[row_offset + i - left_ext] = slice[i];
+                }
+            }
+        }
+
+        if edges.contains(CdefEdgeFlags::HAVE_BOTTOM) {
+            let pixel_stride = dst.pixel_stride::<BitDepth16>();
+            let x_start = if edges.contains(CdefEdgeFlags::HAVE_LEFT) {
+                0usize
+            } else {
+                2
+            };
+            let x_end = if edges.contains(CdefEdgeFlags::HAVE_RIGHT) {
+                w + 4
+            } else {
+                w + 2
+            };
+            if let PicOrBuf::Pic(pic) = bottom.data {
+                let first = WithOffset {
+                    data: pic,
+                    offset: bottom.offset.wrapping_sub(2).wrapping_add(x_start),
+                };
+                first.for_rows::<BitDepth16, _>(x_end - x_start, 2, |dy, row| {
+                    let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
+                    for x in x_start..x_end {
+                        tmp[row_offset + x - 2] = row[x - x_start];
+                    }
+                });
+            } else {
+                for dy in 0..2usize {
+                    let row_offset = tmp_offset + (h + dy) * TMP_STRIDE;
+                    let bottom_row = WithOffset {
+                        data: bottom.data,
+                        offset: bottom
+                            .offset
+                            .wrapping_sub(2)
+                            .wrapping_add_signed(dy as isize * pixel_stride),
+                    };
+                    let PicOrBuf::Buf(buf) = bottom_row.data else {
+                        unreachable!("picture rows handled above")
+                    };
+                    let slice =
+                        buf.slice_as::<_, u16>((bottom_row.offset + x_start.., ..x_end - x_start));
+                    for x in x_start..x_end {
+                        tmp[row_offset + x - 2] = slice[x - x_start];
+                    }
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Domain sweep
+    // ---------------------------------------------------------------------
+
+    /// Picture rows the fixtures reserve for `dst` + `bottom`-Pic reads.
+    const PIC_ROWS: usize = 16;
+    /// Line-buffer rows.
+    const LINE_ROWS: usize = 8;
+
+    /// Element offset of the block's first row in the destination plane.
+    fn dst_offset(pxstride: usize, stride: isize) -> usize {
+        if stride >= 0 {
+            // Reads run down-address: block rows 4..4+h.
+            4 * pxstride + 8
+        } else {
+            // Bottom-up: pixel_offset is the last memory row; the block's
+            // rows step to lower addresses, so start high.
+            (PIC_ROWS - 2) * pxstride + 8
+        }
+    }
+
+    /// Element offset such that `offset + dy*stride` for `dy` in {0,1} stays
+    /// inside a `rows`-deep buffer pitched at `stride` elements — picks row
+    /// `anchor` for positive strides and `anchor` for negative strides (row
+    /// `anchor - 1` is then the second row read).
+    fn row_pair_offset(anchor_row: usize, pxstride: usize, stride: isize, col: usize) -> usize {
+        let _ = stride; // anchor choice already encodes the sign
+        anchor_row * pxstride + col
+    }
+
+    /// `index_rect_as` must actually take the rectangle path on a declared
+    /// buffer and decline on an undeclared one — otherwise the parity sweep
+    /// would only ever exercise the per-row fallback.
+    #[test]
+    fn rect_guard_arms_with_declared_stride() {
+        let mut declared = line_buf(LINE_ROWS, 32, true, 7);
+        let mut undeclared = line_buf(LINE_ROWS, 32, false, 7);
+        #[cfg(not(feature = "untracked"))]
+        {
+            assert!(declared.index_rect_as::<u8>(8, 12, 2, 32).is_some());
+            assert!(undeclared.index_rect_as::<u8>(8, 12, 2, 32).is_none());
+        }
+        #[cfg(feature = "untracked")]
+        {
+            // No tracker exists to require a declared stride; valid rectangle
+            // geometry and element bounds are still checked.
+            assert!(declared.index_rect_as::<u8>(8, 12, 2, 32).is_some());
+            assert!(undeclared.index_rect_as::<u8>(8, 12, 2, 32).is_some());
+        }
+        let _ = (&mut declared, &mut undeclared);
+    }
+
+    #[test]
+    fn padding_8bpc_full_domain_parity() {
+        const SB: usize = 32; // stride bytes == u8 elements
+        let mut case = 0usize;
+        for bits in 0..16u32 {
+            let edges = CdefEdgeFlags::from_bits_retain(bits);
+            for (w, h) in [(4usize, 4usize), (8, 8), (4, 8), (8, 4)] {
+                for neg in [false, true] {
+                    for bot_buf in [false, true] {
+                        for declared in [false, true] {
+                            case += 1;
+                            let stride: isize = if neg { -(SB as isize) } else { SB as isize };
+                            // dst + Pic-bottom component.
+                            let plane = bytes(PIC_ROWS * SB, 0x8b5a_0001 ^ case as u64);
+                            let comp = pic_component(&plane, stride);
+                            let dst = WithOffset {
+                                data: &comp,
+                                offset: dst_offset(SB, stride),
+                            };
+                            // Line buffer: top rows and, optionally, the
+                            // bottom two rows.
+                            let lb = line_buf(LINE_ROWS, SB, declared, 0x1a2b_0002 ^ case as u64);
+                            // Neighbouring tile bytes in the inter-row gap
+                            // must remain writable during both edge copies.
+                            let _top_gap = lb.index_mut(2 * SB + 24);
+                            let _bottom_gap = lb.index_mut(4 * SB + 24);
+                            let top = CdefTop {
+                                data: &lb,
+                                offset: row_pair_offset(if neg { 5 } else { 2 }, SB, stride, 8),
+                            };
+                            let bottom = CdefBottom {
+                                data: if bot_buf {
+                                    PicOrBuf::Buf(WithStride { buf: &lb, stride })
+                                } else {
+                                    PicOrBuf::Pic(&comp)
+                                },
+                                offset: if bot_buf {
+                                    row_pair_offset(if neg { 5 } else { 4 }, SB, stride, 8)
+                                } else {
+                                    // One element past two pixels before the
+                                    // row below the block.
+                                    let base = dst.offset as isize + h as isize * stride;
+                                    (base + 2) as usize
+                                },
+                            };
+                            let left: &[[u8; 2]; 8] = &[[case as u8, !case as u8]; 8];
+                            let (mut tmp_new, mut tmp_ref) = ([0u16; TMP_LEN], [0u16; TMP_LEN]);
+                            padding_8bpc(&mut tmp_new, dst, left, &top, &bottom, w, h, edges);
+                            padding_8bpc_ref(&mut tmp_ref, dst, left, &top, &bottom, w, h, edges);
+                            assert_eq!(
+                                tmp_new,
+                                tmp_ref,
+                                "padding_8bpc diverged: edges={bits:#05b} w={w} h={h} \
+                                 neg={neg} bottom={} declared={declared}",
+                                if bot_buf { "buf" } else { "pic" },
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn padding_16bpc_full_domain_parity() {
+        const SB: usize = 64; // stride bytes == 32 u16 elements
+        const PXSTRIDE: usize = SB / 2;
+        let mut case = 0usize;
+        for bits in 0..16u32 {
+            let edges = CdefEdgeFlags::from_bits_retain(bits);
+            for (w, h) in [(4usize, 4usize), (8, 8), (4, 8), (8, 4)] {
+                for neg in [false, true] {
+                    for bot_buf in [false, true] {
+                        for declared in [false, true] {
+                            case += 1;
+                            let stride: isize = if neg { -(SB as isize) } else { SB as isize };
+                            // u16 pixels stored as their byte patterns.
+                            let plane = bytes(PIC_ROWS * SB, 0x16b0_0003 ^ case as u64);
+                            let comp = pic_component(&plane, stride);
+                            let dst = WithOffset {
+                                data: &comp,
+                                offset: dst_offset(PXSTRIDE, stride / 2),
+                            };
+                            let lb = line_buf(LINE_ROWS, SB, declared, 0x3c4d_0004 ^ case as u64);
+                            let _top_gap = lb.index_mut(2 * SB + 24 * 2);
+                            let _bottom_gap = lb.index_mut(4 * SB + 24 * 2);
+                            let top = CdefTop {
+                                data: &lb,
+                                offset: row_pair_offset(
+                                    if neg { 5 } else { 2 },
+                                    PXSTRIDE,
+                                    stride / 2,
+                                    8,
+                                ),
+                            };
+                            let bottom = CdefBottom {
+                                data: if bot_buf {
+                                    PicOrBuf::Buf(WithStride {
+                                        buf: &lb,
+                                        stride: stride / 2,
+                                    })
+                                } else {
+                                    PicOrBuf::Pic(&comp)
+                                },
+                                offset: if bot_buf {
+                                    row_pair_offset(
+                                        if neg { 5 } else { 4 },
+                                        PXSTRIDE,
+                                        stride / 2,
+                                        8,
+                                    )
+                                } else {
+                                    let base = dst.offset as isize + h as isize * (stride / 2);
+                                    (base + 2) as usize
+                                },
+                            };
+                            let left: &[[u16; 2]; 8] =
+                                &[[case as u16 & 0x3ff, (case as u16) << 2 & 0x3ff]; 8];
+                            let (mut tmp_new, mut tmp_ref) = ([0u16; TMP_LEN], [0u16; TMP_LEN]);
+                            padding_16bpc(
+                                &mut tmp_new,
+                                dst,
+                                left,
+                                &top,
+                                &bottom,
+                                w,
+                                h,
+                                edges,
+                                1023,
+                            );
+                            padding_16bpc_ref(
+                                &mut tmp_ref,
+                                dst,
+                                left,
+                                &top,
+                                &bottom,
+                                w,
+                                h,
+                                edges,
+                                1023,
+                            );
+                            assert_eq!(
+                                tmp_new,
+                                tmp_ref,
+                                "padding_16bpc diverged: edges={bits:#05b} w={w} h={h} \
+                                 neg={neg} bottom={} declared={declared}",
+                                if bot_buf { "buf" } else { "pic" },
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(all(test, target_arch = "x86_64", not(feature = "c-ffi")))]
+#[path = "cdef_direction_cost_tests.rs"]
+mod direction_cost_tests;
