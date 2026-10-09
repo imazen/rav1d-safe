@@ -168,7 +168,7 @@ fn cdef_filter_block_simd_8bpc_avx512(
 
     let zero = _mm512_setzero_si512();
 
-    crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth8, _>(
+    crate::include::dav1d::picture::with_cdef_guard_mut::<BitDepth8, _>(
         &dst,
         w,
         h,
@@ -311,7 +311,7 @@ fn cdef_filter_block_simd_8bpc_avx512(
                 y0 += 4;
             }
         },
-    ); // with_pixel_guard_mut
+    ); // with_cdef_guard_mut
 }
 
 /// Vectorized CDEF filter for 8bpc — processes 8 pixels per row using SSE.
@@ -337,7 +337,7 @@ fn cdef_filter_block_simd_8bpc(
 
     let zero = _mm_setzero_si128();
 
-    crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth8, _>(
+    crate::include::dav1d::picture::with_cdef_guard_mut::<BitDepth8, _>(
         &dst,
         w,
         h,
@@ -533,7 +533,7 @@ fn cdef_filter_block_simd_8bpc(
                 }
             }
         },
-    ); // with_pixel_guard_mut
+    ); // with_cdef_guard_mut
 }
 
 // ============================================================================
@@ -1135,7 +1135,7 @@ pub(super) fn cdef_filter_block_scalar_8bpc(
 
     let tmp = tmp.flex();
 
-    crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth8, _>(
+    crate::include::dav1d::picture::with_cdef_guard_mut::<BitDepth8, _>(
         &dst,
         w,
         h,
@@ -1266,7 +1266,7 @@ pub(super) fn cdef_filter_block_scalar_8bpc(
                 }
             }
         },
-    ); // with_pixel_guard_mut
+    ); // with_cdef_guard_mut
 }
 
 /// Padding function for 8bpc - copies edge pixels into temporary buffer.
@@ -1880,7 +1880,7 @@ fn cdef_filter_block_simd_16bpc(
     let bd_max = _mm_set1_epi16(bitdepth_max as i16);
     let bitdepth_min_8 = ((bitdepth_max + 1) as u32).ilog2() as c_int - 8;
 
-    crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth16, _>(
+    crate::include::dav1d::picture::with_cdef_guard_mut::<BitDepth16, _>(
         &dst,
         w,
         h,
@@ -2069,7 +2069,7 @@ fn cdef_filter_block_simd_16bpc(
                 }
             }
         },
-    ); // with_pixel_guard_mut
+    ); // with_cdef_guard_mut
 }
 
 /// Scalar CDEF filter fallback for 16bpc.
@@ -2092,7 +2092,7 @@ pub(super) fn cdef_filter_block_scalar_16bpc(
 
     let tmp = tmp.flex();
 
-    crate::include::dav1d::picture::with_pixel_guard_mut::<BitDepth16, _>(
+    crate::include::dav1d::picture::with_cdef_guard_mut::<BitDepth16, _>(
         &dst,
         w,
         h,
@@ -2227,7 +2227,7 @@ pub(super) fn cdef_filter_block_scalar_16bpc(
                 }
             }
         },
-    ); // with_pixel_guard_mut
+    ); // with_cdef_guard_mut
 }
 
 /// CDEF filter for 16bpc 8x8 block

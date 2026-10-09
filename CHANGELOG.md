@@ -118,6 +118,17 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   (`block_shift_rule_rows`), coarsening tracked blocks and costing +2.2-3.3%
   at 4 workers tracked under tile parallelism
   ([details](docs/CDEF_PADDING_REVIEW.md), [variant A/B](docs/CDEF_DIRECTION_COST_REVIEW.md)).
+- Tracked CDEF destination writes borrow one retained rectangle across
+  copy-in, filtering and copy-out (`cdef_block_mut`,
+  `BlockMutStorage::Retained`): five filter call sites swap
+  `with_pixel_guard_mut` for `with_cdef_guard_mut`, replacing three
+  registrations per block with one on the already-declared picture buffer.
+  Retained-gap and write-back tests cover every bit depth, both stride
+  signs and 3x4..8x8 shapes, plus the declined-rectangle compact fallback.
+  Paired timing on Zen 4 (4 clips, 1/4 workers, both modes, A/A controls):
+  tracked 4-worker cells −4.0% (4K), −1.3% (1080p) and −4.1% (10-bit
+  1-worker); untracked and remaining cells inside noise after an 8-round
+  remeasure of the two borderline cells.
 - `archmage` and `archmage-macros` now come from the crates.io 0.9.30 release
   instead of a git pin, which crates.io would reject at publish time. The
   registry source is byte-identical to the previously pinned commit `e2dbab66`
