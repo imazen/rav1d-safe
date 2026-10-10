@@ -31,7 +31,7 @@ default = ["std"]
 # Benchmark tooling needs Rust 1.86; keep it out of MSRV API tests.
 __bench = ["dep:criterion"]
 std = []
-# Runtime borrow instrumentation (records size histograms, concurrency, contention).
+# Reserved: gates no code. Kept so manifests that name `instrument` keep resolving.
 instrument = ["std"]
 # Internal measurement features: opt-in and outside the supported API.
 __probe_count = ["std"]

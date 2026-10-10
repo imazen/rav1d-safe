@@ -68,7 +68,7 @@ The new wrapper contains no unsafe code. It adds a trusted synchronization
 dependency: `spin` 0.12.3 with only the `once` feature, no std requirement, and
 MSRV 1.71 (below this crate's 1.85). Its production initializer publication is
 reviewed in source and exercised under native execution and both Miri models.
-**The six Loom record models do not instrument spin::Once initialization.**
+**The Loom models (seven at this revision) do not instrument spin::Once initialization.**
 They continue to check the shared record protocol after initialization. This
 boundary is explicit; passing those models is not a proof of the new dependency.
 The initializer identity test checks exactly one closure and one returned

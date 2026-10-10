@@ -15,7 +15,35 @@ on the `release/disjoint-mut-0.3` branch.
   (`cast_slice`, `mut_slice_as`, ...) is now always available. Manifests that
   name `features = ["zerocopy"]` must drop it.
 
-### Fixed (from the independent pre-publication audit of 0.4.0)
+Why this is 0.4.0 and not 0.3.3: the `PlainData` bound is what makes the opt-in
+`untracked` mode well-defined (a racy read must still yield a valid value), so it cannot
+be reverted to `Copy`. `cargo semver-checks` against 0.3.2 (forced patch) reports only
+the removed `zerocopy` feature; it does not model the bound changes, which were
+diffed from `cargo public-api` output by hand.
+
+### Removed
+- The `aligned-vec` dependency: `AlignedVec32`/`AlignedVec64` now use an in-crate buffer
+  (`src/aligned_buf.rs`, same public types and trait impls). `aligned-vec` 0.6.4's
+  `extend_from_slice` bit-copies non-`Copy` elements; the wrappers never exposed it.
+- Internal measurement features (outside the supported API): `__tracker_legacy`,
+  `__probe_noscan`, `__probe_lockonly`, `__probe_tinynop`, `__probe_addnop`,
+  `__probe_shardsim`, `__probe_shiftpin`, `__probe_lock_{backoff,yield,relax,park}`,
+  `__shards_{1,4,8,16,32,64,128,256}`, `__shard_ident`,
+  `__blockshift_{8,10,13,14,15,16,adaptive}`, `__bps_{quarter,half,1,4,8,blocks}`,
+  `__rpb_{2,8,16}`, `__msb_5`, `__rect_1shard`, and the `__probe_untracked`
+  alias of `untracked`. Each was an A/B arm whose shipped value was already the
+  default; tracker constants and placement are unchanged. The optional
+  `parking_lot` dependency (used only by `__probe_lock_park`) is gone. The Loom
+  model now gets its 4-shard table from `cfg(disjoint_mut_loom)` instead of
+  `--features __shards_4`.
+
+### Added
+- `LICENSE-BSD-2-Clause` in the package (the README linked a file outside it).
+- Opt-in `untracked` feature: no overlap tracking on
+  any instance, bounds checks unchanged. Overlap is UB by design; see the README
+  and `PlainData` docs for what is and is not claimed.
+
+### Fixed
 - `PicBuf::set_usable_len` checked `align_offset + usable_len <= storage_len` with an
   unchecked addition, which wraps in release builds: a safe caller could authorise a
   usable region far larger than the allocation, and every later guard trusted it
@@ -32,26 +60,6 @@ on the `release/disjoint-mut-0.3` branch.
   rectangle records without a stride are now their plain hull (conservative), the wide
   path checks capacity before mutating and releases its locks before panicking, and an
   RAII guard releases them on any unwind.
-
-### Removed
-- Internal measurement features (outside the supported API): `__tracker_legacy`,
-  `__probe_noscan`, `__probe_lockonly`, `__probe_tinynop`, `__probe_addnop`,
-  `__probe_shardsim`, `__probe_shiftpin`, `__probe_lock_{backoff,yield,relax,park}`,
-  `__shards_{1,4,8,16,32,64,128,256}`, `__shard_ident`,
-  `__blockshift_{8,10,13,14,15,16,adaptive}`, `__bps_{quarter,half,1,4,8,blocks}`,
-  `__rpb_{2,8,16}`, `__msb_5`, `__rect_1shard`, and the `__probe_untracked`
-  alias of `untracked`. Each was an A/B arm whose shipped value was already the
-  default; tracker constants and placement are unchanged. The optional
-  `parking_lot` dependency (used only by `__probe_lock_park`) is gone. The Loom
-  model now gets its 4-shard table from `cfg(disjoint_mut_loom)` instead of
-  `--features __shards_4`.
-
-### Added
-- Opt-in `untracked` feature: no overlap tracking on
-  any instance, bounds checks unchanged. Overlap is UB by design; see the README
-  and `PlainData` docs for what is and is not claimed.
-
-### Fixed
 - A poisoned `DisjointMut` now also refuses empty-range borrows (the empty-range
   early return in the tracker skipped the poison check). Found by an independent
   adversarial review.
@@ -61,6 +69,9 @@ on the `release/disjoint-mut-0.3` branch.
   as `(usize::MAX/4+1)..(usize::MAX/4+2)` of `u32` wrapped to bytes `0..4` and
   silently returned a view of element 0 (no UB, but a wrong view from a safe
   API); debug builds already panicked. Found by the same review.
+- `adversarial_review_default::panic_in_other_thread_with_live_mut_guard_poisons` needs
+  `std` (poisoning on unwind uses `std::thread::panicking()`); it is now gated on `std`
+  and a no-`std` counterpart pins the documented behavior (test-only change).
 
 ## [0.3.2] - 2026-09-08
 

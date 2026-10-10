@@ -150,7 +150,9 @@ The difference is `as_mut_ptr(&mut self)` vs `as_ptr(&self).cast_mut()`. Both re
 ### Leaking guards
 
 Forgetting a guard retains its reservation. Later conflicting access is still
-refused, even after moving the buffer. Repeated leaks can consume tracking
+refused, even after moving the buffer. Reconfiguring the instance through `&mut self`
+(`configure_parallelism`, `declare_row_stride`) can discard leaked reservations,
+because that call proves no borrow is live; `resize` to the same length keeps them. Repeated leaks can consume tracking
 resources and cause allocation or admission failure; they must never permit a
 conflicting reference. Memory safety does not require every guard to be dropped.
 
@@ -180,7 +182,7 @@ The primary API is `index()` / `index_mut()`, which return tracked guards. Prefe
 | `std` | yes | Enables `std::thread::panicking()` for mutable guard poisoning on panic. |
 | `aligned` | no | Aligned newtypes (`Align4`..`Align64`) and `AlignedVec32`/`AlignedVec64` for SIMD-friendly layout. |
 | `pic-buf` | no | `PicBuf`: owned byte buffer with alignment offset for `DisjointMut`. |
-| `instrument` | no | Runtime borrow instrumentation (size histograms, concurrency, contention). Implies `std`. |
+| `instrument` | no | Reserved: currently gates no code (kept so manifests that name it keep resolving). Implies `std`. |
 | `untracked` | no | Remove overlap tracking from every instance; bounds checks stay on. Opt-in, UB on overlap by design. See above. |
 
 The zerocopy cast API on guards (`cast_slice`, `mut_slice_as`, ...) is always
@@ -205,6 +207,6 @@ MIRIFLAGS="-Zmiri-tree-borrows" cargo +nightly miri test -p rav1d-disjoint-mut -
 
 ## License
 
-Triple-licensed: [BSD-2-Clause](../../COPYING) OR [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE).
+Triple-licensed: [BSD-2-Clause](LICENSE-BSD-2-Clause) OR [MIT](LICENSE-MIT) OR [Apache-2.0](LICENSE-APACHE).
 
 Started from `disjoint_mut.rs` in [rav1d](https://github.com/memorysafety/rav1d) (BSD-2-Clause, copyright VideoLAN, dav1d authors, and ISRG). The borrow tracker, poisoning, slot allocator, `no_std` support, and aligned storage are new; roughly 12% of the current code traces back to upstream type definitions and trait plumbing. BSD-2-Clause is included to honor that origin.

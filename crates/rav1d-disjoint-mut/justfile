@@ -33,7 +33,6 @@ feature-check:
     cargo test --no-default-features
     cargo test --features instrument
     cargo test --features aligned
-    cargo test --features zerocopy
 
 # Run all CI checks locally
 ci: fmt-check clippy test feature-check

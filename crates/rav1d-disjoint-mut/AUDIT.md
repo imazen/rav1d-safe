@@ -4,6 +4,33 @@
 **Auditor:** Red-team review with Miri verification (Stacked Borrows + Tree Borrows)
 **Verdict:** Three Stacked Borrows UB bugs found and fixed. All other identified issues resolved.
 
+## Independent pre-publication audit of 0.4.0 (2026-10-09)
+
+Scope: the crate at `b7da1887` (0.4.0, unpublished), safe-client attack surface, feature
+matrix, supply chain. Two independent reviewers: a Codex agent (Astra) and a Claude reviewer
+re-checking the fixes. Verdict on `b7da1887`: do not publish. Verdict of the second reviewer on the fixed tree: ship the code (publishing remains gated on the repository release checklist).
+
+| ID | Class | Finding | Resolution |
+|----|-------|---------|------------|
+| A-01 | unsound | `PicBuf::set_usable_len` checked the region end with a wrapping add; in release a safe caller could authorise a usable region past the allocation | checked add before any write; `tests/pic_buf_set_usable_len.rs`, `tests/audit_pins.rs` |
+| A-02 | unsound (internal feature `__probe_count`) | `probe::Slot::loc` was a public `AtomicUsize` turned into `&Location` with `unsafe` | `OnceLock<&'static Location>`, no `unsafe`; `tests/probe_report_forged_location.rs` |
+| A-03 | liveness (DoS) | a panic in the all-shard section stranded every shard lock: division by zero decoding a stride-less rectangle record, and the `u16` wide-id capacity assert running after the push | total `rect_decode`, capacity checked before mutating, RAII lock release; `tests/lock_liveness_after_panic.rs`, `tests/audit_pins.rs` |
+| A-04 | dependency | `aligned-vec` 0.6.4 `extend_from_slice` bit-copies non-`Copy` elements. Not reachable through `AlignedVec32/64` (they expose `resize`, deref and `try_reserve` only) | dependency replaced by the in-crate `AlignedBuf` (`src/aligned_buf.rs`), Miri-checked under Stacked and Tree Borrows |
+
+Also found and fixed in the same pass: the `adversarial_review_default` poison test failed
+without `std` (gated on `std`, no-`std` behavior pinned), stale README/AUDIT/justfile
+statements (corrected in this commit series).
+
+Evidence for the passes: crate tests in default, `untracked`, `pic-buf`, `aligned` and
+combinations, `no_std` check, MSRV 1.85 check, Miri (Stacked Borrows and Tree Borrows,
+`--features aligned,pic-buf`, all targets), Loom (7 models), `cargo deny`, `cargo audit`
+(no advisory in this crate's dependency tree).
+
+Not established: Loom has no model for the wide-id capacity path (it is a native test);
+`lock_liveness_after_panic` is `cfg(not(miri))`, so Miri does not run the new tracker tests;
+CI for this crate runs the dev profile only, so release-only overflow behavior is pinned by
+message checks rather than by a release job.
+
 ## Bugs Found and Fixed
 
 ### CRITICAL: guards held a reference across their own release (FIXED 2026-08-09, #477)
@@ -291,7 +318,7 @@ bound, and two byte-buffer controls (`index_rect_mut_as::<u16>` against
 `mut_slice_as::<u16>`) that pass on both revisions — the decoder's path,
 unchanged by construction. On 00ad667: 6 of 8 fail (2 should-panic tests do
 not panic, the gap control panics, the bound refuses, the negative stride
-misses); on this revision 8 of 8 pass, under `cargo test` and under Miri with both Stacked Borrows and Tree Borrows (`cargo +nightly miri test --features zerocopy,aligned --test rect_units`, `MIRIFLAGS=-Zmiri-tree-borrows` likewise) — the two byte-buffer controls use `align::AlignedVec64<u8>` because a plain `Vec<u8>` is 1-byte aligned under Miri and the `u16` view is then, correctly, refused.
+misses); on this revision 8 of 8 pass, under `cargo test` and under Miri with both Stacked Borrows and Tree Borrows (`cargo +nightly miri test --features aligned --test rect_units`, `MIRIFLAGS=-Zmiri-tree-borrows` likewise) — the two byte-buffer controls use `align::AlignedVec64<u8>` because a plain `Vec<u8>` is 1-byte aligned under Miri and the `u16` view is then, correctly, refused.
 
 ### What this review does not establish
 
@@ -329,7 +356,7 @@ misses); on this revision 8 of 8 pass, under `cargo test` and under Miri with bo
 
 2. **`addr_of_mut!(**ptr)` for Box** — Raw pointer chain through Box's compiler-intrinsic deref creates no intermediate references. Miri confirms.
 
-3. **`parking_lot::Mutex` unwind safety** — `parking_lot::Mutex` doesn't poison (unlike `std::sync::Mutex`), but we add our own `AtomicBool` poisoning at the `BorrowTracker` level. Lock always released on unwind. Mutable guard Drop poisons if `thread::panicking()`.
+3. **Lock release on unwind** — The tracker uses `spin` shard locks, which do not poison, plus our own poison flag at the `BorrowTracker` level. The all-shard section of the wide path (`add_wide`) releases its locks through an RAII guard (since the 2026-10 audit; before that a panic inside it, e.g. the wide-id capacity assert, left every shard locked). The narrower manual lock/unlock regions (`add_multi`, `add_rect`, `remove_multi`, `remove_wide`) contain no panic reachable from safe code (independent review, 2026-10-09; the one `debug_assert!` in `Shard::retire` fires only on a double retire that no safe API can produce). Mutable guard Drop poisons if `thread::panicking()` (`std` only).
 
 ## Remaining Work for crates.io
 
