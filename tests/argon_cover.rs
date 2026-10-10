@@ -21,7 +21,7 @@
 #[cfg(debug_assertions)]
 compile_error!("argon_cover requires release mode: cargo test --release --test argon_cover");
 
-use rav1d_safe::src::managed::{CpuLevel, Decoder, Settings, Strictness};
+use rav1d_safe::{CpuLevel, Decoder, Settings, Strictness};
 use std::path::PathBuf;
 use std::sync::Mutex;
 

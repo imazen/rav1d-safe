@@ -14,7 +14,7 @@
 //! is then per frame of the whole stream. `delay` sets `max_frame_delay` (default 1).
 #![cfg_attr(not(feature = "__probe_sites"), allow(unused))]
 
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::{Decoder, Settings};
 use std::hint::black_box;
 
 #[path = "helpers/ivf_parser.rs"]

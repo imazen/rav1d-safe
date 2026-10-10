@@ -23,7 +23,7 @@
 #[cfg(debug_assertions)]
 compile_error!("tile_threading_parity tests require release mode: cargo test --release");
 
-use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings, Strictness};
+use rav1d_safe::{Decoder, Frame, Planes, Settings, Strictness};
 
 /// Decode every frame in `data` and return the MD5 of all plane bytes, plus the
 /// number of frames hashed. `threads = 1` exercises the single-threaded

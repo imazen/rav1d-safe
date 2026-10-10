@@ -101,10 +101,6 @@ default = ["bitdepth_8", "bitdepth_16"]
 # its only consequence is a wrong value. Opt-in; see docs/UNTRACKED_MODE.md.
 untracked = ["rav1d-disjoint-mut/untracked"]
 
-# DEPRECATED alias, kept so `features = ["unchecked"]` written against 0.6.0 and earlier still
-# resolves. 0.6.0's `unchecked` also meant "skip slice bounds checks"; that mode no longer
-# exists (bounds checks are always on), so this is exactly `untracked`. Use `untracked`.
-unchecked = ["untracked"]
 
 # Internal measurement features: opt-in, prefixed, and outside the supported API.
 # See docs/DIAGNOSTIC_FEATURES.md for purpose, provenance and environment gates.
@@ -158,7 +154,7 @@ __test_induce_worker_panic = []
 
 # C FFI API compatibility (unsafe extern "C" functions)
 # Enables: dav1d_* C API, FFISafe, c_arc, c_box
-c-ffi = ["untracked", "unchecked", "dav1d-compat", "libc"]
+c-ffi = ["untracked", "dav1d-compat", "libc"]
 
 # Export C symbols as dav1d_* (drop-in replacement for libdav1d).
 # When disabled, symbols are exported as rav1d_* for side-by-side benchmarking.
@@ -166,7 +162,7 @@ dav1d-compat = []
 
 # Hand-written ASM for entropy decoding (msac) and loopfilter only.
 # Everything else stays in safe Rust SIMD.
-partial_asm = ["untracked", "unchecked"]
+partial_asm = ["untracked"]
 
 # Level 4: Hand-written assembly (maximum performance)
 asm = ["c-ffi"]

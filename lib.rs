@@ -94,7 +94,7 @@ compile_error!(
     "No bitdepths enabled. Enable one or more of the following features: `bitdepth_8`, `bitdepth_16`"
 );
 
-pub mod include {
+mod include {
     pub mod common {
         pub(crate) mod attributes;
         pub(crate) mod bitdepth;
@@ -111,7 +111,7 @@ pub mod include {
         pub mod picture;
     } // mod dav1d
 } // mod include
-pub mod src {
+mod src {
     // === Module Safety Annotations ===
     // - Modules with zero unsafe use forbid(unsafe_code) internally
     // - Modules with isolated unsafe items use item-level #[allow(unsafe_code)]
@@ -249,11 +249,52 @@ pub mod src {
     pub mod managed;
 } // mod src
 
-// Re-export the managed API at the crate root for convenience.
-// Users can write `rav1d_safe::Decoder` instead of `rav1d_safe::src::managed::Decoder`.
+// The supported API: the managed decoder, re-exported at the crate root. Everything else in
+// this crate (the decoder core under `src`, the dav1d-shaped types under `include`) is private.
 pub use src::managed::{
     ColorInfo, ColorPrimaries, ColorRange, ContentLightLevel, CpuLevel, DecodeFrameType, Decoder,
     Error, Frame, InloopFilters, MasteringDisplay, MatrixCoefficients, Packet, PixelLayout,
     PlaneView8, PlaneView16, Planes, Planes8, Planes16, RawColorInfo, ReceiveStatus, Result,
     SendStatus, Settings, Strictness, TransferCharacteristics, enabled_features,
 };
+
+/// Test, benchmark and measurement hooks. NOT part of the supported API: no stability promise,
+/// hidden from the documentation, and free to change or disappear in any release. It exists
+/// because this repository's own integration tests, examples and benches live outside the crate.
+#[doc(hidden)]
+pub mod __internal {
+    /// Per-kernel SIMD ablation switch and activity counters.
+    pub use crate::src::ablate;
+    /// Whether this build was compiled with the `untracked` feature.
+    pub use crate::src::managed::is_untracked;
+
+    /// x86 dispatch-tier census (`__probe_x86tier`).
+    #[cfg(feature = "__probe_x86tier")]
+    pub use crate::src::cpu::tier_census;
+    /// Per-worker task timing (`__probe_tasktime`).
+    #[cfg(feature = "__probe_tasktime")]
+    pub use crate::src::probe_tasktime;
+    /// Induced worker panic for the recovery test (`__test_induce_worker_panic`).
+    #[cfg(feature = "__test_induce_worker_panic")]
+    pub use crate::src::thread_task::TEST_INDUCE_WORKER_PANIC;
+
+    /// Picture-extent budget constants (`__probe_sites`).
+    #[cfg(feature = "__probe_sites")]
+    pub mod picture {
+        pub use crate::include::dav1d::picture::{
+            TILE_THREADED_PIC_EXTENT_MAX_BYTES, extent_budget, pic_extent_ceiling_const,
+        };
+    }
+
+    /// The dav1d-shaped C API as Rust items (`c-ffi`). C callers use the exported `dav1d_*`
+    /// symbols; this module is only for in-repository Rust tests.
+    #[cfg(feature = "c-ffi")]
+    pub mod ffi {
+        pub use crate::include::dav1d::common::Dav1dDataProps;
+        pub use crate::include::dav1d::data::Dav1dData;
+        pub use crate::include::dav1d::dav1d::{Dav1dContext, Dav1dEventFlags, Dav1dSettings};
+        pub use crate::include::dav1d::headers::Dav1dSequenceHeader;
+        pub use crate::include::dav1d::picture::Dav1dPicture;
+        pub use crate::src::dav1d_api::*;
+    }
+}

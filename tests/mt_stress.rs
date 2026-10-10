@@ -1,5 +1,5 @@
 //! MT stress test
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::{Decoder, Settings};
 use std::sync::OnceLock;
 
 fn obu_4k() -> &'static [u8] {

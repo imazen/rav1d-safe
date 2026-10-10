@@ -3,7 +3,7 @@
 //! These tests verify that the decoder properly cleans up resources
 //! when panics occur during decoding.
 
-use rav1d_safe::src::managed::Decoder;
+use rav1d_safe::Decoder;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 #[test]

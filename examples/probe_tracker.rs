@@ -6,7 +6,7 @@
 //!
 //! Usage: probe_tracker <input.avif> <threads> <iters>
 
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::{Decoder, Settings};
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -58,7 +58,7 @@ fn main() {
     // Reset AFTER the warmup decode, like every other counter here, so the
     // reported activity covers the timed iterations only.
     #[cfg(feature = "__ablate")]
-    rav1d_safe::src::ablate::activity_reset();
+    rav1d_safe::__internal::ablate::activity_reset();
 
     let t0 = Instant::now();
     for _ in 0..iters {
@@ -81,12 +81,12 @@ fn main() {
     // six read 0 whatever ran, which is why they are printed as `-`.
     #[cfg(feature = "__ablate")]
     {
-        let a = rav1d_safe::src::ablate::activity_snapshot();
+        let a = rav1d_safe::__internal::ablate::activity_snapshot();
         let instrumented = [
-            (rav1d_safe::src::ablate::Family::Itx, "itx"),
-            (rav1d_safe::src::ablate::Family::Cdef, "cdef"),
+            (rav1d_safe::__internal::ablate::Family::Itx, "itx"),
+            (rav1d_safe::__internal::ablate::Family::Cdef, "cdef"),
             (
-                rav1d_safe::src::ablate::Family::LoopRestoration,
+                rav1d_safe::__internal::ablate::Family::LoopRestoration,
                 "looprestoration",
             ),
         ];

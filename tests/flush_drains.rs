@@ -29,7 +29,7 @@
 
 #![forbid(unsafe_code)]
 
-use rav1d_safe::src::managed::{Decoder, Frame, Settings};
+use rav1d_safe::{Decoder, Frame, Settings};
 use std::path::PathBuf;
 
 /// A single-temporal-unit 8-bit stream: temporal delimiter, sequence header,

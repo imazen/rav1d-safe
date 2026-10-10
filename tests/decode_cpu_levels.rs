@@ -17,7 +17,7 @@
 #[cfg(debug_assertions)]
 compile_error!("decode_cpu_levels tests require release mode: cargo test --release");
 
-use rav1d_safe::src::managed::{CpuLevel, DecodeFrameType, Decoder, Frame, Planes, Settings};
+use rav1d_safe::{CpuLevel, DecodeFrameType, Decoder, Frame, Planes, Settings};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};

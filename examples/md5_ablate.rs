@@ -25,8 +25,8 @@
 //!                  restrict to vectors marked MISMATCH in a prior inventory
 //!                  TSV (cheap: the passing vectors cannot flip to PASS)
 
-use rav1d_safe::src::ablate::Family;
-use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
+use rav1d_safe::__internal::ablate::Family;
+use rav1d_safe::{Decoder, Frame, Planes, Settings};
 use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -211,7 +211,7 @@ fn main() {
     // report "no kernel is responsible for anything" — a green-looking result
     // that measures nothing. Refuse rather than emit it.
     assert!(
-        rav1d_safe::src::ablate::ENABLED,
+        rav1d_safe::__internal::ablate::ENABLED,
         "build with --features __ablate; without it every arm is the same decoder"
     );
 
@@ -291,7 +291,7 @@ fn main() {
     writeln!(out, "arm\tgroup\tname\tstatus\texpected\tactual").unwrap();
 
     for (arm_name, fams) in &arms {
-        rav1d_safe::src::ablate::set_disabled(fams);
+        rav1d_safe::__internal::ablate::set_disabled(fams);
         let (mut pass, mut fail, mut err) = (0usize, 0usize, 0usize);
         for &(group, grain) in MESON_GROUPS {
             let meson = base.join(group);
@@ -345,5 +345,5 @@ fn main() {
         out.flush().unwrap();
         eprintln!("arm={arm_name} pass={pass} mismatch={fail} error={err}");
     }
-    rav1d_safe::src::ablate::set_disabled(&[]);
+    rav1d_safe::__internal::ablate::set_disabled(&[]);
 }

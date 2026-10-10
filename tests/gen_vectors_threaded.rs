@@ -7,7 +7,7 @@
 //! the tracked build panicked ("overlapping DisjointMut") on every such stream at 2+
 //! threads. The generated corpus has exactly those streams (`tiles1x4`, `tiles2x2`).
 
-use rav1d_safe::src::managed::{Decoder, Frame, Settings};
+use rav1d_safe::{Decoder, Frame, Settings};
 
 #[path = "common/committed_vectors.rs"]
 #[allow(dead_code)]

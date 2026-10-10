@@ -8,7 +8,7 @@
 //! Save: cargo bench --bench threading_bench --no-default-features --features "bitdepth_8,bitdepth_16" 2>&1 | tee benchmarks/threading_$(date +%Y%m%d_%H%M%S).txt
 
 use divan::Bencher;
-use rav1d_safe::src::managed::{CpuLevel, Decoder, Settings};
+use rav1d_safe::{CpuLevel, Decoder, Settings};
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::OnceLock;

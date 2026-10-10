@@ -20,7 +20,7 @@
 //! Prints one TSV row per `CpuLevel`, with the decoded md5 so a tier that
 //! changes the pixels is impossible to miss.
 
-use rav1d_safe::src::managed::{CpuLevel, Decoder, Frame, Planes, Settings};
+use rav1d_safe::{CpuLevel, Decoder, Frame, Planes, Settings};
 
 #[path = "helpers/ivf_parser.rs"]
 mod ivf_parser;
@@ -76,7 +76,7 @@ fn main() {
     let frames = ivf_parser::parse_all_frames(&mut reader).expect("parse ivf");
 
     #[cfg(all(target_arch = "x86_64", feature = "__probe_x86tier"))]
-    let labels = rav1d_safe::src::cpu::tier_census::LABELS;
+    let labels = rav1d_safe::__internal::tier_census::LABELS;
     #[cfg(not(all(target_arch = "x86_64", feature = "__probe_x86tier")))]
     let labels: [&str; 6] = ["-", "-", "-", "-", "-", "-"];
 
@@ -84,7 +84,7 @@ fn main() {
 
     for &level in CpuLevel::platform_levels() {
         #[cfg(all(target_arch = "x86_64", feature = "__probe_x86tier"))]
-        rav1d_safe::src::cpu::tier_census::reset();
+        rav1d_safe::__internal::tier_census::reset();
 
         let mut settings = Settings::default();
         settings.threads = threads;
@@ -112,7 +112,7 @@ fn main() {
         drop(decoder);
 
         #[cfg(all(target_arch = "x86_64", feature = "__probe_x86tier"))]
-        let counts = rav1d_safe::src::cpu::tier_census::snapshot();
+        let counts = rav1d_safe::__internal::tier_census::snapshot();
         #[cfg(not(all(target_arch = "x86_64", feature = "__probe_x86tier")))]
         let counts = [0u64; 6];
 

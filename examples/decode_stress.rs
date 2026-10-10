@@ -15,7 +15,7 @@
 //! silent, 0-CPU process as the hang and a "panicked" line in the log as
 //! the race firing.
 
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::{Decoder, Settings};
 use std::io::Write as _;
 
 fn main() {

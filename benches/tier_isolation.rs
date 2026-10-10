@@ -4,7 +4,7 @@
 //! planes are compared exactly before timing, including high-bit-depth pixels.
 //! Run: cargo bench --bench tier_isolation -- --format=llm
 
-use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
+use rav1d_safe::{Decoder, Frame, Planes, Settings};
 use zenbench::prelude::*;
 
 #[path = "../tests/ivf_parser.rs"]

@@ -26,12 +26,12 @@
 
 use dav1d::{Decoder as Dav1dDecoder, PixelLayout as Dav1dPixelLayout, PlanarImageComponent, Settings as Dav1dSettings};
 use libfuzzer_sys::fuzz_target;
-use rav1d_safe::src::managed::{Decoder, PixelLayout, Planes, Settings, Strictness};
+use rav1d_safe::{Decoder, PixelLayout, Planes, Settings, Strictness};
 
 const FRAME_SIZE_LIMIT_PIXELS: u32 = 256 * 256;
 
 /// Decode `data` through rav1d-safe. Returns the first complete frame or an error.
-fn decode_rav1d(data: &[u8]) -> Result<Option<rav1d_safe::src::managed::Frame>, String> {
+fn decode_rav1d(data: &[u8]) -> Result<Option<rav1d_safe::Frame>, String> {
     let mut settings = Settings::default();
     settings.threads = 1;
     settings.max_frame_delay = 1;
@@ -91,7 +91,7 @@ fn layouts_match(rav1d: PixelLayout, dav1d: Dav1dPixelLayout) -> bool {
 /// is the contiguous `stride * height` buffer.
 fn compare_plane_u8(
     label: &str,
-    rav1d_view: &rav1d_safe::src::managed::PlaneView8<'_>,
+    rav1d_view: &rav1d_safe::PlaneView8<'_>,
     dav1d_plane_bytes: &[u8],
     dav1d_stride_bytes: usize,
     dav1d_height: u32,
@@ -123,7 +123,7 @@ fn compare_plane_u8(
 /// `row()` yields `&[u16]` of `width` samples.
 fn compare_plane_u16(
     label: &str,
-    rav1d_view: &rav1d_safe::src::managed::PlaneView16<'_>,
+    rav1d_view: &rav1d_safe::PlaneView16<'_>,
     dav1d_plane_bytes: &[u8],
     dav1d_stride_bytes: usize,
     dav1d_height: u32,
@@ -150,7 +150,7 @@ fn compare_plane_u16(
 }
 
 fn compare_pictures(
-    rav1d_frame: &rav1d_safe::src::managed::Frame,
+    rav1d_frame: &rav1d_safe::Frame,
     dav1d_picture: &dav1d::Picture,
 ) {
     let rw = rav1d_frame.width();

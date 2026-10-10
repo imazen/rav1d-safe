@@ -7,7 +7,7 @@
 //!   cargo build --release --no-default-features --features "bitdepth_8,bitdepth_16" --example decode_md5
 //!   ./target/release/examples/decode_md5 [--filmgrain] [-q] [--threads N] <input> [expected_md5]
 
-use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
+use rav1d_safe::{Decoder, Frame, Planes, Settings};
 use std::env;
 use std::fs;
 use std::io::Cursor;
@@ -222,14 +222,14 @@ impl Drop for ArmScalarGuard {
 // the sidecar oracle exercises the requested fallback tier throughout decoding.
 #[cfg(target_arch = "x86_64")]
 struct X86TierGuard {
-    level: rav1d_safe::src::managed::CpuLevel,
+    level: rav1d_safe::CpuLevel,
     _lock: archmage::testing::TokenTestGuard,
 }
 
 #[cfg(target_arch = "x86_64")]
 impl X86TierGuard {
-    fn for_level(level: rav1d_safe::src::managed::CpuLevel) -> Option<Self> {
-        use rav1d_safe::src::managed::CpuLevel as L;
+    fn for_level(level: rav1d_safe::CpuLevel) -> Option<Self> {
+        use rav1d_safe::CpuLevel as L;
         let level = match level {
             L::Native => return None,
             L::X86V2 | L::X86V3 | L::X86V4 => level,
@@ -240,8 +240,8 @@ impl X86TierGuard {
         Some(Self { level, _lock: lock })
     }
 
-    fn set_disabled(level: rav1d_safe::src::managed::CpuLevel, disabled: bool) {
-        use rav1d_safe::src::managed::CpuLevel as L;
+    fn set_disabled(level: rav1d_safe::CpuLevel, disabled: bool) {
+        use rav1d_safe::CpuLevel as L;
         let result = match level {
             L::X86V2 => archmage::X64V3Token::dangerously_disable_token_process_wide(disabled),
             L::X86V3 => archmage::X64V4Token::dangerously_disable_token_process_wide(disabled),
@@ -267,7 +267,7 @@ impl Drop for X86TierGuard {
 mod x86_tier_tests {
     use super::X86TierGuard;
     use archmage::SimdToken;
-    use rav1d_safe::src::managed::CpuLevel as L;
+    use rav1d_safe::CpuLevel as L;
 
     #[test]
     fn tier_caps_apply_to_workers_and_restore_baseline_tokens() {
@@ -336,8 +336,8 @@ fn main() {
     let mut filmgrain = false;
     let mut quiet = false;
     let mut per_frame = false;
-    let mut level: Option<rav1d_safe::src::managed::CpuLevel> = None;
-    let mut settings_strictness: Option<rav1d_safe::src::managed::Strictness> = None;
+    let mut level: Option<rav1d_safe::CpuLevel> = None;
+    let mut settings_strictness: Option<rav1d_safe::Strictness> = None;
     // Default 1 to keep every existing invocation byte-identical. `--threads 8`
     // exists because a single-threaded-only identity check cannot see a
     // tile-threading or borrow-tracker defect at all, and ad-hoc vectors (a
@@ -352,7 +352,7 @@ fn main() {
     // for the same mapping applied via Settings.
     let mut operating_point: Option<u8> = None;
     let mut all_layers: Option<bool> = None;
-    let mut decode_frame_type: Option<rav1d_safe::src::managed::DecodeFrameType> = None;
+    let mut decode_frame_type: Option<rav1d_safe::DecodeFrameType> = None;
     let mut positional: Vec<String> = Vec::new();
 
     // meson/dav1d args use both `--flag value` and `--flag=value` forms.
@@ -365,12 +365,12 @@ fn main() {
             "--filmgrain" => filmgrain = true,
             "-q" | "--quiet" => quiet = true,
             "--per-frame" => per_frame = true,
-            "--scalar" => level = Some(rav1d_safe::src::managed::CpuLevel::Scalar),
+            "--scalar" => level = Some(rav1d_safe::CpuLevel::Scalar),
             "--lenient" => {
-                settings_strictness = Some(rav1d_safe::src::managed::Strictness::Lenient)
+                settings_strictness = Some(rav1d_safe::Strictness::Lenient)
             }
             "--level" => {
-                use rav1d_safe::src::managed::CpuLevel as L;
+                use rav1d_safe::CpuLevel as L;
                 level = Some(match it.next().as_deref() {
                     Some("scalar") => L::Scalar,
                     Some("v2") => L::X86V2,
@@ -415,7 +415,7 @@ fn main() {
                 all_layers = Some(it.next().as_deref() != Some("0"));
             }
             "--decodeframetype" => {
-                use rav1d_safe::src::managed::DecodeFrameType as FT;
+                use rav1d_safe::DecodeFrameType as FT;
                 decode_frame_type = Some(match it.next().as_deref() {
                     Some("all") => FT::All,
                     Some("reference") => FT::Reference,
@@ -463,14 +463,14 @@ fn main() {
         settings.decode_frame_type = ft;
     }
     #[cfg(target_arch = "aarch64")]
-    let _arm_scalar_guard = (settings.cpu_level == rav1d_safe::src::managed::CpuLevel::Scalar)
+    let _arm_scalar_guard = (settings.cpu_level == rav1d_safe::CpuLevel::Scalar)
         .then(ArmScalarGuard::new);
     #[cfg(target_arch = "x86_64")]
     let _x86_tier_guard = X86TierGuard::for_level(settings.cpu_level);
     #[cfg(target_arch = "x86_64")]
     {
         use archmage::SimdToken;
-        use rav1d_safe::src::managed::CpuLevel as L;
+        use rav1d_safe::CpuLevel as L;
         match settings.cpu_level {
             L::Native => {}
             L::X86V4 => {
@@ -483,7 +483,7 @@ fn main() {
         }
     }
     #[cfg(target_arch = "aarch64")]
-    if settings.cpu_level == rav1d_safe::src::managed::CpuLevel::Scalar {
+    if settings.cpu_level == rav1d_safe::CpuLevel::Scalar {
         use archmage::SimdToken;
         assert!(archmage::Arm64::summon().is_none());
         assert!(archmage::Arm64V2Token::summon().is_none());

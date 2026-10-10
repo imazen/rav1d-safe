@@ -1,6 +1,6 @@
 //! Per-frame MD5 for comparison with dav1d reference.
 
-use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
+use rav1d_safe::{Decoder, Frame, Planes, Settings};
 use std::env;
 use std::fs;
 use std::io::Cursor;

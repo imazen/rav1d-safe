@@ -1,4 +1,4 @@
-use rav1d_safe::src::managed::{Decoder, Planes};
+use rav1d_safe::{Decoder, Planes};
 use std::fs::File;
 use std::io::{BufReader, Read};
 

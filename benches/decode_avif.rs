@@ -11,7 +11,7 @@
 //! ```
 
 use divan::Bencher;
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::{Decoder, Settings};
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::OnceLock;

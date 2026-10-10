@@ -36,7 +36,7 @@
 //! Run: cargo test --test decode_md5_committed          (debug: overflow checks)
 //!      cargo test --release --test decode_md5_committed (release: speed)
 
-use rav1d_safe::src::managed::{Decoder, Frame, PixelLayout, Settings, Strictness};
+use rav1d_safe::{Decoder, Frame, PixelLayout, Settings, Strictness};
 
 #[path = "common/committed_vectors.rs"]
 mod committed_vectors;

@@ -11,7 +11,7 @@
 #[path = "helpers/ivf_parser.rs"]
 mod ivf_parser;
 
-use rav1d_safe::src::managed::{Decoder, InloopFilters, Settings};
+use rav1d_safe::{Decoder, InloopFilters, Settings};
 use std::env;
 use std::fs::File;
 use std::hint::black_box;
@@ -46,7 +46,7 @@ fn decode_ivf_frames(frames: &[ivf_parser::IvfFrame]) -> usize {
     // (v3 = AVX2). Other token-dispatched SIMD may remain active; this setting
     // does not enforce a whole-decoder instruction cap.
     if let Ok(level) = std::env::var("RAV1D_LEVEL") {
-        use rav1d_safe::src::managed::CpuLevel as L;
+        use rav1d_safe::CpuLevel as L;
         settings.cpu_level = match level.as_str() {
             "scalar" => L::Scalar,
             "v2" => L::X86V2,
@@ -123,14 +123,14 @@ fn main() {
         // This compile-time flag must be checked only when the runtime env
         // requests ablation. A const assertion would reject ordinary builds.
         assert!(
-            rav1d_safe::src::ablate::ENABLED,
+            rav1d_safe::__internal::ablate::ENABLED,
             "RAV1D_ABLATE set but built without --features __ablate"
         );
         let fams: Vec<_> = list
             .split(',')
             .filter(|s| !s.is_empty())
             .map(|s| {
-                rav1d_safe::src::ablate::Family::from_name(s)
+                rav1d_safe::__internal::ablate::Family::from_name(s)
                     .unwrap_or_else(|| panic!("unknown family {s}"))
             })
             .collect();
@@ -138,7 +138,7 @@ fn main() {
             "Ablated: {:?}",
             fams.iter().map(|f| f.name()).collect::<Vec<_>>()
         );
-        rav1d_safe::src::ablate::set_disabled(&fams);
+        rav1d_safe::__internal::ablate::set_disabled(&fams);
     }
 
     // Per-iteration timing to stdout, so an external driver can take a median

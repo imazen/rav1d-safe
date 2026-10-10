@@ -14,7 +14,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use rav1d_safe::src::managed::{Decoder, Settings, Planes};
+//! use rav1d_safe::{Decoder, Settings, Planes};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut decoder = Decoder::new()?;
@@ -441,7 +441,7 @@ impl From<DecodeFrameType> for Rav1dDecodeFrameType {
 /// # Example
 ///
 /// ```no_run
-/// use rav1d_safe::src::managed::{Decoder, Settings, CpuLevel};
+/// use rav1d_safe::{Decoder, Settings, CpuLevel};
 ///
 /// // Select scalar pixel-dispatch flags (see the token-dispatch limit below).
 /// let mut settings = Settings::default();
@@ -590,7 +590,7 @@ impl std::fmt::Display for CpuLevel {
 /// # Example
 ///
 /// ```no_run
-/// use rav1d_safe::src::managed::Decoder;
+/// use rav1d_safe::Decoder;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut decoder = Decoder::new()?;
@@ -714,19 +714,6 @@ pub const fn is_untracked() -> bool {
     cfg!(feature = "untracked")
 }
 
-/// Deprecated alias of [`is_untracked`], kept for callers written against 0.6.0.
-///
-/// The `unchecked` feature used to mean "untracked, and also skip slice bounds checks". The
-/// bounds-unchecked mode was removed (bounds checks are always on), so the feature is now an
-/// alias of `untracked` and this returns the same value as [`is_untracked`].
-#[deprecated(
-    since = "0.6.1",
-    note = "renamed to `is_untracked`; the bounds-unchecked mode no longer exists"
-)]
-pub const fn is_unchecked() -> bool {
-    is_untracked()
-}
-
 /// The core's send / get-picture entry points inline very large call chains
 /// (`parse_obus` -> frame decode -> reconstruction). Each inlined copy gets its own
 /// stack slots, and one thread already needs close to 2 MiB of stack to decode
@@ -782,7 +769,7 @@ impl Decoder {
     /// the in-flight frame with [`Error::Cancelled`] if it fires — so a server
     /// can bound a slow decode of a crafted-but-legal stream without abandoning
     /// the worker thread. Pass any `Arc<dyn Stop>` (a deadline, a flag, an
-    /// [`Unstoppable`] no-op); `None` (the default) disables checking at zero
+    /// `enough::Unstoppable` no-op); `None` (the default) disables checking at zero
     /// cost. The token applies to subsequent `decode` / `get_frame` / `flush`
     /// calls and may be swapped between them.
     ///
@@ -794,7 +781,8 @@ impl Decoder {
     /// boundary.
     ///
     /// ```no_run
-    /// # use rav1d_safe::src::managed::{Decoder, Unstoppable};
+    /// # use rav1d_safe::Decoder;
+    /// # use enough::Unstoppable;
     /// # use std::sync::Arc;
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let mut decoder = Decoder::new()?;
@@ -910,7 +898,7 @@ impl Decoder {
     /// # Example
     ///
     /// ```no_run
-    /// # use rav1d_safe::src::managed::Decoder;
+    /// # use rav1d_safe::Decoder;
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let mut decoder = Decoder::new()?;
     /// let data = b"..."; // AV1 OBU data

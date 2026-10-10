@@ -29,10 +29,10 @@ fn main() {
     // Geometry comes from our own decoder rather than from a hand-rolled
     // sequence-header parse, so the IVF header cannot disagree with the
     // stream it wraps.
-    let mut settings = rav1d_safe::src::managed::Settings::default();
+    let mut settings = rav1d_safe::Settings::default();
     settings.threads = 1;
     settings.frame_size_limit = 8192 * 8192;
-    let mut dec = rav1d_safe::src::managed::Decoder::with_settings(settings).expect("decoder");
+    let mut dec = rav1d_safe::Decoder::with_settings(settings).expect("decoder");
     let frame = dec.decode(&obu).expect("decode").expect("frame");
     let (w, h) = (frame.width() as u16, frame.height() as u16);
     drop(frame);

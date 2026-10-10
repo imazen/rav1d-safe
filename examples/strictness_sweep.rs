@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use rav1d_safe::src::managed::{Decoder, Settings, Strictness};
+use rav1d_safe::{Decoder, Settings, Strictness};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Verdict {

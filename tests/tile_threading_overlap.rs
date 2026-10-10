@@ -18,7 +18,7 @@
 #[cfg(debug_assertions)]
 compile_error!("tile_threading_overlap tests require release mode: cargo test --release");
 
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::{Decoder, Settings};
 use std::time::Duration;
 
 const OBU: &[u8] = include_bytes!("crash_vectors/disjoint_mut_tile_overlap.obu");

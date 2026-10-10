@@ -1,6 +1,6 @@
 //! Shared committed vectors and visible-plane hashing for decode gates.
 
-use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings, Strictness};
+use rav1d_safe::{Decoder, Frame, Planes, Settings, Strictness};
 
 pub(super) fn hash_frame(frame: &Frame, ctx: &mut md5::Context) {
     match frame.planes() {

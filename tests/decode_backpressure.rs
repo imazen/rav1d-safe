@@ -7,7 +7,7 @@
 //! counted 2 of 192). The documented pump polls `get_frame()`; this test is the one
 //! that does not, at several thread / frame-delay combinations.
 
-use rav1d_safe::src::managed::{Decoder, Frame, Settings};
+use rav1d_safe::{Decoder, Frame, Settings};
 
 #[path = "common/committed_vectors.rs"]
 #[allow(dead_code)]

@@ -1,4 +1,4 @@
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::{Decoder, Settings};
 
 #[test]
 fn test_decoder_creation() {

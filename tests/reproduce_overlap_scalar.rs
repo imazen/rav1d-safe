@@ -1,7 +1,7 @@
 //! Test tile threading with zero pixel-dispatch flags; token SIMD can remain active.
 //! Run: cargo test --release --test reproduce_overlap_scalar -- --ignored --nocapture
 
-use rav1d_safe::src::managed::{CpuLevel, Decoder, Settings};
+use rav1d_safe::{CpuLevel, Decoder, Settings};
 
 mod ivf_parser;
 

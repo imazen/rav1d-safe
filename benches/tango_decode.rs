@@ -15,7 +15,7 @@
 //!    just tango-compare
 //!    ```
 
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::{Decoder, Settings};
 use std::hint::black_box;
 use std::path::PathBuf;
 use std::sync::OnceLock;

@@ -6,7 +6,7 @@
 //! All tests are serialized via a static mutex, and thread counting
 //! only looks at rav1d-worker-* threads to avoid test harness noise.
 
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::{Decoder, Settings};
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 

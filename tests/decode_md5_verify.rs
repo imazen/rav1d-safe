@@ -13,7 +13,7 @@
 #[cfg(debug_assertions)]
 compile_error!("decode_md5_verify tests require release mode: cargo test --release");
 
-use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
+use rav1d_safe::{Decoder, Frame, Planes, Settings};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};

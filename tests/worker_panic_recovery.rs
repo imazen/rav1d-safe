@@ -23,8 +23,8 @@
 #[cfg(debug_assertions)]
 compile_error!("worker_panic_recovery tests require release mode: cargo test --release");
 
-use rav1d_safe::src::managed::{Decoder, Settings};
-use rav1d_safe::src::thread_task::TEST_INDUCE_WORKER_PANIC;
+use rav1d_safe::{Decoder, Settings};
+use rav1d_safe::__internal::TEST_INDUCE_WORKER_PANIC;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 

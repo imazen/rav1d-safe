@@ -2,7 +2,7 @@
 //! profile_concurrency INPUT THREADS INSTANCES PASSES [REPS]
 //! Baseline timings exclude hashes and pool creation. Validation before AND after
 //! the timed section hashes every visible output plane against a serial reference.
-use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
+use rav1d_safe::{Decoder, Frame, Planes, Settings};
 use std::hint::black_box;
 use std::sync::{Arc, Barrier};
 use std::time::Instant;
@@ -238,8 +238,8 @@ fn main() {
         rav1d_disjoint_mut::wide_probe::reset();
         #[cfg(feature = "__probe_tasktime")]
         {
-            rav1d_safe::src::probe_tasktime::reset();
-            rav1d_safe::src::probe_tasktime::start_monitor();
+            rav1d_safe::__internal::probe_tasktime::reset();
+            rav1d_safe::__internal::probe_tasktime::start_monitor();
         }
         let mut perf = PerfControl::open();
         if let Some(p) = &mut perf {
@@ -259,7 +259,7 @@ fn main() {
         #[cfg(feature = "__probe_wide")]
         print!("{}", rav1d_disjoint_mut::wide_probe::report());
         #[cfg(feature = "__probe_tasktime")]
-        rav1d_safe::src::probe_tasktime::report((frames * instances * passes * reps) as u64);
+        rav1d_safe::__internal::probe_tasktime::report((frames * instances * passes * reps) as u64);
         gate.wait();
         for h in handles {
             h.join().unwrap();

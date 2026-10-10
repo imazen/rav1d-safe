@@ -1,4 +1,4 @@
-use rav1d_safe::src::managed::{Decoder, Planes, Settings};
+use rav1d_safe::{Decoder, Planes, Settings};
 use std::env;
 use std::fs;
 

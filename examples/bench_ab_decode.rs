@@ -20,7 +20,7 @@
 //!
 //! The checksum lets the same run double as a bit-identity check between arms.
 
-use rav1d_safe::src::managed::{CpuLevel, Decoder, Frame, Planes, Settings};
+use rav1d_safe::{CpuLevel, Decoder, Frame, Planes, Settings};
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -131,8 +131,8 @@ fn main() {
 
     #[cfg(feature = "__probe_tasktime")]
     {
-        rav1d_safe::src::probe_tasktime::reset();
-        rav1d_safe::src::probe_tasktime::start_monitor();
+        rav1d_safe::__internal::probe_tasktime::reset();
+        rav1d_safe::__internal::probe_tasktime::start_monitor();
     }
 
     for rep in 0..reps {
@@ -149,6 +149,6 @@ fn main() {
         );
     }
     #[cfg(feature = "__probe_tasktime")]
-    rav1d_safe::src::probe_tasktime::report((reps * iters) as u64);
+    rav1d_safe::__internal::probe_tasktime::report((reps * iters) as u64);
     let _ = dec.flush();
 }

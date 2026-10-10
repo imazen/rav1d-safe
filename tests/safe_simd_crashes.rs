@@ -20,7 +20,7 @@
 //! Run: cargo test --test safe_simd_crashes           (debug: overflow checks)
 //!      cargo test --release --test safe_simd_crashes (release: speed)
 
-use rav1d_safe::src::managed::Decoder;
+use rav1d_safe::Decoder;
 
 fn decode_obu(data: &[u8]) -> Result<(), String> {
     let mut decoder = Decoder::new().map_err(|e| format!("create: {e:?}"))?;

@@ -8,7 +8,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use rav1d_safe::src::managed::{Decoder, Settings, InloopFilters, DecodeFrameType, Strictness};
+use rav1d_safe::{Decoder, Settings, InloopFilters, DecodeFrameType, Strictness};
 
 fuzz_target!(|data: &[u8]| {
     if data.is_empty() {

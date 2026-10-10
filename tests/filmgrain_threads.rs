@@ -55,7 +55,7 @@
 
 #![forbid(unsafe_code)]
 
-use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
+use rav1d_safe::{Decoder, Frame, Planes, Settings};
 use std::path::{Path, PathBuf};
 
 mod ivf_parser;
@@ -248,7 +248,7 @@ fn decode_with_delay(
                     deferred += 1;
                     break;
                 }
-                Err(e) if matches!(e.error(), rav1d_safe::src::managed::Error::NeedMoreData) => {
+                Err(e) if matches!(e.error(), rav1d_safe::Error::NeedMoreData) => {
                     // send_data rejected this packet before consuming it.
                     // Retrieve output from the previous packet, then retry
                     // the SAME bytes; dropping them would hide frame loss.

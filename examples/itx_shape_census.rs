@@ -15,8 +15,8 @@
 //!
 //! Emits TSV to stdout: `vector  depth  path  shape  calls  coeff_area`.
 
-use rav1d_safe::src::ablate;
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::__internal::ablate;
+use rav1d_safe::{Decoder, Settings};
 
 // Keep the runtime feature guard: all-target checks also compile unsupported configurations.
 #[allow(clippy::assertions_on_constants)]

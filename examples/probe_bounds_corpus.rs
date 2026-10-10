@@ -21,7 +21,7 @@
 //! for a throwaway.
 #![cfg_attr(not(feature = "__probe_bounds"), allow(unused))]
 
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::{Decoder, Settings};
 use std::path::{Path, PathBuf};
 
 #[path = "helpers/ivf_parser.rs"]

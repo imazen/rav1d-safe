@@ -7,7 +7,7 @@
 //! copy path and is much faster:
 //!   cargo bench --bench tile_threading --no-default-features --features "bitdepth_8,bitdepth_16,untracked"
 
-use rav1d_safe::src::managed::{CpuLevel, Decoder, Settings};
+use rav1d_safe::{CpuLevel, Decoder, Settings};
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use zenbench::prelude::*;

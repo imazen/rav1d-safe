@@ -12,7 +12,8 @@
 #[cfg(debug_assertions)]
 compile_error!("cancellation tests require release mode: cargo test --release");
 
-use rav1d_safe::src::managed::{Decoder, Error, Stop, StopReason, Unstoppable};
+use enough::{Stop, StopReason, Unstoppable};
+use rav1d_safe::{Decoder, Error};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -114,7 +115,7 @@ fn cancel_tile_threaded_yields_cancelled() {
     // (the path that does NOT go through rav1d_decode_frame_main). The token is
     // checked per task in each worker and aborts the frame via the flush error
     // path. allow=0 fires on the first worker task.
-    let mut settings = rav1d_safe::src::managed::Settings::default();
+    let mut settings = rav1d_safe::Settings::default();
     settings.threads = 4;
     settings.max_frame_delay = 1;
     let mut d = Decoder::with_settings(settings).unwrap();

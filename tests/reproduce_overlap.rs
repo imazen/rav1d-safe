@@ -1,7 +1,7 @@
 //! Reproducer for DisjointMut overlap panic with frame threading.
 //! Run: cargo test --release -p rav1d-safe --test reproduce_overlap -- --ignored --nocapture
 
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::{Decoder, Settings};
 use std::fs::File;
 use std::io::BufReader;
 

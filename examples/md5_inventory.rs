@@ -23,7 +23,7 @@
 //!                      single-threaded-only gate cannot see a borrow-tracker
 //!                      or threading regression at all.
 
-use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
+use rav1d_safe::{Decoder, Frame, Planes, Settings};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -302,7 +302,7 @@ fn main() {
     );
 
     assert!(
-        !activity || rav1d_safe::src::ablate::ENABLED,
+        !activity || rav1d_safe::__internal::ablate::ENABLED,
         "--activity needs --features __ablate; without it every count is 0 \
          and the output would read as 'no family does any work'"
     );
@@ -344,7 +344,7 @@ fn main() {
     let mut out = stdout.lock();
     let head = "group\tname\tstatus\texpected\tactual\tframes\twall_ms\tw\th";
     if activity {
-        let fams: Vec<&str> = rav1d_safe::src::ablate::Family::ALL
+        let fams: Vec<&str> = rav1d_safe::__internal::ablate::Family::ALL
             .iter()
             .map(|f| f.name())
             .collect();
@@ -397,12 +397,12 @@ fn main() {
             // it because `decode_md5` joins before returning, so no worker
             // line can straddle two vectors (they may interleave WITHIN one).
             eprintln!("VECTOR\t{group_key}\t{}", v.name);
-            rav1d_safe::src::ablate::activity_reset();
+            rav1d_safe::__internal::ablate::activity_reset();
             let t0 = Instant::now();
             let res = decode_md5(&v.ivf_path, grain, threads);
             let ms = t0.elapsed().as_millis();
             let act = if activity {
-                let counts = rav1d_safe::src::ablate::activity_snapshot();
+                let counts = rav1d_safe::__internal::ablate::activity_snapshot();
                 let cols: Vec<String> = counts.iter().map(|c| c.to_string()).collect();
                 format!("\t{}", cols.join("\t"))
             } else {

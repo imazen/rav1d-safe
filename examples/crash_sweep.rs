@@ -26,7 +26,7 @@ use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use rav1d_safe::src::managed::{DecodeFrameType, Decoder, InloopFilters, Settings, Strictness};
+use rav1d_safe::{DecodeFrameType, Decoder, InloopFilters, Settings, Strictness};
 
 /// Matches `frame_size_limit` in all three fuzz targets.
 const FRAME_SIZE_LIMIT_PIXELS: u32 = 256 * 256;

@@ -11,7 +11,7 @@
 //!     --no-default-features --features "bitdepth_8,bitdepth_16,untracked" \
 //!     -- --baseline=checked
 
-use rav1d_safe::src::managed::{self, CpuLevel, Decoder, Settings};
+use rav1d_safe::{self, CpuLevel, Decoder, Settings};
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use zenbench::prelude::*;

@@ -2,7 +2,7 @@
 //!
 //! > While tile threading is active, a **partial** reservation against a
 //! > picture plane may not exceed
-//! > [`TILE_THREADED_PIC_EXTENT_MAX_BYTES`](rav1d_safe::include::dav1d::picture::TILE_THREADED_PIC_EXTENT_MAX_BYTES).
+//! > [`TILE_THREADED_PIC_EXTENT_MAX_BYTES`](rav1d_safe::__internal::picture::TILE_THREADED_PIC_EXTENT_MAX_BYTES).
 //!
 //! # Why this exists
 //!
@@ -52,10 +52,10 @@
 
 #![cfg(feature = "__probe_sites")]
 
-use rav1d_safe::include::dav1d::picture::{
+use rav1d_safe::__internal::picture::{
     TILE_THREADED_PIC_EXTENT_MAX_BYTES, extent_budget, pic_extent_ceiling_const,
 };
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::{Decoder, Settings};
 use std::path::{Path, PathBuf};
 
 mod ivf_parser;
@@ -94,8 +94,8 @@ fn decode_all(data: &[u8], threads: u32) -> Result<usize, String> {
 // Output plane views remain deliberate whole-component reads after MC was
 // narrowed. Exercise the public consumer path rather than depending on an
 // interpolation implementation detail to keep the exemption alive.
-fn inspect_output(frame: &rav1d_safe::src::managed::Frame) {
-    use rav1d_safe::src::managed::Planes;
+fn inspect_output(frame: &rav1d_safe::Frame) {
+    use rav1d_safe::Planes;
     let pixels = match frame.planes() {
         Planes::Depth8(p) => p.y().rows().map(|r| r.len()).sum::<usize>(),
         Planes::Depth16(p) => p.y().rows().map(|r| r.len()).sum::<usize>(),

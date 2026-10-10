@@ -34,7 +34,7 @@
 #[path = "helpers/ivf_parser.rs"]
 mod ivf_parser;
 
-use rav1d_safe::src::managed::{Decoder, Frame, InloopFilters, Planes, Settings};
+use rav1d_safe::{Decoder, Frame, InloopFilters, Planes, Settings};
 use std::fs::File;
 use std::hint::black_box;
 use std::io::BufReader;

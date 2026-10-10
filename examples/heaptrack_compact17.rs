@@ -7,7 +7,7 @@
 //! Usage:
 //!   heaptrack ./target/release/examples/heaptrack_compact17 <input.avif> [threads] [iters]
 
-use rav1d_safe::src::managed::{Decoder, Settings};
+use rav1d_safe::{Decoder, Settings};
 use std::env;
 use std::hint::black_box;
 

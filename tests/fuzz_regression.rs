@@ -76,7 +76,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rav1d_safe::src::managed::{DecodeFrameType, Decoder, InloopFilters, Settings, Strictness};
+use rav1d_safe::{DecodeFrameType, Decoder, InloopFilters, Settings, Strictness};
 
 /// Matches `frame_size_limit` in all three fuzz targets.
 const FRAME_SIZE_LIMIT_PIXELS: u32 = 256 * 256;
@@ -551,7 +551,7 @@ fn guarded_seeds_all_present() {
 /// failed it exactly this way on the first push.)
 #[test]
 fn fuzz_regression_corpus_exercises_instrumented_kernels() {
-    use rav1d_safe::src::ablate::{self, Family};
+    use rav1d_safe::__internal::ablate::{self, Family};
 
     if !ablate::ENABLED {
         eprintln!(

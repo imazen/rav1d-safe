@@ -7,7 +7,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use rav1d_safe::src::managed::{Decoder, Settings, Strictness};
+use rav1d_safe::{Decoder, Settings, Strictness};
 
 fuzz_target!(|data: &[u8]| {
     // Skip empty inputs — nothing to decode.

@@ -3,7 +3,7 @@
 //! Usage:
 //!   ./target/release/examples/dump_pixels <input.ivf> > output.yuv
 
-use rav1d_safe::src::managed::{Decoder, Frame, Planes, Settings};
+use rav1d_safe::{Decoder, Frame, Planes, Settings};
 use std::env;
 use std::fs;
 use std::io::{self, Cursor, Write};
@@ -60,11 +60,11 @@ fn dump_frame(frame: &Frame, out: &mut impl Write) -> io::Result<()> {
 fn main() {
     let args: Vec<String> = env::args().collect();
     let mut it = args.iter().skip(1);
-    let mut level: Option<rav1d_safe::src::managed::CpuLevel> = None;
+    let mut level: Option<rav1d_safe::CpuLevel> = None;
     let mut input = None;
     while let Some(a) = it.next() {
         if a == "--level" {
-            use rav1d_safe::src::managed::CpuLevel as L;
+            use rav1d_safe::CpuLevel as L;
             level = Some(match it.next().map(|s| s.as_str()) {
                 Some("scalar") => L::Scalar,
                 Some("v2") => L::X86V2,

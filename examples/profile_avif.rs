@@ -3,7 +3,7 @@
 //! Usage:
 //!   ./target/release/examples/profile_avif <input.avif> [iterations]
 
-use rav1d_safe::src::managed::{CpuLevel, Decoder, Settings};
+use rav1d_safe::{CpuLevel, Decoder, Settings};
 use std::env;
 use std::hint::black_box;
 use std::time::Instant;
