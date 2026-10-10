@@ -4,6 +4,10 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### QUEUED BREAKING CHANGES
+- Remove the deprecated `unchecked` feature alias, `managed::is_unchecked()` and the
+  constant-false `cdef_double_reads()` / `rect_hull_arm()` helpers.
+
 ### Fixed
 - x86 warp put preserves the bounded destination prefix and a separate byte
   base for negative row strides at 8/10/12 bits. Scalar whole-plane oracles,
@@ -150,11 +154,15 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   fall-through (bit-exact on all 803 vectors).
 
 ### Removed
-- **Breaking:** the `unchecked` feature. Its bounds-unchecked SIMD loads/stores
-  measured 0% (within -1.7%..+1.3%, both signs) and its tracking removal only
-  covered four `dm_new` call sites. Use `untracked`. `managed::is_unchecked()` is
-  now `is_untracked()`; `include::dav1d::picture::{cdef_double_reads,
-  rect_hull_arm}` are gone.
+- The bounds-unchecked mode that the `unchecked` feature added on top of `untracked`
+  (unchecked SIMD loads/stores) is gone: it measured 0% (within -1.7%..+1.3%, both
+  signs) and its tracking removal only covered four `dm_new` call sites. Bounds checks are
+  always on. For compatibility the `unchecked` feature remains as a deprecated alias of
+  `untracked` (`c-ffi` and `partial_asm` still enable it), `managed::is_unchecked()` remains
+  as a deprecated alias of `is_untracked()`, and `include::dav1d::picture::{cdef_double_reads,
+  rect_hull_arm}` remain as constant-`false` functions, so this release needs no major bump
+  (`cargo semver-checks` 0.6.0 -> 0.6.1: 196 pass, 0 fail, default features;
+  `tests/semver_compat_0_6_0.rs` pins the three).
 - Finished A/B experiment features whose winner already ships, in both crates:
   the tracker tuning ladders (`__shards_*`, `__blockshift_*`, `__bps_*`,
   `__rpb_*`, `__msb_5`, `__shard_ident`, `__lf_rect1`/`__rect_1shard`,
@@ -175,8 +183,14 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   Overlap is formally UB by design; every `DisjointMut` element is now `PlainData`
   (all bit patterns valid) so a load is always a valid value. `c-ffi`, `asm` and
   `partial_asm` imply it. `managed::is_untracked()` reports it.
-- `rav1d-disjoint-mut` 0.4.0 (breaking, see its CHANGELOG): `PlainData` element
-  bound, `untracked`, a poison/empty-range fix and an overflow fix in the cast API.
+- `rav1d-disjoint-mut` 0.4.0 (breaking for direct users, see its CHANGELOG): `PlainData`
+  element bound, `untracked`, a poison/empty-range fix, an overflow fix in the cast API,
+  the independent-audit fixes and an in-crate aligned buffer in place of `aligned-vec`.
+  `rav1d_safe::src::disjoint_mut` re-exports the crate's types, so their bounds are now
+  `PlainData` there too; that module is the decoder's internal layout, and the managed API
+  is unaffected. cargo-semver-checks cannot see this (it does not follow re-exported
+  external types), so it is stated here: a downstream `impl AsMutPtr` through that path for
+  a non-`FromBytes` element type no longer compiles.
 - Tools and write-ups for finding where we lose to dav1d:
   `docs/SAFE_VS_DAV1D.md`, `docs/ASM_VS_DAV1D.md`, `scripts/perf/{cg_lines.py,
   family_compare.py,libc_call_shim.c}`.

@@ -15,7 +15,7 @@ container handling and color conversion. See the
 Add to your `Cargo.toml`:
 ```toml
 [dependencies]
-rav1d-safe = "0.6.0"
+rav1d-safe = "0.6.1"
 ```
 
 Decode an AV1 bitstream:
@@ -51,7 +51,7 @@ fn decode(obu_data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
 
 ## API Overview
 
-The reference below describes the 0.6.0 API, including `Strictness` and
+The reference below describes the 0.6 API, including `Strictness` and
 cooperative cancellation. The [historical runnable codec examples](docs/RUST_CODEC_WORKFLOW.md)
 remain pinned to the published versions used for their recorded validation.
 
@@ -174,7 +174,7 @@ With `threads >= 2` or `threads == 0`, the decoder uses tile threading to parall
 **Tile threading works in the default `forbid(unsafe_code)` build.** No special feature flags needed:
 
 ```toml
-rav1d-safe = { version = "0.6.0", features = ["bitdepth_8", "bitdepth_16"] }
+rav1d-safe = { version = "0.6.1", features = ["bitdepth_8", "bitdepth_16"] }
 ```
 
 Still-image scaling depends on the encoded tile layout. A single-tile image
@@ -215,7 +215,7 @@ Fallible operations return the crate's `Result<T>` alias, which is `Result<T, wh
 
 ### Cancellation
 
-The 0.6.0 Rust API provides `Decoder::set_stop`, accepting an
+The 0.6 Rust API provides `Decoder::set_stop`, accepting an
 `Option<Arc<dyn enough::Stop>>`. Single-threaded decoding checks at superblock-row
 boundaries; tile workers also check for cancellation. A triggered token returns
 `Error::Cancelled`. `None` disables cancellation checks. This is cooperative
@@ -372,12 +372,13 @@ cargo test --release
 |---------|---------|-------------|
 | `bitdepth_8` | on | 8-bit pixel support |
 | `bitdepth_16` | on | 10/12-bit pixel support |
+| `unchecked` | off | Deprecated alias of `untracked` (kept for manifests written against 0.6.0) |
 | `untracked` | off | Race-tolerant fast mode: no `DisjointMut` overlap tracking, zero-copy pixel access under tile threading; bounds checks stay on. See [UNTRACKED_MODE.md](docs/UNTRACKED_MODE.md) |
 | `partial_asm` | off | ASM for entropy decoding (msac) and loopfilter only; safe SIMD everything else. Implies `untracked` |
 | `c-ffi` | off | C API entry points (`dav1d_*` symbols). Implies `untracked` |
 | `asm` | off | Full hand-written assembly. Implies `c-ffi` |
 
-Safety chain: `default` (`forbid(unsafe_code)`, overlap-checked, tile and frame threading) -> `untracked` (no overlap tracking) -> `c-ffi` -> `asm`. Each level relaxes the safety constraint. The former `unchecked` feature was removed: skipping bounds checks measured 0% (within +-1.7%, both signs) and its tracking removal is `untracked`.
+Safety chain: `default` (`forbid(unsafe_code)`, overlap-checked, tile and frame threading) -> `untracked` (no overlap tracking) -> `c-ffi` -> `asm`. Each level relaxes the safety constraint. The bounds-unchecked mode the former `unchecked` feature added was removed: skipping bounds checks measured 0% (within +-1.7%, both signs). The `unchecked` feature name remains as a deprecated alias of `untracked` so existing manifests keep resolving.
 
 ### Cross-Compilation
 
