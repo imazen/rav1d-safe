@@ -107,8 +107,8 @@ batched CDEF reads (4K inter, 4 threads: 0.44-0.65x the time), automatic two-fra
 threading (about half the untracked decode time on 4K video at 4-8 threads), and the
 LR scratch moved off thread-local storage. Parked, unlanded experiments: fused 4x4 MC,
 AVX-512 active-row vertical MC, CDEF variants, retained-row tracker CDEF, `decode_b`
-initialisation (see `docs/MC_*.md` and `docs/CDEF_*.md`; the `decode_b` one lives only in the
-`cand-glue`/`lead-glue` jj workspaces).
+initialisation. Each is a `revisit/*` branch on `origin`, with its timing and next step in
+`docs/REVISIT.md` (background in `docs/MC_*.md` and `docs/CDEF_*.md`).
 
 Rules for any perf claim: interleaved A/B with an A-vs-A control (`just
 bench-paired-modes`), 8-bit AND 10-bit clips, 1 and 4 workers, tracked AND untracked,
