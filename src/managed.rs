@@ -714,6 +714,19 @@ pub const fn is_untracked() -> bool {
     cfg!(feature = "untracked")
 }
 
+/// Deprecated alias of [`is_untracked`], kept for callers written against 0.6.0.
+///
+/// The `unchecked` feature used to mean "untracked, and also skip slice bounds checks". The
+/// bounds-unchecked mode was removed (bounds checks are always on), so the feature is now an
+/// alias of `untracked` and this returns the same value as [`is_untracked`].
+#[deprecated(
+    since = "0.6.1",
+    note = "renamed to `is_untracked`; the bounds-unchecked mode no longer exists"
+)]
+pub const fn is_unchecked() -> bool {
+    is_untracked()
+}
+
 /// The core's send / get-picture entry points inline very large call chains
 /// (`parse_obus` -> frame decode -> reconstruction). Each inlined copy gets its own
 /// stack slots, and one thread already needs close to 2 MiB of stack to decode
