@@ -4,9 +4,19 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
-### QUEUED BREAKING CHANGES
-- Remove the deprecated `unchecked` feature alias, `managed::is_unchecked()` and the
-  constant-false `cdef_double_reads()` / `rect_hull_arm()` helpers.
+### Breaking (0.7.0)
+- **The managed decoder is the whole public API.** `rav1d_safe::src` and `rav1d_safe::include`
+  are private. Outside this repository (zenavif, heic, zenrav1e) only the managed types were
+  used, so those stay, at the crate root: `rav1d_safe::src::managed::X` becomes `rav1d_safe::X`.
+  Removed from the public surface: 173 dav1d header constants and the rest of `include::dav1d`,
+  the picture-extent helpers, `src::ablate`, the probe modules, `src::dav1d_api`, and the
+  `enough::{Stop, StopReason, Unstoppable}` re-exports (depend on `enough` directly).
+  `managed::is_untracked()` moved to the hidden `rav1d_safe::__internal`, which also carries the
+  hooks this repository's own tests, examples and benches need; it is `#[doc(hidden)]` and
+  carries no stability promise. C callers are unaffected: the `dav1d_*` symbols are still
+  exported under `c-ffi`.
+- The `unchecked` feature, `managed::is_unchecked()` and the constant-false
+  `include::dav1d::picture::{cdef_double_reads, rect_hull_arm}` are removed (see "Removed").
 
 ### Fixed
 - x86 warp put preserves the bounded destination prefix and a separate byte
@@ -154,15 +164,11 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   fall-through (bit-exact on all 803 vectors).
 
 ### Removed
-- The bounds-unchecked mode that the `unchecked` feature added on top of `untracked`
-  (unchecked SIMD loads/stores) is gone: it measured 0% (within -1.7%..+1.3%, both
-  signs) and its tracking removal only covered four `dm_new` call sites. Bounds checks are
-  always on. For compatibility the `unchecked` feature remains as a deprecated alias of
-  `untracked` (`c-ffi` and `partial_asm` still enable it), `managed::is_unchecked()` remains
-  as a deprecated alias of `is_untracked()`, and `include::dav1d::picture::{cdef_double_reads,
-  rect_hull_arm}` remain as constant-`false` functions, so this release needs no major bump
-  (`cargo semver-checks` 0.6.0 -> 0.6.1: 196 pass, 0 fail, default features;
-  `tests/semver_compat_0_6_0.rs` pins the three).
+- The `unchecked` feature and `managed::is_unchecked()`. The feature added a bounds-unchecked
+  SIMD mode on top of `untracked`; it measured 0% (within -1.7%..+1.3%, both signs) and its
+  tracking removal only covered four `dm_new` call sites. Bounds checks are always on; use
+  `untracked` and `__internal::is_untracked()`. `cdef_double_reads()` and `rect_hull_arm()`
+  went with the measurement arms they reported.
 - Finished A/B experiment features whose winner already ships, in both crates:
   the tracker tuning ladders (`__shards_*`, `__blockshift_*`, `__bps_*`,
   `__rpb_*`, `__msb_5`, `__shard_ident`, `__lf_rect1`/`__rect_1shard`,
@@ -186,12 +192,7 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 - `rav1d-disjoint-mut` 0.4.0 (breaking for direct users, see its CHANGELOG): `PlainData`
   element bound, `untracked`, a poison/empty-range fix, an overflow fix in the cast API,
   the independent-audit fixes and an in-crate aligned buffer in place of `aligned-vec`.
-  `rav1d_safe::src::disjoint_mut` no longer re-exports the crate's types (it is
-  `pub(crate) use` now; nothing in this repository named them through that path, and
-  the managed API never exposed them). The types still appear in the signatures of
-  public items under `rav1d_safe::src::*` (the decoder core, public only because it keeps
-  rav1d's module layout), so the `PlainData` bound reaches that internal surface.
-  cargo-semver-checks cannot see either point (it does not follow external types).
+  None of its types are part of this crate's public API any more.
 - Tools and write-ups for finding where we lose to dav1d:
   `docs/SAFE_VS_DAV1D.md`, `docs/ASM_VS_DAV1D.md`, `scripts/perf/{cg_lines.py,
   family_compare.py,libc_call_shim.c}`.

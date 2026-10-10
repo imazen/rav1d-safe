@@ -15,7 +15,7 @@ container handling and color conversion. See the
 Add to your `Cargo.toml`:
 ```toml
 [dependencies]
-rav1d-safe = "0.6.1"
+rav1d-safe = "0.7.0"
 ```
 
 Decode an AV1 bitstream:
@@ -174,7 +174,7 @@ With `threads >= 2` or `threads == 0`, the decoder uses tile threading to parall
 **Tile threading works in the default `forbid(unsafe_code)` build.** No special feature flags needed:
 
 ```toml
-rav1d-safe = { version = "0.6.1", features = ["bitdepth_8", "bitdepth_16"] }
+rav1d-safe = { version = "0.7.0", features = ["bitdepth_8", "bitdepth_16"] }
 ```
 
 Still-image scaling depends on the encoded tile layout. A single-tile image
