@@ -112,6 +112,8 @@ extern crate std;
 
 #[cfg(feature = "aligned")]
 pub mod align;
+#[cfg(feature = "aligned")]
+mod aligned_buf;
 
 /// THROWAWAY contention probe (feature `__probe_count`). Not public API.
 #[cfg(feature = "__probe_count")]

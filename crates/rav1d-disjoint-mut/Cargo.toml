@@ -54,14 +54,13 @@ __probe_sites = ["std"]
 # feature. See src/bounds_probe.rs.
 __probe_bounds = ["std", "__probe_sites"]
 # Aligned newtypes (Align4..64) and AlignedVec32/64 for SIMD-friendly layout.
-aligned = ["dep:aligned", "dep:aligned-vec"]
+aligned = ["dep:aligned"]
 # PicBuf: owned/borrowed byte buffer for DisjointMut (used by rav1d picture data).
 pic-buf = []
 
 [dependencies]
 spin = { version = "0.12.3", default-features = false, features = ["once"] }
 aligned = { version = "0.4.3", default-features = false, optional = true }
-aligned-vec = { version = "0.6.4", default-features = false, optional = true }
 zerocopy = { version = "0.8.56", default-features = false }
 
 criterion = { version = "0.8.2", default-features = false, optional = true }

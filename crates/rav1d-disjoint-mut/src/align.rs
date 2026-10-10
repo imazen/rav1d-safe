@@ -1,6 +1,6 @@
 //! Aligned newtypes and aligned Vec for SIMD-friendly data layout.
 //!
-//! Thin wrappers around [`struct@aligned::Aligned`] and [`aligned_vec::AVec`] that
+//! Thin wrappers around [`struct@aligned::Aligned`] and an in-crate aligned buffer that
 //! integrate with [`DisjointMut`](crate::DisjointMut) via [`ExternalAsMutPtr`]
 //! and [`Resizable`].
 //!
@@ -11,19 +11,9 @@
 use crate::ExternalAsMutPtr;
 use crate::Resizable;
 use crate::TryResizable;
+use crate::aligned_buf::AlignedBuf;
 use aligned::Aligned;
-use aligned_vec::{AVec, ConstAlign};
 use core::ops::{Deref, DerefMut};
-
-/// Create a `TryReserveError` to represent allocation failure from `aligned_vec`.
-///
-/// `alloc::collections::TryReserveError` has no public constructor, so we trigger
-/// a real one by asking a `Vec` to reserve `usize::MAX`.
-fn alloc_err() -> alloc::collections::TryReserveError {
-    alloc::vec::Vec::<u8>::new()
-        .try_reserve(usize::MAX)
-        .unwrap_err()
-}
 
 // =============================================================================
 // ArrayDefault — workaround for Default not covering [T; N>32]
@@ -138,19 +128,19 @@ impl<A, T: ArrayDefault> ArrayDefault for aligned::Aligned<A, T> {
 }
 
 // =============================================================================
-// AlignedVec wrappers — thin newtypes around aligned_vec::AVec
+// AlignedVec wrappers — thin newtypes around the in-crate `AlignedBuf`
 // =============================================================================
 
 /// A heap-allocated, 64-byte-aligned buffer.
 ///
-/// Wraps [`AVec<T, ConstAlign<64>>`] with a [`Default`] impl and
+/// Wraps [`AlignedBuf<T, 64>`] with a [`Default`] impl and
 /// [`ExternalAsMutPtr`] integration for [`DisjointMut`](crate::DisjointMut).
-pub struct AlignedVec64<T>(AVec<T, ConstAlign<64>>);
+pub struct AlignedVec64<T>(AlignedBuf<T, 64>);
 
 impl<T> AlignedVec64<T> {
     /// Create a new empty aligned vector.
     pub fn new() -> Self {
-        Self(AVec::new(64))
+        Self(AlignedBuf::new())
     }
 
     /// Resize the buffer, filling new elements with `value`.
@@ -210,18 +200,16 @@ impl<T: Clone> TryResizable for AlignedVec64<T> {
         value: T,
     ) -> Result<(), alloc::collections::TryReserveError> {
         if new_len > self.0.len() {
-            self.0
-                .try_reserve(new_len - self.0.len())
-                .map_err(|_| alloc_err())?;
+            self.0.try_reserve(new_len - self.0.len())?;
         }
         self.0.resize(new_len, value);
         Ok(())
     }
 }
 
-/// SAFETY: We only create `&AVec` (SharedReadOnly), never `&mut AVec`.
+/// SAFETY: We only create `&AlignedBuf` (SharedReadOnly), never `&mut AlignedBuf`.
 /// `as_ptr()` takes `&self` and returns `*const T`, which we cast to `*mut T`.
-/// This avoids the Stacked Borrows hazard of creating `&mut AVec` through
+/// This avoids the Stacked Borrows hazard of creating `&mut AlignedBuf` through
 /// `as_mut_ptr(&mut self)`, which would issue a Unique retag over the heap data.
 unsafe impl<T: crate::PlainData> ExternalAsMutPtr for AlignedVec64<T> {
     type Target = T;
@@ -246,14 +234,14 @@ unsafe impl<T: crate::PlainData> ExternalAsMutPtr for AlignedVec64<T> {
 
 /// A heap-allocated, 32-byte-aligned buffer.
 ///
-/// Wraps [`AVec<T, ConstAlign<32>>`] with a [`Default`] impl and
+/// Wraps [`AlignedBuf<T, 32>`] with a [`Default`] impl and
 /// [`ExternalAsMutPtr`] integration for [`DisjointMut`](crate::DisjointMut).
-pub struct AlignedVec32<T>(AVec<T, ConstAlign<32>>);
+pub struct AlignedVec32<T>(AlignedBuf<T, 32>);
 
 impl<T> AlignedVec32<T> {
     /// Create a new empty aligned vector.
     pub fn new() -> Self {
-        Self(AVec::new(32))
+        Self(AlignedBuf::new())
     }
 
     /// Resize the buffer, filling new elements with `value`.
@@ -313,9 +301,7 @@ impl<T: Clone> TryResizable for AlignedVec32<T> {
         value: T,
     ) -> Result<(), alloc::collections::TryReserveError> {
         if new_len > self.0.len() {
-            self.0
-                .try_reserve(new_len - self.0.len())
-                .map_err(|_| alloc_err())?;
+            self.0.try_reserve(new_len - self.0.len())?;
         }
         self.0.resize(new_len, value);
         Ok(())
