@@ -40,16 +40,16 @@ pub fn set_tile_threading(active: bool) {
 }
 
 /// Always `false`. The `__probe_rect_hull` measurement arm this reported was removed; the
-/// function stays so downstream paths written against 0.6.0 keep compiling.
-#[doc(hidden)]
+/// function stays so code written against 0.6.0 keeps compiling. Not part of the supported
+/// API.
 #[inline(always)]
 pub fn rect_hull_arm() -> bool {
     false
 }
 
 /// Always `false`. The `__probe_cdef_double` measurement arm this reported was removed; the
-/// function stays so downstream paths written against 0.6.0 keep compiling.
-#[doc(hidden)]
+/// function stays so code written against 0.6.0 keeps compiling. Not part of the supported
+/// API.
 #[inline(always)]
 pub fn cdef_double_reads() -> bool {
     false
