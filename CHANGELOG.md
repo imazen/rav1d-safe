@@ -186,11 +186,12 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 - `rav1d-disjoint-mut` 0.4.0 (breaking for direct users, see its CHANGELOG): `PlainData`
   element bound, `untracked`, a poison/empty-range fix, an overflow fix in the cast API,
   the independent-audit fixes and an in-crate aligned buffer in place of `aligned-vec`.
-  `rav1d_safe::src::disjoint_mut` re-exports the crate's types, so their bounds are now
-  `PlainData` there too; that module is the decoder's internal layout, and the managed API
-  is unaffected. cargo-semver-checks cannot see this (it does not follow re-exported
-  external types), so it is stated here: a downstream `impl AsMutPtr` through that path for
-  a non-`FromBytes` element type no longer compiles.
+  `rav1d_safe::src::disjoint_mut` no longer re-exports the crate's types (it is
+  `pub(crate) use` now; nothing in this repository named them through that path, and
+  the managed API never exposed them). The types still appear in the signatures of
+  public items under `rav1d_safe::src::*` (the decoder core, public only because it keeps
+  rav1d's module layout), so the `PlainData` bound reaches that internal surface.
+  cargo-semver-checks cannot see either point (it does not follow external types).
 - Tools and write-ups for finding where we lose to dav1d:
   `docs/SAFE_VS_DAV1D.md`, `docs/ASM_VS_DAV1D.md`, `scripts/perf/{cg_lines.py,
   family_compare.py,libc_call_shim.c}`.
