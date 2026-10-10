@@ -11,20 +11,25 @@ NOTE: excluded-feature surface (__bench,__probe_bounds,__probe_count,__probe_sit
 ## summary
 #
 #   pub types (struct/enum/trait/alias)         2
-#   pub consts/statics                          1
-#   inherent methods                           11
+#   pub consts/statics                          2
+#   inherent methods                           15
 #   struct fields                               1
 #   enum variants                               2
 #   trait roster entries (type × trait)         2
 #   auto-trait-complete types                   1
 #
 # per-module pub lines:
-#   (root)                           17
+#   (root)                           22
 
-## items (17 lines)
+## items (22 lines)
 
 pub const fn DisjointMut<T>::inner(&self) -> *mut T
+pub const fn DisjointMut<T>::is_checked(&self) -> bool
 pub fn Bounds::assert_fields_are_eq(&self)
+pub fn DisjointImmutGuard<'a, T, V>::probe_declare_rows(&self, usize, usize, usize, isize)
+pub fn DisjointMut<T>::probe_declare_stride(&self, isize)
+pub fn DisjointMut<T>::probe_eval_rect(&self, &'static core::panic::location::Location<'static>, bool, usize, usize, usize, isize)
+pub fn DisjointMutGuard<'a, T, V>::probe_declare_rows(&self, usize, usize, usize, isize)
 pub fn PicBuf::as_usable_bytes(&self) -> &[u8]
 pub fn PicBuf::as_usable_bytes_mut(&mut self) -> &mut [u8]
 pub fn PicBuf::default() -> PicBuf

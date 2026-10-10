@@ -10,30 +10,23 @@
 ## summary
 #
 #   pub modules                                 1
-#   pub types (struct/enum/trait/alias)         8
+#   pub types (struct/enum/trait/alias)         7
 #   pub consts/statics                          1
 #   free functions                              1
-#   inherent methods                           25
-#   enum variants                              20
-#   trait roster entries (type × trait)        30
-#   auto-trait exceptions                       2
+#   inherent methods                           19
+#   enum variants                              16
+#   trait roster entries (type × trait)        22
+#   auto-trait exceptions                       1
 #
 # per-module pub lines:
-#   (root)                           23
-#   align                            21
+#   (root)                           19
+#   align                            14
 #   aligned                          10
 #   pic_buf                           2
 
-## items (56 lines)
+## items (45 lines)
 
 pub mod align
-pub struct align::AlignedVec32<T>(_)
-pub fn align::AlignedVec32<T>::new() -> Self
-pub fn align::AlignedVec32<T>::resize(&mut self, usize, T) where T: core::clone::Clone
-pub unsafe fn align::AlignedVec32<T>::as_mut_ptr(*mut Self) -> *mut T
-pub unsafe fn align::AlignedVec32<T>::as_mut_slice(*mut Self) -> *mut [T]
-pub fn align::AlignedVec32<T>::is_empty(&self) -> bool
-pub fn align::AlignedVec32<T>::len(&self) -> usize
 pub struct align::AlignedVec64<T>(_)
 pub fn align::AlignedVec64<T>::new() -> Self
 pub fn align::AlignedVec64<T>::resize(&mut self, usize, T) where T: core::clone::Clone
@@ -54,10 +47,6 @@ pub unsafe fn pic_buf::PicBuf::as_mut_ptr(*mut Self) -> *mut u8
 pub unsafe fn pic_buf::PicBuf::as_mut_slice(*mut Self) -> *mut [u8]
 pub fn pic_buf::PicBuf::is_empty(&self) -> bool
 pub fn pic_buf::PicBuf::len(&self) -> usize
-pub unsafe fn align::AlignedVec32<T>::as_mut_ptr(*mut Self) -> *mut T
-pub unsafe fn align::AlignedVec32<T>::as_mut_slice(*mut Self) -> *mut [T]
-pub fn align::AlignedVec32<T>::is_empty(&self) -> bool
-pub fn align::AlignedVec32<T>::len(&self) -> usize
 pub unsafe fn align::AlignedVec64<T>::as_mut_ptr(*mut Self) -> *mut T
 pub unsafe fn align::AlignedVec64<T>::as_mut_slice(*mut Self) -> *mut [T]
 pub fn align::AlignedVec64<T>::is_empty(&self) -> bool
@@ -83,10 +72,9 @@ pub unsafe fn aligned::Aligned<aligned::A8, [V; N]>::as_mut_slice(*mut Self) -> 
 pub fn aligned::Aligned<aligned::A8, [V; N]>::is_empty(&self) -> bool
 pub fn aligned::Aligned<aligned::A8, [V; N]>::len(&self) -> usize
 
-## trait impls (16 types)
+## trait impls (15 types)
 
 [T; N]: align::ArrayDefault
-align::AlignedVec32<T>: AsMut<[T]>, AsRef<[T]>, Default, Deref, DerefMut, ExternalAsMutPtr, Resizable, TryResizable
 align::AlignedVec64<T>: AsMut<[T]>, AsRef<[T]>, Default, Deref, DerefMut, ExternalAsMutPtr, Resizable, TryResizable
 aligned::Aligned<A, T>: align::ArrayDefault
 aligned::Aligned<aligned::A16, [V; N]>: ExternalAsMutPtr
@@ -105,5 +93,4 @@ u8: align::ArrayDefault
 ## auto traits
 
 0 types implement all of: Freeze, RefUnwindSafe, Send, Sync, Unpin, UnwindSafe
-align::AlignedVec32<T>: !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
-align::AlignedVec64<T>: !RefUnwindSafe !Send !Sync !Unpin !UnwindSafe
+align::AlignedVec64<T>: !RefUnwindSafe !Send !Sync !UnwindSafe
