@@ -22,7 +22,10 @@ the removed `zerocopy` feature; it does not model the bound changes, which were
 diffed from `cargo public-api` output by hand.
 
 ### Removed
-- The `aligned-vec` dependency: `AlignedVec32`/`AlignedVec64` now use an in-crate buffer
+- `AlignedVec32` and `DisjointMutArcSlice::try_new_unchecked` (no consumer; `rav1d-safe` uses
+  `AlignedVec64` and `try_new`). The measurement hooks `probe_declare_rows`,
+  `probe_declare_stride`, `probe_eval_rect` and `is_checked` are `#[doc(hidden)]`.
+- The `aligned-vec` dependency: `AlignedVec64` now uses an in-crate buffer
   (`src/aligned_buf.rs`, same public types and trait impls). `aligned-vec` 0.6.4's
   `extend_from_slice` bit-copies non-`Copy` elements; the wrappers never exposed it.
 - Internal measurement features (outside the supported API): `__tracker_legacy`,

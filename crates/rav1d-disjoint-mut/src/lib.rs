@@ -249,6 +249,7 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     }
 
     /// Returns `true` if this instance performs runtime overlap checking.
+    #[doc(hidden)]
     pub const fn is_checked(&self) -> bool {
         self.tracker.is_checked()
     }
@@ -519,6 +520,7 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointMutGuard<'a, T, V> {
     /// The guard's true footprint is `rows` spans of `w` elements, the first at
     /// absolute element offset `lo`, successive ones `stride` elements apart.
     #[inline(always)]
+    #[doc(hidden)]
     pub fn probe_declare_rows(&self, lo: usize, w: usize, rows: usize, stride: isize) {
         #[cfg(feature = "__probe_bounds")]
         self.probe.declare_rows(lo, w, rows, stride);
@@ -530,6 +532,7 @@ impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointMutGuard<'a, T, V> {
 impl<'a, T: ?Sized + AsMutPtr, V: ?Sized> DisjointImmutGuard<'a, T, V> {
     /// See [`DisjointMutGuard::probe_declare_rows`].
     #[inline(always)]
+    #[doc(hidden)]
     pub fn probe_declare_rows(&self, lo: usize, w: usize, rows: usize, stride: isize) {
         #[cfg(feature = "__probe_bounds")]
         self.probe.declare_rows(lo, w, rows, stride);
@@ -913,6 +916,7 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     ///
     /// A no-op, and absent from codegen, without the feature.
     #[inline(always)]
+    #[doc(hidden)]
     pub fn probe_declare_stride(&self, stride_bytes: isize) {
         #[cfg(feature = "__probe_bounds")]
         bounds_probe::declare_stride(
@@ -937,6 +941,7 @@ impl<T: ?Sized + AsMutPtr> DisjointMut<T> {
     ///
     /// A no-op, and absent from codegen, without the feature.
     #[inline(always)]
+    #[doc(hidden)]
     pub fn probe_eval_rect(
         &self,
         loc: &'static core::panic::Location<'static>,
@@ -2450,23 +2455,6 @@ impl<T: PlainData> DisjointMutArcSlice<T> {
         v.resize(n, value);
         Ok(Self {
             inner: Arc::new(DisjointMut::new_eager(v.into_boxed_slice())),
-        })
-    }
-
-    /// Like [`try_new`](Self::try_new) but without borrow tracking.
-    ///
-    /// # Safety
-    ///
-    /// See [`DisjointMut::dangerously_unchecked()`].
-    pub unsafe fn try_new_unchecked(
-        n: usize,
-        value: T,
-    ) -> Result<Self, alloc::collections::TryReserveError> {
-        let mut v = Vec::new();
-        v.try_reserve(n)?;
-        v.resize(n, value);
-        Ok(Self {
-            inner: Arc::new(unsafe { DisjointMut::dangerously_unchecked(v.into_boxed_slice()) }),
         })
     }
 }

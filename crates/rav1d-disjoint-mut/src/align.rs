@@ -6,7 +6,7 @@
 //!
 //! The wrapper types preserve the same public API as the previous custom
 //! implementations: `Align{4,8,16,32,64}<T>` for stack alignment and
-//! `AlignedVec{32,64}<T>` for heap-allocated aligned buffers.
+//! `AlignedVec64<T>` for heap-allocated aligned buffers.
 
 use crate::ExternalAsMutPtr;
 use crate::Resizable;
@@ -133,7 +133,7 @@ impl<A, T: ArrayDefault> ArrayDefault for aligned::Aligned<A, T> {
 
 /// A heap-allocated, 64-byte-aligned buffer.
 ///
-/// Wraps [`AlignedBuf<T, 64>`] with a [`Default`] impl and
+/// Wraps an in-crate 64-byte-aligned buffer with a [`Default`] impl and
 /// [`ExternalAsMutPtr`] integration for [`DisjointMut`](crate::DisjointMut).
 pub struct AlignedVec64<T>(AlignedBuf<T, 64>);
 
@@ -223,101 +223,6 @@ unsafe impl<T: crate::PlainData> ExternalAsMutPtr for AlignedVec64<T> {
     unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [T] {
         // SAFETY: Only creates &Self (SharedReadOnly). Heap data is a
         // separate allocation, so SharedReadOnly doesn't cover it.
-        let shared_ref = unsafe { &*ptr };
-        core::ptr::slice_from_raw_parts_mut(shared_ref.0.as_ptr().cast_mut(), shared_ref.0.len())
-    }
-
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
-/// A heap-allocated, 32-byte-aligned buffer.
-///
-/// Wraps [`AlignedBuf<T, 32>`] with a [`Default`] impl and
-/// [`ExternalAsMutPtr`] integration for [`DisjointMut`](crate::DisjointMut).
-pub struct AlignedVec32<T>(AlignedBuf<T, 32>);
-
-impl<T> AlignedVec32<T> {
-    /// Create a new empty aligned vector.
-    pub fn new() -> Self {
-        Self(AlignedBuf::new())
-    }
-
-    /// Resize the buffer, filling new elements with `value`.
-    pub fn resize(&mut self, new_len: usize, value: T)
-    where
-        T: Clone,
-    {
-        self.0.resize(new_len, value);
-    }
-}
-
-impl<T> Default for AlignedVec32<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<T> Deref for AlignedVec32<T> {
-    type Target = [T];
-    #[inline(always)]
-    fn deref(&self) -> &[T] {
-        self.0.as_slice()
-    }
-}
-
-impl<T> DerefMut for AlignedVec32<T> {
-    #[inline(always)]
-    fn deref_mut(&mut self) -> &mut [T] {
-        self.0.as_mut_slice()
-    }
-}
-
-impl<T> AsRef<[T]> for AlignedVec32<T> {
-    fn as_ref(&self) -> &[T] {
-        self.0.as_slice()
-    }
-}
-
-impl<T> AsMut<[T]> for AlignedVec32<T> {
-    fn as_mut(&mut self) -> &mut [T] {
-        self.0.as_mut_slice()
-    }
-}
-
-impl<T: Clone> Resizable for AlignedVec32<T> {
-    type Value = T;
-    fn resize(&mut self, new_len: usize, value: T) {
-        self.0.resize(new_len, value);
-    }
-}
-
-impl<T: Clone> TryResizable for AlignedVec32<T> {
-    type Value = T;
-    fn try_resize(
-        &mut self,
-        new_len: usize,
-        value: T,
-    ) -> Result<(), alloc::collections::TryReserveError> {
-        if new_len > self.0.len() {
-            self.0.try_reserve(new_len - self.0.len())?;
-        }
-        self.0.resize(new_len, value);
-        Ok(())
-    }
-}
-
-/// SAFETY: See [`AlignedVec64`]'s impl for rationale.
-unsafe impl<T: crate::PlainData> ExternalAsMutPtr for AlignedVec32<T> {
-    type Target = T;
-
-    unsafe fn as_mut_ptr(ptr: *mut Self) -> *mut T {
-        let shared_ref = unsafe { &*ptr };
-        shared_ref.0.as_ptr().cast_mut()
-    }
-
-    unsafe fn as_mut_slice(ptr: *mut Self) -> *mut [T] {
         let shared_ref = unsafe { &*ptr };
         core::ptr::slice_from_raw_parts_mut(shared_ref.0.as_ptr().cast_mut(), shared_ref.0.len())
     }

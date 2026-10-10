@@ -180,7 +180,7 @@ The primary API is `index()` / `index_mut()`, which return tracked guards. Prefe
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `std` | yes | Enables `std::thread::panicking()` for mutable guard poisoning on panic. |
-| `aligned` | no | Aligned newtypes (`Align4`..`Align64`) and `AlignedVec32`/`AlignedVec64` for SIMD-friendly layout. |
+| `aligned` | no | Aligned newtypes (`Align4`..`Align64`) and `AlignedVec64` for SIMD-friendly layout. |
 | `pic-buf` | no | `PicBuf`: owned byte buffer with alignment offset for `DisjointMut`. |
 | `instrument` | no | Reserved: currently gates no code (kept so manifests that name it keep resolving). Implies `std`. |
 | `untracked` | no | Remove overlap tracking from every instance; bounds checks stay on. Opt-in, UB on overlap by design. See above. |

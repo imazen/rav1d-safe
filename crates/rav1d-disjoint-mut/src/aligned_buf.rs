@@ -1,6 +1,6 @@
 //! A minimal heap buffer whose allocation start is aligned to a const `ALIGN`.
 //!
-//! This is the only storage `AlignedVec32`/`AlignedVec64` need: create empty, grow with
+//! This is the only storage `AlignedVec64` needs: create empty, grow with
 //! `resize`/`try_reserve`, view as a slice, hand out the base pointer. It replaces the
 //! general-purpose `aligned-vec` dependency so that the surface we vouch for is exactly the
 //! surface we use (no `extend_from_slice`, `insert`, `drain`, boxed-slice conversions, ...).
