@@ -132,6 +132,10 @@ fn cross_thread_overlap_is_rejected() {
     drop(dm.index_mut(0..64));
 }
 
+// Poisoning on unwind needs `std::thread::panicking()`; without `std` a guard cannot tell it is
+// being dropped by an unwinding thread (README, "Cargo features"). The two tests below pin both
+// sides of that documented difference.
+#[cfg(feature = "std")]
 #[test]
 fn panic_in_other_thread_with_live_mut_guard_poisons() {
     let dm = Arc::new(DisjointMut::new(vec![0u8; 64]));
@@ -144,6 +148,23 @@ fn panic_in_other_thread_with_live_mut_guard_poisons() {
     };
     assert!(t.join().is_err());
     assert!(panics(|| drop(dm.index(40))));
+}
+
+#[cfg(not(feature = "std"))]
+#[test]
+fn without_std_a_panicking_mut_guard_releases_without_poisoning() {
+    let dm = Arc::new(DisjointMut::new(vec![0u8; 64]));
+    let t = {
+        let dm = dm.clone();
+        thread::spawn(move || {
+            let _g = dm.index_mut(0..8);
+            panic!("boom with live mut guard");
+        })
+    };
+    assert!(t.join().is_err());
+    // Documented limitation: no poisoning, but the region is released.
+    drop(dm.index_mut(0..8));
+    drop(dm.index(40));
 }
 
 #[test]
