@@ -45,10 +45,14 @@ assessment of design is from reading the diffs.
 ## Other open items
 
 - **Aligned storage.** `AlignedVec64` (about 75 `u8` buffers plus the refmvs arrays) is only needed for
-  the `asm` / `c-ffi` builds; the safe SIMD uses unaligned loads. A paired A/B of 64-byte vs 1-byte
-  alignment is queued (`paired-noalign`). If it is free: plain `Vec<u8>` / `Vec<T>` in the default build, and
-  keep the aligned buffer only for `asm`/`c-ffi`. If it helps: a zerocopy `Vec<#[repr(align(64))] Chunk>` for
-  `u8` only (no unsafe); the refmvs types need no 64-byte alignment.
+  the `asm` / `c-ffi` builds; the safe SIMD uses unaligned loads. Paired A/B of 64-byte vs 1-byte alignment
+  (2026-10-11, r7900x / Zen 4, tip `d34abb60`, four clips, 1 and 4 workers, both modes, with A/A controls):
+  median ratios are 0.987-1.012 in 15 of 16 cells; the sixteenth (safe, svt 1080p, 4 workers) is 1.042 against
+  an A/A control of 1.059. Alignment costs nothing measurable. Next: plain `Vec<u8>` / `Vec<T>` in the default
+  build (the aligned buffer stays for `asm` / `c-ffi`, which need it); the refmvs types need no 64-byte
+  alignment. Not done yet. The same session's api-vs-`f3132ee6` timing is usable only for the untracked cells
+  (0.995-1.011); the tracked cells ran at load 18-19 and their A/A minimum ratios span 0.794-1.386, so they show
+  nothing either way.
 - **Smaller public API of rav1d-disjoint-mut.** `dangerously_unchecked` is a documented `unsafe` constructor
   that only a probe example uses. Folding the crate into rav1d-safe as a private module would leave one
   published API, at the cost of its independent Miri / loom / CI setup.
