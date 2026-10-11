@@ -59,10 +59,12 @@ impl<T, const ALIGN: usize> AlignedBuf<T, ALIGN> {
     pub(crate) const fn new() -> Self {
         let () = Self::CHECK;
         Self {
-            // A non-null, `ALLOC_ALIGN`-aligned address that is never dereferenced.
-            ptr: NonNull::without_provenance(
-                core::num::NonZeroUsize::new(Self::ALLOC_ALIGN).unwrap(),
-            ),
+            // A non-null, `ALLOC_ALIGN`-aligned address that is never dereferenced
+            // (`NonNull::without_provenance` needs 1.89; this crate's MSRV is 1.85).
+            ptr: match NonNull::new(core::ptr::without_provenance_mut(Self::ALLOC_ALIGN)) {
+                Some(p) => p,
+                None => panic!("ALLOC_ALIGN is never zero"),
+            },
             len: 0,
             cap: if Self::ZST { usize::MAX } else { 0 },
         }
