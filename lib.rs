@@ -94,6 +94,9 @@ compile_error!(
     "No bitdepths enabled. Enable one or more of the following features: `bitdepth_8`, `bitdepth_16`"
 );
 
+// The dav1d-shaped header types and constants are a complete C-port table; the Rust API only
+// reaches some of them, so being private must not turn the rest into dead-code warnings.
+#[allow(dead_code, clippy::wrong_self_convention)]
 mod include {
     pub mod common {
         pub(crate) mod attributes;

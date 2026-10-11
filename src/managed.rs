@@ -62,7 +62,7 @@ use std::sync::Arc;
 /// Cooperative cancellation token support (issue #412). Re-exported from the
 /// [`enough`] crate so callers can pass a `&dyn Stop` / `Arc<dyn Stop>` to
 /// [`Decoder::set_stop`] without depending on `enough` directly.
-pub use enough::{Stop, StopReason, Unstoppable};
+use enough::Stop;
 
 /// Decoder errors
 #[derive(Debug, Clone, PartialEq, Eq)]

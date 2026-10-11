@@ -35,10 +35,6 @@ impl<T: Atom> RelaxedAtomic<T> {
     pub fn update(&self, f: impl Fn(T) -> T) {
         self.set(f(self.get()));
     }
-
-    pub fn inner(&self) -> &Atomic<T> {
-        &self.inner
-    }
 }
 
 impl<T: Atom + Copy> RelaxedAtomic<T> {

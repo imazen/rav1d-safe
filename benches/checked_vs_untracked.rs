@@ -11,7 +11,7 @@
 //!     --no-default-features --features "bitdepth_8,bitdepth_16,untracked" \
 //!     -- --baseline=checked
 
-use rav1d_safe::{self, CpuLevel, Decoder, Settings};
+use rav1d_safe::{CpuLevel, Decoder, Settings};
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use zenbench::prelude::*;
@@ -47,7 +47,7 @@ fn decode(obu: &[u8], cpu: CpuLevel) {
 }
 
 fn bench_decode(suite: &mut Suite) {
-    let mode = if managed::is_untracked() {
+    let mode = if rav1d_safe::__internal::is_untracked() {
         "untracked"
     } else {
         "tracked"
