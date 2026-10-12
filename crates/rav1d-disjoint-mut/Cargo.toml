@@ -53,7 +53,7 @@ __probe_sites = ["std"]
 # registration. Internal diagnostic; absent from `default` and from every supported
 # feature. See src/bounds_probe.rs.
 __probe_bounds = ["std", "__probe_sites"]
-# Aligned newtypes (Align4..64) and AlignedVec32/64 for SIMD-friendly layout.
+# Aligned newtypes (Align4..64) and AlignedVec64 for SIMD-friendly layout.
 aligned = ["dep:aligned"]
 # PicBuf: owned/borrowed byte buffer for DisjointMut (used by rav1d picture data).
 pic-buf = []

@@ -27,12 +27,14 @@ fmt:
 fmt-check:
     cargo fmt --check
 
-# Feature permutation checks
+# Feature permutation checks — mirrors .github/workflows/disjoint-mut-ci.yml.
+# There is deliberately no --all-features leg: `untracked` disables tracking by
+# construction and `__probe_count` conflicts with `__probe_usage` (compile_error).
 feature-check:
-    cargo test --all-features
     cargo test --no-default-features
-    cargo test --features instrument
-    cargo test --features aligned
+    cargo test --lib --features std,__probe_count,__probe_sites
+    cargo test --features aligned,pic-buf
+    cargo test --features __probe_wide --test wide_exclusion
 
 # Run all CI checks locally
 ci: fmt-check clippy test feature-check
