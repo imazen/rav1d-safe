@@ -513,7 +513,7 @@ test-filmgrain-rows:
 # Native ARM interleaved decoder tiers; requires the explicit IVF fixtures.
 arm-tiers-macos:
     mkdir -p "$HOME/tmp"
-    CARGO_BUILD_JOBS=4 RAYON_NUM_THREADS=4 OMP_NUM_THREADS=4 TMPDIR="$HOME/tmp" nice -n 19 cargo bench --locked -p rav1d-safe --bench tier_isolation -- --format=llm > "$HOME/tmp/rav1d-arm-tiers.log" 2>&1
+    CARGO_BUILD_JOBS=4 RAYON_NUM_THREADS=4 OMP_NUM_THREADS=4 TMPDIR="$HOME/tmp" nice -n 19 cargo bench -p rav1d-safe --bench tier_isolation -- --cpu-policy=unrestricted --format=llm > "$HOME/tmp/rav1d-arm-tiers.log" 2>&1
 
 
 # #526: actual frame contexts plus a 32-tile stream, and concurrent decoders.
