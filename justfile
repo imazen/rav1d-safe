@@ -529,3 +529,9 @@ test-strictness:
 # Replay one differential artifact without a sweep; requires system libdav1d.
 repro-differential artifact:
     cargo +nightly fuzz run differential_dav1d --features differential {{artifact}} -- -runs=1
+
+# Isolated tests preserve process-wide dispatch permutation state.
+beta-cohort-check:
+    cargo fmt --check
+    cargo clippy --locked --lib --no-default-features --features bitdepth_8,bitdepth_16 -- -D warnings
+    cargo nextest run --locked --release --lib --test-threads 4 --no-default-features --features bitdepth_8,bitdepth_16
