@@ -366,9 +366,7 @@ fn main() {
             "-q" | "--quiet" => quiet = true,
             "--per-frame" => per_frame = true,
             "--scalar" => level = Some(rav1d_safe::CpuLevel::Scalar),
-            "--lenient" => {
-                settings_strictness = Some(rav1d_safe::Strictness::Lenient)
-            }
+            "--lenient" => settings_strictness = Some(rav1d_safe::Strictness::Lenient),
             "--level" => {
                 use rav1d_safe::CpuLevel as L;
                 level = Some(match it.next().as_deref() {
@@ -463,8 +461,8 @@ fn main() {
         settings.decode_frame_type = ft;
     }
     #[cfg(target_arch = "aarch64")]
-    let _arm_scalar_guard = (settings.cpu_level == rav1d_safe::CpuLevel::Scalar)
-        .then(ArmScalarGuard::new);
+    let _arm_scalar_guard =
+        (settings.cpu_level == rav1d_safe::CpuLevel::Scalar).then(ArmScalarGuard::new);
     #[cfg(target_arch = "x86_64")]
     let _x86_tier_guard = X86TierGuard::for_level(settings.cpu_level);
     #[cfg(target_arch = "x86_64")]
