@@ -146,10 +146,6 @@ jobs:
             features: "bitdepth_8,bitdepth_16,c-ffi"
             label: c-ffi-arm64
 
-          # macOS Intel (x86_64) — catch Intel-specific issues
-          - os: macos-26-intel
-            features: "bitdepth_8,bitdepth_16"
-            label: safe-simd
 
           # ASM builds on native x86_64 and ARM64 hardware
           - os: ubuntu-latest
