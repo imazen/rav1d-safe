@@ -4,6 +4,10 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Dependency compatibility
+
+- Admit archmage/magetypes 0.9.31-beta.1 in the current-main tool graph while retaining compatible stable requirements (`48e796ca`). Strict dual-bit-depth library lint and process-isolated release library tests pass.
+
 ### Breaking (0.7.0)
 - **The managed decoder is the whole public API.** `rav1d_safe::src` and `rav1d_safe::include`
   are private. Outside this repository (zenavif, heic, zenrav1e) only the managed types were
