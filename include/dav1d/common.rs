@@ -57,7 +57,7 @@ pub(crate) struct Rav1dDataProps {
     pub size: usize,
     pub user_data: Rav1dUserData,
     /// Managed Rust presentation context. The C ABI has its separate user data.
-    pub context: Option<Arc<dyn Any + Send + Sync>>,
+    pub context: Option<Arc<dyn Any + Send + Sync + core::panic::RefUnwindSafe>>,
 }
 
 impl Default for Rav1dDataProps {

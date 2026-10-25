@@ -56,8 +56,8 @@ Every presentation produced by one packet inherits its metadata, so combine
 temporal units only if this association is intentional. A FIFO guess based on
 one input packet equaling one output frame is not the protocol.
 
-`Packet::with_context(Arc<dyn Any + Send + Sync>)` carries additional owned,
-opaque presentation context. `Frame::context()` returns a borrowed Arc; use
+`Packet::with_context(Arc<dyn Any + Send + Sync + RefUnwindSafe>)` carries additional owned,
+opaque presentation context. `Frame::context()` returns a borrowed value; use
 `downcast_ref` to recover the adapter's type. An adapter can snapshot its clock,
 configuration epoch and container color at acceptance, then use that snapshot
 when delayed output arrives. It must not consult the latest track configuration
@@ -71,6 +71,8 @@ The final owner releases the value. This does not acknowledge completion after
 one frame or guarantee release at end-of-input: the decoder may still retain
 reference pictures. Avoid a reference cycle back to the decoder. Context is
 not parsed metadata and is not included in decoder diagnostics.
+The `RefUnwindSafe` bound preserves the pre-existing unwind-safety traits of
+`Packet`; immutable configuration snapshots satisfy it.
 
 `end_input` declares EOF without allocating a result vector. `receive` returns
 one picture at a time and waits for delayed frame-threaded output before EOS.
@@ -132,3 +134,13 @@ passed with one and four configured workers; the two native test binaries
 passed every selected case. Resource-wrapper receipt: rc=0, 32 s, peak RSS
 1.10 GiB, minimum available 15284 MiB, peak load 1.49. This measures the build
 and test process, not decoder workspace or context overhead.
+
+Final validation adds native parse-error and cancellation cleanup and a
+compile-time check that `Packet` keeps its original Send/Sync/unwind traits.
+`just qualify-packet-context` passes the native cases in checked and untracked
+modes, strict library/integration Clippy, C-FFI and WASM builds, ten active
+doctests (the thirteen existing ignored examples are unchanged), and generated
+public API snapshots. The borrowed context accessor performs no Arc clone.
+The final command ran with a ten-minute deadline and completed normally:
+rc=0, 59 s, peak RSS 1.10 GiB, minimum available 15337 MiB, peak load 1.65.
+Decoder workspace and performance overhead remain unmeasured here.

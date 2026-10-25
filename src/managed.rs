@@ -683,7 +683,12 @@ impl Packet {
     /// retain shared ownership as needed. End of input does not clear reference
     /// pictures. The last owner releases the value; this is not a per-frame
     /// completion notification. Avoid owning the decoder from its own context.
-    pub fn with_context(mut self, context: Arc<dyn core::any::Any + Send + Sync>) -> Self {
+    /// The context must also be `RefUnwindSafe`, preserving the packet's
+    /// existing unwind-safety contract while its opaque value is shared.
+    pub fn with_context(
+        mut self,
+        context: Arc<dyn core::any::Any + Send + Sync + core::panic::RefUnwindSafe>,
+    ) -> Self {
         self.inner.m.context = Some(context);
         self
     }
@@ -1247,12 +1252,16 @@ impl Frame {
 
     /// Opaque context from the packet responsible for this presentation.
     ///
-    /// Use `downcast_ref` to recover the adapter's type, or clone the `Arc` to
-    /// retain it independently. Frame clones share the same context. Existing
+    /// Use `downcast_ref` to recover the adapter's type. Frame clones share the
+    /// same context; clone the frame or the recovered value to retain it. Existing
     /// frames keep their context when the decoder resets or drops. This is
     /// separate from metadata parsed from the AV1 bitstream.
-    pub fn context(&self) -> Option<&Arc<dyn core::any::Any + Send + Sync>> {
-        self.inner.m.context.as_ref()
+    pub fn context(&self) -> Option<&(dyn core::any::Any + Send + Sync)> {
+        self.inner
+            .m
+            .context
+            .as_deref()
+            .map(|value| value as &(dyn core::any::Any + Send + Sync))
     }
 }
 

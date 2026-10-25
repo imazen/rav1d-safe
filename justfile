@@ -143,6 +143,18 @@ test-packet-context features="bitdepth_8,bitdepth_16":
 packet-context-sync destination:
     rsync -a --exclude .git --exclude .jj --exclude .workongoing --exclude target --exclude Cargo.lock ./ "{{destination}}/"
 
+check-packet-context:
+    cargo clippy --locked --no-default-features --features bitdepth_8,bitdepth_16 --lib --test managed_packets --test presentation_provenance -- -D warnings
+    cargo check --locked --no-default-features --features bitdepth_8,bitdepth_16,c-ffi
+    cargo check --locked --target wasm32-unknown-unknown --no-default-features --features bitdepth_8,bitdepth_16
+    cargo test --locked --doc --no-default-features --features bitdepth_8,bitdepth_16
+    just api-doc
+
+qualify-packet-context:
+    just test-packet-context
+    just test-packet-context bitdepth_8,bitdepth_16,untracked
+    just check-packet-context
+
 # Native ARM regression for concurrent reference-frame reconstruction.
 test-mc-reference:
     cargo nextest run --cargo-profile release-thin --lib -E 'test(interpolation_reads_leave_unrelated_reconstruction_rows_available)'

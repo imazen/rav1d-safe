@@ -2,6 +2,12 @@
 use rav1d_safe::{Decoder, Frame, Packet, Planes, ReceiveStatus, SendStatus, Settings};
 use std::sync::Arc;
 
+#[test]
+fn packet_retains_its_public_auto_traits() {
+    fn require<T: Send + Sync + std::panic::RefUnwindSafe + std::panic::UnwindSafe>() {}
+    require::<Packet>();
+}
+
 fn temporal_units() -> Vec<Vec<u8>> {
     let data = include_bytes!("media_vectors/av1-10-420-full-17x13.ivf");
     assert_eq!(&data[..4], b"DKIF");
@@ -347,7 +353,7 @@ fn packet_context_lives_with_all_presentations_and_their_clones() {
                 Some(&(7, "old configuration"))
             );
             assert!(value.downcast_ref::<String>().is_none());
-            assert!(Arc::ptr_eq(value, frames[0].context().unwrap()));
+            assert!(std::ptr::eq(value, frames[0].context().unwrap()));
         }
         let retained = frames[0].clone();
         decoder.reset();
@@ -451,6 +457,57 @@ fn packet_context_survives_film_grain_picture_copy() {
         }
         drop(decoder);
         drop(frames);
+        drop(packet);
+        assert!(weak.upgrade().is_none());
+    }
+}
+
+#[test]
+fn packet_context_parse_error_retains_input_until_caller_releases_it() {
+    let context = Arc::new(17_u32);
+    let weak = Arc::downgrade(&context);
+    let mut packet = Packet::new(vec![0xff]).unwrap().with_context(context);
+    let mut decoder = Decoder::new().unwrap();
+    let error = decoder.send_packet(&mut packet).unwrap_err();
+    assert_eq!(error.error(), &rav1d_safe::Error::InvalidData);
+    assert_eq!(packet.len(), 1);
+    decoder.reset();
+    assert!(weak.upgrade().is_some());
+    drop(packet);
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn packet_context_cancelled_decode_releases_owners_on_reset_and_drop() {
+    struct Cancel;
+    impl enough::Stop for Cancel {
+        fn check(&self) -> Result<(), enough::StopReason> {
+            Err(enough::StopReason::Cancelled)
+        }
+    }
+    for threads in [1, 4] {
+        let context = Arc::new(17_u32);
+        let weak = Arc::downgrade(&context);
+        let mut packet = Packet::new(temporal_units().concat())
+            .unwrap()
+            .with_context(context);
+        let mut settings = Settings::default();
+        settings.threads = threads;
+        settings.max_frame_delay = 4;
+        let mut decoder = Decoder::with_settings(settings).unwrap();
+        decoder.set_stop(Some(Arc::new(Cancel)));
+        match decoder.send_packet(&mut packet) {
+            Err(error) => assert_eq!(error.error(), &rav1d_safe::Error::Cancelled),
+            Ok(SendStatus::Accepted) => {
+                decoder.end_input();
+                match decoder.receive() {
+                    Err(error) => assert_eq!(error.error(), &rav1d_safe::Error::Cancelled),
+                    Ok(_) => panic!("cancelled input produced a successful receive"),
+                }
+            }
+            Ok(_) => panic!("first input cannot be backpressured"),
+        }
+        decoder.reset();
         drop(packet);
         assert!(weak.upgrade().is_none());
     }
