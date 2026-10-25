@@ -140,6 +140,16 @@ clippy-lib:
 test-packet-context features="bitdepth_8,bitdepth_16":
     cargo nextest run --cargo-profile release-thin --locked --no-default-features --features "{{features}}" --test managed_packets --test presentation_provenance --test-threads 1
 
+# Native picture-plane admission, separate from whole-decoder workspace bounds.
+test-picture-budget features="bitdepth_8,bitdepth_16":
+    cargo nextest run --cargo-profile release-thin --locked --no-default-features --features "{{features}}" --lib --test managed_packets -E 'test(picture_budget)' --test-threads 1
+
+qualify-picture-budget:
+    just test-picture-budget
+    just test-picture-budget bitdepth_8,bitdepth_16,untracked
+    just test-picture-budget bitdepth_8,bitdepth_16,c-ffi
+    just qualify-packet-context
+
 packet-context-sync destination:
     rsync -a --exclude .git --exclude .jj --exclude .workongoing --exclude target --exclude Cargo.lock ./ "{{destination}}/"
 

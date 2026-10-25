@@ -560,6 +560,8 @@ use crate::src::error::Rav1dError;
 use crate::src::error::Rav1dError::EINVAL;
 use crate::src::error::Rav1dResult;
 use crate::src::mem::MemPool;
+#[cfg(not(feature = "c-ffi"))]
+use crate::src::mem::{PictureBudget, PictureReservation};
 #[cfg(asm_fn_ptrs)]
 use crate::src::pixels::Pixels;
 #[cfg(feature = "c-ffi")]
@@ -2100,6 +2102,8 @@ pub struct Rav1dPictureData {
 pub struct Rav1dPictureData {
     pub data: [Rav1dPictureDataComponent; 3],
     pub(crate) allocator: Rav1dPicAllocator,
+    // Drops after the plane buffers, including on partial construction failure.
+    reservation: Option<PictureReservation>,
 }
 
 #[cfg(feature = "c-ffi")]
@@ -2119,7 +2123,7 @@ impl Drop for Rav1dPictureData {
     fn drop(&mut self) {
         for component in &mut self.data {
             if let Some(buf) = component.take_buf() {
-                if !buf.is_empty() {
+                if self.reservation.is_none() && !buf.is_empty() {
                     self.allocator.pool.push(buf);
                 }
             }
@@ -2444,6 +2448,7 @@ pub(crate) struct Rav1dPicAllocator {
 #[derive(Clone, Default)]
 pub(crate) struct Rav1dPicAllocator {
     pub(crate) pool: Arc<MemPool<u8>>,
+    pub(crate) budget: Option<Arc<PictureBudget>>,
 }
 
 #[cfg(feature = "c-ffi")]
@@ -2555,6 +2560,13 @@ impl Rav1dPicAllocator {
 
 #[cfg(not(feature = "c-ffi"))]
 impl Rav1dPicAllocator {
+    pub(crate) fn with_limit(limit: Option<usize>) -> Self {
+        Self {
+            pool: Arc::default(),
+            budget: limit.map(|limit| Arc::new(PictureBudget::new(limit))),
+        }
+    }
+
     pub fn alloc_picture_data(
         &self,
         w: c_int,
@@ -2601,22 +2613,48 @@ impl Rav1dPicAllocator {
         let y_sz = round_up(y_sz)?;
         let uv_sz = round_up(uv_sz)?;
 
-        // Allocate per-plane buffers with alignment padding (checked add — see above).
-        let alloc_plane = |sz: usize| -> Result<Vec<u8>, Rav1dError> {
+        let allocation_len = |sz: usize| -> Rav1dResult<usize> {
             if sz == 0 {
+                Ok(0)
+            } else {
+                sz.checked_add(RAV1D_PICTURE_ALIGNMENT)
+                    .ok_or(Rav1dError::ENOMEM)
+            }
+        };
+        let y_len = allocation_len(y_sz)?;
+        let uv_len = allocation_len(uv_sz)?;
+        let requested = uv_len
+            .checked_mul(2)
+            .and_then(|uv| y_len.checked_add(uv))
+            .ok_or(Rav1dError::ENOMEM)?;
+        // Reserve the complete picture before allocating its first plane. The
+        // guard rolls back on every subsequent allocation error or unwind.
+        let reservation = self
+            .budget
+            .as_ref()
+            .map(|budget| budget.reserve(requested))
+            .transpose()?;
+
+        // Allocate per-plane buffers with alignment padding (checked add — see above).
+        let alloc_plane = |alloc_len: usize| -> Result<Vec<u8>, Rav1dError> {
+            if alloc_len == 0 {
                 return Ok(Vec::new());
             }
-            let alloc_len = sz
-                .checked_add(RAV1D_PICTURE_ALIGNMENT)
-                .ok_or(Rav1dError::ENOMEM)?;
+            if reservation.is_some() {
+                let mut buf = Vec::new();
+                buf.try_reserve_exact(alloc_len)
+                    .map_err(|_| Rav1dError::ENOMEM)?;
+                buf.resize(alloc_len, 0);
+                return Ok(buf);
+            }
             self.pool
                 .pop_init(alloc_len, 0)
                 .map_err(|_| Rav1dError::ENOMEM)
         };
 
-        let y_buf = alloc_plane(y_sz)?;
-        let u_buf = alloc_plane(uv_sz)?;
-        let v_buf = alloc_plane(uv_sz)?;
+        let y_buf = alloc_plane(y_len)?;
+        let u_buf = alloc_plane(uv_len)?;
+        let v_buf = alloc_plane(uv_len)?;
 
         let data = [
             Rav1dPictureDataComponent::from_parts(
@@ -2641,6 +2679,7 @@ impl Rav1dPicAllocator {
             data: Some(Arc::new(Rav1dPictureData {
                 data,
                 allocator: self.clone(),
+                reservation,
             })),
             ..Default::default()
         };

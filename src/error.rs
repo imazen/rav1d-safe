@@ -38,6 +38,11 @@ pub enum Rav1dError {
     /// case, but the managed API authoritatively reports cancellation by
     /// re-checking the caller's token, not by this code.
     ECANCELED = 125,
+
+    /// Native picture-plane admission refused. Never crosses the C ABI;
+    /// the managed C-FFI configuration rejects this unsupported requirement.
+    #[cfg(not(feature = "c-ffi"))]
+    EPICLIMIT = 254,
 }
 
 impl Rav1dError {

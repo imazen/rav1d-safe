@@ -102,6 +102,8 @@ impl From<Rav1dError> for Error {
             Rav1dError::ENOMEM => Self::OutOfMemory,
             Rav1dError::EINVAL => Self::InvalidData,
             Rav1dError::ECANCELED => Self::Cancelled,
+            #[cfg(not(feature = "c-ffi"))]
+            Rav1dError::EPICLIMIT => Self::Other("native picture storage limit exceeded".into()),
             Rav1dError::EGeneric => Self::Other("generic error".to_string()),
             _ => Self::Other(format!("{:?}", err)),
         }
@@ -208,6 +210,22 @@ pub struct Settings {
     /// Frames exceeding this limit are rejected during OBU parsing with `Err(InvalidData)`.
     pub frame_size_limit: u32,
 
+    /// Limit the sum of requested native picture-plane allocation bytes.
+    ///
+    /// Counts alignment and padded rows across reconstruction, reference frames,
+    /// film-grain copies and caller-held frames. Admission happens before plane
+    /// allocation. A picture stays charged until its last native owner drops,
+    /// even after reset or decoder destruction. `Some(0)` refuses every picture;
+    /// `None` keeps the ordinary pooled allocator.
+    ///
+    /// Bounded pictures bypass the reusable plane cache so freed storage cannot
+    /// outlive its charge. This excludes decoder workspace, input, metadata,
+    /// thread stacks, allocator overhead and excess allocator capacity. It is
+    /// not a process-memory or total decoder-memory bound. Refusal is reported
+    /// as `Error::Other("native picture storage limit exceeded")` with a trace.
+    /// The `c-ffi` build rejects `Some(_)` at construction.
+    pub max_picture_bytes: Option<usize>,
+
     /// Decode all layers or just the selected operating point
     pub all_layers: bool,
 
@@ -304,6 +322,7 @@ impl Default for Settings {
             threads: 1,
             apply_grain: true,
             frame_size_limit: 120_000_000, // 120 MP (admits 108 MP phone photos)
+            max_picture_bytes: None,
             all_layers: true,
             operating_point: 0,
             max_frame_delay: 0,
@@ -335,6 +354,12 @@ fn env_logger_enabled() -> bool {
 impl From<Settings> for Rav1dSettings {
     fn from(settings: Settings) -> Self {
         let strictness = settings.effective_strictness();
+        #[cfg(not(feature = "c-ffi"))]
+        let allocator = crate::include::dav1d::picture::Rav1dPicAllocator::with_limit(
+            settings.max_picture_bytes,
+        );
+        #[cfg(feature = "c-ffi")]
+        let allocator = Default::default();
         Self {
             n_threads: settings.threads as i32,
             max_frame_delay: settings.effective_frame_delay(),
@@ -342,7 +367,7 @@ impl From<Settings> for Rav1dSettings {
             operating_point: settings.operating_point,
             all_layers: settings.all_layers,
             frame_size_limit: settings.frame_size_limit,
-            allocator: Default::default(),
+            allocator,
             logger: if env_logger_enabled() {
                 Some(crate::src::log::Rav1dLogger::Stderr)
             } else {
@@ -770,6 +795,13 @@ impl Decoder {
     // about 1.3 MiB taken by thread-local scratch, so every extra KB counts.
     #[inline(never)]
     pub fn with_settings(settings: Settings) -> Result<Self> {
+        #[cfg(feature = "c-ffi")]
+        if settings.max_picture_bytes.is_some() {
+            return Err(Error::InvalidSettings(
+                "native picture storage limits are unavailable with c-ffi",
+            )
+            .into());
+        }
         // Apply CPU feature level mask before decoder init (affects SIMD dispatch)
         crate::src::cpu::rav1d_set_cpu_flags_mask(settings.cpu_level.to_mask());
 
@@ -1895,3 +1927,7 @@ mod frame_delay_tests;
 #[cfg(all(test, not(feature = "untracked")))]
 #[path = "managed/frame_tile_tests.rs"]
 mod frame_tile_tests;
+
+#[cfg(all(test, not(feature = "c-ffi")))]
+#[path = "managed/picture_budget_tests.rs"]
+mod picture_budget_tests;

@@ -199,6 +199,59 @@ fn empty_stream_ends_without_a_frame_and_empty_packets_are_rejected() {
     assert!(decoder.decode(&[]).unwrap().is_none());
 }
 
+#[cfg(not(feature = "c-ffi"))]
+#[test]
+fn picture_budget_applies_to_native_decode_before_publication() {
+    for threads in [1, 4] {
+        for limit in [0, 1, 128] {
+            let mut settings = Settings::default();
+            settings.threads = threads;
+            settings.max_frame_delay = 4;
+            settings.max_picture_bytes = Some(limit);
+            let mut decoder = Decoder::with_settings(settings).unwrap();
+            let result = decoder.decode(&temporal_units().concat());
+            let error = match result {
+                Err(error) => error,
+                Ok(None) => match decoder.flush() {
+                    Err(error) => error,
+                    Ok(_) => panic!("native admission did not report refusal"),
+                },
+                Ok(Some(_)) => panic!("picture escaped before native admission"),
+            };
+            assert!(
+                matches!(error.error(), rav1d_safe::Error::Other(message) if message == "native picture storage limit exceeded"),
+                "{error:?}"
+            );
+        }
+        let mut settings = Settings::default();
+        settings.threads = threads;
+        settings.max_frame_delay = 4;
+        settings.apply_grain = false;
+        settings.max_picture_bytes = Some(1 << 20);
+        let mut decoder = Decoder::with_settings(settings).unwrap();
+        let mut frames = Vec::new();
+        if let Some(frame) = decoder.decode(&temporal_units().concat()).unwrap() {
+            frames.push(frame);
+        }
+        frames.extend(decoder.flush().unwrap());
+        drop(decoder);
+        assert_eq!(frames.len(), 4);
+        for (index, frame) in frames.iter().enumerate() {
+            check_pixels(frame, index);
+        }
+    }
+}
+
+#[cfg(feature = "c-ffi")]
+#[test]
+fn picture_budget_refuses_an_unqualified_ffi_allocator_at_construction() {
+    let mut settings = Settings::default();
+    settings.max_picture_bytes = Some(0);
+    assert!(
+        matches!(Decoder::with_settings(settings), Err(error) if matches!(error.error(), rav1d_safe::Error::InvalidSettings(_)))
+    );
+}
+
 #[test]
 fn end_input_waits_for_delayed_first_frame_without_an_earlier_poll() {
     for threads in [1, 4] {

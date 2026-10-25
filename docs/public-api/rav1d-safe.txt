@@ -6,7 +6,7 @@
 # impls omitted; re-export duplicates annotated `[also: path]`.
 # DO NOT EDIT BY HAND — commit regenerated changes with the code.
 #
-# files: rav1d-safe.txt 229 lines (supported surface) | rav1d-safe.features.txt 0 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,c-ffi,dav1d-compat,libc,partial_asm,untracked) | rav1d-safe.internal.txt 179 lines (224 hidden + 0 excluded-feature)
+# files: rav1d-safe.txt 230 lines (supported surface) | rav1d-safe.features.txt 0 added (features: asm,asm_arm64_dotprod,asm_arm64_i8mm,asm_arm64_sve2,bitdepth_16,bitdepth_8,c-ffi,dav1d-compat,libc,partial_asm,untracked) | rav1d-safe.internal.txt 179 lines (224 hidden + 0 excluded-feature)
 
 ## summary
 #
@@ -15,16 +15,16 @@
 #   pub consts/statics                          9
 #   free functions                              1
 #   inherent methods                           58
-#   struct fields                              27
+#   struct fields                              28
 #   enum variants                              80
 #   trait roster entries (type × trait)        83
 #   auto-trait-complete types                  17
 #   auto-trait exceptions                       8
 #
 # per-module pub lines:
-#   (root)                          202
+#   (root)                          203
 
-## items (202 lines)
+## items (203 lines)
 
 pub mod rav1d_safe
 #[repr(u8)] pub enum ColorPrimaries
@@ -221,6 +221,7 @@ pub Settings::decode_frame_type: DecodeFrameType
 pub Settings::frame_size_limit: u32
 pub Settings::inloop_filters: InloopFilters
 pub Settings::max_frame_delay: u32
+pub Settings::max_picture_bytes: core::option::Option<usize>
 pub Settings::operating_point: u8
 pub Settings::output_invisible_frames: bool
 pub Settings::strict_std_compliance: bool
