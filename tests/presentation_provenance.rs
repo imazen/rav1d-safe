@@ -1,5 +1,6 @@
 //! Output provenance must not be inferred from a retained reference header.
 use rav1d_safe::{Decoder, Frame, Packet, Planes, ReceiveStatus, SendStatus, Settings, Strictness};
+use std::sync::Arc;
 
 fn units() -> Vec<(usize, Vec<u8>)> {
     let data = include_bytes!("media_vectors/native-reordered-17x17-444.obu");
@@ -59,7 +60,8 @@ fn reordered_presentations_keep_their_own_flags_and_packet_offsets() {
             let mut packet = Packet::new(bytes.clone())
                 .unwrap()
                 .with_timestamp(i as i64 * 1001)
-                .with_offset(*offset as i64);
+                .with_offset(*offset as i64)
+                .with_context(Arc::new(i));
             loop {
                 match decoder.send_packet(&mut packet).unwrap() {
                     SendStatus::Accepted => break,
@@ -78,6 +80,7 @@ fn reordered_presentations_keep_their_own_flags_and_packet_offsets() {
             assert_eq!(frame.is_show_existing(), matches!(i, 2 | 4));
             assert_eq!(frame.timestamp(), i as i64 * 1001);
             assert_eq!(frame.input_offset(), units[i].0 as i64);
+            assert_eq!(frame.context().unwrap().downcast_ref::<usize>(), Some(&i));
             let Planes::Depth8(planes) = frame.planes() else {
                 panic!("storage")
             };

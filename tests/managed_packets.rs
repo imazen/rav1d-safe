@@ -1,5 +1,6 @@
 //! Streaming ownership and timing, exercised against original lossless AV1.
 use rav1d_safe::{Decoder, Frame, Packet, Planes, ReceiveStatus, SendStatus, Settings};
+use std::sync::Arc;
 
 fn temporal_units() -> Vec<Vec<u8>> {
     let data = include_bytes!("media_vectors/av1-10-420-full-17x13.ivf");
@@ -316,4 +317,141 @@ fn raw_color_codes_and_chroma_position_survive_actual_sequence_parsing() {
     assert_eq!(raw.chroma_sample_position, 2);
     assert!(raw.full_range);
     check_pixels(&frame, 0);
+}
+
+#[test]
+fn packet_context_lives_with_all_presentations_and_their_clones() {
+    for threads in [1, 4] {
+        let mut settings = Settings::default();
+        settings.threads = threads;
+        settings.max_frame_delay = 4;
+        let mut decoder = Decoder::with_settings(settings).unwrap();
+        let context = Arc::new((7_u32, "old configuration"));
+        let weak = Arc::downgrade(&context);
+        let mut packet = Packet::new(temporal_units().concat())
+            .unwrap()
+            .with_context(context);
+        assert_eq!(
+            decoder.send_packet(&mut packet).unwrap(),
+            SendStatus::Accepted
+        );
+        drop(packet);
+        let mut frames = Vec::new();
+        finish(&mut decoder, &mut frames);
+        assert_eq!(frames.len(), 4);
+        for (i, frame) in frames.iter().enumerate() {
+            check_pixels(frame, i);
+            let value = frame.context().unwrap();
+            assert_eq!(
+                value.downcast_ref::<(u32, &str)>(),
+                Some(&(7, "old configuration"))
+            );
+            assert!(value.downcast_ref::<String>().is_none());
+            assert!(Arc::ptr_eq(value, frames[0].context().unwrap()));
+        }
+        let retained = frames[0].clone();
+        decoder.reset();
+        drop(decoder);
+        drop(frames);
+        assert!(weak.upgrade().is_some());
+        check_pixels(&retained, 0);
+        drop(retained);
+        assert!(
+            weak.upgrade().is_none(),
+            "native owners leaked the packet context"
+        );
+    }
+}
+
+#[test]
+fn packet_context_survives_backpressure_and_error_without_leaking() {
+    let context = Arc::new(42_u32);
+    let weak = Arc::downgrade(&context);
+    let mut decoder = Decoder::new().unwrap();
+    let mut joined = Packet::new(temporal_units().concat()).unwrap();
+    assert_eq!(
+        decoder.send_packet(&mut joined).unwrap(),
+        SendStatus::Accepted
+    );
+    let mut retry = Packet::new(temporal_units().remove(0))
+        .unwrap()
+        .with_context(context);
+    assert_eq!(
+        decoder.send_packet(&mut retry).unwrap(),
+        SendStatus::ReceivePending
+    );
+    decoder.end_input();
+    assert!(decoder.send_packet(&mut retry).is_err());
+    decoder.reset();
+    assert!(
+        weak.upgrade().is_some(),
+        "rejected packet must retain its owner"
+    );
+    assert_eq!(
+        decoder.send_packet(&mut retry).unwrap(),
+        SendStatus::Accepted
+    );
+    drop(retry);
+    let mut frames = Vec::new();
+    finish(&mut decoder, &mut frames);
+    assert_eq!(frames.len(), 1);
+    assert_eq!(
+        frames[0].context().unwrap().downcast_ref::<u32>(),
+        Some(&42)
+    );
+    drop(frames);
+    drop(decoder);
+    assert!(weak.upgrade().is_none());
+}
+
+#[test]
+fn packet_context_reset_releases_unpublished_presentations() {
+    for threads in [1, 4] {
+        let mut settings = Settings::default();
+        settings.threads = threads;
+        settings.max_frame_delay = 4;
+        let mut decoder = Decoder::with_settings(settings).unwrap();
+        let context = Arc::new(7_u32);
+        let weak = Arc::downgrade(&context);
+        let mut packet = Packet::new(temporal_units().concat())
+            .unwrap()
+            .with_context(context);
+        assert_eq!(
+            decoder.send_packet(&mut packet).unwrap(),
+            SendStatus::Accepted
+        );
+        drop(packet);
+        decoder.reset();
+        assert!(
+            weak.upgrade().is_none(),
+            "reset retained unpublished context"
+        );
+    }
+}
+
+#[test]
+fn packet_context_survives_film_grain_picture_copy() {
+    for bytes in [
+        include_bytes!("gen_vectors/i8_420_grain_128x128.obu").as_slice(),
+        include_bytes!("gen_vectors/i10_420_grain_128x128.obu").as_slice(),
+    ] {
+        let context = Arc::new(9_u32);
+        let weak = Arc::downgrade(&context);
+        let mut packet = Packet::new(bytes.to_vec()).unwrap().with_context(context);
+        let mut decoder = Decoder::new().unwrap();
+        assert_eq!(
+            decoder.send_packet(&mut packet).unwrap(),
+            SendStatus::Accepted
+        );
+        let mut frames = Vec::new();
+        finish(&mut decoder, &mut frames);
+        assert!(!frames.is_empty());
+        for frame in &frames {
+            assert_eq!(frame.context().unwrap().downcast_ref::<u32>(), Some(&9));
+        }
+        drop(decoder);
+        drop(frames);
+        drop(packet);
+        assert!(weak.upgrade().is_none());
+    }
 }

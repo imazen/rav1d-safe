@@ -56,6 +56,22 @@ Every presentation produced by one packet inherits its metadata, so combine
 temporal units only if this association is intentional. A FIFO guess based on
 one input packet equaling one output frame is not the protocol.
 
+`Packet::with_context(Arc<dyn Any + Send + Sync>)` carries additional owned,
+opaque presentation context. `Frame::context()` returns a borrowed Arc; use
+`downcast_ref` to recover the adapter's type. An adapter can snapshot its clock,
+configuration epoch and container color at acceptance, then use that snapshot
+when delayed output arrives. It must not consult the latest track configuration
+for an older accepted packet. Caller ordinals need not be unique map keys.
+
+Native input, reference pictures and output frames share the context. Several
+presentations from one packet retain it independently; show-existing output
+receives the later presentation packet's context. Frame clones and film-grain
+picture copies retain it too. A retry keeps the caller's packet and context.
+The final owner releases the value. This does not acknowledge completion after
+one frame or guarantee release at end-of-input: the decoder may still retain
+reference pictures. Avoid a reference cycle back to the decoder. Context is
+not parsed metadata and is not included in decoder diagnostics.
+
 `end_input` declares EOF without allocating a result vector. `receive` returns
 one picture at a time and waits for delayed frame-threaded output before EOS.
 It distinguishes `NeedInput` from terminal `EndOfStream`; repeated EOS is stable.
@@ -105,3 +121,14 @@ reference. The C picture ABI is unchanged and does not expose these Rust flags.
 
 The native reordered fixture in `tests/media_vectors/` records its clean encoder
 revision, source formula and hashes in an adjacent JSON manifest.
+
+## Packet-context qualification (2026-10-25)
+
+`just test-packet-context` adds native checks for all presentations from one
+packet, rejected/backpressured ownership, queued-output reset, retained frame
+clones, film-grain picture copies and reordered/show-existing provenance.
+The existing authored sample oracle remains active. The checked-mode run
+passed with one and four configured workers; the two native test binaries
+passed every selected case. Resource-wrapper receipt: rc=0, 32 s, peak RSS
+1.10 GiB, minimum available 15284 MiB, peak load 1.49. This measures the build
+and test process, not decoder workspace or context overhead.

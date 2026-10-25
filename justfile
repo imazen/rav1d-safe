@@ -136,6 +136,13 @@ clippy-untracked:
 clippy-lib:
     cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16" -- -D warnings
 
+# Native presentation context, including reordering, retries, reset and grain.
+test-packet-context features="bitdepth_8,bitdepth_16":
+    cargo nextest run --cargo-profile release-thin --locked --no-default-features --features "{{features}}" --test managed_packets --test presentation_provenance --test-threads 1
+
+packet-context-sync destination:
+    rsync -a --exclude .git --exclude .jj --exclude .workongoing --exclude target --exclude Cargo.lock ./ "{{destination}}/"
+
 # Native ARM regression for concurrent reference-frame reconstruction.
 test-mc-reference:
     cargo nextest run --cargo-profile release-thin --lib -E 'test(interpolation_reads_leave_unrelated_reconstruction_rows_available)'

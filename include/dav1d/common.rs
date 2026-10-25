@@ -1,8 +1,10 @@
 use crate::src::c_arc::CArc;
 #[cfg(feature = "c-ffi")]
 use crate::src::c_arc::RawCArc;
+use std::any::Any;
 #[cfg(feature = "c-ffi")]
 use std::ptr::NonNull;
+use std::sync::Arc;
 
 #[cfg(feature = "c-ffi")]
 #[derive(Default)]
@@ -54,6 +56,8 @@ pub(crate) struct Rav1dDataProps {
     pub offset: i64, // libc::off_t
     pub size: usize,
     pub user_data: Rav1dUserData,
+    /// Managed Rust presentation context. The C ABI has its separate user data.
+    pub context: Option<Arc<dyn Any + Send + Sync>>,
 }
 
 impl Default for Rav1dDataProps {
@@ -64,6 +68,7 @@ impl Default for Rav1dDataProps {
             offset: -1,
             size: 0,
             user_data: Default::default(),
+            context: None,
         }
     }
 }
@@ -84,6 +89,7 @@ impl From<Dav1dDataProps> for Rav1dDataProps {
             offset,
             size,
             user_data: user_data.into(),
+            context: None,
         }
     }
 }
@@ -97,6 +103,7 @@ impl From<Rav1dDataProps> for Dav1dDataProps {
             offset,
             size,
             user_data,
+            context: _,
         } = value;
         Self {
             timestamp,

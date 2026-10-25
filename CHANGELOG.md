@@ -4,6 +4,13 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
 
 ## [Unreleased]
 
+### Added
+
+- Managed packets can carry an owned opaque context through delayed, reordered,
+  repeated and film-grain presentations. `Frame::context` retains the accepted
+  packet's context across frame cloning and decoder reset/drop; adapters can
+  associate configuration and provenance without an ordinal-retirement map.
+
 ### Dependency compatibility
 
 - Admit archmage/magetypes 0.9.31-beta.1 in the current-main tool graph while retaining compatible stable requirements (`48e796ca`). Strict dual-bit-depth library lint and process-isolated release library tests pass.

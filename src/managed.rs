@@ -670,6 +670,24 @@ impl Packet {
         self
     }
 
+    /// Attach opaque owned context to every presentation produced by this packet.
+    ///
+    /// The decoder does not interpret this value. Container adapters can carry
+    /// an immutable configuration snapshot, clock, or packet provenance without
+    /// guessing which input produced delayed or reordered output. A show-existing
+    /// presentation receives its own packet's context, not the original coded
+    /// picture's context. Packets submitted without this call have no context.
+    ///
+    /// Backpressure and errors retain the packet and its context for the caller.
+    /// After acceptance, native input, reference pictures and returned frames
+    /// retain shared ownership as needed. End of input does not clear reference
+    /// pictures. The last owner releases the value; this is not a per-frame
+    /// completion notification. Avoid owning the decoder from its own context.
+    pub fn with_context(mut self, context: Arc<dyn core::any::Any + Send + Sync>) -> Self {
+        self.inner.m.context = Some(context);
+        self
+    }
+
     /// Number of compressed bytes, or zero after successful acceptance.
     pub fn len(&self) -> usize {
         self.inner.data.as_ref().map_or(0, |data| data.len())
@@ -1225,6 +1243,16 @@ impl Frame {
     /// packet, not the earlier packet that originally coded its pixels.
     pub fn input_offset(&self) -> i64 {
         self.inner.m.offset
+    }
+
+    /// Opaque context from the packet responsible for this presentation.
+    ///
+    /// Use `downcast_ref` to recover the adapter's type, or clone the `Arc` to
+    /// retain it independently. Frame clones share the same context. Existing
+    /// frames keep their context when the decoder resets or drops. This is
+    /// separate from metadata parsed from the AV1 bitstream.
+    pub fn context(&self) -> Option<&Arc<dyn core::any::Any + Send + Sync>> {
+        self.inner.m.context.as_ref()
     }
 }
 
