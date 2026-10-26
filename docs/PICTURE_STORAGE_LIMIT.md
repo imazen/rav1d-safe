@@ -52,3 +52,15 @@ Each decoder is reused and reset between passes, so idle buffer reuse is part
 of the measured path. Both allocation modes must match every visible sample's
 digest before timing. These controls do not establish production-video FPS;
 the benchmark results must be recorded separately before making a cost claim.
+
+The native grain lifetime test also exercises a refusal after reconstruction:
+one picture fits but the separate grain output does not. At twice that
+allowance, output succeeds; a returned frame retained across reset then blocks
+the next reconstruction-plus-grain pair until released. After release the same
+decoder succeeds again. Both 8/10-bit fixtures and one/four workers pass in
+tracked and untracked builds. The test drains with `end_input`/`receive` so
+reference release is tested separately from reset (`flush` drains and resets).
+
+The expanded `qualify-picture-budget` gate passed: run-heavy rc=0, 102 s,
+peak RSS 1.15 GiB, minimum available 14434 MiB, peak load 3.04. This is
+build/test-process usage, not native plane consumption.

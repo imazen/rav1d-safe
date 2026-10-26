@@ -154,8 +154,8 @@ qualify-picture-budget:
 picture-budget-golden features="bitdepth_8,bitdepth_16":
     cargo nextest run --cargo-profile release-thin --locked --no-default-features --features "{{features}}" --test gen_cover --test-threads 1 --success-output immediate
 
-picture-budget-bench features="bitdepth_8,bitdepth_16":
-    cargo bench --profile release-thin --locked --no-default-features --features "{{features}}" --bench picture_budget -- --cpu-policy=unrestricted --format=llm
+picture-budget-bench features="bitdepth_8,bitdepth_16" group="picture_storage":
+    cargo bench --profile release-thin --locked --no-default-features --features "{{features}}" --bench picture_budget -- --cpu-policy=unrestricted --format=llm --group="{{group}}"
 
 picture-budget-bench-check:
     cargo clippy --locked --no-default-features --features bitdepth_8,bitdepth_16 --bench picture_budget -- -D warnings

@@ -99,3 +99,79 @@ fn picture_budget_follows_copy_allocator_after_its_creator_drops() {
     drop(refused);
     assert_eq!(budget.used(), 0);
 }
+
+#[test]
+fn picture_budget_native_grain_refusal_reset_and_retained_output() {
+    fn one(decoder: &mut Decoder, input: &[u8]) -> Result<Frame> {
+        let mut frames = Vec::new();
+        if let Some(frame) = decoder.decode(input)? {
+            frames.push(frame);
+        }
+        decoder.end_input();
+        loop {
+            match decoder.receive()? {
+                ReceiveStatus::Frame(frame) => frames.push(frame),
+                ReceiveStatus::EndOfStream => break,
+                ReceiveStatus::NeedInput => panic!("ended input requested more packets"),
+            }
+        }
+        assert_eq!(frames.len(), 1);
+        Ok(frames.pop().unwrap())
+    }
+    for input in [
+        include_bytes!("../../tests/gen_vectors/i8_420_grain_128x128.obu").as_slice(),
+        include_bytes!("../../tests/gen_vectors/i10_420_grain_128x128.obu").as_slice(),
+    ] {
+        for threads in [1, 4] {
+            let configured = |limit, grain| {
+                let mut settings = Settings::default();
+                settings.threads = threads;
+                settings.max_frame_delay = 1;
+                settings.apply_grain = grain;
+                settings.max_picture_bytes = Some(limit);
+                Decoder::with_settings(settings).unwrap()
+            };
+            // Observe the real native allocation, rather than duplicate its
+            // geometry arithmetic. No-grain output shares reconstruction.
+            let mut probe = configured(usize::MAX, false);
+            let budget = probe.ctx.allocator.budget.clone().unwrap();
+            let frame = one(&mut probe, input).unwrap();
+            let bytes = budget.used();
+            assert!(bytes > 0);
+            drop(probe);
+            assert_eq!(budget.used(), bytes);
+            drop(frame);
+            assert_eq!(budget.used(), 0);
+
+            // Reconstruction fits; the separate grain output cannot fit.
+            let mut refused = configured(bytes, true);
+            let budget = refused.ctx.allocator.budget.clone().unwrap();
+            let Err(error) = one(&mut refused, input) else {
+                panic!("grain copy escaped its native picture allowance")
+            };
+            assert!(matches!(error.error(), Error::Other(message)
+                if message == "native picture storage limit exceeded"));
+            assert!(budget.used() <= bytes);
+            refused.reset();
+            assert_eq!(budget.used(), 0);
+            drop(refused);
+
+            let mut decoder = configured(bytes * 2, true);
+            let budget = decoder.ctx.allocator.budget.clone().unwrap();
+            let retained = one(&mut decoder, input).unwrap();
+            assert_eq!(budget.used(), bytes * 2);
+            decoder.reset();
+            assert_eq!(budget.used(), bytes);
+            assert!(one(&mut decoder, input).is_err());
+            decoder.reset();
+            assert_eq!(budget.used(), bytes);
+            drop(retained);
+            assert_eq!(budget.used(), 0);
+            let retained = one(&mut decoder, input).unwrap();
+            drop(decoder);
+            assert_eq!(budget.used(), bytes);
+            drop(retained);
+            assert_eq!(budget.used(), 0);
+        }
+    }
+}
