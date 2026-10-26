@@ -88,6 +88,10 @@ fn picture_budget(suite: &mut Suite) {
                 ] {
                     group.bench(label, move |b| {
                         let mut decoder = configured(threads, bounded);
+                        // Prime this sample's decoder before timing. A slow
+                        // fixture can get only one timed call; without this
+                        // pass that sample cannot exercise pooled reuse.
+                        assert_eq!(decode(&mut decoder, data, |_| {}), count);
                         b.iter(|| assert_eq!(decode(&mut decoder, black_box(data), |_| {}), count));
                     });
                 }

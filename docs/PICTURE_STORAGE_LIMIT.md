@@ -48,8 +48,9 @@ peak load 1.14.
 `just picture-budget-bench` compares pooled, a second pooled control and bounded
 allocation in interleaved zenbench groups. It uses committed small 8/10-bit
 inter and grain streams plus the 1024×1024 tiled still, on one and four workers.
-Each decoder is reused and reset between passes, so idle buffer reuse is part
-of the measured path. Both allocation modes must match every visible sample's
+Each sample primes its decoder before timing, then reuses and resets it between
+passes. That makes idle buffer reuse part of even a single-call sample. Both
+allocation modes must match every visible sample's
 digest before timing. These controls do not establish production-video FPS;
 the benchmark results must be recorded separately before making a cost claim.
 
@@ -64,3 +65,10 @@ reference release is tested separately from reset (`flush` drains and resets).
 The expanded `qualify-picture-budget` gate passed: run-heavy rc=0, 102 s,
 peak RSS 1.15 GiB, minimum available 14434 MiB, peak load 3.04. This is
 build/test-process usage, not native plane consumption.
+
+The first complete exploratory timing pass used a fresh decoder per sample
+without priming. The 1024×1024 groups received only one timed call, so they
+could not measure warm pool reuse. Those results are retained as a cold-sample
+pilot, not evidence about the cache tradeoff. The benchmark now primes all
+three arms before timing; fresh qualified measurements are required for that
+question.
