@@ -59,7 +59,12 @@ fn manifest() -> Vec<Vector> {
         .collect()
 }
 
-fn decode_md5_at(data: &[u8], level: CpuLevel, grain: bool) -> (String, Vec<String>) {
+fn decode_md5_at(
+    data: &[u8],
+    level: CpuLevel,
+    grain: bool,
+    picture_limit: Option<usize>,
+) -> (String, Vec<String>) {
     let _guard = CPU_LEVEL_LOCK.lock().unwrap();
     let mut settings = Settings::default();
     settings.strictness = Strictness::Lenient;
@@ -68,6 +73,7 @@ fn decode_md5_at(data: &[u8], level: CpuLevel, grain: bool) -> (String, Vec<Stri
     settings.frame_size_limit = 8192 * 8192;
     settings.cpu_level = level;
     settings.apply_grain = grain;
+    settings.max_picture_bytes = picture_limit;
     let mut decoder = Decoder::with_settings(settings).expect("decoder");
     let mut ctx = md5::Context::new();
     let mut errors = Vec::new();
@@ -114,22 +120,28 @@ fn gen_cover_streams_bit_exact_across_levels() {
     );
 
     let mut failures = Vec::new();
+    #[cfg(not(feature = "c-ffi"))]
+    let limits = [None, Some(64 * 1024 * 1024)].as_slice();
+    #[cfg(feature = "c-ffi")]
+    let limits = [None].as_slice();
     for v in &vectors {
         let data = std::fs::read(&v.path).unwrap_or_else(|e| panic!("read {:?}: {e}", v.path));
         for &level in levels {
             for (grain, expected) in [(false, &v.md5_nofg), (true, &v.md5_ref)] {
-                let (got, errors) = decode_md5_at(&data, level, grain);
-                if !errors.is_empty() {
-                    failures.push(format!(
-                        "{} [{level} grain={grain}]: {}",
-                        v.name,
-                        errors.join("; ")
-                    ));
-                } else if got != *expected {
-                    failures.push(format!(
-                        "{} [{level} grain={grain}]: expected {expected}, got {got}",
+                for &picture_limit in limits {
+                    let (got, errors) = decode_md5_at(&data, level, grain, picture_limit);
+                    if !errors.is_empty() {
+                        failures.push(format!(
+                            "{} [{level} grain={grain} picture_limit={picture_limit:?}]: {}",
+                            v.name,
+                            errors.join("; ")
+                        ));
+                    } else if got != *expected {
+                        failures.push(format!(
+                        "{} [{level} grain={grain} picture_limit={picture_limit:?}]: expected {expected}, got {got}",
                         v.name
                     ));
+                    }
                 }
             }
         }

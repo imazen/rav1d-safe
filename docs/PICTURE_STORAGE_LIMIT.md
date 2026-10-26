@@ -37,3 +37,18 @@ ignored low-level examples.
 Validation on 2026-10-25: run-heavy rc=0, 81 s, peak RSS 1.15 GiB,
 minimum available 14231 MiB, peak load 2.43. This is the test/build process
 receipt, not a measurement of the decoder's picture budget.
+
+The existing generated-vector gate now checks both allocation modes against
+the same committed ASM-derived MD5s: 28 original streams, five CPU settings,
+grain enabled/disabled and pooled/bounded storage. It passed on 2026-10-25
+without changing any oracle. `just picture-budget-golden` and strict benchmark
+Clippy: run-heavy rc=0, 19 s, peak RSS 1.09 GiB, minimum available 15231 MiB,
+peak load 1.14.
+
+`just picture-budget-bench` compares pooled, a second pooled control and bounded
+allocation in interleaved zenbench groups. It uses committed small 8/10-bit
+inter and grain streams plus the 1024×1024 tiled still, on one and four workers.
+Each decoder is reused and reset between passes, so idle buffer reuse is part
+of the measured path. Both allocation modes must match every visible sample's
+digest before timing. These controls do not establish production-video FPS;
+the benchmark results must be recorded separately before making a cost claim.
