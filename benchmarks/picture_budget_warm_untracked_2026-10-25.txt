@@ -1,0 +1,55 @@
+# Warm native picture allocation experiment, 2026-10-25 local / 2026-10-26 UTC
+# Revision: 027cb22428b467bc066b74aa30585a9dc36a5f93
+# Host CPU: AMD Ryzen 9 7900X; Linux x86_64; rustc 1.99.1
+# Command: run-heavy --mem 12G --jobs 4 -- timeout --kill-after=15s 12m /usr/bin/time -v just picture-budget-bench bitdepth_8,bitdepth_16,untracked
+# Features: bitdepth_8,bitdepth_16,untracked; release-thin, no target-cpu=native, CPU policy unrestricted.
+# Decoder primed before each timed sample; identical full visible-plane digests required before timing.
+# One exploratory run per build, not a production FPS or noninferiority result.
+# Raw source: zenbench-1792975426-cbf7.txt; sha256=500333735b2bdeec235c18be808f7bbc6c74fc52b82918f12cc49f066c544edf
+# run-heavy: done rc=0 318s | peak-RSS 0.37GiB | min-avail 15888MiB | peak-load 1.34
+# /usr/bin/time -v Maximum resident set size (kbytes): 386744
+# RSS covers the complete build/benchmark process, not native plane storage alone.
+# zenbench 0.1.10 significant=false may mean the CI is not outside the +/-1% practical threshold.
+# Its console footnote "CI crosses zero" does not distinguish this; use the numeric CI below.
+
+# zenbench results (complete)
+# git: unknown
+# 2026-10-26T00:48:57Z
+#
+# Re-read this file instead of re-running the benchmark.
+# Formats:  cargo bench -- --format=llm|csv|md|json
+# Env var:  ZENBENCH_FORMAT=llm cargo bench
+# Disable:  ZENBENCH_NO_SAVE=1 cargo bench
+#
+# Fields: group | benchmark | vs_base comparison | min mean median mad | throughput | n cv rounds calls
+#
+group=picture_storage/inter8_128x128/1t benchmark=pooled  |  vs_base=baseline  |  min=1.18ms mean=1.22ms median=1.21ms mad=20.44µs  |  throughput=3.27 Kops/s  |  n=50 cv=3.0% rounds=50 calls=4 mean_ci=[1.21ms 1.23ms] cold=1.20ms
+group=picture_storage/inter8_128x128/1t benchmark=pooled_control  |  vs_base_pct=-0.38 ci=[-1.30% +0.51%] significant=false effect=-0.14 p=0.5054  |  min=1.18ms mean=1.22ms median=1.21ms mad=24.31µs  |  throughput=3.28 Kops/s  |  n=50 cv=2.3% rounds=50 calls=4 mean_ci=[1.21ms 1.23ms] cold=1.21ms
+group=picture_storage/inter8_128x128/1t benchmark=bounded  |  vs_base_pct=-0.25 ci=[-1.06% +0.58%] significant=false effect=-0.10 p=0.5485  |  min=1.18ms mean=1.22ms median=1.21ms mad=16.36µs  |  throughput=3.28 Kops/s  |  n=50 cv=2.4% rounds=50 calls=4 mean_ci=[1.21ms 1.23ms] cold=1.20ms
+group=picture_storage/inter8_128x128/4t benchmark=pooled  |  vs_base=baseline  |  min=1.10ms mean=1.19ms median=1.18ms mad=30.99µs  |  throughput=3.35 Kops/s  |  n=110 cv=3.8% rounds=110 calls=4 mean_ci=[1.18ms 1.20ms] cold=1.15ms
+group=picture_storage/inter8_128x128/4t benchmark=pooled_control  |  vs_base_pct=-0.46 ci=[-1.36% +0.43%] significant=false effect=-0.14 p=0.3586  |  min=1.10ms mean=1.19ms median=1.18ms mad=26.43µs  |  throughput=3.36 Kops/s  |  n=110 cv=3.3% rounds=110 calls=4 mean_ci=[1.18ms 1.20ms] cold=1.29ms
+group=picture_storage/inter8_128x128/4t benchmark=bounded  |  vs_base_pct=+0.15 ci=[-0.70% +0.99%] significant=false effect=0.05 p=0.3916  |  min=1.06ms mean=1.19ms median=1.19ms mad=27.03µs  |  throughput=3.35 Kops/s  |  n=110 cv=3.4% rounds=110 calls=4 mean_ci=[1.19ms 1.20ms] cold=1.20ms
+group=picture_storage/inter10_96x96/1t benchmark=pooled  |  vs_base=baseline  |  min=637.57µs mean=684.84µs median=665.58µs mad=26.51µs  |  throughput=5.84 Kops/s  |  n=179 cv=5.5% rounds=179 calls=7 mean_ci=[679.54µs 690.49µs] cold=660.98µs
+group=picture_storage/inter10_96x96/1t benchmark=pooled_control  |  vs_base_pct=-0.21 ci=[-1.56% +1.12%] significant=false effect=-0.04 p=0.9191  |  min=637.33µs mean=683.39µs median=661.84µs mad=20.53µs  |  throughput=5.85 Kops/s  |  n=179 cv=5.6% rounds=179 calls=7 mean_ci=[677.84µs 689.17µs] cold=663.76µs
+group=picture_storage/inter10_96x96/1t benchmark=bounded  |  vs_base_pct=-0.78 ci=[-1.96% +0.38%] significant=false effect=-0.15 p=0.3341  |  min=639.03µs mean=679.48µs median=664.88µs mad=18.55µs  |  throughput=5.89 Kops/s  |  n=179 cv=4.8% rounds=179 calls=7 mean_ci=[674.76µs 684.28µs] cold=655.78µs
+group=picture_storage/inter10_96x96/4t benchmark=pooled  |  vs_base=baseline  |  min=651.37µs mean=800.03µs median=803.49µs mad=35.85µs  |  throughput=5.00 Kops/s  |  n=165 cv=4.9% rounds=165 calls=6 mean_ci=[794.01µs 805.94µs] cold=787.38µs
+group=picture_storage/inter10_96x96/4t benchmark=pooled_control  |  vs_base_pct=+0.17 ci=[-0.76% +1.14%] significant=false effect=0.04 p=0.6882  |  min=673.86µs mean=802.14µs median=807.75µs mad=29.11µs  |  throughput=4.99 Kops/s  |  n=165 cv=4.4% rounds=165 calls=6 mean_ci=[796.68µs 807.53µs] cold=818.89µs
+group=picture_storage/inter10_96x96/4t benchmark=bounded  |  vs_base_pct=+2.35 ci=[+1.48% +3.21%] significant=true effect=0.60 p=0.0000  |  min=722.86µs mean=819.68µs median=820.09µs mad=26.73µs  |  throughput=4.88 Kops/s  |  n=165 cv=3.8% rounds=165 calls=6 mean_ci=[814.92µs 824.29µs] cold=829.12µs
+group=picture_storage/grain8_128x128/1t benchmark=pooled  |  vs_base=baseline  |  min=509.65µs mean=526.22µs median=520.87µs mad=12.07µs  |  throughput=1.90 Kops/s  |  n=80 cv=2.8% rounds=80 calls=9 mean_ci=[523.12µs 529.58µs] cold=514.05µs
+group=picture_storage/grain8_128x128/1t benchmark=pooled_control  |  vs_base_pct=-0.29 ci=[-1.15% +0.59%] significant=false effect=-0.12 p=0.4763  |  min=508.70µs mean=524.97µs median=519.05µs mad=9.81µs  |  throughput=1.90 Kops/s  |  n=80 cv=2.8% rounds=80 calls=9 mean_ci=[521.92µs 528.34µs] cold=508.79µs
+group=picture_storage/grain8_128x128/1t benchmark=bounded  |  vs_base_pct=-0.18 ci=[-0.95% +0.59%] significant=false effect=-0.07 p=0.7071  |  min=508.47µs mean=525.95µs median=521.73µs mad=11.19µs  |  throughput=1.90 Kops/s  |  n=80 cv=2.9% rounds=80 calls=9 mean_ci=[522.79µs 529.46µs] cold=508.54µs
+group=picture_storage/grain8_128x128/4t benchmark=pooled  |  vs_base=baseline  |  min=553.57µs mean=594.48µs median=593.06µs mad=17.86µs  |  throughput=1.68 Kops/s  |  n=100 cv=3.1% rounds=100 calls=8 mean_ci=[590.99µs 598.13µs] cold=595.45µs
+group=picture_storage/grain8_128x128/4t benchmark=pooled_control  |  vs_base_pct=-0.19 ci=[-1.18% +0.79%] significant=false effect=-0.06 p=0.5834  |  min=544.20µs mean=593.34µs median=591.99µs mad=19.21µs  |  throughput=1.69 Kops/s  |  n=100 cv=3.5% rounds=100 calls=8 mean_ci=[589.27µs 597.38µs] cold=619.91µs
+group=picture_storage/grain8_128x128/4t benchmark=bounded  |  vs_base_pct=+1.06 ci=[+0.09% +2.02%] significant=false effect=0.31 p=0.0566  |  min=538.94µs mean=600.75µs median=600.81µs mad=20.89µs  |  throughput=1.66 Kops/s  |  n=100 cv=3.6% rounds=100 calls=8 mean_ci=[596.56µs 605.09µs] cold=585.57µs
+group=picture_storage/grain10_128x128/1t benchmark=pooled  |  vs_base=baseline  |  min=557.39µs mean=576.13µs median=572.94µs mad=11.26µs  |  throughput=1.74 Kops/s  |  n=60 cv=2.1% rounds=60 calls=8 mean_ci=[573.13µs 579.12µs] cold=564.21µs
+group=picture_storage/grain10_128x128/1t benchmark=pooled_control  |  vs_base_pct=-0.32 ci=[-1.21% +0.59%] significant=false effect=-0.14 p=0.4160  |  min=558.41µs mean=574.29µs median=569.72µs mad=13.69µs  |  throughput=1.74 Kops/s  |  n=60 cv=2.3% rounds=60 calls=8 mean_ci=[571.00µs 577.74µs] cold=563.68µs
+group=picture_storage/grain10_128x128/1t benchmark=bounded  |  vs_base_pct=-0.03 ci=[-0.91% +0.90%] significant=false effect=-0.01 p=0.6937  |  min=555.57µs mean=575.97µs median=570.41µs mad=8.96µs  |  throughput=1.74 Kops/s  |  n=60 cv=2.4% rounds=60 calls=8 mean_ci=[572.61µs 579.53µs] cold=561.97µs
+group=picture_storage/grain10_128x128/4t benchmark=pooled  |  vs_base=baseline  |  min=566.23µs mean=643.44µs median=643.93µs mad=19.93µs  |  throughput=1.55 Kops/s  |  n=120 cv=3.6% rounds=120 calls=7 mean_ci=[639.37µs 647.56µs] cold=587.50µs
+group=picture_storage/grain10_128x128/4t benchmark=pooled_control  |  vs_base_pct=+0.72 ci=[-0.27% +1.68%] significant=false effect=0.20 p=0.1624  |  min=593.88µs mean=648.06µs median=646.88µs mad=19.12µs  |  throughput=1.54 Kops/s  |  n=120 cv=3.5% rounds=120 calls=7 mean_ci=[644.02µs 652.11µs] cold=652.46µs
+group=picture_storage/grain10_128x128/4t benchmark=bounded  |  vs_base_pct=+1.96 ci=[+1.02% +2.90%] significant=true effect=0.52 p=0.0001  |  min=574.41µs mean=656.06µs median=658.16µs mad=21.20µs  |  throughput=1.52 Kops/s  |  n=120 cv=3.9% rounds=120 calls=7 mean_ci=[651.43µs 660.65µs] cold=623.89µs
+group=picture_storage/tiled_1024x1024/1t benchmark=pooled  |  vs_base=baseline  |  min=8.02ms mean=8.16ms median=8.14ms mad=62.52µs  |  throughput=122.57 ops/s  |  n=30 cv=1.5% rounds=30 calls=1 mean_ci=[8.12ms 8.20ms] cold=8.09ms
+group=picture_storage/tiled_1024x1024/1t benchmark=pooled_control  |  vs_base_pct=-0.21 ci=[-0.71% +0.29%] significant=false effect=-0.19 p=0.4593  |  min=8.00ms mean=8.14ms median=8.12ms mad=89.87µs  |  throughput=122.80 ops/s  |  n=30 cv=1.6% rounds=30 calls=1 mean_ci=[8.10ms 8.20ms] cold=8.05ms
+group=picture_storage/tiled_1024x1024/1t benchmark=bounded  |  vs_base_pct=-0.25 ci=[-0.64% +0.15%] significant=false effect=-0.24 p=0.1664  |  min=7.98ms mean=8.12ms median=8.12ms mad=86.38µs  |  throughput=123.18 ops/s  |  n=30 cv=1.1% rounds=30 calls=1 mean_ci=[8.09ms 8.15ms] cold=8.04ms
+group=picture_storage/tiled_1024x1024/4t benchmark=pooled  |  vs_base=baseline  |  min=2.42ms mean=2.98ms median=2.95ms mad=94.67µs  |  throughput=335.89 ops/s  |  n=127 cv=6.7% rounds=127 calls=1 mean_ci=[2.94ms 3.01ms] cold=2.96ms
+group=picture_storage/tiled_1024x1024/4t benchmark=pooled_control  |  vs_base_pct=-0.59 ci=[-1.53% +0.35%] significant=false effect=-0.13 p=0.3280  |  min=2.44ms mean=2.95ms median=2.94ms mad=84.33µs  |  throughput=338.97 ops/s  |  n=127 cv=6.2% rounds=127 calls=1 mean_ci=[2.92ms 2.98ms] cold=2.99ms
+group=picture_storage/tiled_1024x1024/4t benchmark=bounded  |  vs_base_pct=+0.95 ci=[-0.26% +2.19%] significant=false effect=0.19 p=0.0505  |  min=2.43ms mean=2.96ms median=2.99ms mad=92.32µs  |  throughput=337.79 ops/s  |  n=127 cv=5.8% rounds=127 calls=1 mean_ci=[2.93ms 2.99ms] cold=2.85ms

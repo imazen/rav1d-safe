@@ -5,6 +5,67 @@ use parking_lot::Mutex;
 use std::collections::TryReserveError;
 use std::sync::Arc;
 
+/// Admission for requested native plane bytes, including codec padding.
+/// Bounded pictures do not return their allocations to the uncharged pool.
+#[cfg(not(feature = "c-ffi"))]
+pub(crate) struct PictureBudget {
+    limit: usize,
+    used: std::sync::atomic::AtomicUsize,
+}
+
+#[cfg(not(feature = "c-ffi"))]
+impl PictureBudget {
+    pub(crate) fn new(limit: usize) -> Self {
+        Self {
+            limit,
+            used: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
+
+    pub(crate) fn reserve(self: &Arc<Self>, bytes: usize) -> Rav1dResult<PictureReservation> {
+        use std::sync::atomic::Ordering;
+        let mut used = self.used.load(Ordering::Acquire);
+        loop {
+            let next = used
+                .checked_add(bytes)
+                .filter(|&next| next <= self.limit)
+                .ok_or(crate::src::error::Rav1dError::EPICLIMIT)?;
+            match self
+                .used
+                .compare_exchange_weak(used, next, Ordering::AcqRel, Ordering::Acquire)
+            {
+                Ok(_) => break,
+                Err(current) => used = current,
+            }
+        }
+        Ok(PictureReservation {
+            budget: Arc::clone(self),
+            bytes,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn used(&self) -> usize {
+        self.used.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+
+/// One charge follows the entire picture through native references and clones.
+#[cfg(not(feature = "c-ffi"))]
+pub(crate) struct PictureReservation {
+    budget: Arc<PictureBudget>,
+    bytes: usize,
+}
+
+#[cfg(not(feature = "c-ffi"))]
+impl Drop for PictureReservation {
+    fn drop(&mut self) {
+        self.budget
+            .used
+            .fetch_sub(self.bytes, std::sync::atomic::Ordering::AcqRel);
+    }
+}
+
 /// Fallible `Arc<T>` allocation.
 ///
 /// On stable Rust, probes allocation feasibility via `Vec::try_reserve`,
@@ -73,5 +134,56 @@ impl<T> MemPool<T> {
 impl<T> Default for MemPool<T> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(all(test, not(feature = "c-ffi")))]
+mod picture_budget_tests {
+    use super::PictureBudget;
+    use crate::src::error::Rav1dError;
+    use std::sync::{Arc, Barrier};
+
+    #[test]
+    fn picture_budget_admission_is_atomic_and_overflow_refuses() {
+        let budget = Arc::new(PictureBudget::new(40));
+        let admitted = Arc::new(Barrier::new(9));
+        let release = Arc::new(Barrier::new(9));
+        std::thread::scope(|scope| {
+            for _ in 0..8 {
+                let budget = budget.clone();
+                let admitted = admitted.clone();
+                let release = release.clone();
+                scope.spawn(move || {
+                    let lease = budget.reserve(10);
+                    admitted.wait();
+                    release.wait();
+                    drop(lease);
+                });
+            }
+            admitted.wait();
+            assert_eq!(budget.used(), 40);
+            assert!(matches!(budget.reserve(1), Err(Rav1dError::EPICLIMIT)));
+            release.wait();
+        });
+        assert_eq!(budget.used(), 0);
+        let budget = Arc::new(PictureBudget::new(usize::MAX));
+        let lease = budget.reserve(usize::MAX).unwrap();
+        assert!(matches!(budget.reserve(1), Err(Rav1dError::EPICLIMIT)));
+        drop(lease);
+        assert_eq!(budget.used(), 0);
+        let budget = Arc::new(PictureBudget::new(0));
+        assert!(matches!(budget.reserve(1), Err(Rav1dError::EPICLIMIT)));
+    }
+
+    #[test]
+    fn picture_budget_unwind_releases_the_uncommitted_reservation() {
+        let budget = Arc::new(PictureBudget::new(16));
+        let result = std::panic::catch_unwind(|| {
+            let _lease = budget.reserve(16).unwrap();
+            panic!("controlled failure after admission");
+        });
+        assert!(result.is_err());
+        assert_eq!(budget.used(), 0);
+        assert!(budget.reserve(16).is_ok());
     }
 }

@@ -211,6 +211,10 @@ name = "tier_isolation"
 harness = false
 
 [[bench]]
+name = "picture_budget"
+harness = false
+
+[[bench]]
 name = "decode"
 harness = false
 

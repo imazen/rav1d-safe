@@ -1,0 +1,14 @@
+Native grain picture-budget lifetime — 2026-10-25
+Base: b19aec6561204ff310250bf2bc1b2c6faa42c3b5
+Change under test: src/managed/picture_budget_tests.rs in this commit
+Command in normal dependency export:
+run-heavy --mem 12G --jobs 4 -- timeout --kill-after=15s 5m just qualify-picture-budget
+
+Result: tracked/untracked allocation and lifetime tests pass, including grain
+output refusal after reconstruction, retained frames across reset, allowance
+recovery and reuse, and last-owner release after decoder destruction.
+C-FFI constructor refusal, native packet tests, strict Clippy, WASM,
+active doctests and API snapshots pass. 13 existing doctests remain ignored.
+
+run-heavy: done rc=0 102s | peak-RSS 1.15GiB | min-avail 14434MiB | peak-load 3.04
+This measures the qualification process, not the native plane budget.

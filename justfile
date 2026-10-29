@@ -136,6 +136,45 @@ clippy-untracked:
 clippy-lib:
     cargo clippy --no-default-features --features "bitdepth_8,bitdepth_16" -- -D warnings
 
+# Native presentation context, including reordering, retries, reset and grain.
+test-packet-context features="bitdepth_8,bitdepth_16":
+    cargo nextest run --cargo-profile release-thin --locked --no-default-features --features "{{features}}" --test managed_packets --test presentation_provenance --test-threads 1
+
+# Native picture-plane admission, separate from whole-decoder workspace bounds.
+test-picture-budget features="bitdepth_8,bitdepth_16":
+    cargo nextest run --cargo-profile release-thin --locked --no-default-features --features "{{features}}" --lib --test managed_packets -E 'test(picture_budget)' --test-threads 1
+
+qualify-picture-budget:
+    just test-picture-budget
+    just test-picture-budget bitdepth_8,bitdepth_16,untracked
+    just test-picture-budget bitdepth_8,bitdepth_16,c-ffi
+    just qualify-packet-context
+
+# The original ASM oracle covers both pooled and bounded native allocations.
+picture-budget-golden features="bitdepth_8,bitdepth_16":
+    cargo nextest run --cargo-profile release-thin --locked --no-default-features --features "{{features}}" --test gen_cover --test-threads 1 --success-output immediate
+
+picture-budget-bench features="bitdepth_8,bitdepth_16" group="picture_storage":
+    cargo bench --profile release-thin --locked --no-default-features --features "{{features}}" --bench picture_budget -- --cpu-policy=unrestricted --format=llm --group="{{group}}"
+
+picture-budget-bench-check:
+    cargo clippy --locked --no-default-features --features bitdepth_8,bitdepth_16 --bench picture_budget -- -D warnings
+
+packet-context-sync destination:
+    rsync -a --exclude .git --exclude .jj --exclude .workongoing --exclude target --exclude Cargo.lock ./ "{{destination}}/"
+
+check-packet-context:
+    cargo clippy --locked --no-default-features --features bitdepth_8,bitdepth_16 --lib --test managed_packets --test presentation_provenance -- -D warnings
+    cargo check --locked --no-default-features --features bitdepth_8,bitdepth_16,c-ffi
+    cargo check --locked --target wasm32-unknown-unknown --no-default-features --features bitdepth_8,bitdepth_16
+    cargo test --locked --doc --no-default-features --features bitdepth_8,bitdepth_16
+    just api-doc
+
+qualify-packet-context:
+    just test-packet-context
+    just test-packet-context bitdepth_8,bitdepth_16,untracked
+    just check-packet-context
+
 # Native ARM regression for concurrent reference-frame reconstruction.
 test-mc-reference:
     cargo nextest run --cargo-profile release-thin --lib -E 'test(interpolation_reads_leave_unrelated_reconstruction_rows_available)'

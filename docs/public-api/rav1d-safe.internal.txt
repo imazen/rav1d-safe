@@ -14,7 +14,7 @@ NOTE: excluded-feature surface (__ablate,__bisect,__lrpoison,__lrvarcov,__pad2,_
 #   pub types (struct/enum/trait/alias)         8
 #   pub consts/statics                          4
 #   free functions                              8
-#   inherent methods                           21
+#   inherent methods                           11
 #   struct fields                              94
 #   enum variants                              28
 #   trait roster entries (type × trait)        24
@@ -22,10 +22,10 @@ NOTE: excluded-feature surface (__ablate,__bisect,__lrpoison,__lrvarcov,__pad2,_
 #   auto-trait exceptions                       3
 #
 # per-module pub lines:
-#   (root)                           34
-#   __internal                      132
+#   (root)                           25
+#   __internal                      131
 
-## items (166 lines)
+## items (156 lines)
 
 #[export_name = "dav1d_apply_grain"] pub unsafe c fn __internal::ffi::dav1d_apply_grain(core::option::Option<__internal::ffi::Dav1dContext>, core::option::Option<core::ptr::non_null::NonNull<__internal::ffi::Dav1dPicture>>, core::option::Option<core::ptr::non_null::NonNull<__internal::ffi::Dav1dPicture>>) -> src::error::Dav1dResult
 #[export_name = "dav1d_close"] pub unsafe c fn __internal::ffi::dav1d_close(core::option::Option<core::ptr::non_null::NonNull<core::option::Option<__internal::ffi::Dav1dContext>>>)
@@ -56,21 +56,11 @@ pub const fn __internal::ablate::Family::name(self) -> &'static str
 pub const fn __internal::is_untracked() -> bool
 pub const __internal::ablate::ENABLED: bool
 pub const __internal::ablate::Family::ALL: &'static [__internal::ablate::Family]
-pub fn ColorPrimaries::assert_fields_are_eq(&self)
-pub fn ColorRange::assert_fields_are_eq(&self)
-pub fn CpuLevel::assert_fields_are_eq(&self)
-pub fn DecodeFrameType::assert_fields_are_eq(&self)
 pub fn Error::assert_fields_are_eq(&self)
 pub fn InloopFilters::assert_fields_are_eq(&self)
-pub fn MatrixCoefficients::assert_fields_are_eq(&self)
-pub fn PixelLayout::assert_fields_are_eq(&self)
 pub fn RawColorInfo::assert_fields_are_eq(&self)
-pub fn SendStatus::assert_fields_are_eq(&self)
-pub fn Strictness::assert_fields_are_eq(&self)
-pub fn TransferCharacteristics::assert_fields_are_eq(&self)
-pub fn __internal::ablate::Family::assert_fields_are_eq(&self)
-pub fn __internal::ablate::Family::clone(&self) -> __internal::ablate::Family
-pub fn __internal::ablate::Family::eq(&self, &__internal::ablate::Family) -> bool
+pub fn __internal::ablate::Family::clone(&self) -> Self
+pub fn __internal::ablate::Family::eq(&self, &Self) -> bool
 pub fn __internal::ablate::Family::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub fn __internal::ablate::Family::from_name(&str) -> core::option::Option<__internal::ablate::Family>
 pub fn __internal::ablate::activity_reset()
@@ -81,10 +71,10 @@ pub fn __internal::ablate::itx_shape_reset()
 pub fn __internal::ablate::note(__internal::ablate::Family, u64)
 pub fn __internal::ablate::note_itx_shape(usize, u8, bool)
 pub fn __internal::ablate::set_disabled(&[__internal::ablate::Family])
-pub fn __internal::ffi::Dav1dData::default() -> __internal::ffi::Dav1dData
-pub fn __internal::ffi::Dav1dDataProps::default() -> __internal::ffi::Dav1dDataProps
-pub fn __internal::ffi::Dav1dPicture::default() -> __internal::ffi::Dav1dPicture
-pub fn __internal::ffi::Dav1dSequenceHeader::clone(&self) -> __internal::ffi::Dav1dSequenceHeader
+pub fn __internal::ffi::Dav1dData::default() -> Self
+pub fn __internal::ffi::Dav1dDataProps::default() -> Self
+pub fn __internal::ffi::Dav1dPicture::default() -> Self
+pub fn __internal::ffi::Dav1dSequenceHeader::clone(&self) -> Self
 pub mod __internal
 pub mod __internal::ablate
 pub mod __internal::ffi
