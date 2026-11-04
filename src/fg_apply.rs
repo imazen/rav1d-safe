@@ -10,6 +10,7 @@ use crate::src::filmgrain::FG_BLOCK_SIZE;
 use crate::src::filmgrain::Rav1dFilmGrainDSPContext;
 use crate::src::internal::GrainBD;
 use crate::src::strided::Strided as _;
+use aligned::Aligned;
 use std::cmp;
 
 fn generate_scaling<BD: BitDepth>(bd: BD, points: &[[u8; 2]]) -> BD::Scaling {
@@ -97,9 +98,9 @@ pub(crate) fn rav1d_prep_grain<BD: BitDepth>(
 
     // Generate scaling LUTs as needed
     let bd = BD::from_c((1 << r#in.p.bpc) - 1);
-    scaling[0] = generate_scaling::<BD>(bd, &data.y_points[..data.num_y_points as usize]);
-    scaling[1] = generate_scaling::<BD>(bd, &data.uv_points[0][..data.num_uv_points[0] as usize]);
-    scaling[2] = generate_scaling::<BD>(bd, &data.uv_points[1][..data.num_uv_points[1] as usize]);
+    scaling[0] = Aligned(generate_scaling::<BD>(bd, &data.y_points[..data.num_y_points as usize]));
+    scaling[1] = Aligned(generate_scaling::<BD>(bd, &data.uv_points[0][..data.num_uv_points[0] as usize]));
+    scaling[2] = Aligned(generate_scaling::<BD>(bd, &data.uv_points[1][..data.num_uv_points[1] as usize]));
 
     // Copy over the non-modified planes
     // TODO: eliminate in favor of per-plane refs
@@ -153,8 +154,8 @@ pub(crate) fn rav1d_apply_grain_row<BD: BitDepth>(
             &in_data[0],
             data,
             w,
-            &scaling[0],
-            &grain_lut[0],
+            &*scaling[0],
+            &*grain_lut[0],
             bh,
             row,
             bd,
@@ -187,8 +188,8 @@ pub(crate) fn rav1d_apply_grain_row<BD: BitDepth>(
                 &in_data[1 + pl],
                 data,
                 cpw,
-                &scaling[0],
-                &grain_lut[1 + pl],
+                &*scaling[0],
+                &*grain_lut[1 + pl],
                 bh,
                 row,
                 &in_data[0],
@@ -206,8 +207,8 @@ pub(crate) fn rav1d_apply_grain_row<BD: BitDepth>(
                     &in_data[1 + pl],
                     data_c,
                     cpw,
-                    &scaling[1 + pl],
-                    &grain_lut[1 + pl],
+                    &*scaling[1 + pl],
+                    &*grain_lut[1 + pl],
                     bh,
                     row,
                     &in_data[0],

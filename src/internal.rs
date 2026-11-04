@@ -259,17 +259,31 @@ pub(crate) struct Rav1dContextFrameThread {
 pub type GrainLut<Entry> = [[Entry; GRAIN_WIDTH]; GRAIN_HEIGHT + 1];
 
 pub struct GrainBD<BD: BitDepth> {
-    pub grain_lut: Align16<[GrainLut<BD::Entry>; 3]>,
+    /// Heap-allocated: this is ~36 KiB (8-bit) / ~72 KiB (16-bit) and lives
+    /// inside [`TaskThreadDataDelayedFg`], which is built by value through the
+    /// `Arc::default()` chain in [`Rav1dFrameContext::default`]. Inline it
+    /// materialized ~49 KiB on the stack per frame context — enough to
+    /// overflow bounded caller stacks (<512 KiB) seen from zencodecs.
+    /// Boxing per-element keeps the SIMD-required 16-byte alignment.
+    pub grain_lut: Box<[Align16<GrainLut<BD::Entry>>; 3]>,
     // TODO(kkysen) can use `BD::SCALING_LEN` directly with `#![feature(generic_const_exprs)]` when stabilized
-    pub scaling: Align64<[BD::Scaling; 3]>,
+    pub scaling: Box<[Align64<BD::Scaling>; 3]>,
 }
 
 // Implemented manually since we don't require `BD: Default`.
 impl<BD: BitDepth> Default for GrainBD<BD> {
     fn default() -> Self {
         Self {
-            grain_lut: ArrayDefault::default(),
-            scaling: ArrayDefault::default(),
+            // `vec![..].into_boxed_slice()` allocates on the heap first;
+            // `Box::new([..; 3])` would materialize the array on the stack.
+            grain_lut: vec![ArrayDefault::default(); 3]
+                .into_boxed_slice()
+                .try_into()
+                .unwrap_or_else(|_| unreachable!()),
+            scaling: vec![ArrayDefault::default(); 3]
+                .into_boxed_slice()
+                .try_into()
+                .unwrap_or_else(|_| unreachable!()),
         }
     }
 }
