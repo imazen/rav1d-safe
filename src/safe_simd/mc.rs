@@ -73,11 +73,22 @@ thread_local! {
     static MID_I32_130: Cell<Option<Mid32x130>> = const { Cell::new(None) };
 }
 
+/// `Box::new([elem; N])` builds the array on the stack first (up to ~69 KiB
+/// for the i32 buffers here), then copies it to the heap. Building the `Vec`
+/// first allocates on the heap directly — same trick as
+/// `looprestoration_arm::boxed_zeroed`.
+fn boxed_zeroed<T: Clone, const N: usize>(elem: T) -> Box<[T; N]> {
+    vec![elem; N]
+        .into_boxed_slice()
+        .try_into()
+        .unwrap_or_else(|_| unreachable!())
+}
+
 #[inline(always)]
 fn take_mid_i16_135() -> Mid16x135 {
     MID_I16_135
         .with(|c| c.take())
-        .unwrap_or_else(|| Box::new([[0; MID_STRIDE]; 135]))
+        .unwrap_or_else(|| boxed_zeroed([0; MID_STRIDE]))
 }
 #[inline(always)]
 fn put_mid_i16_135(mid: Mid16x135) {
@@ -87,7 +98,7 @@ fn put_mid_i16_135(mid: Mid16x135) {
 fn take_mid_i32_135() -> Mid32x135 {
     MID_I32_135
         .with(|c| c.take())
-        .unwrap_or_else(|| Box::new([[0; MID_STRIDE]; 135]))
+        .unwrap_or_else(|| boxed_zeroed([0; MID_STRIDE]))
 }
 #[inline(always)]
 fn put_mid_i32_135(mid: Mid32x135) {
@@ -97,7 +108,7 @@ fn put_mid_i32_135(mid: Mid32x135) {
 fn take_mid_i16_130() -> Mid16x130 {
     MID_I16_130
         .with(|c| c.take())
-        .unwrap_or_else(|| Box::new([[0; MID_STRIDE]; 130]))
+        .unwrap_or_else(|| boxed_zeroed([0; MID_STRIDE]))
 }
 #[inline(always)]
 fn put_mid_i16_130(mid: Mid16x130) {
@@ -107,7 +118,7 @@ fn put_mid_i16_130(mid: Mid16x130) {
 fn take_mid_i32_130() -> Mid32x130 {
     MID_I32_130
         .with(|c| c.take())
-        .unwrap_or_else(|| Box::new([[0; MID_STRIDE]; 130]))
+        .unwrap_or_else(|| boxed_zeroed([0; MID_STRIDE]))
 }
 #[inline(always)]
 fn put_mid_i32_130(mid: Mid32x130) {
