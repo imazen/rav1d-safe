@@ -98,9 +98,18 @@ pub(crate) fn rav1d_prep_grain<BD: BitDepth>(
 
     // Generate scaling LUTs as needed
     let bd = BD::from_c((1 << r#in.p.bpc) - 1);
-    scaling[0] = Aligned(generate_scaling::<BD>(bd, &data.y_points[..data.num_y_points as usize]));
-    scaling[1] = Aligned(generate_scaling::<BD>(bd, &data.uv_points[0][..data.num_uv_points[0] as usize]));
-    scaling[2] = Aligned(generate_scaling::<BD>(bd, &data.uv_points[1][..data.num_uv_points[1] as usize]));
+    scaling[0] = Aligned(generate_scaling::<BD>(
+        bd,
+        &data.y_points[..data.num_y_points as usize],
+    ));
+    scaling[1] = Aligned(generate_scaling::<BD>(
+        bd,
+        &data.uv_points[0][..data.num_uv_points[0] as usize],
+    ));
+    scaling[2] = Aligned(generate_scaling::<BD>(
+        bd,
+        &data.uv_points[1][..data.num_uv_points[1] as usize],
+    ));
 
     // Copy over the non-modified planes
     // TODO: eliminate in favor of per-plane refs
