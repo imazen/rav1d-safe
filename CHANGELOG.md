@@ -105,6 +105,8 @@ All notable changes to the `rav1d-safe` crate are documented in this file. Forma
   retries the same packet. Applies to every thread count.
 
 ### Changed
+
+- Accept the archmage and magetypes 0.9.31 stable release.
 - CDEF `find_dir` cost accumulation runs through a single contiguous-loop
   helper for 8 and 16 bit, and CDEF padding widens/copies over equal-length
   slices instead of index loops. Full-domain padding parity (every edge-flag
