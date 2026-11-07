@@ -57,7 +57,7 @@ enough = "0.4.4"
 rav1d-disjoint-mut = { version = "0.4.0", path = "crates/rav1d-disjoint-mut", default-features = false, features = ["std", "aligned", "pic-buf"] }
 libc = { version = "0.2.189", optional = true }
 parking_lot = "0.12.5"
-paste = "1.0.15"
+paste = { package = "pastey", version = "0.2.3" }
 raw-cpuid = "11.6.0"
 strum = { version = "0.28.0", features = ["derive"] }
 to_method = "1.1.0"
